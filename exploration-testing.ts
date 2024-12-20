@@ -12,26 +12,44 @@ import { ParserRuleContext } from 'antlr4ts';
 import { TerminalNode } from 'antlr4ts/tree/TerminalNode';
 import { ComparisonOperatorContext, ParExpressionContext } from 'apex-parser/lib/ApexParser';
 
-export class Listener implements ApexParserListener {
-  _parser: ApexParser;
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  _mutations: any[] = []; // Replace 'any' with the specific type of your mutations
+export class CompositeListener implements ApexParserListener {
+  private listeners: BaseListener[];
+  _mutations: any[] = [];
 
-  constructor(parser: ApexParser) {
-    this._parser = parser;
+  constructor(listeners: BaseListener[]) {
+    this.listeners = listeners;
+    // Share mutations array across all listeners
+    this.listeners
+      .filter((listener) => '_mutations' in listener)
+      .forEach((listener) => {
+        (listener as any)._mutations = this._mutations;
+      });
+
+    // Create a proxy that automatically forwards all method calls to listeners
+    return new Proxy(this, {
+      get: (target, prop) => {
+        if (prop in target) {
+          return target[prop];
+        }
+
+        // Return a function that calls the method on all listeners that have it
+        return (...args: any[]) => {
+          this.listeners.forEach((listener) => {
+            if (prop in listener && typeof listener[prop] === 'function') {
+              (listener[prop] as Function).apply(listener, args);
+            }
+          });
+        };
+      },
+    });
   }
 }
 
-export class ListenerDecoratorBase extends Listener {
-  _listener: Listener;
-
-  constructor(listener: Listener) {
-    super(listener._parser); // Call the constructor of the base class
-    this._listener = listener;
-  }
+class BaseListener implements ApexParserListener {
+  _mutations: any[] = [];
 }
 
-export class BoundaryConditionMutator extends ListenerDecoratorBase {
+export class BoundaryConditionMutator extends BaseListener {
   REPLACEMENT_MAP = {
     '!=': '==',
     '==': '!=',
@@ -39,35 +57,31 @@ export class BoundaryConditionMutator extends ListenerDecoratorBase {
     '<=': '<',
     '>': '>=',
     '>=': '>',
+    '===': '!==',
+    '!==': '===',
   };
-
-  constructor(listener: Listener) {
-    super(listener);
-  }
 
   // Target rule
   // expression: expression ('<=' | '>=' | '>' | '<') expression
-  enterEqualityExpression(ctx: ParExpressionContext): void {
-    if (ctx.childCount === 3 && ctx.getChild(1) instanceof TerminalNode) {
-      const symbol = ctx.getChild(1) as TerminalNode;
-
-      if (symbol?.text in this.REPLACEMENT_MAP) {
-        this._listener._mutations.push([this.constructor, symbol, this.REPLACEMENT_MAP[symbol.text]]);
-        console.log(symbol.text);
+  enterParExpression(ctx: ParserRuleContext): void {
+    if (ctx.childCount === 3) {
+      const symbol = ctx.getChild(1).getChild(1);
+      if (symbol instanceof TerminalNode) {
+        const symbolText = symbol.text;
+        const replacement = this.REPLACEMENT_MAP[symbolText];
+        if (replacement) {
+          this._mutations.push([this.constructor, symbol, replacement]);
+        }
       }
     }
   }
 }
 
-export class IncrementMutator extends ListenerDecoratorBase {
+export class IncrementMutator extends BaseListener {
   REPLACEMENT_MAP = {
     '++': '--',
     '--': '++',
   };
-
-  constructor(listener: Listener) {
-    super(listener);
-  }
 
   // Target rule
   // expression :
@@ -83,9 +97,8 @@ export class IncrementMutator extends ListenerDecoratorBase {
       }
 
       if (symbol?.text in this.REPLACEMENT_MAP) {
-        this._listener._mutations.push([this.constructor, symbol, this.REPLACEMENT_MAP[symbol.text]]);
+        this._mutations.push([this.constructor, symbol, this.REPLACEMENT_MAP[symbol.text]]);
       }
-      console.log(symbol.text);
     }
   }
 
@@ -99,9 +112,8 @@ export class IncrementMutator extends ListenerDecoratorBase {
       }
 
       if (symbol !== null && symbol.text in this.REPLACEMENT_MAP) {
-        this._listener._mutations.push([this.constructor, symbol, this.REPLACEMENT_MAP[symbol.text]]);
+        this._mutations.push([this.constructor, symbol, this.REPLACEMENT_MAP[symbol.text]]);
       }
-      console.log(symbol.text);
     }
   }
 }
@@ -135,18 +147,15 @@ function run() {
   const debugFile = fs.createWriteStream(debugFilePath);
   */
 
-  const baseListener = new Listener(parser);
-  const incrementListener = new IncrementMutator(baseListener);
-  const boundaryListener = new BoundaryConditionMutator(baseListener);
-  /*
-  listener = new OutputDecorator(listener, outputFile);
-  listener = new DebugDecorator(listener, debugFile);
-  listener = new BoundaryConditionMutator(listener);
-  listener = new IncrementMutator(listener);
-  */
-  ParseTreeWalker.DEFAULT.walk(boundaryListener as ApexParserListener, tree);
-  // biome-ignore lint/suspicious/noConsoleLog: <explanation>
-  console.log(baseListener._mutations);
+  const incrementListener = new IncrementMutator();
+  const boundaryListener = new BoundaryConditionMutator();
+
+  // Create composite listener using Proxy
+  const listener = new CompositeListener([incrementListener, boundaryListener]);
+
+  ParseTreeWalker.DEFAULT.walk(listener as ApexParserListener, tree);
+
+  console.log(listener._mutations);
   //walker.walk(listener as ApexParserListener, tree);
   //console.log(listener);
 
