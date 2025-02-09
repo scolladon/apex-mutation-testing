@@ -1,10 +1,10 @@
 {
   "files.exclude": {
-    "**/.git": true,
-    "**/.svn": true,
+    "**/.DS_Store": true,
+    "**/.git": false,
     "**/.hg": true,
-    "**/CVS": true,
-    "**/.DS_Store": true
+    "**/.svn": true,
+    "**/CVS": true
   },
   "search.exclude": {
     "**/lib": true,

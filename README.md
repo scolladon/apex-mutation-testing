@@ -111,35 +111,44 @@ sf plugins
 
 <!-- commands -->
 
-- [`sf hello world`](#sf-hello-world)
+- [`sf apex mutation test run`](#sf-apex-mutation-test-run)
 
-## `sf hello world`
+## `sf apex mutation test run`
 
-Say hello either to the world or someone you know.
+Evaluate test coverage quality by injecting mutations and measuring test detection rates
 
 ```
 USAGE
-  $ sf hello world [--json] [-n <value>]
+  $ sf apex mutation test run -c <value> -t <value> -o <value> [--json] [--flags-dir <value>] [-r <value>]
 
 FLAGS
-  -n, --name=<value>  [default: World] The name of the person you'd like to say hello to.
+  -c, --class-file=<value>  (required) Path to the Apex class file to be tested for mutation coverage
+  -o, --target-org=<value>  (required) Username or alias of the target org. Not required if the `target-org`
+                            configuration variable is already set.
+  -r, --report-dir=<value>  [default: mutations] Path to the directory where mutation test reports will be generated
+  -t, --test-file=<value>   (required) Path to the Apex test file that will be used to validate mutations
 
 GLOBAL FLAGS
-  --json  Format output as json.
+  --flags-dir=<value>  Import flag values from a directory.
+  --json               Format output as json.
 
 DESCRIPTION
-  Say hello either to the world or someone you know.
+  Evaluate test coverage quality by injecting mutations and measuring test detection rates
 
-  Say hello either to the world or someone you know.
+  The Apex Mutation Testing plugin helps evaluate the effectiveness of your Apex test classes by introducing mutations
+  into your code and checking if your tests can detect these changes:
+
+  The plugin provides insights into how trustworthy your test suite is by measuring its ability to catch intentional
+  code changes.
 
 EXAMPLES
-  Say hello to the world:
+  Run mutation testing on a class with its test file:
 
-    $ sf hello world
+    $ sf apex mutation test run --class-file MyClass.cls --test-file MyClassTest.cls
 
-  Say hello to someone you know:
+  Run mutation testing with specific class and test files:
 
-    $ sf hello world --name Astro
+    $ sf apex mutation test run --class-file path/to/MyClass.cls --test-file path/to/MyClassTest.cls
 ```
 
 <!-- commandsstop -->

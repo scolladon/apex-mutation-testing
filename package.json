@@ -1,71 +1,63 @@
 {
   "name": "apex-mutation-testing",
-  "description": "Apex mutation testing sfdx plugin",
+  "description": "Apex mutation testing plugin",
   "version": "1.0.0",
   "dependencies": {
-    "@oclif/core": "^4",
-    "@salesforce/core": "^8.6.2",
-    "@salesforce/sf-plugins-core": "^11.3.12"
+    "@oclif/core": "^4.2.6",
+    "@salesforce/core": "^8.8.2",
+    "@salesforce/sf-plugins-core": "^12.1.4",
+    "apex-parser": "^2.17.0"
   },
   "devDependencies": {
-    "@oclif/plugin-command-snapshot": "^5.2.18",
-    "@salesforce/cli-plugins-testkit": "^5.3.33",
+    "@biomejs/biome": "1.9.4",
+    "@oclif/plugin-command-snapshot": "^5.2.33",
+    "@salesforce/cli-plugins-testkit": "^5.3.39",
     "@salesforce/dev-scripts": "^10",
-    "apex-parser": "^2.17.0",
-    "biome": "^0.2.2",
-    "oclif": "^4.15.6",
+    "oclif": "^4.17.26",
+    "shx": "^0.3.4",
     "ts-node": "^10.9.2",
-    "typescript": "^5.6.3"
+    "typescript": "^5.7.3"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=18.6.0"
   },
   "files": [
     "/lib",
     "/messages",
+    "/npm-shrinkwrap.json",
     "/oclif.manifest.json",
     "/oclif.lock"
   ],
   "keywords": [
-    "force",
-    "salesforce",
-    "salesforcedx",
     "sf",
     "sf-plugin",
-    "sfdx",
-    "sfdx-plugin"
+    "apex",
+    "test",
+    "mutation"
   ],
   "license": "BSD-3-Clause",
   "oclif": {
     "commands": "./lib/commands",
     "bin": "sf",
     "topicSeparator": " ",
+    "flexibleTaxonomy": true,
     "devPlugins": [
       "@oclif/plugin-help"
-    ],
-    "topics": {
-      "hello": {
-        "description": "Commands to say hello."
-      }
-    },
-    "flexibleTaxonomy": true
+    ]
   },
   "scripts": {
     "build": "wireit",
-    "clean": "sf-clean",
-    "clean-all": "sf-clean all",
+    "clean:package-manager": "wireit",
+    "clean": "wireit",
     "compile": "wireit",
-    "docs": "sf-docs",
-    "format": "wireit",
-    "link-check": "wireit",
+    "dependencies:upgrade": "npx npm-check-updates -u ; npm install ; npm audit fix",
     "lint": "wireit",
-    "postinstall": "npx husky install",
-    "postpack": "sf-clean --ignore-signing-artifacts",
-    "prepack": "sf-prepack",
+    "postpack": "shx rm -f oclif.manifest.json",
+    "prepack": "wireit",
+    "prepare": "husky",
     "test": "wireit",
     "test:nuts": "nyc mocha \"**/*.nut.ts\" --slow 4500 --timeout 600000 --parallel",
-    "test:only": "wireit",
-    "version": "oclif readme"
+    "test:only": "wireit"
   },
   "publishConfig": {
     "access": "public"
@@ -75,6 +67,36 @@
       "dependencies": [
         "compile",
         "lint"
+      ]
+    },
+    "clean": {
+      "command": "shx rm -rf 'reports/*' .nyc_output oclif.manifest.json package.tgz 'sfdx-git-delta-*.tgz' 'stderr*.txt' 'stdout*.txt' '.stryker-tmp/*' perf-result.txt",
+      "files": [
+        "lib",
+        "reports/*",
+        ".nyc_output",
+        "oclif.manifest.json",
+        "package.tgz",
+        "sfdx-git-delta-v*.tgz",
+        "stderr*.txt",
+        "stdout*.txt",
+        ".stryker-tmp/*",
+        "perf-result.txt"
+      ],
+      "dependencies": [
+        "clean:build"
+      ]
+    },
+    "clean:build": {
+      "command": "shx rm -rf lib",
+      "files": [
+        "lib/*"
+      ]
+    },
+    "clean:package-manager": {
+      "command": "shx rm -rf node_modules tsconfig.tsbuildinfo .wireit",
+      "files": [
+        "node_modules/*"
       ]
     },
     "compile": {
@@ -90,27 +112,31 @@
       ],
       "clean": "if-file-deleted"
     },
-    "format": {
-      "command": "prettier --write \"+(src|test|schemas)/**/*.+(ts|js|json)|command-snapshot.json\"",
-      "files": [
-        "src/**/*.ts",
-        "test/**/*.ts",
-        "schemas/**/*.json",
-        "command-snapshot.json",
-        ".prettier*"
-      ],
-      "output": []
-    },
     "lint": {
-      "command": "biome check --error-on-warnings src test",
+      "command": "npx @biomejs/biome check --error-on-warnings src test",
       "files": [
         "src/**",
-        "test/**/*.ts",
+        "__tests__/**/*.ts",
         "messages/**",
         "**/biome.json",
         "**/tsconfig.json"
       ],
       "output": []
+    },
+    "prepack": {
+      "command": "oclif manifest && oclif readme",
+      "files": [
+        "src/commands/apex/mutation/test/run.ts",
+        "messages/apex.mutation.test.run.md",
+        "README.md"
+      ],
+      "dependencies": [
+        "build"
+      ],
+      "output": [
+        "README.md"
+      ],
+      "clean": false
     },
     "test:compile": {
       "command": "tsc -p \"./test\" --pretty",
@@ -168,15 +194,6 @@
       "files": [
         "src/**/*.ts",
         "schemas"
-      ],
-      "output": []
-    },
-    "link-check": {
-      "command": "node -e \"process.exit(process.env.CI ? 0 : 1)\" || linkinator \"**/*.md\" --skip \"CHANGELOG.md|node_modules|test/|confluence.internal.salesforce.com|my.salesforce.com|%s\" --markdown --retry --directory-listing --verbosity error",
-      "files": [
-        "./*.md",
-        "./!(CHANGELOG).md",
-        "messages/**/*.md"
       ],
       "output": []
     }

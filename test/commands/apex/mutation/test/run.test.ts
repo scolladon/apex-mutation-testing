@@ -1,7 +1,7 @@
 import { TestContext } from '@salesforce/core/testSetup';
-import { expect } from 'chai';
 import { stubSfCommandUx } from '@salesforce/sf-plugins-core';
-import World from '../../../src/commands/hello/world.js';
+import { expect } from 'chai';
+import { ApexMutationTest } from '../../../../../src/commands/apex/mutation/test/run.js';
 
 describe('hello world', () => {
   const $$ = new TestContext();
@@ -16,7 +16,7 @@ describe('hello world', () => {
   });
 
   it('runs hello world', async () => {
-    await World.run([]);
+    await ApexMutationTest.run([]);
     const output = sfCommandStubs.log
       .getCalls()
       .flatMap((c) => c.args)
@@ -25,12 +25,12 @@ describe('hello world', () => {
   });
 
   it('runs hello world with --json and no provided name', async () => {
-    const result = await World.run([]);
+    const result = await ApexMutationTest.run([]);
     expect(result.name).to.equal('World');
   });
 
   it('runs hello world --name Astro', async () => {
-    await World.run(['--name', 'Astro']);
+    await ApexMutationTest.run(['--name', 'Astro']);
     const output = sfCommandStubs.log
       .getCalls()
       .flatMap((c) => c.args)
@@ -39,7 +39,7 @@ describe('hello world', () => {
   });
 
   it('runs hello world --name Astro --json', async () => {
-    const result = await World.run(['--name', 'Astro', '--json']);
+    const result = await ApexMutationTest.run(['--name', 'Astro', '--json']);
     expect(result.name).to.equal('Astro');
   });
 });
