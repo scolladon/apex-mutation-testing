@@ -110,8 +110,7 @@ sf plugins
 ## Commands
 
 <!-- commands -->
-
-- [`sf apex mutation test run`](#sf-apex-mutation-test-run)
+* [`sf apex mutation test run`](#sf-apex-mutation-test-run)
 
 ## `sf apex mutation test run`
 
@@ -150,5 +149,4 @@ EXAMPLES
 
     $ sf apex mutation test run --class-file path/to/MyClass.cls --test-file path/to/MyClassTest.cls
 ```
-
 <!-- commandsstop -->

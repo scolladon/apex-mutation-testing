@@ -8,7 +8,15 @@
     "lineEnding": "lf",
     "lineWidth": 80,
     "attributePosition": "auto",
-    "ignore": ["**/.next", "**/node_modules", "**/output", "**/reports", "**/.github", "**/*.json", "**/*.md"]
+    "ignore": [
+      "**/.next",
+      "**/node_modules",
+      "**/output",
+      "**/reports",
+      "**/.github",
+      "**/*.json",
+      "**/*.md"
+    ]
   },
   "organizeImports": { "enabled": true },
   "linter": {
@@ -88,7 +96,15 @@
         "useValidTypeof": "error"
       }
     },
-    "ignore": ["lib/**/*", "**/node_modules", "**/.next", "**/output", "**/reports", "**/e2e", "**/.github"]
+    "ignore": [
+      "lib/**/*",
+      "**/node_modules",
+      "**/.next",
+      "**/output",
+      "**/reports",
+      "**/e2e",
+      "**/.github"
+    ]
   },
   "javascript": {
     "formatter": {

@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "dependencies": {
     "@oclif/core": "^4.2.6",
+    "@salesforce/apex-node": "^8.1.19",
     "@salesforce/core": "^8.8.2",
     "@salesforce/sf-plugins-core": "^12.1.4",
     "apex-parser": "^2.17.0"
