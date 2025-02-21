@@ -54,6 +54,8 @@
     "compile": "wireit",
     "dependencies:upgrade": "npx npm-check-updates -u ; npm install ; npm audit fix",
     "lint": "wireit",
+    "lint:fix": "wireit",
+    "lint:staged": "wireit",
     "postpack": "shx rm -f oclif.manifest.json",
     "prepack": "wireit",
     "prepare": "husky",
@@ -115,7 +117,7 @@
       "clean": "if-file-deleted"
     },
     "lint": {
-      "command": "npx @biomejs/biome check --error-on-warnings src test",
+      "command": "npx @biomejs/biome check --error-on-warnings --no-errors-on-unmatched src test",
       "files": [
         "src/**",
         "test/**/*.ts",
