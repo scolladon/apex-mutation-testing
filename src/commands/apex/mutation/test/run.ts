@@ -68,13 +68,28 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       const mutations = mutantGenerator.compute(classDefinition['Body'])
       for (const mutation of mutations) {
         const mutatedVersion = mutantGenerator.getMutatedVersion(mutation)
-        console.log(mutatedVersion)
         // deploy the code and run the test-file
+        // Create MetadataContainer
+        const container = await connection.tooling
+          .sobject('MetadataContainer')
+          .create({
+            Name: `MutationTest_${Date.now()}`,
+          })
+
+        // Create ApexClassMember for the mutated version
+        await connection.tooling.sobject('ApexClassMember').create({
+          MetadataContainerId: container.id,
+          ContentEntityId: classDefinition.Id,
+          Body: mutatedVersion,
+        })
+
+        // Create ContainerAsyncRequest to deploy
         const deployResult = await connection.tooling
-          .sobject('ApexClass')
-          .update({
-            Id: classDefinition.Id as string,
-            Body: mutatedVersion,
+          .sobject('ContainerAsyncRequest')
+          .create({
+            IsCheckOnly: false,
+            MetadataContainerId: container.id,
+            IsRunTests: true,
           })
 
         if (!deployResult.success) {
@@ -82,19 +97,43 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
           continue
         }
 
-        const testResult = await testService.runTestSynchronous({
+        const testRun = await testService.runTestAsynchronous({
           tests: [{ className: flags['test-class'] }],
           testLevel: TestLevel.RunSpecifiedTests,
           skipCodeCoverage: true,
           maxFailedTests: 0,
         })
 
-        console.log(testResult)
-
         // Compute the test result and store the surviving mutants
+        console.log(testRun)
       }
 
       // Rollback the deployment
+      const container = await connection.tooling
+        .sobject('MetadataContainer')
+        .create({
+          Name: `MutationTest_${Date.now()}`,
+        })
+
+      // Create ApexClassMember for the mutated version
+      await connection.tooling.sobject('ApexClassMember').create({
+        MetadataContainerId: container.id,
+        ContentEntityId: classDefinition.Id,
+        Body: classDefinition['Body'],
+      })
+
+      // Create ContainerAsyncRequest to deploy
+      const deployResult = await connection.tooling
+        .sobject('ContainerAsyncRequest')
+        .create({
+          IsCheckOnly: false,
+          MetadataContainerId: container.id,
+          IsRunTests: true,
+        })
+
+      if (!deployResult.success) {
+        // Warn user class has not been rolledback
+      }
 
       // Generate Stryker-style mutation report
     } catch (error) {
