@@ -1,6 +1,6 @@
-import { BoundaryConditionMutator } from './mutator/boundaryConditionMutator.js'
-import { IncrementMutator } from './mutator/incrementMutator.js'
-import { MutationListener } from './mutator/mutationListener.js'
+import { BoundaryConditionMutator } from '../mutator/boundaryConditionMutator.js'
+import { IncrementMutator } from '../mutator/incrementMutator.js'
+import { MutationListener } from '../mutator/mutationListener.js'
 
 import {
   ApexLexer,
@@ -33,7 +33,7 @@ export class MutantGenerator {
     return listener.getMutations()
   }
 
-  public getMutatedVersion(mutation: any) {
+  public mutate(mutation: any) {
     const [_mutatorClass, token, replacementText] = mutation
     // Create a new token stream rewriter
     const rewriter = new TokenStreamRewriter(this.tokenStream!)
