@@ -2,6 +2,7 @@ import { BaseListener } from './baseListener.js'
 
 import { ApexParserListener } from 'apex-parser'
 
+// @ts-ignore: Just a proxy doing accumulation of mutations
 export class MutationListener implements ApexParserListener {
   private listeners: BaseListener[]
   _mutations: any[] = []

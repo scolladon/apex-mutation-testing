@@ -8,13 +8,13 @@ The Apex Mutation Testing plugin helps evaluate the effectiveness of your Apex t
 
 The plugin provides insights into how trustworthy your test suite is by measuring its ability to catch intentional code changes.
 
-# flags.class-file.summary
+# flags.apex-class.summary
 
-Path to the Apex class file to be tested for mutation coverage
+Apex class name to mutate
 
-# flags.test-file.summary
+# flags.test-class.summary
 
-Path to the Apex test file that will be used to validate mutations
+Apex test class name to validate mutations
 
 # flags.report-dir.summary
 

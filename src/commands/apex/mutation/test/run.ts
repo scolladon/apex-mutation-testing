@@ -1,32 +1,39 @@
-import { readFile } from 'node:fs/promises';
-import { TestItem, TestLevel, TestResult, TestService } from '@salesforce/apex-node';
-import { Messages } from '@salesforce/core';
-import { Flags, SfCommand } from '@salesforce/sf-plugins-core';
-import { MutantGenerator } from '../../../../mutantGenerator.js';
+import {
+  //TestItem,
+  TestLevel,
+  //TestResult,
+  TestService,
+} from '@salesforce/apex-node'
+import { Messages } from '@salesforce/core'
+import { Flags, SfCommand } from '@salesforce/sf-plugins-core'
+import { MutantGenerator } from '../../../../mutantGenerator.js'
 
-Messages.importMessagesDirectoryFromMetaUrl(import.meta.url);
-const messages = Messages.loadMessages('apex-mutation-testing', 'apex.mutation.test.run');
+Messages.importMessagesDirectoryFromMetaUrl(import.meta.url)
+const messages = Messages.loadMessages(
+  'apex-mutation-testing',
+  'apex.mutation.test.run'
+)
 
 export type ApexMutationTestResult = {
-  'mutants-number': number;
-  'report-dir': string;
-};
+  'mutants-number': number
+  'report-dir': string
+}
 
 export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> {
-  public static readonly summary = messages.getMessage('summary');
-  public static readonly description = messages.getMessage('description');
-  public static readonly examples = messages.getMessages('examples');
+  public static override readonly summary = messages.getMessage('summary')
+  public static override readonly description =
+    messages.getMessage('description')
+  public static override readonly examples = messages.getMessages('examples')
 
-  public static readonly flags = {
-    'class-file': Flags.file({
+  public static override readonly flags = {
+    'apex-class': Flags.string({
       char: 'c',
-      summary: messages.getMessage('flags.class-file.summary'),
-      exists: true,
+      summary: messages.getMessage('flags.apex-class.summary'),
       required: true,
     }),
     'test-class': Flags.string({
       char: 't',
-      summary: messages.getMessage('flags.test-file.summary'),
+      summary: messages.getMessage('flags.test-class.summary'),
       required: true,
     }),
     'report-dir': Flags.directory({
@@ -37,52 +44,67 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
     }),
     'target-org': Flags.requiredOrg(),
     'api-version': Flags.orgApiVersion(),
-  };
+  }
 
   public async run(): Promise<ApexMutationTestResult> {
     // parse the provided flags
-    const { flags } = await this.parse(ApexMutationTest);
+    const { flags } = await this.parse(ApexMutationTest)
+    const connection = flags['target-org'].getConnection(flags['api-version'])
 
     // Read class-file
-    const classInitialContent = await readFile(flags['class-file'], 'utf8');
+    const classDefinition = (
+      await connection.tooling
+        .sobject('ApexClass')
+        .find({ Name: flags['apex-class'] })
+        .execute()
+    )[0]
 
-    // Compute every mutant
-    const connection = flags['target-org'].getConnection(flags['api-version']);
-    const testService = new TestService(connection);
-    const mutantGenerator = new MutantGenerator();
-    const mutations = mutantGenerator.compute(classInitialContent);
-    for (const mutation of mutations) {
-      const mutatedVersion = mutantGenerator.getMutatedVersion(mutation);
-      // deploy the code and run the test-file
-      const deployResult = await connection.tooling.sobject('ApexClass').update({
-        Id: mutation.classId, // Assuming mutation object contains classId
-        Body: mutatedVersion,
-      });
+    // TODO if class does not exist
 
-      if (!deployResult.success) {
-        //this.error(`Failed to deploy mutation: ${mutation.id}`);
-        continue;
+    try {
+      // Compute every mutant
+      const testService = new TestService(connection)
+      const mutantGenerator = new MutantGenerator()
+      const mutations = mutantGenerator.compute(classDefinition['Body'])
+      for (const mutation of mutations) {
+        const mutatedVersion = mutantGenerator.getMutatedVersion(mutation)
+        console.log(mutatedVersion)
+        // deploy the code and run the test-file
+        const deployResult = await connection.tooling
+          .sobject('ApexClass')
+          .update({
+            Id: classDefinition.Id as string,
+            Body: mutatedVersion,
+          })
+
+        if (!deployResult.success) {
+          //this.error(`Failed to deploy mutation: ${mutation.id}`);
+          continue
+        }
+
+        const testResult = await testService.runTestSynchronous({
+          tests: [{ className: flags['test-class'] }],
+          testLevel: TestLevel.RunSpecifiedTests,
+          skipCodeCoverage: true,
+          maxFailedTests: 0,
+        })
+
+        console.log(testResult)
+
+        // Compute the test result and store the surviving mutants
       }
 
-      const testConfig: {
-        tests: [{ classNames: flags['test-class'] }];
-        testLevel: TestLevel.RunSpecifiedTests;
-        skipCodeCoverage: true;
-        maxFailedTests: 0;
-      };
+      // Rollback the deployment
 
-      const testResult = await testService.runTestSynchronous(testConfig);
-
-      // Compute the test result and store the surviving mutants
+      // Generate Stryker-style mutation report
+    } catch (error) {
+      console.log(error)
+      throw error
     }
-
-    // Rollback the deployment
-
-    // Generate Stryker-style mutation report
 
     return {
       'mutants-number': 10,
       'report-dir': flags['report-dir'],
-    };
+    }
   }
 }

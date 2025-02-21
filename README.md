@@ -118,14 +118,16 @@ Evaluate test coverage quality by injecting mutations and measuring test detecti
 
 ```
 USAGE
-  $ sf apex mutation test run -c <value> -t <value> -o <value> [--json] [--flags-dir <value>] [-r <value>]
+  $ sf apex mutation test run -c <value> -t <value> -o <value> [--json] [--flags-dir <value>] [-r <value>] [--api-version
+    <value>]
 
 FLAGS
-  -c, --class-file=<value>  (required) Path to the Apex class file to be tested for mutation coverage
-  -o, --target-org=<value>  (required) Username or alias of the target org. Not required if the `target-org`
-                            configuration variable is already set.
-  -r, --report-dir=<value>  [default: mutations] Path to the directory where mutation test reports will be generated
-  -t, --test-file=<value>   (required) Path to the Apex test file that will be used to validate mutations
+  -c, --apex-class=<value>   (required) Apex class name to mutate
+  -o, --target-org=<value>   (required) Username or alias of the target org. Not required if the `target-org`
+                             configuration variable is already set.
+  -r, --report-dir=<value>   [default: mutations] Path to the directory where mutation test reports will be generated
+  -t, --test-class=<value>   (required) Apex test class name to validate mutations
+      --api-version=<value>  Override the api version used for api requests made by this command
 
 GLOBAL FLAGS
   --flags-dir=<value>  Import flag values from a directory.

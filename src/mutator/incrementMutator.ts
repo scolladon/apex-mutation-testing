@@ -1,7 +1,7 @@
 import { BaseListener } from './baseListener.js'
 
 import { ParserRuleContext } from 'antlr4ts'
-import { TerminalNode } from 'antlr4ts/tree/TerminalNode'
+import { TerminalNode } from 'antlr4ts/tree/index.js'
 
 export class IncrementMutator extends BaseListener {
   REPLACEMENT_MAP = {
@@ -22,7 +22,7 @@ export class IncrementMutator extends BaseListener {
         symbol = ctx.getChild(1) as TerminalNode
       }
 
-      if (symbol?.text in this.REPLACEMENT_MAP) {
+      if (symbol !== null && symbol.text in this.REPLACEMENT_MAP) {
         this._mutations.push([
           this.constructor,
           symbol,
