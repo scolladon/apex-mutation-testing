@@ -4,7 +4,7 @@ import { ParserRuleContext } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
 
 export class IncrementMutator extends BaseListener {
-  REPLACEMENT_MAP = {
+  private REPLACEMENT_MAP: Record<string, string> = {
     '++': '--',
     '--': '++',
   }
@@ -23,11 +23,11 @@ export class IncrementMutator extends BaseListener {
       }
 
       if (symbol !== null && symbol.text in this.REPLACEMENT_MAP) {
-        this._mutations.push([
-          this.constructor,
-          symbol,
-          this.REPLACEMENT_MAP[symbol.text],
-        ])
+        this._mutations.push({
+          mutationName: this.constructor.name,
+          token: symbol,
+          replacement: this.REPLACEMENT_MAP[symbol.text],
+        })
       }
     }
   }
@@ -42,11 +42,11 @@ export class IncrementMutator extends BaseListener {
       }
 
       if (symbol !== null && symbol.text in this.REPLACEMENT_MAP) {
-        this._mutations.push([
-          this.constructor,
-          symbol,
-          this.REPLACEMENT_MAP[symbol.text],
-        ])
+        this._mutations.push({
+          mutationName: this.constructor.name,
+          token: symbol,
+          replacement: this.REPLACEMENT_MAP[symbol.text],
+        })
       }
     }
   }

@@ -62,7 +62,7 @@ function run() {
     )
     const mutatedTokenStream = new CommonTokenStream(mutatedLexer)
     const mutatedParser = new ApexParser(mutatedTokenStream)
-    const mutatedTree = mutatedParser.compilationUnit()
+    const _mutatedTree = mutatedParser.compilationUnit()
 
     // Create a new token stream rewriter
     const rewriter = new TokenStreamRewriter(mutatedTokenStream)

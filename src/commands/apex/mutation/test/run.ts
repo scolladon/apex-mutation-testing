@@ -1,5 +1,6 @@
 import { Messages } from '@salesforce/core'
 import { Flags, SfCommand } from '@salesforce/sf-plugins-core'
+import { ApexMutationHTMLReporter } from '../../../../reporter/HTMLReporter.js'
 import { MutationTestingService } from '../../../../service/mutationTestingService.js'
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url)
@@ -9,7 +10,7 @@ const messages = Messages.loadMessages(
 )
 
 export type ApexMutationTestResult = {
-  'zombies-count': number
+  score: number
 }
 
 export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> {
@@ -48,11 +49,13 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       apexClassName: flags['apex-class'],
       apexClassTestName: flags['test-class'],
     })
+    const mutationResult = await mutationTestingService.process()
 
-    const zombiesCount = await mutationTestingService.process()
+    const htmlReporter = new ApexMutationHTMLReporter()
+    await htmlReporter.generateReport(mutationResult, flags['report-dir'])
 
     return {
-      'zombies-count': zombiesCount,
+      score: mutationTestingService.calculateScore(mutationResult),
     }
   }
 }

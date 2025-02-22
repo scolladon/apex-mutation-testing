@@ -4,7 +4,7 @@ import { ParserRuleContext } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
 
 export class BoundaryConditionMutator extends BaseListener {
-  REPLACEMENT_MAP = {
+  private REPLACEMENT_MAP: Record<string, string> = {
     '!=': '==',
     '==': '!=',
     '<': '<=',
@@ -24,7 +24,11 @@ export class BoundaryConditionMutator extends BaseListener {
         const symbolText = symbol.text
         const replacement = this.REPLACEMENT_MAP[symbolText]
         if (replacement) {
-          this._mutations.push([this.constructor, symbol, replacement])
+          this._mutations.push({
+            mutationName: this.constructor.name,
+            token: symbol,
+            replacement,
+          })
         }
       }
     }

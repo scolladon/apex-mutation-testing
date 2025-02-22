@@ -1,3 +1,4 @@
+import { ApexMutation } from '../type/ApexMutation.js'
 import { BaseListener } from './baseListener.js'
 
 import { ApexParserListener } from 'apex-parser'
@@ -5,7 +6,7 @@ import { ApexParserListener } from 'apex-parser'
 // @ts-ignore: Just a proxy doing accumulation of mutations
 export class MutationListener implements ApexParserListener {
   private listeners: BaseListener[]
-  _mutations: any[] = []
+  _mutations: ApexMutation[] = []
 
   public getMutations() {
     return this._mutations
@@ -17,7 +18,7 @@ export class MutationListener implements ApexParserListener {
     this.listeners
       .filter(listener => '_mutations' in listener)
       .forEach(listener => {
-        ;(listener as any)._mutations = this._mutations
+        ;(listener as BaseListener)._mutations = this._mutations
       })
 
     // Create a proxy that automatically forwards all method calls to listeners
@@ -28,7 +29,7 @@ export class MutationListener implements ApexParserListener {
         }
 
         // Return a function that calls the method on all listeners that have it
-        return (...args: any[]) => {
+        return (...args: []) => {
           this.listeners.forEach(listener => {
             if (prop in listener && typeof listener[prop] === 'function') {
               ;(listener[prop] as Function).apply(listener, args)

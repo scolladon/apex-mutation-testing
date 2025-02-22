@@ -12,6 +12,7 @@ import {
 } from 'apex-parser'
 
 import { TokenStreamRewriter } from 'antlr4ts'
+import { ApexMutation } from '../type/ApexMutation.js'
 
 export class MutantGenerator {
   private tokenStream?: CommonTokenStream
@@ -33,15 +34,14 @@ export class MutantGenerator {
     return listener.getMutations()
   }
 
-  public mutate(mutation: any) {
-    const [_mutatorClass, token, replacementText] = mutation
+  public mutate(mutation: ApexMutation) {
     // Create a new token stream rewriter
     const rewriter = new TokenStreamRewriter(this.tokenStream!)
     // Apply the mutation by replacing the original token with the replacement text
     rewriter.replace(
-      token.symbol.tokenIndex,
-      token.symbol.tokenIndex,
-      replacementText
+      mutation.token.symbol.tokenIndex,
+      mutation.token.symbol.tokenIndex,
+      mutation.replacement
     )
 
     // Get the mutated code

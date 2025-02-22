@@ -1,4 +1,5 @@
 import { Connection } from '@salesforce/core'
+import { ApexClass } from '../type/ApexClass.js'
 export class ApexClassRepository {
   constructor(protected readonly connection: Connection) {}
 
@@ -11,7 +12,7 @@ export class ApexClassRepository {
     )[0]
   }
 
-  public async update(apexClass: any) {
+  public async update(apexClass: ApexClass) {
     const container = await this.connection.tooling
       .sobject('MetadataContainer')
       .create({
