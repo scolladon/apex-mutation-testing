@@ -1,6 +1,6 @@
 {
     "ignorePaths": [
-	    "**/CHANGELOG.md",
+        "**/CHANGELOG.md",
         "**/.git/**",
         "**/megalinter.yml",
         "**/node_modules/**"
@@ -9,9 +9,21 @@
     "noConfigSearch": true,
     "version": "0.2",
     "words": [
+        "amannn",
+        "antlr",
+        "apexskier",
+        "behaviour",
+        "commitlint",
         "cspell",
+        "jwalton",
         "megalinter",
+        "scolladon",
+        "sobject",
+        "testkit",
+        "thollander",
+        "tsconfig.json",
         "tsconfig",
-        "tsconfig.json"
+        "wagoid",
+        "wireit"
     ]
 }

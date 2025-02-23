@@ -30,9 +30,9 @@ The apex-mutation-testing plugin implements this technique for Salesforce Apex c
 3. Deploying each mutated version to a Salesforce org
 4. Running your test class against each mutation
 5. Analyzing the results to determine if your tests:
-   - Detected the mutation (killed the mutant)
-   - Failed to detect the mutation (created a zombie)
-   - Caused a test failure unrelated to the mutation
+    - Detected the mutation (killed the mutant)
+    - Failed to detect the mutation (created a zombie)
+    - Caused a test failure unrelated to the mutation
 6. Generating a detailed report showing mutation coverage and test effectiveness
 
 This process helps you identify areas where your tests may be insufficient and provides insights into improving your test quality.
@@ -110,12 +110,12 @@ EXAMPLES
 
 ## Backlog
 
- - **Expand Mutation Types**: Add more mutation operators to test different code patterns
- - **Smart Mutation Detection**: Implement logic to identify relevant mutations for specific code contexts
- - **Coverage Analysis**: Detect untested code paths that mutations won't affect
- - **Performance Optimization**: Add CPU time monitoring to fail fast on non ending mutation
- - **Better Configurability**: Pass threashold and use more information from test class
- - **Additional Features**: Explore other mutation testing enhancements and quality metrics
+- **Expand Mutation Types**: Add more mutation operators to test different code patterns
+- **Smart Mutation Detection**: Implement logic to identify relevant mutations for specific code contexts
+- **Coverage Analysis**: Detect untested code paths that mutations won't affect
+- **Performance Optimization**: Add CPU time monitoring to fail fast on non ending mutation
+- **Better Configurability**: Pass threashold and use more information from test class
+- **Additional Features**: Explore other mutation testing enhancements and quality metrics
 
 ## Changelog
 
