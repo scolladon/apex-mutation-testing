@@ -37,7 +37,7 @@
     "test",
     "mutation"
   ],
-  "license": "BSD-3-Clause",
+  "license": "MIT",
   "oclif": {
     "commands": "./lib/commands",
     "bin": "sf",
@@ -224,7 +224,6 @@
       "output": []
     }
   },
-  "exports": "./lib/index.js",
   "type": "module",
   "author": "Sébastien Colladon (colladonsebastien@gmail.com)"
 }
