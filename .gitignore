@@ -1,47 +1,17 @@
-# -- CLEAN
-tmp/
-
-
-# never checkin npm config
-.npmrc
-
-# debug logs
-npm-error.log
-
-
-# compile source
-lib
-
-# test artifacts
-*xunit.xml
-*checkstyle.xml
-*unitcoverage
-.nyc_output
-coverage
-test_session*
-
-# generated docs
-docs
-
-# ignore sfdx-trust files
-*.tgz
-*.sig
-package.json.bak.
-
-
-npm-shrinkwrap.json
-oclif.manifest.json
-oclif.lock
-
-# -- CLEAN ALL
-*.tsbuildinfo
-.eslintcache
+.stryker-tmp
 .wireit
-node_modules
-
-# --
-# put files here you don't want cleaned with sf-clean
-
-# os specific files
-.DS_Store
-.idea
+*-debug.log
+*-error.log
+/.nyc_output
+/e2e
+/lib
+/node_modules
+/reports
+install-state.gz
+megalinter-reports/
+package.tgz
+perf-result.txt
+apex-mutation-testing-*.tgz
+stderr*.txt
+stdout*.txt
+tsconfig.tsbuildinfo

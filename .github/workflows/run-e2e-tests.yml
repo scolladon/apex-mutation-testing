@@ -1,0 +1,46 @@
+---
+name: E2E Tests a published version
+on:
+  workflow_call:
+    inputs:
+      channel:
+        type: string
+        default: latest-rc
+
+jobs:
+  e2e-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+        node: [18, 20, 22]
+        cli: ['@salesforce/cli']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: 'e2e/head'
+          fetch-depth: 0
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Set environment variables
+        run: |
+          echo "SF_DISABLE_AUTOUPDATE=true" >> "$GITHUB_ENV"
+          echo "SF_DISABLE_TELEMETRY=true" >> "$GITHUB_ENV"
+
+      - name: Install cli
+        run: npm install -g ${{ matrix.cli }}
+
+      - name: Install new plugin version
+        run: echo y | sf plugins install apex-mutation-testing@${{ inputs.channel }}
+
+      - name: Test new plugin version
+        run: sf apex mutation test run --help
+
+      - name: E2E Tests
+        run: echo "TODO"

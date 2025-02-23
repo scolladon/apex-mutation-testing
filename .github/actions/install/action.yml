@@ -1,0 +1,22 @@
+---
+name: Install
+description: Install dependencies
+
+runs:
+  using: composite
+  steps:
+    - name: Get cache directory
+      id: cache-dir
+      run: echo "dir=$(npm config get cache)" >> "$GITHUB_OUTPUT"
+      shell: bash
+
+    - uses: actions/cache@v4
+      with:
+        path: ${{ steps.cache-dir.outputs.dir }}
+        key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+    - name: Install dependencies
+      run: npm ci
+      shell: bash
+      env:
+        HUSKY: '0' # By default do not run HUSKY install

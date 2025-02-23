@@ -1,0 +1,44 @@
+---
+name: Build Checks
+on:
+  workflow_call:
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - uses: google/wireit@setup-github-actions-caching/v2
+
+      - name: Setup dependencies, cache and install
+        uses: ./.github/actions/install
+
+      - name: Lint plugin
+        run: npm run lint
+
+      - name: Build plugin
+        run: npm pack
+
+      - name: Unit test
+        run: npm run test:unit -- --runInBand
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+        continue-on-error: true
+
+      - name: Functional test
+        run: npm run test:nut
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-test-report
+          path: reports/coverage
