@@ -1,6 +1,5 @@
 import { writeFile } from 'node:fs/promises'
 import * as path from 'path'
-import { schema } from '@stryker-mutator/api/core'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
 
 export class ApexMutationHTMLReporter {
@@ -14,9 +13,7 @@ export class ApexMutationHTMLReporter {
     await writeFile(path.join(outputDir, 'index.html'), htmlContent)
   }
 
-  private transformApexResults(
-    apexMutationTestResult: ApexMutationTestResult
-  ): schema.MutationTestResult {
+  private transformApexResults(apexMutationTestResult: ApexMutationTestResult) {
     const mutationTestResult = {
       schemaVersion: '2.0.0',
       config: {}, // You can add your configuration here
@@ -59,7 +56,7 @@ export class ApexMutationHTMLReporter {
   }
 }
 
-const createReportHtml = (report: schema.MutationTestResult) => {
+const createReportHtml = report => {
   return `<!DOCTYPE html>
   <html>
   <head>
