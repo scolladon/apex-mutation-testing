@@ -9,7 +9,7 @@
   },
   "devDependencies": {
     "@oclif/plugin-command-snapshot": "^5.2.18",
-    "@salesforce/cli-plugins-testkit": "^5.3.33",
+    "@salesforce/cli-plugins-testkit": "^5.3.39",
     "@salesforce/dev-scripts": "^10",
     "apex-parser": "^2.17.0",
     "biome": "^0.2.2",
