@@ -25,6 +25,7 @@
     "nyc": "^17.1.0",
     "oclif": "^4.17.31",
     "shx": "^0.3.4",
+    "ts-jest": "^29.2.6",
     "ts-node": "^10.9.2",
     "tslib": "^2.8.1",
     "typescript": "^5.7.3",
@@ -191,19 +192,14 @@
       ],
       "clean": false
     },
-    "test:compile": {
-      "command": "tsc -p \"./test\" --pretty",
-      "files": [
-        "test/**/*.ts",
-        "**/tsconfig.json"
-      ],
-      "output": []
-    },
     "test": {
       "dependencies": [
+        "build",
+        "lint",
         "test:compile",
-        "test:only",
-        "lint"
+        "test:unit",
+        "test:nut",
+        "test:e2e"
       ]
     },
     "test:build": {
@@ -212,6 +208,14 @@
         "clean",
         "clean:package-manager"
       ]
+    },
+    "test:compile": {
+      "command": "tsc -p \"./test\" --pretty",
+      "files": [
+        "test/**/*.ts",
+        "**/tsconfig.json"
+      ],
+      "output": []
     },
     "test:e2e": {
       "command": "echo TODO",
