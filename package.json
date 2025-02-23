@@ -8,7 +8,7 @@
     "@salesforce/sf-plugins-core": "^11.3.12"
   },
   "devDependencies": {
-    "@oclif/plugin-command-snapshot": "^5.2.18",
+    "@oclif/plugin-command-snapshot": "^5.2.36",
     "@salesforce/cli-plugins-testkit": "^5.3.33",
     "@salesforce/dev-scripts": "^10",
     "apex-parser": "^2.17.0",
