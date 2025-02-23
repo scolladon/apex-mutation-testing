@@ -1,5 +1,6 @@
 import { writeFile } from 'node:fs/promises'
 import * as path from 'path'
+import { schema } from '@stryker-mutator/api/core'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
 
 export class ApexMutationHTMLReporter {
@@ -13,11 +14,16 @@ export class ApexMutationHTMLReporter {
     await writeFile(path.join(outputDir, 'index.html'), htmlContent)
   }
 
-  private transformApexResults(apexMutationTestResult: ApexMutationTestResult) {
+  private transformApexResults(
+    apexMutationTestResult: ApexMutationTestResult
+  ): schema.MutationTestResult {
     const mutationTestResult = {
       schemaVersion: '2.0.0',
       config: {}, // You can add your configuration here
-      thresholds: {},
+      thresholds: {
+        high: 80,
+        low: 60,
+      },
       files: {},
     }
 
@@ -53,7 +59,7 @@ export class ApexMutationHTMLReporter {
   }
 }
 
-const createReportHtml = report => {
+const createReportHtml = (report: schema.MutationTestResult) => {
   return `<!DOCTYPE html>
   <html>
   <head>

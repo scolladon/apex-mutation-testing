@@ -69,6 +69,8 @@ Before running mutation testing:
 Remember, mutation testing complements but doesn't replace good test coverage. It helps identify weaknesses in your existing tests, but only for the code they already cover.
 
 <!-- commands -->
+* [`sf apex mutation test run`](#sf-apex-mutation-test-run)
+
 ## `sf apex mutation test run`
 
 Evaluate test coverage quality by injecting mutations and measuring test detection rates
@@ -112,6 +114,7 @@ EXAMPLES
  - **Smart Mutation Detection**: Implement logic to identify relevant mutations for specific code contexts
  - **Coverage Analysis**: Detect untested code paths that mutations won't affect
  - **Performance Optimization**: Add CPU time monitoring to fail fast on non ending mutation
+ - **Better Configurability**: Pass threashold and use more information from test class
  - **Additional Features**: Explore other mutation testing enhancements and quality metrics
 
 ## Changelog

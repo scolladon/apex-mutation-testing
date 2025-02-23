@@ -7,6 +7,7 @@
     "@salesforce/apex-node": "^8.1.19",
     "@salesforce/core": "^8.8.3",
     "@salesforce/sf-plugins-core": "^12.1.4",
+    "@stryker-mutator/core": "^8.7.1",
     "antlr4ts": "^0.5.0-alpha.4",
     "apex-parser": "^2.17.0"
   },
