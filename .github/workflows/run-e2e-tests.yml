@@ -17,12 +17,6 @@ jobs:
         cli: ['@salesforce/cli']
     runs-on: ${{ matrix.os }}
     steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
-        with:
-          ref: 'e2e/head'
-          fetch-depth: 0
-
       - name: Setup node
         uses: actions/setup-node@v4
         with:
@@ -43,4 +37,4 @@ jobs:
         run: sf apex mutation test run --help
 
       - name: E2E Tests
-        run: echo "TODO"
+        run: npm run test:e2e

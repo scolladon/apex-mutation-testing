@@ -102,7 +102,6 @@
       "**/.next",
       "**/output",
       "**/reports",
-      "**/e2e",
       "**/.github"
     ]
   },

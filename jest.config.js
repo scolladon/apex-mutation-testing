@@ -169,7 +169,6 @@ export default {
     '/node_modules/',
     '/test/utils/',
     '/reports/',
-    '/e2e',
   ],
 
   // The regexp pattern or array of patterns that Jest uses to detect test files

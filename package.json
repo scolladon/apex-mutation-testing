@@ -18,7 +18,9 @@
     "@salesforce/dev-scripts": "^10",
     "chai": "^5.2.0",
     "husky": "^9.1.7",
+    "jest": "^29.7.0",
     "knip": "^5.44.5",
+    "mocha": "^11.1.0",
     "nyc": "^17.1.0",
     "oclif": "^4.17.31",
     "shx": "^0.3.4",
@@ -68,9 +70,10 @@
     "prepack": "wireit",
     "prepare": "husky",
     "prepublishOnly": "npm shrinkwrap",
-    "test": "wireit",
-    "test:nuts": "nyc mocha \"**/*.nut.ts\" --slow 4500 --timeout 600000 --parallel",
-    "test:only": "wireit"
+    "test:build": "wireit",
+    "test:nut": "wireit",
+    "test:unit": "wireit",
+    "test": "wireit"
   },
   "publishConfig": {
     "access": "public"
@@ -202,49 +205,57 @@
         "lint"
       ]
     },
-    "test:only": {
-      "command": "nyc mocha \"test/**/*.test.ts\"",
-      "env": {
-        "FORCE_COLOR": "2"
-      },
-      "files": [
-        "test/**/*.ts",
-        "src/**/*.ts",
-        "**/tsconfig.json",
-        ".mocha*",
-        "!*.nut.ts",
-        ".nycrc"
-      ],
-      "output": []
-    },
-    "test:command-reference": {
-      "command": "node --loader ts-node/esm --no-warnings=ExperimentalWarning \"./bin/dev.js\" commandreference:generate --erroronwarnings",
-      "files": [
-        "src/**/*.ts",
-        "messages/**",
-        "package.json"
-      ],
-      "output": [
-        "tmp/root"
+    "test:build": {
+      "command": "npm install && npm pack && npm run test",
+      "dependencies": [
+        "clean",
+        "clean:package-manager"
       ]
     },
-    "test:deprecation-policy": {
-      "command": "node --loader ts-node/esm --no-warnings=ExperimentalWarning \"./bin/dev.js\" snapshot:compare",
+    "test:e2e": {
+      "command": "echo TODO",
       "files": [
-        "src/**/*.ts"
+        "src/**/*.ts",
+        "test/**/*.ts",
+        "messages/**",
+        "**/tsconfig.json"
       ],
       "output": [],
       "dependencies": [
-        "compile"
+        "lint",
+        "build"
       ]
     },
-    "test:json-schema": {
-      "command": "node --loader ts-node/esm --no-warnings=ExperimentalWarning \"./bin/dev.js\" schema:compare",
+    "test:nut": {
+      "command": "nyc mocha -r ts-node/register **/*.nut.ts",
       "files": [
         "src/**/*.ts",
-        "schemas"
+        "test/**/*.ts",
+        "messages/**",
+        "**/tsconfig.json"
       ],
-      "output": []
+      "output": [
+        ".nyc_output/**"
+      ],
+      "dependencies": [
+        "lint",
+        "build"
+      ]
+    },
+    "test:unit": {
+      "command": "jest --coverage",
+      "files": [
+        "src/**/*.ts",
+        "__tests__/**/*.ts",
+        "messages/**",
+        "**/tsconfig.json"
+      ],
+      "output": [
+        "reports/coverage/**"
+      ],
+      "dependencies": [
+        "lint"
+      ]
     }
   },
   "type": "module",
