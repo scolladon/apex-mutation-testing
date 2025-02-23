@@ -25,3 +25,25 @@ Path to the directory where mutation test reports will be generated
 - Run mutation testing on a class with its test file:
 
   <%= config.bin %> <%= command.id %> --class-file MyClass --test-file MyClassTest
+
+# info.reportGenerated
+
+Report has been generated at this location: %s
+
+# info.CommandIsRunning
+
+Running mutation testing for "%s" with "%s" test class
+
+# info.CommandSuccess
+
+Mutation score: %s%
+
+# info.CommandFailure
+
+Failure
+
+# info.EncourageSponsorship
+
+💡 Enjoying apex-mutation-testing?
+Your contribution helps us provide fast support 🚀 and high quality features 🔥
+Become a sponsor: https://github.com/sponsors/scolladon 💙

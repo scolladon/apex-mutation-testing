@@ -45,17 +45,35 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
     const { flags } = await this.parse(ApexMutationTest)
     const connection = flags['target-org'].getConnection(flags['api-version'])
 
-    const mutationTestingService = new MutationTestingService(connection, {
-      apexClassName: flags['apex-class'],
-      apexClassTestName: flags['test-class'],
-    })
+    this.log(
+      messages.getMessage('info.CommandIsRunning', [
+        flags['apex-class'],
+        flags['test-class'],
+      ])
+    )
+
+    const mutationTestingService = new MutationTestingService(
+      this.progress,
+      this.spinner,
+      connection,
+      {
+        apexClassName: flags['apex-class'],
+        apexClassTestName: flags['test-class'],
+      }
+    )
     const mutationResult = await mutationTestingService.process()
 
     const htmlReporter = new ApexMutationHTMLReporter()
     await htmlReporter.generateReport(mutationResult, flags['report-dir'])
+    this.log(messages.getMessage('info.reportGenerated', [flags['report-dir']]))
 
+    const score = mutationTestingService.calculateScore(mutationResult)
+
+    this.log(messages.getMessage('info.CommandSuccess', [score]))
+
+    this.info(messages.getMessage('info.EncourageSponsorship'))
     return {
-      score: mutationTestingService.calculateScore(mutationResult),
+      score,
     }
   }
 }
