@@ -67,6 +67,7 @@
     "postpack": "shx rm -f oclif.manifest.json",
     "prepack": "wireit",
     "prepare": "husky",
+    "prepublishOnly": "npm shrinkwrap",
     "test": "wireit",
     "test:nuts": "nyc mocha \"**/*.nut.ts\" --slow 4500 --timeout 600000 --parallel",
     "test:only": "wireit"

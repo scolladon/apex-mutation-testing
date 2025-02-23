@@ -24,8 +24,4 @@ Path to the directory where mutation test reports will be generated
 
 - Run mutation testing on a class with its test file:
 
-  <%= config.bin %> <%= command.id %> --class-file MyClass.cls --test-file MyClassTest.cls
-
-- Run mutation testing with specific class and test files:
-
-  <%= config.bin %> <%= command.id %> --class-file path/to/MyClass.cls --test-file path/to/MyClassTest.cls
+  <%= config.bin %> <%= command.id %> --class-file MyClass --test-file MyClassTest
