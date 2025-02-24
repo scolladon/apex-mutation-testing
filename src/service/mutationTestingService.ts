@@ -148,8 +148,7 @@ export class MutationTestingService {
         },
         end: {
           line: token.symbol.line,
-          column:
-            token.symbol.charPositionInLine + mutation.replacement?.length || 0,
+          column: token.symbol.charPositionInLine + mutation.replacement.length,
         },
       },
       replacement: mutation.replacement,
