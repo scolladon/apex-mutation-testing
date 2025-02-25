@@ -41,9 +41,10 @@ describe('apex mutation test run NUTs', () => {
     expect(result).to.include('mutation')
   })
 
-  /* TODO create a dedicated org for this test
-     It consumes a lot of scratch orgs
-     I need to find a way to use a dedicated org for this test
+  /* 
+  TODO create a dedicated org for this test
+  It consumes a lot of scratch orgs
+  I need to find a way to use a dedicated org for this test
 
   it('should run mutation testing successfully', async () => {
     const result = execCmd<ApexMutationTestResult>(
