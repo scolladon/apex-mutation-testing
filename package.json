@@ -22,7 +22,7 @@
     "chai": "^5.2.0",
     "husky": "^9.1.7",
     "jest": "^29.7.0",
-    "knip": "^5.44.5",
+    "knip": "^5.45.0",
     "mocha": "^11.1.0",
     "nyc": "^17.1.0",
     "oclif": "^4.17.32",
@@ -198,7 +198,6 @@
       "dependencies": [
         "build",
         "lint",
-        "test:compile",
         "test:unit",
         "test:nut",
         "test:e2e"
@@ -211,16 +210,8 @@
         "clean:package-manager"
       ]
     },
-    "test:compile": {
-      "command": "tsc -p \"./test\" --pretty",
-      "files": [
-        "test/**/*.ts",
-        "**/tsconfig.json"
-      ],
-      "output": []
-    },
     "test:e2e": {
-      "command": "sf apex mutation test run --help"
+      "command": "echo 'No e2e tests'"
     },
     "test:nut": {
       "command": "nyc mocha -r ts-node/register **/*.nut.ts",

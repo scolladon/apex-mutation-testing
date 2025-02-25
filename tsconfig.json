@@ -26,5 +26,8 @@
     "strictPropertyInitialization": true,
     "useUnknownInCatchVariables": true
   },
-  "include": ["./src/**/*.json", "./src/**/*"]
+  "include": [
+    "./src/**/*.json",
+    "./src/**/*"
+  ]
 }

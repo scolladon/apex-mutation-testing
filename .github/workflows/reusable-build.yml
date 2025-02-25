@@ -29,7 +29,7 @@ jobs:
       - name: Unit test
         run: npm run test:unit -- --runInBand
 
-      - name: Functional test
+      - name: Integration test
         run: npm run test:nut
 
       - uses: actions/upload-artifact@v4
