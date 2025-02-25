@@ -220,18 +220,7 @@
       "output": []
     },
     "test:e2e": {
-      "command": "echo TODO",
-      "files": [
-        "src/**/*.ts",
-        "test/**/*.ts",
-        "messages/**",
-        "**/tsconfig.json"
-      ],
-      "output": [],
-      "dependencies": [
-        "lint",
-        "build"
-      ]
+      "command": "sf apex mutation test run --help"
     },
     "test:nut": {
       "command": "nyc mocha -r ts-node/register **/*.nut.ts",
