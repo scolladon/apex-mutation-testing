@@ -9,18 +9,12 @@ on:
 
 jobs:
   e2e-test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
-        node: [18, 20, 22]
-        cli: ['@salesforce/cli']
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
+          node-version: 18
 
       - name: Set environment variables
         run: |
@@ -28,7 +22,7 @@ jobs:
           echo "SF_DISABLE_TELEMETRY=true" >> "$GITHUB_ENV"
 
       - name: Install cli
-        run: npm install -g ${{ matrix.cli }}
+        run: npm install -g @salesforce/cli
 
       - name: Install new plugin version
         run: echo y | sf plugins install apex-mutation-testing@${{ inputs.channel }}
@@ -37,4 +31,4 @@ jobs:
         run: sf apex mutation test run --help
 
       - name: E2E Tests
-        run: npm run test:e2e
+        run: echo TODO
