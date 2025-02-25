@@ -55,5 +55,5 @@ jobs:
             ```sh
             $ sf plugins install apex-mutation-testing@${{ env.DEV_CHANNEL }}
             ```
-          comment_tag: dev-publish
+          comment-tag: dev-publish
           mode: delete
