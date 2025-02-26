@@ -27,8 +27,13 @@ jobs:
       - name: Install new plugin version
         run: echo y | sf plugins install apex-mutation-testing@${{ inputs.channel }}
 
-      - name: Test new plugin version
+      - name: Test new plugin version installation
         run: sf apex mutation test run --help
 
+      - name: Authenticate to E2E test org
+        run: echo "${{ secrets.SFDX_AUTH_URL }}" | sf org login sfdx-url --set-alias e2e-test-org --set-default --sfdx-url-stdin
+
       - name: E2E Tests
-        run: echo TODO
+        run: |
+          mkdir mutation
+          sf apex mutation test run --target-org e2e-test-org --apex-class Mutation --test-class MutationTest --report-dir mutation --json

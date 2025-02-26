@@ -199,8 +199,7 @@
         "build",
         "lint",
         "test:unit",
-        "test:nut",
-        "test:e2e"
+        "test:nut"
       ]
     },
     "test:build": {
@@ -209,9 +208,6 @@
         "clean",
         "clean:package-manager"
       ]
-    },
-    "test:e2e": {
-      "command": "echo 'No e2e tests'"
     },
     "test:nut": {
       "command": "nyc mocha -r ts-node/register **/*.nut.ts",
