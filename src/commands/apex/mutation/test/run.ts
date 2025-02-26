@@ -1,7 +1,9 @@
 import { Messages } from '@salesforce/core'
 import { Flags, SfCommand } from '@salesforce/sf-plugins-core'
 import { ApexMutationHTMLReporter } from '../../../../reporter/HTMLReporter.js'
+import { ApexClassValidator } from '../../../../service/apexClassValidator.js'
 import { MutationTestingService } from '../../../../service/mutationTestingService.js'
+import { ApexMutationParameter } from '../../../../type/ApexMutationParameter.js'
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url)
 const messages = Messages.loadMessages(
@@ -45,27 +47,35 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
     const { flags } = await this.parse(ApexMutationTest)
     const connection = flags['target-org'].getConnection(flags['api-version'])
 
+    const parameters: ApexMutationParameter = {
+      apexClassName: flags['apex-class'],
+      apexTestClassName: flags['test-class'],
+      reportDir: flags['report-dir'],
+    }
+
     this.log(
       messages.getMessage('info.CommandIsRunning', [
-        flags['apex-class'],
-        flags['test-class'],
+        parameters.apexClassName,
+        parameters.apexTestClassName,
       ])
     )
+
+    const apexClassValidator = new ApexClassValidator(connection)
+    await apexClassValidator.validate(parameters)
 
     const mutationTestingService = new MutationTestingService(
       this.progress,
       this.spinner,
       connection,
-      {
-        apexClassName: flags['apex-class'],
-        apexClassTestName: flags['test-class'],
-      }
+      parameters
     )
     const mutationResult = await mutationTestingService.process()
 
     const htmlReporter = new ApexMutationHTMLReporter()
-    await htmlReporter.generateReport(mutationResult, flags['report-dir'])
-    this.log(messages.getMessage('info.reportGenerated', [flags['report-dir']]))
+    await htmlReporter.generateReport(mutationResult, parameters.reportDir)
+    this.log(
+      messages.getMessage('info.reportGenerated', [parameters.reportDir])
+    )
 
     const score = mutationTestingService.calculateScore(mutationResult)
 

@@ -5,24 +5,22 @@ import { ApexClassRepository } from '../adapter/apexClassRepository.js'
 import { ApexTestRunner } from '../adapter/apexTestRunner.js'
 import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
+import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
 import { MutantGenerator } from './mutantGenerator.js'
 
 export class MutationTestingService {
   protected readonly apexClassName: string
-  protected readonly apexClassTestName: string
+  protected readonly apexTestClassName: string
 
   constructor(
     protected readonly progress: Progress,
     protected readonly spinner: Spinner,
     protected readonly connection: Connection,
-    {
-      apexClassName,
-      apexClassTestName,
-    }: { apexClassName: string; apexClassTestName: string }
+    { apexClassName, apexTestClassName }: ApexMutationParameter
   ) {
     this.apexClassName = apexClassName
-    this.apexClassTestName = apexClassTestName
+    this.apexTestClassName = apexTestClassName
   }
 
   public async process() {
@@ -53,7 +51,7 @@ export class MutationTestingService {
     const mutationResults: ApexMutationTestResult = {
       sourceFile: this.apexClassName,
       sourceFileContent: apexClass.Body,
-      testFile: this.apexClassTestName,
+      testFile: this.apexTestClassName,
       mutants: [],
     }
     this.spinner.stop(`${mutations.length} mutations generated`)
@@ -86,7 +84,7 @@ export class MutationTestingService {
           info: `Running tests for "${mutation.replacement}" mutation at line ${mutation.token.symbol.line}`,
         })
         const testResult: TestResult = await apexTestRunner.run(
-          this.apexClassTestName
+          this.apexTestClassName
         )
 
         const mutantResult = this.buildMutantResult(mutation, testResult)

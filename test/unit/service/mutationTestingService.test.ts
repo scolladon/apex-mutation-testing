@@ -5,6 +5,7 @@ import { ApexClassRepository } from '../../../src/adapter/apexClassRepository.js
 import { ApexTestRunner } from '../../../src/adapter/apexTestRunner.js'
 import { MutantGenerator } from '../../../src/service/mutantGenerator.js'
 import { MutationTestingService } from '../../../src/service/mutationTestingService.js'
+import { ApexMutationParameter } from '../../../src/type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult.js'
 
 jest.mock('../../../src/adapter/apexClassRepository.js')
@@ -52,8 +53,8 @@ describe('MutationTestingService', () => {
 
     sut = new MutationTestingService(progress, spinner, connection, {
       apexClassName: 'TestClass',
-      apexClassTestName: 'TestClassTest',
-    })
+      apexTestClassName: 'TestClassTest',
+    } as ApexMutationParameter)
   })
 
   describe('Given a mutation testing service', () => {
