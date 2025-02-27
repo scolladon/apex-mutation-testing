@@ -29,11 +29,16 @@ jobs:
       - name: Unit test
         run: npm run test:unit -- --runInBand
 
-      - name: Authenticate to E2E test org
+      - name: Install cli
+        run: npm install -g @salesforce/cli
+
+      - name: Authenticate to NUT test org
         run: echo "${{ secrets.SFDX_AUTH_URL }}" | sf org login sfdx-url --set-alias apex-mutation-testing --set-default --sfdx-url-stdin
 
       - name: Integration test
-        run: npm run test:nut
+        run: |
+          mkdir reports/nut
+          npm run test:nut
 
       - uses: actions/upload-artifact@v4
         with:
