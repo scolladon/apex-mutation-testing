@@ -11,7 +11,6 @@ export default {
   ignoreDependencies: [
     '@commitlint/config-conventional',
     '@stryker-mutator/core',
-    'mocha',
     'ts-node',
   ],
   ignoreBinaries: ['commitlint', 'npm-check-updates'],
