@@ -14,7 +14,7 @@ describe('apex mutation test run NUTs', () => {
 
     // Run the mutation test command
     execCmd<ApexMutationTestResult>(
-      `apex mutation test run -o bulk-wizard --apex-class Mutation --test-class MutationTest --json`,
+      `apex mutation test run -o apex-mutation-testing --apex-class Mutation --test-class MutationTest --json`,
       {
         ensureExitCode: 0,
       }
@@ -61,7 +61,7 @@ describe('apex mutation test run NUTs', () => {
 
     // Run the mutation test command
     execCmd<ApexMutationTestResult>(
-      `apex mutation test run -o bulk-wizard --report-dir ${reportDir} --apex-class Mutation --test-class MutationTest --json`,
+      `apex mutation test run -o apex-mutation-testing --report-dir ${reportDir} --apex-class Mutation --test-class MutationTest --json`,
       {
         ensureExitCode: 0,
       }
