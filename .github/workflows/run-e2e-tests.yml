@@ -35,5 +35,5 @@ jobs:
 
       - name: E2E Tests
         run: |
-          mkdir mutation
-          sf apex mutation test run --target-org e2e-test-org --apex-class Mutation --test-class MutationTest --report-dir mutation --json
+          mkdir reports/e2e
+          sf apex mutation test run --target-org e2e-test-org --apex-class Mutation --test-class MutationTest --report-dir reports/e2e --json
