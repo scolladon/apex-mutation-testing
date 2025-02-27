@@ -31,7 +31,7 @@ jobs:
         run: sf apex mutation test run --help
 
       - name: Authenticate to E2E test org
-        run: echo "${{ secrets.SFDX_AUTH_URL }}" | sf org login sfdx-url --set-alias e2e-test-org --set-default --sfdx-url-stdin
+        run: echo "${{ secrets.SFDX_AUTH_URL }}" | sf org login sfdx-url --alias e2e-test-org --set-default --sfdx-url-stdin
 
       - name: E2E Tests
         run: |

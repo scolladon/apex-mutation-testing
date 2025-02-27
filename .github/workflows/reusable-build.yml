@@ -2,6 +2,9 @@
 name: Build Checks
 on:
   workflow_call:
+    secrets:
+      SFDX_AUTH_URL:
+        required: true
 
 jobs:
   source:
@@ -33,7 +36,7 @@ jobs:
         run: npm install -g @salesforce/cli
 
       - name: Authenticate to NUT test org
-        run: echo "${{ secrets.SFDX_AUTH_URL }}" | sf org login sfdx-url --set-alias apex-mutation-testing --set-default --sfdx-url-stdin
+        run: echo "${{ secrets.SFDX_AUTH_URL }}" | sf org login sfdx-url --alias apex-mutation-testing --set-default --sfdx-url-stdin
 
       - name: Integration test
         run: |
