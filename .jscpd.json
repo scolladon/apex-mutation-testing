@@ -1,0 +1,14 @@
+{
+    "threshold": 0,
+    "reporters": ["html", "markdown"],
+    "ignore": [
+      "**/node_modules/**",
+      "**/.git/**",
+      "**/*cache*/**",
+      "**/.github/**",
+      "**/report/**",
+      "**/img/**",
+      "**/__tests__/**",
+      "**/*.md"
+    ]
+  }

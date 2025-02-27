@@ -1,22 +1,19 @@
+---
 version: 2
 updates:
-  - package-ecosystem: 'npm'
-    directory: '/'
+  - package-ecosystem: "github-actions"
+    directory: "/"
     schedule:
-      interval: 'weekly'
-      day: 'saturday'
-    versioning-strategy: 'increase'
-    labels:
-      - 'dependencies'
-    open-pull-requests-limit: 5
-    pull-request-branch-name:
-      separator: '-'
+      interval: "monthly"
     commit-message:
-      # cause a release for non-dev-deps
-      prefix: fix(deps)
-      # no release for dev-deps
-      prefix-development: chore(dev-deps)
-    ignore:
-      - dependency-name: '@salesforce/dev-scripts'
-      - dependency-name: '*'
-        update-types: ['version-update:semver-major']
+      prefix: "build"
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    versioning-strategy: increase
+    commit-message:
+      prefix: "build"
+    allow:
+      - dependency-type: "all"

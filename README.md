@@ -1,145 +1,143 @@
-# apex-mutation-testing
+# Apex Mutation Testing
 
-[![NPM](https://img.shields.io/npm/v/apex-mutation-testing.svg?label=apex-mutation-testing)](https://www.npmjs.com/package/apex-mutation-testing) [![Downloads/week](https://img.shields.io/npm/dw/apex-mutation-testing.svg)](https://npmjs.org/package/apex-mutation-testing) [![License](https://img.shields.io/badge/License-BSD%203--Clause-brightgreen.svg)](https://raw.githubusercontent.com/salesforcecli/apex-mutation-testing/main/LICENSE.txt)
+[![NPM](https://img.shields.io/npm/v/apex-mutation-testing.svg?label=apex-mutation-testing)](https://www.npmjs.com/package/apex-mutation-testing) [![Downloads/week](https://img.shields.io/npm/dw/apex-mutation-testing.svg)](https://npmjs.org/package/apex-mutation-testing) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/scolladon/apex-mutation-testing/main/LICENSE.md)
+![GitHub Sponsors](https://img.shields.io/github/sponsors/scolladon)
 
-## Using the template
+## Disclaimer
 
-This repository provides a template for creating a plugin for the Salesforce CLI. To convert this template to a working plugin:
+This project is in its early stages and requires further development.
+It provides a solid foundation for implementing additional features and improvements.
+You are welcome to contribute by logging issue, proposing enhancements or pull requests.
 
-1. Please get in touch with the Platform CLI team. We want to help you develop your plugin.
-2. Generate your plugin:
+## TL;DR
 
-   ```
-   sf plugins install dev
-   sf dev generate plugin
-
-   git init -b main
-   git add . && git commit -m "chore: initial commit"
-   ```
-
-3. Create your plugin's repo in the salesforcecli github org
-4. When you're ready, replace the contents of this README with the information you want.
-
-## Learn about `sf` plugins
-
-Salesforce CLI plugins are based on the [oclif plugin framework](<(https://oclif.io/docs/introduction.html)>). Read the [plugin developer guide](https://developer.salesforce.com/docs/atlas.en-us.sfdx_cli_plugins.meta/sfdx_cli_plugins/cli_plugins_architecture_sf_cli.htm) to learn about Salesforce CLI plugin development.
-
-This repository contains a lot of additional scripts and tools to help with general Salesforce node development and enforce coding standards. You should familiarize yourself with some of the [node developer packages](#tooling) used by Salesforce.
-
-Additionally, there are some additional tests that the Salesforce CLI will enforce if this plugin is ever bundled with the CLI. These test are included by default under the `posttest` script and it is required to keep these tests active in your plugin if you plan to have it bundled.
-
-### Tooling
-
-- [@salesforce/core](https://github.com/forcedotcom/sfdx-core)
-- [@salesforce/kit](https://github.com/forcedotcom/kit)
-- [@salesforce/sf-plugins-core](https://github.com/salesforcecli/sf-plugins-core)
-- [@salesforce/ts-types](https://github.com/forcedotcom/ts-types)
-- [@salesforce/ts-sinon](https://github.com/forcedotcom/ts-sinon)
-- [@salesforce/dev-config](https://github.com/forcedotcom/dev-config)
-- [@salesforce/dev-scripts](https://github.com/forcedotcom/dev-scripts)
-
-### Hooks
-
-For cross clouds commands, e.g. `sf env list`, we utilize [oclif hooks](https://oclif.io/docs/hooks) to get the relevant information from installed plugins.
-
-This plugin includes sample hooks in the [src/hooks directory](src/hooks). You'll just need to add the appropriate logic. You can also delete any of the hooks if they aren't required for your plugin.
-
-# Everything past here is only a suggestion as to what should be in your specific plugin's description
-
-This plugin is bundled with the [Salesforce CLI](https://developer.salesforce.com/tools/sfdxcli). For more information on the CLI, read the [getting started guide](https://developer.salesforce.com/docs/atlas.en-us.sfdx_setup.meta/sfdx_setup/sfdx_setup_intro.htm).
-
-We always recommend using the latest version of these commands bundled with the CLI, however, you can install a specific version or tag if needed.
-
-## Install
-
-```bash
-sf plugins install apex-mutation-testing@x.y.z
+```sh
+sf plugins install apex-mutation-testing
 ```
 
-## Issues
-
-Please report any issues at https://github.com/forcedotcom/cli/issues
-
-## Contributing
-
-1. Please read our [Code of Conduct](CODE_OF_CONDUCT.md)
-2. Create a new issue before starting your project so that we can keep track of
-   what you are trying to add/fix. That way, we can also offer suggestions or
-   let you know if there is already an effort in progress.
-3. Fork this repository.
-4. [Build the plugin locally](#build)
-5. Create a _topic_ branch in your fork. Note, this step is recommended but technically not required if contributing using a fork.
-6. Edit the code in your fork.
-7. Write appropriate tests for your changes. Try to achieve at least 95% code coverage on any new code. No pull request will be accepted without unit tests.
-8. Sign CLA (see [CLA](#cla) below).
-9. Send us a pull request when you are done. We'll review your code, suggest any needed changes, and merge it in.
-
-### CLA
-
-External contributors will be required to sign a Contributor's License
-Agreement. You can do so by going to https://cla.salesforce.com/sign-cla.
-
-### Build
-
-To build the plugin locally, make sure to have npm installed and run the following commands:
-
-```bash
-# Clone the repository
-git clone git@github.com:salesforcecli/apex-mutation-testing
-
-# Install the dependencies and compile
-npm install && npm run build
+```sh
+sf apex mutation test run --class-file MyClass --test-file MyClassTest
 ```
 
-To use your plugin, run using the local `./bin/dev` or `./bin/dev.cmd` file.
+## What is it mutation testing ?
 
-```bash
-# Run using local run file.
-./bin/dev hello world
-```
+Mutation testing is a software testing technique that evaluates the quality of your test suite by introducing small changes (mutations) to your code and checking if your tests can detect these changes. It helps identify weaknesses in your test coverage by measuring how effectively your tests can catch intentional bugs. cf [wikipedia](https://en.wikipedia.org/wiki/Mutation_testing)
 
-There should be no differences when running via the Salesforce CLI or using the local run file. However, it can be useful to link the plugin to do some additional testing or run your commands from anywhere on your machine.
+The apex-mutation-testing plugin implements this technique for Salesforce Apex code by:
 
-```bash
-# Link your plugin to the sf cli
-sf plugins link .
-# To verify
-sf plugins
-```
+1. Parsing your Apex class to identify potential mutation points
+2. Generating mutated versions of your code with specific changes
+3. Deploying each mutated version to a Salesforce org
+4. Running your test class against each mutation
+5. Analyzing the results to determine if your tests:
+    - Detected the mutation (killed the mutant)
+    - Failed to detect the mutation (created a zombie)
+    - Caused a test failure unrelated to the mutation
+6. Generating a detailed report showing mutation coverage and test effectiveness
 
-## Commands
+This process helps you identify areas where your tests may be insufficient and provides insights into improving your test quality.
+
+cf this [idea](https://ideas.salesforce.com/s/idea/a0B8W00000GdmxmUAB/use-mutation-testing-to-stop-developers-from-cheating-on-apex-tests) for more information about the community appetit
+
+## How to use it?
+
+Fast unit tests are crucial for mutation testing as each detected mutation is deployed and tested individually. The plugin generates numerous mutations, and having quick-running tests allows for:
+1. Efficient execution of the mutation testing process
+2. Faster feedback on test coverage quality
+3. Ability to test more mutations within time constraints
+4. Reduced resource consumption during testing
+5. More iterations and improvements in test quality
+
+The more the test interacts with the database (dml or soql) the more times the test will take
+
+### Test Coverage Requirements
+
+To maximize the benefits of mutation testing, your test class should have very high code coverage (ideally 100%) **AND** meaningful assert. Here's why:
+
+1. **Accurate Metrics**: High coverage ensures the mutation score accurately reflects your test suite's effectiveness.
+
+2. **Meaningful Results**: With high coverage, the mutation test results provide actionable insights about your test quality.
+
+3. **Mutation Detection**: Mutations detection can be optimized by being scoped to code that is executed by your tests. Uncovered code means not relevant mutations for your tests.
+
+Before running mutation testing:
+- Ensure your test class achieves maximum coverage
+- Verify all critical paths are tested
+- Include edge case scenarios
+- Validate test assertions are comprehensive
+
+Remember, mutation testing complements but doesn't replace good test coverage. It helps identify weaknesses in your existing tests, but only for the code they already cover.
 
 <!-- commands -->
+* [`sf apex mutation test run`](#sf-apex-mutation-test-run)
 
-- [`sf hello world`](#sf-hello-world)
+## `sf apex mutation test run`
 
-## `sf hello world`
-
-Say hello either to the world or someone you know.
+Evaluate test coverage quality by injecting mutations and measuring test detection rates
 
 ```
 USAGE
-  $ sf hello world [--json] [-n <value>]
+  $ sf apex mutation test run -c <value> -t <value> -o <value> [--json] [--flags-dir <value>] [-r <value>] [--api-version
+    <value>]
 
 FLAGS
-  -n, --name=<value>  [default: World] The name of the person you'd like to say hello to.
+  -c, --apex-class=<value>   (required) Apex class name to mutate
+  -o, --target-org=<value>   (required) Username or alias of the target org. Not required if the `target-org`
+                             configuration variable is already set.
+  -r, --report-dir=<value>   [default: mutations] Path to the directory where mutation test reports will be generated
+  -t, --test-class=<value>   (required) Apex test class name to validate mutations
+      --api-version=<value>  Override the api version used for api requests made by this command
 
 GLOBAL FLAGS
-  --json  Format output as json.
+  --flags-dir=<value>  Import flag values from a directory.
+  --json               Format output as json.
 
 DESCRIPTION
-  Say hello either to the world or someone you know.
+  Evaluate test coverage quality by injecting mutations and measuring test detection rates
 
-  Say hello either to the world or someone you know.
+  The Apex Mutation Testing plugin helps evaluate the effectiveness of your Apex test classes by introducing mutations
+  into your code and checking if your tests can detect these changes:
+
+  The plugin provides insights into how trustworthy your test suite is by measuring its ability to catch intentional
+  code changes.
 
 EXAMPLES
-  Say hello to the world:
+  Run mutation testing on a class with its test file:
 
-    $ sf hello world
-
-  Say hello to someone you know:
-
-    $ sf hello world --name Astro
+    $ sf apex mutation test run --class-file MyClass --test-file MyClassTest
 ```
-
 <!-- commandsstop -->
+
+## Backlog
+
+- **Expand Mutation Types**: Add more mutation operators to test different code patterns
+- **Smart Mutation Detection**: Implement logic to identify relevant mutations for specific code contexts
+- **Coverage Analysis**: Detect untested code paths that mutations won't affect
+- **Performance Optimization**: Add CPU time monitoring to fail fast on non ending mutation
+- **Better Configurability**: Pass threashold and use more information from test class
+- **Additional Features**: Explore other mutation testing enhancements and quality metrics
+
+## Changelog
+
+[changelog.md](CHANGELOG.md) is available for consultation.
+
+## Versioning
+
+Versioning follows [SemVer](http://semver.org/) specification.
+
+## Authors
+
+- **Sebastien Colladon** - Developer - [scolladon](https://github.com/scolladon)
+
+Special thanks to **Sara Sali** for her [presentation at Dreamforce](https://www.youtube.com/watch?v=8PjzrTaNNns) about apex mutation testing
+This repository is basically a port of her idea / repo to a sf plugin.
+
+## Contributing
+
+Contributions are what make the trailblazer community such an amazing place. I regard this component as a way to inspire and learn from others. Any contributions you make are **appreciated**.
+
+See [contributing.md](CONTRIBUTING.md) for sgd contribution principles.
+
+## License
+
+This project license is MIT - see the [LICENSE.md](LICENSE.md) file for details
