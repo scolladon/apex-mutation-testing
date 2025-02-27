@@ -52,13 +52,13 @@ The more the test interacts with the database (dml or soql) the more times the t
 
 ### Test Coverage Requirements
 
-To maximize the benefits of mutation testing, your test class should have very high code coverage (ideally 100%) **AND** meaningfull assert. Here's why:
+To maximize the benefits of mutation testing, your test class should have very high code coverage (ideally 100%) **AND** meaningful assert. Here's why:
 
 1. **Accurate Metrics**: High coverage ensures the mutation score accurately reflects your test suite's effectiveness.
 
 2. **Meaningful Results**: With high coverage, the mutation test results provide actionable insights about your test quality.
 
-3. **Mutation Detection**: Mutations detection can be optmized by being scoped to code that is executed by your tests. Uncovered code means unmeaningful mutations for your tests.
+3. **Mutation Detection**: Mutations detection can be optimized by being scoped to code that is executed by your tests. Uncovered code means not relevant mutations for your tests.
 
 Before running mutation testing:
 - Ensure your test class achieves maximum coverage
