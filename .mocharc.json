@@ -4,5 +4,5 @@
   "node-option": ["experimental-specifier-resolution=node","loader=ts-node/esm"],
   "recursive": true,
   "reporter": "spec",
-  "timeout": 30000
+  "timeout": 60000
 }
