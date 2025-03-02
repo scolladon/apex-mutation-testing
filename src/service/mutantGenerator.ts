@@ -16,7 +16,7 @@ import { ApexMutation } from '../type/ApexMutation.js'
 
 export class MutantGenerator {
   private tokenStream?: CommonTokenStream
-  public compute(classContent: string) {
+  public compute(classContent: string, coveredLines: Set<number>) {
     const lexer = new ApexLexer(
       new CaseInsensitiveInputStream('other', classContent)
     )
@@ -27,7 +27,10 @@ export class MutantGenerator {
     const incrementListener = new IncrementMutator()
     const boundaryListener = new BoundaryConditionMutator()
 
-    const listener = new MutationListener([incrementListener, boundaryListener])
+    const listener = new MutationListener(
+      [incrementListener, boundaryListener],
+      coveredLines
+    )
 
     ParseTreeWalker.DEFAULT.walk(listener as ApexParserListener, tree)
 

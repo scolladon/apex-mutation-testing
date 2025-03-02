@@ -130,6 +130,7 @@ describe('MutationTestingService', () => {
               [error ? 'mockRejectedValue' : 'mockResolvedValue'](
                 error || testResult
               ),
+            getCoveredLines: jest.fn().mockResolvedValue(new Set([1])),
           }))
 
           // Act
@@ -142,8 +143,8 @@ describe('MutationTestingService', () => {
             testFile: 'TestClassTest',
             mutants: expectedMutants,
           })
-          expect(spinner.start).toHaveBeenCalledTimes(3)
-          expect(spinner.stop).toHaveBeenCalledTimes(3)
+          expect(spinner.start).toHaveBeenCalledTimes(4)
+          expect(spinner.stop).toHaveBeenCalledTimes(4)
           expect(progress.start).toHaveBeenCalled()
           expect(progress.finish).toHaveBeenCalled()
         }

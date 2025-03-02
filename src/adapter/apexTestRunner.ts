@@ -7,12 +7,29 @@ export class ApexTestRunner {
     this.testService = new TestService(connection)
   }
 
-  public async run(className: string) {
-    return (await this.testService.runTestAsynchronous({
-      tests: [{ className }],
-      testLevel: TestLevel.RunSpecifiedTests,
-      skipCodeCoverage: true,
-      maxFailedTests: 0,
-    })) as TestResult
+  public async getCoveredLines(testClassName: string) {
+    const testResult = await this.runTestAsynchronous(testClassName, false)
+    return new Set(
+      testResult.codecoverage?.flatMap(coverage => coverage.coveredLines)
+    )
+  }
+
+  public async run(testClassName: string) {
+    return await this.runTestAsynchronous(testClassName)
+  }
+
+  private async runTestAsynchronous(
+    testClassName: string,
+    skipCodeCoverage: boolean = true
+  ) {
+    return (await this.testService.runTestAsynchronous(
+      {
+        tests: [{ className: testClassName }],
+        testLevel: TestLevel.RunSpecifiedTests,
+        skipCodeCoverage,
+        maxFailedTests: 0,
+      },
+      !skipCodeCoverage
+    )) as TestResult
   }
 }
