@@ -40,6 +40,18 @@ export class MutationTestingService {
     this.spinner.stop('Done')
 
     this.spinner.start(
+      `Computing coverage from "${this.apexTestClassName}" Test class`,
+      undefined,
+      {
+        stdout: true,
+      }
+    )
+    const coveredLines = await apexTestRunner.getCoveredLines(
+      this.apexTestClassName
+    )
+    this.spinner.stop('Done')
+
+    this.spinner.start(
       `Generating mutants for "${this.apexClassName}" ApexClass`,
       undefined,
       {
@@ -47,7 +59,7 @@ export class MutationTestingService {
       }
     )
     const mutantGenerator = new MutantGenerator()
-    const mutations = mutantGenerator.compute(apexClass.Body)
+    const mutations = mutantGenerator.compute(apexClass.Body, coveredLines)
     const mutationResults: ApexMutationTestResult = {
       sourceFile: this.apexClassName,
       sourceFileContent: apexClass.Body,
