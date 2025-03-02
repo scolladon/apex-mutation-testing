@@ -1,7 +1,6 @@
+import { MethodCallContext } from 'apex-parser'
 import { BaseListener } from '../../../src/mutator/baseListener.js'
 import { MutationListener } from '../../../src/mutator/mutationListener.js'
-
-import { MethodCallContext } from 'apex-parser'
 
 describe('MutationListener', () => {
   // Arrange

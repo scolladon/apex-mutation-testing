@@ -1,3 +1,4 @@
+import { ParserRuleContext } from 'antlr4ts'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { BaseListener } from './baseListener.js'
 
@@ -12,7 +13,10 @@ export class MutationListener implements ApexParserListener {
     return this._mutations
   }
 
-  constructor(listeners: BaseListener[]) {
+  constructor(
+    listeners: BaseListener[],
+    protected readonly coveredLines: Set<number>
+  ) {
     this.listeners = listeners
     // Share mutations array across all listeners
     this.listeners
@@ -29,12 +33,17 @@ export class MutationListener implements ApexParserListener {
         }
 
         // Return a function that calls the method on all listeners that have it
-        return (...args: []) => {
-          this.listeners.forEach(listener => {
-            if (prop in listener && typeof listener[prop] === 'function') {
-              ;(listener[prop] as Function).apply(listener, args)
+        return (...args: unknown[]) => {
+          if (Array.isArray(args) && args.length > 0) {
+            const ctx = args[0] as ParserRuleContext
+            if (this.coveredLines.has(ctx?.start?.line)) {
+              this.listeners.forEach(listener => {
+                if (prop in listener && typeof listener[prop] === 'function') {
+                  ;(listener[prop] as Function).apply(listener, args)
+                }
+              })
             }
-          })
+          }
         }
       },
     })
