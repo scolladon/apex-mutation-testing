@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
 import { Messages } from '@salesforce/core'
 import { Flags, SfCommand } from '@salesforce/sf-plugins-core'
 import { ApexMutationHTMLReporter } from '../../../../reporter/HTMLReporter.js'
@@ -35,7 +37,7 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
     'report-dir': Flags.directory({
       char: 'r',
       summary: messages.getMessage('flags.report-dir.summary'),
-      exists: true,
+      exists: false,
       default: 'mutations',
     }),
     'target-org': Flags.requiredOrg(),
@@ -51,6 +53,17 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       apexClassName: flags['apex-class'],
       apexTestClassName: flags['test-class'],
       reportDir: flags['report-dir'],
+    }
+
+    if (!existsSync(parameters.reportDir)) {
+      try {
+        await mkdir(parameters.reportDir, { recursive: true })
+        this.debug(`Created report directory: ${parameters.reportDir}`)
+      } catch (error: unknown) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error)
+        throw new Error(`Unable to create report directory: ${errorMessage}`)
+      }
     }
 
     this.log(

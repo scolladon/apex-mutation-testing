@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { ApexMutationHTMLReporter } from '../../../src/reporter/HTMLReporter.js'
 import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult.js'
 
@@ -46,8 +46,21 @@ describe('HTMLReporter', () => {
       await sut.generateReport(testResults)
 
       // Assert
+      expect(mkdir).toHaveBeenCalledWith('reports', { recursive: true })
       expect(writeFile).toHaveBeenCalledWith(
         expect.any(String),
+        expect.stringContaining('<html>')
+      )
+    })
+
+    it('should use custom output directory when specified', async () => {
+      // Act
+      await sut.generateReport(testResults, 'custom/path')
+
+      // Assert
+      expect(mkdir).toHaveBeenCalledWith('custom/path', { recursive: true })
+      expect(writeFile).toHaveBeenCalledWith(
+        expect.stringContaining('custom/path'),
         expect.stringContaining('<html>')
       )
     })

@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import * as path from 'path'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
 
@@ -10,6 +10,7 @@ export class ApexMutationHTMLReporter {
     const reportData = this.transformApexResults(apexMutationTestResult)
     // Generate and write the HTML file with the report data embedded
     const htmlContent = createReportHtml(reportData)
+    await mkdir(outputDir, { recursive: true })
     await writeFile(path.join(outputDir, 'index.html'), htmlContent)
   }
 
