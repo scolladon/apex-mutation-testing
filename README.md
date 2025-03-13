@@ -16,7 +16,7 @@ sf plugins install apex-mutation-testing
 ```
 
 ```sh
-sf apex mutation test run --class-file MyClass --test-file MyClassTest
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest
 ```
 
 ## What is it mutation testing ?
