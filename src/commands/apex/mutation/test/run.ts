@@ -58,7 +58,6 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
     if (!existsSync(parameters.reportDir)) {
       try {
         await mkdir(parameters.reportDir, { recursive: true })
-        this.debug(`Created report directory: ${parameters.reportDir}`)
       } catch (error: unknown) {
         const errorMessage =
           error instanceof Error ? error.message : String(error)
