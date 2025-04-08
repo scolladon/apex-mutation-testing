@@ -1,3 +1,4 @@
+import { ArithmeticOperatorMutator } from '../mutator/arithmeticOperatorMutator.js'
 import { BoundaryConditionMutator } from '../mutator/boundaryConditionMutator.js'
 import { IncrementMutator } from '../mutator/incrementMutator.js'
 import { MutationListener } from '../mutator/mutationListener.js'
@@ -24,11 +25,12 @@ export class MutantGenerator {
     const parser = new ApexParser(this.tokenStream)
     const tree = parser.compilationUnit()
 
-    const incrementListener = new IncrementMutator()
+    const arithmeticOperatorListener = new ArithmeticOperatorMutator()
     const boundaryListener = new BoundaryConditionMutator()
+    const incrementListener = new IncrementMutator()
 
     const listener = new MutationListener(
-      [incrementListener, boundaryListener],
+      [arithmeticOperatorListener, boundaryListener, incrementListener],
       coveredLines
     )
 
