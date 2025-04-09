@@ -20,6 +20,11 @@ export class ArithmeticOperatorMutator extends BaseListener {
     this.processArithmeticOperation(ctx)
   }
 
+  // Signal to the parser that we want to traverse into assignment expressions
+  enterAssignExpression(_ctx: ParserRuleContext): void {
+    // Method intentionally left empty - its presence enables traversal into children
+  }
+
   private processArithmeticOperation(ctx: ParserRuleContext) {
     if (ctx.childCount === 3) {
       const operatorNode = ctx.getChild(1)
