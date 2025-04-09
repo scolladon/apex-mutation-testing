@@ -139,7 +139,6 @@ describe('ArithmeticOperatorMutator', () => {
   })
 
   it('should process arithmetic operations in assignment expressions via traversal', () => {
-
     // Arrange
     const assignCtx = {
       childCount: 3,
