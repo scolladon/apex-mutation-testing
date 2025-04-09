@@ -1,15 +1,15 @@
 import { ParserRuleContext, Token } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
-import { ArithmeticOperatorMutator } from '../../../src/mutator/arithmeticOperatorMutator.js'
+import { ArithmeticOperatorReplacementMutator } from '../../../src/mutator/arithmeticOperatorReplacementMutator.js'
 
 describe('ArithmeticOperatorMutator', () => {
-  let sut: ArithmeticOperatorMutator
+  let sut: ArithmeticOperatorReplacementMutator
   let mockCtx: ParserRuleContext
   let mockTerminalNode: TerminalNode
 
   beforeEach(() => {
     // Arrange
-    sut = new ArithmeticOperatorMutator()
+    sut = new ArithmeticOperatorReplacementMutator()
     mockCtx = {
       childCount: 3,
       getChild: jest.fn().mockImplementation(index => {

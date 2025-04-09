@@ -2,7 +2,7 @@ import { ParserRuleContext } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
 import { BaseListener } from './baseListener.js'
 
-export class ArithmeticOperatorMutator extends BaseListener {
+export class ArithmeticOperatorReplacementMutator extends BaseListener {
   private REPLACEMENT_MAP: Record<string, string[]> = {
     '+': ['-', '*', '/'],
     '-': ['+', '*', '/'],
