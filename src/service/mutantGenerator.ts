@@ -1,6 +1,8 @@
 import { BoundaryConditionMutator } from '../mutator/boundaryConditionMutator.js'
+import { EmptyReturnMutator } from '../mutator/emptyReturnMutator.js'
 import { IncrementMutator } from '../mutator/incrementMutator.js'
 import { MutationListener } from '../mutator/mutationListener.js'
+import { ApexTypeResolver } from './apexTypeResolver.js'
 
 import {
   ApexLexer,
@@ -16,7 +18,12 @@ import { ApexMutation } from '../type/ApexMutation.js'
 
 export class MutantGenerator {
   private tokenStream?: CommonTokenStream
-  public compute(classContent: string, coveredLines: Set<number>) {
+
+  public compute(
+    classContent: string,
+    coveredLines: Set<number>,
+    typeResolver?: ApexTypeResolver
+  ) {
     const lexer = new ApexLexer(
       new CaseInsensitiveInputStream('other', classContent)
     )
@@ -24,12 +31,18 @@ export class MutantGenerator {
     const parser = new ApexParser(this.tokenStream)
     const tree = parser.compilationUnit()
 
+    const methodTypeTable = typeResolver
+      ? typeResolver.analyzeMethodTypes(tree)
+      : undefined
+
     const incrementListener = new IncrementMutator()
     const boundaryListener = new BoundaryConditionMutator()
+    const emptyReturnListener = new EmptyReturnMutator()
 
     const listener = new MutationListener(
-      [incrementListener, boundaryListener],
-      coveredLines
+      [incrementListener, boundaryListener, emptyReturnListener],
+      coveredLines,
+      methodTypeTable
     )
 
     ParseTreeWalker.DEFAULT.walk(listener as ApexParserListener, tree)

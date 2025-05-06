@@ -1,5 +1,6 @@
 import { Connection } from '@salesforce/core'
 import { ApexClass } from '../type/ApexClass.js'
+import { MetadataComponentDependency } from '../type/MetadataComponentDependency.js'
 export class ApexClassRepository {
   constructor(protected readonly connection: Connection) {}
 
@@ -10,6 +11,15 @@ export class ApexClassRepository {
         .find({ Name: name })
         .execute()
     )[0]
+  }
+
+  public async getApexClassDependencies(
+    classId: string
+  ): Promise<MetadataComponentDependency[]> {
+    return (await this.connection.tooling
+      .sobject('MetadataComponentDependency')
+      .find({ MetadataComponentId: classId })
+      .execute()) as MetadataComponentDependency[]
   }
 
   public async update(apexClass: ApexClass) {

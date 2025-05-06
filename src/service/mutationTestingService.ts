@@ -7,6 +7,7 @@ import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
+import { ApexTypeResolver } from './apexTypeResolver.js'
 import { MutantGenerator } from './mutantGenerator.js'
 
 export class MutationTestingService {
@@ -34,9 +35,40 @@ export class MutationTestingService {
         stdout: true,
       }
     )
+
     const apexClass: ApexClass = (await apexClassRepository.read(
       this.apexClassName
     )) as unknown as ApexClass
+    this.spinner.stop('Done')
+
+    this.spinner.start(
+      `Analyzing class dependencies for "${this.apexClassName}"`,
+      undefined,
+      {
+        stdout: true,
+      }
+    )
+    const dependencies = await apexClassRepository.getApexClassDependencies(
+      apexClass.Id as string
+    )
+
+    const apexClassTypes = dependencies
+      .filter(dep => dep.RefMetadataComponentType === 'ApexClass')
+      .map(dep => dep.RefMetadataComponentName)
+
+    const standardEntityTypes = dependencies
+      .filter(dep => dep.RefMetadataComponentType === 'StandardEntity')
+      .map(dep => dep.RefMetadataComponentName)
+
+    const customObjectTypes = dependencies
+      .filter(dep => dep.RefMetadataComponentType === 'CustomObject')
+      .map(dep => dep.RefMetadataComponentName)
+
+    const typeResolver = new ApexTypeResolver(
+      apexClassTypes,
+      standardEntityTypes,
+      customObjectTypes
+    )
     this.spinner.stop('Done')
 
     this.spinner.start(
@@ -59,7 +91,11 @@ export class MutationTestingService {
       }
     )
     const mutantGenerator = new MutantGenerator()
-    const mutations = mutantGenerator.compute(apexClass.Body, coveredLines)
+    const mutations = mutantGenerator.compute(
+      apexClass.Body,
+      coveredLines,
+      typeResolver
+    )
     const mutationResults: ApexMutationTestResult = {
       sourceFile: this.apexClassName,
       sourceFileContent: apexClass.Body,
