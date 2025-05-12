@@ -1,7 +1,11 @@
 import { BoundaryConditionMutator } from '../mutator/boundaryConditionMutator.js'
 import { EmptyReturnMutator } from '../mutator/emptyReturnMutator.js'
+import { FalseReturnMutator } from '../mutator/falseReturnMutator.js'
 import { IncrementMutator } from '../mutator/incrementMutator.js'
 import { MutationListener } from '../mutator/mutationListener.js'
+import { NullReturnMutator } from '../mutator/nullReturnMutator.js'
+import { TrueReturnMutator } from '../mutator/trueReturnMutator.js'
+
 import { ApexTypeResolver } from './apexTypeResolver.js'
 
 import {
@@ -14,8 +18,6 @@ import {
 } from 'apex-parser'
 
 import { TokenStreamRewriter } from 'antlr4ts'
-import { FalseReturnMutator } from '../mutator/falseReturnMutator.js'
-import { TrueReturnMutator } from '../mutator/trueReturnMutator.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 
 export class MutantGenerator {
@@ -42,6 +44,7 @@ export class MutantGenerator {
     const emptyReturnListener = new EmptyReturnMutator()
     const trueReturnListener = new TrueReturnMutator()
     const falseReturnListener = new FalseReturnMutator()
+    const nullReturnListener = new NullReturnMutator()
 
     const listener = new MutationListener(
       [
@@ -50,6 +53,7 @@ export class MutantGenerator {
         emptyReturnListener,
         trueReturnListener,
         falseReturnListener,
+        nullReturnListener,
       ],
       coveredLines,
       methodTypeTable
