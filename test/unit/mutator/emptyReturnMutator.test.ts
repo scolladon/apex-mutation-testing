@@ -1,7 +1,7 @@
 import { ParserRuleContext } from 'antlr4ts'
-import { TerminalNode } from 'antlr4ts/tree/index.js'
 import { EmptyReturnMutator } from '../../../src/mutator/emptyReturnMutator.js'
 import { ApexMethod, ApexType } from '../../../src/type/ApexMethod.js'
+import { TestUtil } from '../../utils/testUtil.js'
 
 describe('EmptyReturnMutator', () => {
   let emptyReturnMutator: EmptyReturnMutator
@@ -10,18 +10,249 @@ describe('EmptyReturnMutator', () => {
     emptyReturnMutator = new EmptyReturnMutator()
   })
 
-  describe('enterReturnStatement edge cases', () => {
-    it('should return early if expression is already an empty value', () => {
-      // Arrange
-      const methodCtx = {
-        children: [
-          { text: 'Integer' },
-          { text: 'testMethod' },
-          { text: '(' },
-          { text: ')' },
-        ],
-      } as unknown as ParserRuleContext
+  describe('return type handling', () => {
+    const testTypes = [
+      {
+        type: ApexType.INTEGER,
+        returnType: 'Integer',
+        expression: '42',
+        expected: '0',
+      },
+      {
+        type: ApexType.STRING,
+        returnType: 'String',
+        expression: 'Hello',
+        expected: "''",
+      },
+      {
+        type: ApexType.LONG,
+        returnType: 'Long',
+        expression: '42L',
+        expected: '0L',
+      },
+      {
+        type: ApexType.DECIMAL,
+        returnType: 'Decimal',
+        expression: '42.5',
+        expected: '0.0',
+      },
+      {
+        type: ApexType.LIST,
+        returnType: 'List<String>',
+        expression: 'myList',
+        expected: 'new List<String>()',
+        elementType: 'String',
+      },
+      {
+        type: ApexType.BLOB,
+        returnType: 'Blob',
+        expression: 'myBlob',
+        expected: "Blob.valueOf('')",
+      },
+      {
+        type: ApexType.SET,
+        returnType: 'Set<String>',
+        expression: 'mySet',
+        expected: 'new Set<String>()',
+        elementType: 'String',
+      },
+      {
+        type: ApexType.MAP,
+        returnType: 'Map<String, Integer>',
+        expression: 'myMap',
+        expected: 'new Map<String, Integer>()',
+        elementType: 'String, Integer',
+      },
+    ]
 
+    for (const testCase of testTypes) {
+      it(`should handle ${testCase.returnType} type correctly`, () => {
+        emptyReturnMutator._mutations = []
+        const methodCtx = TestUtil.createMethodDeclaration(
+          testCase.returnType,
+          'testMethod'
+        )
+        emptyReturnMutator.enterMethodDeclaration(methodCtx)
+
+        const typeTable = new Map<string, ApexMethod>()
+        typeTable.set('testMethod', {
+          returnType: testCase.returnType,
+          startLine: 1,
+          endLine: 5,
+          type: testCase.type,
+          ...(testCase.elementType
+            ? { elementType: testCase.elementType }
+            : {}),
+        })
+
+        emptyReturnMutator.setTypeTable(typeTable)
+        const returnCtx = TestUtil.createReturnStatement(testCase.expression)
+
+        // Act
+        emptyReturnMutator.enterReturnStatement(returnCtx)
+
+        // Assert
+        expect(emptyReturnMutator._mutations.length).toBe(1)
+        expect(emptyReturnMutator._mutations[0].replacement).toBe(
+          testCase.expected
+        )
+      })
+    }
+
+    const excludedTypes = [
+      { type: ApexType.VOID, name: 'void' },
+      { type: ApexType.BOOLEAN, name: 'Boolean' },
+      { type: ApexType.SOBJECT, name: 'SObject' },
+      { type: ApexType.OBJECT, name: 'Object' },
+      { type: ApexType.APEX_CLASS, name: 'SomeClass' },
+      { type: ApexType.DATE, name: 'Date' },
+      { type: ApexType.DATETIME, name: 'DateTime' },
+      { type: ApexType.TIME, name: 'Time' },
+    ]
+
+    for (const excluded of excludedTypes) {
+      it(`should not create mutations for ${excluded.name} type`, () => {
+        emptyReturnMutator._mutations = []
+        const methodCtx = TestUtil.createMethodDeclaration(
+          excluded.name,
+          'testMethod'
+        )
+        emptyReturnMutator.enterMethodDeclaration(methodCtx)
+
+        const typeTable = new Map<string, ApexMethod>()
+        typeTable.set('testMethod', {
+          returnType: excluded.name,
+          startLine: 1,
+          endLine: 5,
+          type: excluded.type,
+        })
+
+        emptyReturnMutator.setTypeTable(typeTable)
+        const returnCtx = TestUtil.createReturnStatement('something')
+
+        // Act
+        emptyReturnMutator.enterReturnStatement(returnCtx)
+
+        // Assert
+        expect(emptyReturnMutator._mutations.length).toBe(0)
+      })
+    }
+  })
+
+  describe('empty value detection', () => {
+    const emptyValueCases = [
+      { type: 'String', value: "''", expected: true },
+      { type: 'String', value: '""', expected: true },
+      { type: 'String', value: "'Hello'", expected: false },
+
+      { type: 'Integer', value: '0', expected: true },
+      { type: 'Integer', value: '42', expected: false },
+      { type: 'Long', value: '0L', expected: true },
+      { type: 'Long', value: '42L', expected: false },
+      { type: 'Double', value: '0.0', expected: true },
+      { type: 'Double', value: '42.5', expected: false },
+
+      { type: 'List<String>', value: 'new List<String>()', expected: true },
+      { type: 'List<String>', value: 'myList', expected: false },
+      { type: 'Set<String>', value: 'new Set<String>()', expected: true },
+      {
+        type: 'Set<String>',
+        value: 'new Set<String>{ "value" }',
+        expected: false,
+      },
+      {
+        type: 'Map<String, Integer>',
+        value: 'new Map<String, Integer>()',
+        expected: true,
+      },
+      {
+        type: 'Map<String, Integer>',
+        value: 'new Map<String, Integer>{ "key" => 1 }',
+        expected: false,
+      },
+    ]
+
+    for (const testCase of emptyValueCases) {
+      it(`should identify '${testCase.value}' as ${testCase.expected ? 'empty' : 'non-empty'} for ${testCase.type} type`, () => {
+        const result = emptyReturnMutator.isEmptyValue(
+          testCase.type,
+          testCase.value
+        )
+        expect(result).toBe(testCase.expected)
+      })
+    }
+  })
+
+  describe('validation and edge cases', () => {
+    it('should handle null type info', () => {
+      const methodCtx = TestUtil.createMethodDeclaration(
+        'Integer',
+        'testMethod'
+      )
+      emptyReturnMutator.enterMethodDeclaration(methodCtx)
+
+      const returnCtx = TestUtil.createReturnStatement('42')
+      emptyReturnMutator._mutations = []
+
+      // Act
+      emptyReturnMutator.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(emptyReturnMutator._mutations.length).toBe(0)
+    })
+
+    it('should handle missing method context', () => {
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+
+      emptyReturnMutator.setTypeTable(typeTable)
+      const returnCtx = TestUtil.createReturnStatement('42')
+      emptyReturnMutator._mutations = []
+
+      // Act
+      emptyReturnMutator.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(emptyReturnMutator._mutations.length).toBe(0)
+    })
+
+    it('should handle already empty values', () => {
+      // Setup
+      const methodCtx = TestUtil.createMethodDeclaration(
+        'Integer',
+        'testMethod'
+      )
+      emptyReturnMutator.enterMethodDeclaration(methodCtx)
+
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+
+      emptyReturnMutator.setTypeTable(typeTable)
+      const returnCtx = TestUtil.createReturnStatement('0')
+      emptyReturnMutator._mutations = []
+
+      // Act
+      emptyReturnMutator.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(emptyReturnMutator._mutations.length).toBe(0)
+    })
+
+    it('should handle return statement without children', () => {
+      const methodCtx = TestUtil.createMethodDeclaration(
+        'Integer',
+        'testMethod'
+      )
       emptyReturnMutator.enterMethodDeclaration(methodCtx)
 
       const typeTable = new Map<string, ApexMethod>()
@@ -34,20 +265,7 @@ describe('EmptyReturnMutator', () => {
 
       emptyReturnMutator.setTypeTable(typeTable)
 
-      // Mock isEmptyValue to return true - should cause early return
-      jest.spyOn(emptyReturnMutator, 'isEmptyValue').mockReturnValue(true)
-
-      const returnCtx = {
-        children: [
-          { text: 'return' },
-          {
-            text: '0', // Already an empty value
-            start: { line: 1 },
-          } as unknown as ParserRuleContext,
-        ],
-        start: { line: 1 },
-      } as unknown as ParserRuleContext
-
+      const returnCtx = { children: [] } as unknown as ParserRuleContext
       emptyReturnMutator._mutations = []
 
       // Act
@@ -57,252 +275,12 @@ describe('EmptyReturnMutator', () => {
       expect(emptyReturnMutator._mutations.length).toBe(0)
     })
 
-    it('should return early if generateEmptyValue returns null', () => {
-      // Arrange
-      const methodCtx = {
-        children: [
-          { text: 'Void' },
-          { text: 'testMethod' },
-          { text: '(' },
-          { text: ')' },
-        ],
-      } as unknown as ParserRuleContext
-
-      emptyReturnMutator.enterMethodDeclaration(methodCtx)
-
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: 'Void',
-        startLine: 1,
-        endLine: 5,
-        type: ApexType.VOID,
-      })
-
-      emptyReturnMutator.setTypeTable(typeTable)
-
-      // Mock isEmptyValue to return false so we don't exit early
-      jest.spyOn(emptyReturnMutator, 'isEmptyValue').mockReturnValue(false)
-
-      const returnCtx = {
-        children: [
-          { text: 'return' },
-          {
-            text: 'something',
-            start: { line: 1 },
-          } as unknown as ParserRuleContext,
-        ],
-        start: { line: 1 },
-      } as unknown as ParserRuleContext
-
-      emptyReturnMutator._mutations = []
-
-      // Act
-      emptyReturnMutator.enterReturnStatement(returnCtx)
-
-      // Assert
-      expect(emptyReturnMutator._mutations.length).toBe(0)
-    })
-
-    it('should return early if no typeInfo is found', () => {
-      // Arrange
-      const methodCtx = {
-        children: [
-          { text: 'Integer' },
-          { text: 'testMethod' },
-          { text: '(' },
-          { text: ')' },
-        ],
-      } as unknown as ParserRuleContext
-
-      emptyReturnMutator.enterMethodDeclaration(methodCtx)
-
-      // Undefined typeInfo
-      const typeTable = new Map<string, ApexMethod>()
-      emptyReturnMutator.setTypeTable(typeTable)
-
-      const returnCtx = {
-        children: [
-          { text: 'return' },
-          {
-            text: 'expression',
-            start: { line: 1 },
-          } as unknown as ParserRuleContext,
-        ],
-        start: { line: 1 },
-      } as unknown as ParserRuleContext
-
-      emptyReturnMutator._mutations = []
-
-      // Act
-      emptyReturnMutator.enterReturnStatement(returnCtx)
-
-      // Assert
-      expect(emptyReturnMutator._mutations.length).toBe(0)
-    })
-
-    it('should return early if type is in the excluded types list', () => {
-      // Arrange
-      const methodCtx = {
-        children: [
-          { text: 'Boolean' },
-          { text: 'testMethod' },
-          { text: '(' },
-          { text: ')' },
-        ],
-      } as unknown as ParserRuleContext
-
-      emptyReturnMutator.enterMethodDeclaration(methodCtx)
-
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: 'Boolean',
-        startLine: 1,
-        endLine: 5,
-        type: ApexType.BOOLEAN, // excluded type
-      })
-
-      emptyReturnMutator.setTypeTable(typeTable)
-
-      const returnCtx = {
-        children: [
-          { text: 'return' },
-          {
-            text: 'true',
-            start: { line: 1 },
-          } as unknown as ParserRuleContext,
-        ],
-        start: { line: 1 },
-      } as unknown as ParserRuleContext
-
-      emptyReturnMutator._mutations = []
-
-      // Act
-      emptyReturnMutator.enterReturnStatement(returnCtx)
-
-      // Assert
-      expect(emptyReturnMutator._mutations.length).toBe(0)
-    })
-
-    it('should return early if ctx.children is missing', () => {
-      // Arrange
-      const methodCtx = {
-        children: [
-          { text: 'Integer' },
-          { text: 'testMethod' },
-          { text: '(' },
-          { text: ')' },
-        ],
-      } as unknown as ParserRuleContext
-
-      emptyReturnMutator.enterMethodDeclaration(methodCtx)
-
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: 'Integer',
-        startLine: 1,
-        endLine: 5,
-        type: ApexType.INTEGER,
-      })
-
-      emptyReturnMutator.setTypeTable(typeTable)
-
-      const returnCtx = {
-        children: [
-          { text: 'return' },
-          // Missing the expression child
-        ],
-        start: { line: 1 },
-      } as unknown as ParserRuleContext
-
-      emptyReturnMutator._mutations = []
-
-      // Act
-      emptyReturnMutator.enterReturnStatement(returnCtx)
-
-      // Assert
-      expect(emptyReturnMutator._mutations.length).toBe(0)
-    })
-
-    it('should return early if currentMethodName is not set', () => {
-      // Arrange - do not set currentMethodName
-
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: 'Integer',
-        startLine: 1,
-        endLine: 5,
-        type: ApexType.INTEGER,
-      })
-
-      emptyReturnMutator.setTypeTable(typeTable)
-
-      const returnCtx = {
-        children: [
-          { text: 'return' },
-          {
-            text: '42',
-            start: { line: 1 },
-          } as unknown as ParserRuleContext,
-        ],
-        start: { line: 1 },
-      } as unknown as ParserRuleContext
-
-      emptyReturnMutator._mutations = []
-
-      // Act
-      emptyReturnMutator.enterReturnStatement(returnCtx)
-
-      // Assert
-      expect(emptyReturnMutator._mutations.length).toBe(0)
-    })
-
-    it('should return early if typeTable is not set', () => {
-      // Arrange
-      const methodCtx = {
-        children: [
-          { text: 'Integer' },
-          { text: 'testMethod' },
-          { text: '(' },
-          { text: ')' },
-        ],
-      } as unknown as ParserRuleContext
-
-      emptyReturnMutator.enterMethodDeclaration(methodCtx)
-
-      // Do not set type table
-      emptyReturnMutator.setTypeTable(new Map())
-
-      const returnCtx = {
-        children: [
-          { text: 'return' },
-          {
-            text: '42',
-            start: { line: 1 },
-          } as unknown as ParserRuleContext,
-        ],
-        start: { line: 1 },
-      } as unknown as ParserRuleContext
-
-      emptyReturnMutator._mutations = []
-
-      // Act
-      emptyReturnMutator.enterReturnStatement(returnCtx)
-
-      // Assert
-      expect(emptyReturnMutator._mutations.length).toBe(0)
-    })
-
-    it('should return early if expression node is not a ParserRuleContext', () => {
-      // Arrange
-      const methodCtx = {
-        children: [
-          { text: 'Integer' },
-          { text: 'testMethod' },
-          { text: '(' },
-          { text: ')' },
-        ],
-      } as unknown as ParserRuleContext
-
+    it('should handle non-ParserRuleContext expression node', () => {
+      // Setup
+      const methodCtx = TestUtil.createMethodDeclaration(
+        'Integer',
+        'testMethod'
+      )
       emptyReturnMutator.enterMethodDeclaration(methodCtx)
 
       const typeTable = new Map<string, ApexMethod>()
@@ -320,7 +298,9 @@ describe('EmptyReturnMutator', () => {
           { text: 'return' },
           { text: '42' }, // Not a ParserRuleContext
         ],
-        start: { line: 1 },
+        childCount: 2,
+        getChild: (i: number) =>
+          i === 0 ? { text: 'return' } : { text: '42' },
       } as unknown as ParserRuleContext
 
       emptyReturnMutator._mutations = []
@@ -331,466 +311,55 @@ describe('EmptyReturnMutator', () => {
       // Assert
       expect(emptyReturnMutator._mutations.length).toBe(0)
     })
-  })
 
-  describe('isEmptyValue', () => {
-    it('should identify empty string', () => {
-      // Arrange & Act & Assert
-      expect(emptyReturnMutator.isEmptyValue('String', "''")).toBe(true)
-      expect(emptyReturnMutator.isEmptyValue('String', '""')).toBe(true)
-      expect(emptyReturnMutator.isEmptyValue('String', "'test'")).toBe(false)
-    })
-
-    it('should identify zero integer values', () => {
-      // Arrange & Act & Assert
-      expect(emptyReturnMutator.isEmptyValue('Integer', '0')).toBe(true)
-      expect(emptyReturnMutator.isEmptyValue('Integer', '1')).toBe(false)
-    })
-
-    it('should identify zero decimal values', () => {
-      // Arrange & Act & Assert
-      expect(emptyReturnMutator.isEmptyValue('Decimal', '0')).toBe(true)
-      expect(emptyReturnMutator.isEmptyValue('Decimal', '0.0')).toBe(true)
-      expect(emptyReturnMutator.isEmptyValue('Decimal', '0.00')).toBe(true)
-      expect(emptyReturnMutator.isEmptyValue('Decimal', '0.1')).toBe(false)
-    })
-
-    it('should identify zero long values', () => {
-      // Arrange & Act & Assert
-      expect(emptyReturnMutator.isEmptyValue('Long', '0')).toBe(true)
-      expect(emptyReturnMutator.isEmptyValue('Long', '0L')).toBe(true)
-      expect(emptyReturnMutator.isEmptyValue('Long', '1L')).toBe(false)
-    })
-
-    it('should identify empty lists', () => {
-      // Arrange & Act & Assert
-      expect(
-        emptyReturnMutator.isEmptyValue('List<Account>', 'new List<Account>()')
-      ).toBe(true)
-      expect(
-        emptyReturnMutator.isEmptyValue('Account[]', 'new Account[]{}')
-      ).toBe(true)
-      expect(
-        emptyReturnMutator.isEmptyValue(
-          'List<Account>',
-          'new List<Account>{acc}'
-        )
-      ).toBe(false)
-    })
-
-    it('should identify empty sets', () => {
-      // Arrange & Act & Assert
-      expect(
-        emptyReturnMutator.isEmptyValue('Set<String>', 'new Set<String>()')
-      ).toBe(true)
-      expect(
-        emptyReturnMutator.isEmptyValue(
-          'Set<String>',
-          'new Set<String>{"test"}'
-        )
-      ).toBe(false)
-    })
-
-    it('should identify empty maps', () => {
-      // Arrange & Act & Assert
-      expect(
-        emptyReturnMutator.isEmptyValue(
-          'Map<Id, Account>',
-          'new Map<Id, Account>()'
-        )
-      ).toBe(true)
-      expect(
-        emptyReturnMutator.isEmptyValue(
-          'Map<Id, Account>',
-          'new Map<Id, Account>{id => acc}'
-        )
-      ).toBe(false)
-    })
-
-    it('should identify null as empty', () => {
-      // Arrange & Act & Assert
-      expect(emptyReturnMutator.isEmptyValue('Object', 'null')).toBe(true)
-    })
-
-    it('should identify boolean values as empty', () => {
-      // Arrange & Act & Assert
-      expect(emptyReturnMutator.isEmptyValue('Boolean', 'true')).toBe(true)
-      expect(emptyReturnMutator.isEmptyValue('Boolean', 'false')).toBe(true)
-      expect(emptyReturnMutator.isEmptyValue('Boolean', 'someValue')).toBe(
-        false
+    it('should handle unknown type when generating empty value', () => {
+      const methodCtx = TestUtil.createMethodDeclaration(
+        'CustomType',
+        'testMethod'
       )
-    })
-  })
-
-  describe('enterMethodDeclaration', () => {
-    it('should not throw when provided a valid method declaration', () => {
-      // Arrange
-      const ctx = {
-        children: [
-          { text: 'public' },
-          { text: 'testMethod' },
-          { text: '(' },
-          { text: ')' },
-        ],
-      } as unknown as ParserRuleContext
-
-      // Act & Assert
-      expect(() => {
-        emptyReturnMutator.enterMethodDeclaration(ctx)
-      }).not.toThrow()
-    })
-
-    it('should not throw when provided an invalid method declaration', () => {
-      // Arrange
-      const ctx = {
-        children: [{ text: 'public' }],
-      } as unknown as ParserRuleContext
-
-      // Act & Assert
-      expect(() => {
-        emptyReturnMutator.enterMethodDeclaration(ctx)
-      }).not.toThrow()
-    })
-  })
-
-  describe('exitMethodDeclaration', () => {
-    it('should not throw', () => {
-      // Act & Assert
-      expect(() => {
-        emptyReturnMutator.exitMethodDeclaration()
-      }).not.toThrow()
-    })
-  })
-
-  describe('setTypeTable', () => {
-    it('should not throw when setting type table', () => {
-      // Arrange
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: 'Integer',
-        startLine: 1,
-        endLine: 5,
-        type: ApexType.INTEGER,
-      })
-
-      // Act & Assert
-      expect(() => {
-        emptyReturnMutator.setTypeTable(typeTable)
-      }).not.toThrow()
-    })
-  })
-
-  describe('enterReturnStatement', () => {
-    it('should not throw when processing a return statement', () => {
-      // Arrange
-      const ctx = {
-        children: [
-          { text: 'return' },
-          {
-            text: '42',
-            children: [],
-            start: { line: 1 },
-          } as unknown as ParserRuleContext,
-        ],
-        start: { line: 1 },
-      } as unknown as ParserRuleContext
-
-      // Act & Assert
-      expect(() => {
-        emptyReturnMutator.enterReturnStatement(ctx)
-      }).not.toThrow()
-    })
-
-    it('should not throw when processing a return statement with a method name set', () => {
-      // Arrange
-      const methodCtx = {
-        children: [
-          { text: 'public' },
-          { text: 'testMethod' },
-          { text: '(' },
-          { text: ')' },
-        ],
-      } as unknown as ParserRuleContext
-
-      emptyReturnMutator.enterMethodDeclaration(methodCtx)
-
-      const returnCtx = {
-        children: [
-          { text: 'return' },
-          {
-            text: '42',
-            children: [],
-            start: { line: 1 },
-          } as unknown as ParserRuleContext,
-        ],
-        start: { line: 1 },
-      } as unknown as ParserRuleContext
-
-      // Act & Assert
-      expect(() => {
-        emptyReturnMutator.enterReturnStatement(returnCtx)
-      }).not.toThrow()
-    })
-  })
-
-  describe('findFirstTerminalNode integration', () => {
-    it('should properly identify and use terminal nodes for mutations', () => {
-      // Arrange
-      const methodCtx = {
-        children: [
-          { text: 'Integer' }, // Return type
-          { text: 'testMethod' },
-          { text: '(' },
-          { text: ')' },
-        ],
-      } as unknown as ParserRuleContext
-
       emptyReturnMutator.enterMethodDeclaration(methodCtx)
 
       const typeTable = new Map<string, ApexMethod>()
       typeTable.set('testMethod', {
-        returnType: 'Integer',
+        returnType: 'CustomType',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: 'UNKNOWN' as ApexType,
       })
 
       emptyReturnMutator.setTypeTable(typeTable)
+      const returnCtx = TestUtil.createReturnStatement('someValue')
+      emptyReturnMutator._mutations = []
 
-      jest.spyOn(emptyReturnMutator, 'isEmptyValue').mockReturnValue(false)
-
-      // should be mutated
-      const returnCtx = {
-        children: [
-          { text: 'return' },
-          {
-            text: '42',
-            start: { line: 3 },
-          } as unknown as ParserRuleContext,
-        ],
-        start: { line: 3 },
-      } as unknown as ParserRuleContext
-
-      // Act & Assert - Test that no error is thrown
-      expect(() => {
-        emptyReturnMutator.enterReturnStatement(returnCtx)
-      }).not.toThrow()
-    })
-  })
-
-  it('should properly test the mutation generation without using any', () => {
-    // Arrange
-    const methodCtx = {
-      children: [
-        { text: 'Integer' },
-        { text: 'testMethod' },
-        { text: '(' },
-        { text: ')' },
-      ],
-    } as unknown as ParserRuleContext
-
-    emptyReturnMutator.enterMethodDeclaration(methodCtx)
-
-    const typeTable = new Map<string, ApexMethod>()
-    typeTable.set('testMethod', {
-      returnType: 'Integer',
-      startLine: 1,
-      endLine: 5,
-      type: ApexType.INTEGER,
-    })
-
-    emptyReturnMutator.setTypeTable(typeTable)
-
-    jest.spyOn(emptyReturnMutator, 'isEmptyValue').mockReturnValue(false)
-
-    const terminalNode = {
-      symbol: {
-        line: 3,
-        charPositionInLine: 10,
-        tokenIndex: 42,
-      },
-      text: '42',
-    } as unknown as TerminalNode
-
-    emptyReturnMutator._mutations = []
-    emptyReturnMutator._mutations.push({
-      mutationName: 'EmptyReturn',
-      token: terminalNode,
-      replacement: '0',
-    })
-
-    // Assert
-    expect(emptyReturnMutator._mutations.length).toBe(1)
-    expect(emptyReturnMutator._mutations[0].mutationName).toBe('EmptyReturn')
-    expect(emptyReturnMutator._mutations[0].replacement).toBe('0')
-    expect(emptyReturnMutator._mutations[0].token).toBe(terminalNode)
-  })
-  it('should not throw when processing a return statement with a method name and type table set', () => {
-    // Arrange
-    const methodCtx = {
-      children: [
-        { text: 'public' },
-        { text: 'testMethod' },
-        { text: '(' },
-        { text: ')' },
-      ],
-    } as unknown as ParserRuleContext
-
-    emptyReturnMutator.enterMethodDeclaration(methodCtx)
-
-    const typeTable = new Map<string, ApexMethod>()
-    typeTable.set('testMethod', {
-      returnType: 'Integer',
-      startLine: 1,
-      endLine: 5,
-      type: ApexType.INTEGER,
-    })
-
-    emptyReturnMutator.setTypeTable(typeTable)
-
-    const returnCtx = {
-      children: [
-        { text: 'return' },
-        {
-          text: '42',
-          children: [],
-          start: { line: 1 },
-        } as unknown as ParserRuleContext,
-      ],
-      start: { line: 1 },
-    } as unknown as ParserRuleContext
-
-    // Act & Assert
-    expect(() => {
+      // Act
       emptyReturnMutator.enterReturnStatement(returnCtx)
-    }).not.toThrow()
+
+      // Assert
+      expect(emptyReturnMutator._mutations.length).toBe(0)
+    })
   })
 
-  describe('generateEmptyValue', () => {
-    it('should generate appropriate empty values for different types', () => {
-      type PrivateMethodType = (typeInfo: ApexMethod) => string | null
-      const generateEmptyValue = (
-        emptyReturnMutator as unknown as {
-          generateEmptyValue: PrivateMethodType
-        }
-      ).generateEmptyValue.bind(emptyReturnMutator)
+  describe('token range handling', () => {
+    it('should work with TokenRange structure', () => {
+      // Arrange
+      const tokenRange = TestUtil.createTokenRange('42', 3, 10)
+      emptyReturnMutator._mutations = []
 
-      expect(
-        generateEmptyValue({
-          returnType: 'String',
-          startLine: 1,
-          endLine: 5,
-          type: ApexType.STRING,
-        })
-      ).toBe("''")
+      // Act
+      emptyReturnMutator._mutations.push({
+        mutationName: 'EmptyReturn',
+        target: tokenRange,
+        replacement: '0',
+      })
 
-      expect(
-        generateEmptyValue({
-          returnType: 'ID',
-          startLine: 1,
-          endLine: 5,
-          type: ApexType.ID,
-        })
-      ).toBe("''")
-
-      expect(
-        generateEmptyValue({
-          returnType: 'Integer',
-          startLine: 1,
-          endLine: 5,
-          type: ApexType.INTEGER,
-        })
-      ).toBe('0')
-
-      expect(
-        generateEmptyValue({
-          returnType: 'Long',
-          startLine: 1,
-          endLine: 5,
-          type: ApexType.LONG,
-        })
-      ).toBe('0L')
-
-      expect(
-        generateEmptyValue({
-          returnType: 'Decimal',
-          startLine: 1,
-          endLine: 5,
-          type: ApexType.DECIMAL,
-        })
-      ).toBe('0.0')
-
-      expect(
-        generateEmptyValue({
-          returnType: 'Double',
-          startLine: 1,
-          endLine: 5,
-          type: ApexType.DOUBLE,
-        })
-      ).toBe('0.0')
-
-      expect(
-        generateEmptyValue({
-          returnType: 'Blob',
-          startLine: 1,
-          endLine: 5,
-          type: ApexType.BLOB,
-        })
-      ).toBe("Blob.valueOf('')")
-
-      expect(
-        generateEmptyValue({
-          returnType: 'List<Account>',
-          startLine: 1,
-          endLine: 5,
-          type: ApexType.LIST,
-        })
-      ).toBe('new List<Account>()')
-
-      expect(
-        generateEmptyValue({
-          returnType: 'Set<String>',
-          startLine: 1,
-          endLine: 5,
-          type: ApexType.SET,
-        })
-      ).toBe('new Set<String>()')
-
-      expect(
-        generateEmptyValue({
-          returnType: 'Map<Id, Account>',
-          startLine: 1,
-          endLine: 5,
-          type: ApexType.MAP,
-        })
-      ).toBe('new Map<Id, Account>()')
-
-      expect(
-        generateEmptyValue({
-          returnType: 'MyCustomObject',
-          startLine: 1,
-          endLine: 5,
-          type: ApexType.CUSTOM_OBJECT,
-        })
-      ).toBe('new MyCustomObject()')
-
-      expect(
-        generateEmptyValue({
-          returnType: 'Account',
-          startLine: 1,
-          endLine: 5,
-          type: ApexType.STANDARD_ENTITY,
-        })
-      ).toBe('new Account()')
-
-      expect(
-        generateEmptyValue({
-          returnType: 'Void',
-          startLine: 1,
-          endLine: 5,
-          type: ApexType.VOID,
-        })
-      ).toBeNull()
+      // Assert
+      expect(emptyReturnMutator._mutations[0].target.text).toBe('42')
+      if ('startToken' in emptyReturnMutator._mutations[0].target) {
+        expect(emptyReturnMutator._mutations[0].target.startToken.line).toBe(3)
+        expect(
+          emptyReturnMutator._mutations[0].target.startToken.charPositionInLine
+        ).toBe(10)
+      }
     })
   })
 })

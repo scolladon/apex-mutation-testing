@@ -14,6 +14,7 @@ import {
 } from 'apex-parser'
 
 import { TokenStreamRewriter } from 'antlr4ts'
+import { TrueReturnMutator } from '../mutator/trueReturnMutator.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 
 export class MutantGenerator {
@@ -38,9 +39,15 @@ export class MutantGenerator {
     const incrementListener = new IncrementMutator()
     const boundaryListener = new BoundaryConditionMutator()
     const emptyReturnListener = new EmptyReturnMutator()
+    const trueReturnListener = new TrueReturnMutator()
 
     const listener = new MutationListener(
-      [incrementListener, boundaryListener, emptyReturnListener],
+      [
+        incrementListener,
+        boundaryListener,
+        emptyReturnListener,
+        trueReturnListener,
+      ],
       coveredLines,
       methodTypeTable
     )
@@ -53,12 +60,22 @@ export class MutantGenerator {
   public mutate(mutation: ApexMutation) {
     // Create a new token stream rewriter
     const rewriter = new TokenStreamRewriter(this.tokenStream!)
-    // Apply the mutation by replacing the original token with the replacement text
-    rewriter.replace(
-      mutation.token.symbol.tokenIndex,
-      mutation.token.symbol.tokenIndex,
-      mutation.replacement
-    )
+
+    if ('symbol' in mutation.target) {
+      // Single token (Terminal Node)
+      rewriter.replace(
+        mutation.target.symbol.tokenIndex,
+        mutation.target.symbol.tokenIndex,
+        mutation.replacement
+      )
+    } else {
+      // Expression
+      rewriter.replace(
+        mutation.target.startToken.tokenIndex,
+        mutation.target.endToken.tokenIndex,
+        mutation.replacement
+      )
+    }
 
     // Get the mutated code
     return rewriter.getText()

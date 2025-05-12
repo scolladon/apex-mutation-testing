@@ -10,6 +10,13 @@ import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
 import { ApexTypeResolver } from './apexTypeResolver.js'
 import { MutantGenerator } from './mutantGenerator.js'
 
+interface TokenTargetInfo {
+  line: number
+  column: number
+  tokenIndex: number
+  text: string
+}
+
 export class MutationTestingService {
   protected readonly apexClassName: string
   protected readonly apexTestClassName: string
@@ -117,8 +124,23 @@ export class MutationTestingService {
     for (const mutation of mutations) {
       const mutatedVersion = mutantGenerator.mutate(mutation)
 
+      const targetInfo: TokenTargetInfo =
+        'symbol' in mutation.target
+          ? {
+              line: mutation.target.symbol.line,
+              column: mutation.target.symbol.charPositionInLine,
+              tokenIndex: mutation.target.symbol.tokenIndex,
+              text: mutation.target.text,
+            }
+          : {
+              line: mutation.target.startToken.line,
+              column: mutation.target.startToken.charPositionInLine,
+              tokenIndex: mutation.target.startToken.tokenIndex,
+              text: mutation.target.text,
+            }
+
       this.progress.update(mutationCount, {
-        info: `Deploying "${mutation.replacement}" mutation at line ${mutation.token.symbol.line}`,
+        info: `Deploying "${mutation.replacement}" mutation at line ${targetInfo.line}`,
       })
 
       let progressMessage
@@ -129,18 +151,22 @@ export class MutationTestingService {
         })
 
         this.progress.update(mutationCount, {
-          info: `Running tests for "${mutation.replacement}" mutation at line ${mutation.token.symbol.line}`,
+          info: `Running tests for "${mutation.replacement}" mutation at line ${targetInfo.line}`,
         })
         const testResult: TestResult = await apexTestRunner.run(
           this.apexTestClassName
         )
 
-        const mutantResult = this.buildMutantResult(mutation, testResult)
+        const mutantResult = this.buildMutantResult(
+          mutation,
+          testResult,
+          targetInfo
+        )
         mutationResults.mutants.push(mutantResult)
 
         progressMessage = `Mutation result: ${testResult.summary.outcome === 'Pass' ? 'zombie' : 'mutant killed'}`
       } catch {
-        progressMessage = `Issue while computing "${mutation.replacement}" mutation at line ${mutation.token.symbol.line}`
+        progressMessage = `Issue while computing "${mutation.replacement}" mutation at line ${targetInfo.line}`
       }
       ++mutationCount
       this.progress.update(mutationCount, {
@@ -177,28 +203,31 @@ export class MutationTestingService {
     )
   }
 
-  private buildMutantResult(mutation: ApexMutation, testResult: TestResult) {
-    const token = mutation.token
+  private buildMutantResult(
+    mutation: ApexMutation,
+    testResult: TestResult,
+    targetInfo: TokenTargetInfo
+  ) {
     // TODO Handle NoCoverage
     const mutationStatus: 'Killed' | 'Survived' | 'NoCoverage' =
       testResult.summary.outcome === 'Pass' ? 'Survived' : 'Killed'
 
     return {
-      id: `${this.apexClassName}-${token.symbol.line}-${token.symbol.charPositionInLine}-${token.symbol.tokenIndex}-${Date.now()}`,
+      id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
       mutatorName: mutation.mutationName,
       status: mutationStatus,
       location: {
         start: {
-          line: token.symbol.line,
-          column: token.symbol.charPositionInLine,
+          line: targetInfo.line,
+          column: targetInfo.column,
         },
         end: {
-          line: token.symbol.line,
-          column: token.symbol.charPositionInLine + mutation.replacement.length,
+          line: targetInfo.line,
+          column: targetInfo.column + targetInfo.text.length,
         },
       },
       replacement: mutation.replacement,
-      original: token.text,
+      original: targetInfo.text,
     }
   }
 }

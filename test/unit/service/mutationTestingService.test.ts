@@ -28,13 +28,13 @@ describe('MutationTestingService', () => {
   const mockMutation = {
     mutationName: 'TestMutation',
     replacement: 'newCode',
-    token: {
-      text: 'oldCode',
+    target: {
       symbol: {
         line: 1,
         charPositionInLine: 0,
         tokenIndex: 0,
       },
+      text: 'oldCode',
     },
   }
 
@@ -120,11 +120,23 @@ describe('MutationTestingService', () => {
               [updateError ? 'mockRejectedValue' : 'mockResolvedValue'](
                 updateError || {}
               ),
-            getApexClassDependencies: jest
-              .fn()
-              .mockResolvedValue([
-                { Id: 'dep1', RefMetadataComponentType: 'ApexClass' },
-              ] as MetadataComponentDependency[]),
+            getApexClassDependencies: jest.fn().mockResolvedValue([
+              {
+                Id: 'dep1',
+                RefMetadataComponentType: 'ApexClass',
+                RefMetadataComponentName: 'TestDep',
+              },
+              {
+                Id: 'dep2',
+                RefMetadataComponentType: 'StandardEntity',
+                RefMetadataComponentName: 'Account',
+              },
+              {
+                Id: 'dep3',
+                RefMetadataComponentType: 'CustomObject',
+                RefMetadataComponentName: 'Custom__c',
+              },
+            ] as MetadataComponentDependency[]),
           }))
           ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
             compute: jest.fn().mockReturnValue([mockMutation]),

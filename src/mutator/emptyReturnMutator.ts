@@ -1,31 +1,14 @@
 import { ParserRuleContext } from 'antlr4ts'
-import { TerminalNode } from 'antlr4ts/tree/index.js'
 import { ApexMethod, ApexType } from '../type/ApexMethod.js'
-import { TypeAwareBaseListener } from './typeAwareBaseListener.js'
+import { ReturnTypeAwareBaseListener } from './returnTypeAwareBaseListener.js'
 
-export class EmptyReturnMutator extends TypeAwareBaseListener {
-  private currentMethodName: string | null = null
-
-  enterMethodDeclaration(ctx: ParserRuleContext): void {
-    if (ctx.children && ctx.children.length >= 4) {
-      this.currentMethodName = ctx.children[1].text
-    }
-  }
-
-  exitMethodDeclaration(): void {
-    this.currentMethodName = null
-  }
-
+export class EmptyReturnMutator extends ReturnTypeAwareBaseListener {
   enterReturnStatement(ctx: ParserRuleContext): void {
-    if (
-      !this.currentMethodName ||
-      !this.typeTable ||
-      !this.typeTable.has(this.currentMethodName)
-    ) {
+    if (!this.isCurrentMethodTypeKnown()) {
       return
     }
 
-    const typeInfo = this.typeTable.get(this.currentMethodName)
+    const typeInfo = this.getCurrentMethodReturnTypeInfo()
     if (!typeInfo) {
       return
     }
@@ -50,8 +33,6 @@ export class EmptyReturnMutator extends TypeAwareBaseListener {
       return
     }
 
-    // Child 0: "return"
-    // Child 1: The expression to return
     const expressionNode = ctx.children[1]
     if (!(expressionNode instanceof ParserRuleContext)) {
       return
@@ -66,13 +47,14 @@ export class EmptyReturnMutator extends TypeAwareBaseListener {
       return
     }
 
-    if (expressionNode.start) {
+    if (expressionNode.start && expressionNode.stop) {
       this._mutations.push({
         mutationName: 'EmptyReturn',
-        token: {
-          symbol: expressionNode.start,
+        target: {
+          startToken: expressionNode.start,
+          endToken: expressionNode.stop,
           text: expressionNode.text,
-        } as TerminalNode,
+        },
         replacement: emptyValue,
       })
     }
@@ -119,7 +101,6 @@ export class EmptyReturnMutator extends TypeAwareBaseListener {
       decimal: expr =>
         expr === '0' || expr === '0.0' || !!expr.match(/^0\.0+$/),
       long: expr => expr === '0' || expr === '0L',
-      boolean: expr => expr === 'false' || expr === 'true',
     }
 
     if (lowerType.startsWith('list<') || lowerType.endsWith('[]')) {
