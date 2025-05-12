@@ -14,6 +14,7 @@ import {
 } from 'apex-parser'
 
 import { TokenStreamRewriter } from 'antlr4ts'
+import { FalseReturnMutator } from '../mutator/falseReturnMutator.js'
 import { TrueReturnMutator } from '../mutator/trueReturnMutator.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 
@@ -40,6 +41,7 @@ export class MutantGenerator {
     const boundaryListener = new BoundaryConditionMutator()
     const emptyReturnListener = new EmptyReturnMutator()
     const trueReturnListener = new TrueReturnMutator()
+    const falseReturnListener = new FalseReturnMutator()
 
     const listener = new MutationListener(
       [
@@ -47,6 +49,7 @@ export class MutantGenerator {
         boundaryListener,
         emptyReturnListener,
         trueReturnListener,
+        falseReturnListener,
       ],
       coveredLines,
       methodTypeTable
