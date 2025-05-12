@@ -6,11 +6,8 @@ export interface TokenRange {
   endToken: Token
   text: string
 }
-
-export type ReplacementTarget = TerminalNode | TokenRange
-
 export interface ApexMutation {
   mutationName: string
-  target: ReplacementTarget
+  target: TerminalNode | TokenRange
   replacement: string
 }
