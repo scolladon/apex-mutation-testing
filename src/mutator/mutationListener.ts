@@ -21,7 +21,7 @@ export class MutationListener implements ApexParserListener {
   ) {
     this.listeners = listeners
 
-    // Share type table with type-aware listeners
+
     if (typeTable) {
       this.listeners.forEach(listener => {
         if (listener instanceof ReturnTypeAwareBaseListener) {

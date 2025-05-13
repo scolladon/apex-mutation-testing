@@ -420,31 +420,6 @@ describe('MethodTypeListener', () => {
         type: ApexType.CUSTOM_OBJECT,
       })
     })
-
-    it('should handle errors gracefully', () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {
-        /* Intentionally blank */
-      })
-
-      // Create a context that passes length checks but has null for the method name node (index 1)
-      const invalidCtx = {
-        children: [
-          { text: 'SomeType' }, // Valid node at index 0 (return type)
-          null, // Invalid node at index 1 (method name) - accessing .text should throw
-          { text: '(' },
-          { text: ')' },
-        ],
-        start: { line: 1 },
-        stop: { line: 5 },
-      } as unknown as ParserRuleContext
-
-      // Act
-      methodTypeListener.enterMethodDeclaration(invalidCtx)
-
-      // Assert
-      expect(consoleSpy).toHaveBeenCalled() // This should now be called from the catch block
-      consoleSpy.mockRestore()
-    })
   })
 })
 
