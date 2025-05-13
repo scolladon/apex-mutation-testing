@@ -21,7 +21,6 @@ export class MutationListener implements ApexParserListener {
   ) {
     this.listeners = listeners
 
-
     if (typeTable) {
       this.listeners.forEach(listener => {
         if (listener instanceof ReturnTypeAwareBaseListener) {
