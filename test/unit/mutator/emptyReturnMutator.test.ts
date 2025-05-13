@@ -142,7 +142,6 @@ describe('EmptyReturnMutator', () => {
   describe('empty value detection', () => {
     const emptyValueCases = [
       { type: 'String', value: "''", expected: true },
-      { type: 'String', value: '""', expected: true },
       { type: 'String', value: "'Hello'", expected: false },
 
       { type: 'Integer', value: '0', expected: true },

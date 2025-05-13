@@ -95,7 +95,7 @@ export class EmptyReturnMutator extends ReturnTypeAwareBaseListener {
     const lowerType = type.toLowerCase()
 
     const emptyValuePatterns: Record<string, (expr: string) => boolean> = {
-      string: expr => expr === "''" || expr === '""',
+      string: expr => expr === "''",
       integer: expr => expr === '0',
       double: expr => expr === '0' || expr === '0.0' || !!expr.match(/^0\.0+$/),
       decimal: expr =>
