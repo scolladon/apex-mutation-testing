@@ -1,8 +1,9 @@
 import { ParserRuleContext } from 'antlr4ts'
+import { ApexParserListener } from 'apex-parser'
+import { ApexMethod } from '../type/ApexMethod.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { BaseListener } from './baseListener.js'
-
-import { ApexParserListener } from 'apex-parser'
+import { ReturnTypeAwareBaseListener } from './returnTypeAwareBaseListener.js'
 
 // @ts-ignore: Just a proxy doing accumulation of mutations
 export class MutationListener implements ApexParserListener {
@@ -15,9 +16,18 @@ export class MutationListener implements ApexParserListener {
 
   constructor(
     listeners: BaseListener[],
-    protected readonly coveredLines: Set<number>
+    protected readonly coveredLines: Set<number>,
+    protected readonly typeTable?: Map<string, ApexMethod>
   ) {
     this.listeners = listeners
+
+    if (typeTable) {
+      this.listeners.forEach(listener => {
+        if (listener instanceof ReturnTypeAwareBaseListener) {
+          listener.setTypeTable(typeTable)
+        }
+      })
+    }
     // Share mutations array across all listeners
     this.listeners
       .filter(listener => '_mutations' in listener)

@@ -26,7 +26,7 @@ export class BoundaryConditionMutator extends BaseListener {
         if (replacement) {
           this._mutations.push({
             mutationName: this.constructor.name,
-            token: symbol,
+            target: symbol,
             replacement,
           })
         }

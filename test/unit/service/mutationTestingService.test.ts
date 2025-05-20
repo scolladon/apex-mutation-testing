@@ -7,6 +7,7 @@ import { MutantGenerator } from '../../../src/service/mutantGenerator.js'
 import { MutationTestingService } from '../../../src/service/mutationTestingService.js'
 import { ApexMutationParameter } from '../../../src/type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult.js'
+import { MetadataComponentDependency } from '../../../src/type/MetadataComponentDependency.js'
 
 jest.mock('../../../src/adapter/apexClassRepository.js')
 jest.mock('../../../src/adapter/apexTestRunner.js')
@@ -27,13 +28,13 @@ describe('MutationTestingService', () => {
   const mockMutation = {
     mutationName: 'TestMutation',
     replacement: 'newCode',
-    token: {
-      text: 'oldCode',
+    target: {
       symbol: {
         line: 1,
         charPositionInLine: 0,
         tokenIndex: 0,
       },
+      text: 'oldCode',
     },
   }
 
@@ -119,6 +120,23 @@ describe('MutationTestingService', () => {
               [updateError ? 'mockRejectedValue' : 'mockResolvedValue'](
                 updateError || {}
               ),
+            getApexClassDependencies: jest.fn().mockResolvedValue([
+              {
+                Id: 'dep1',
+                RefMetadataComponentType: 'ApexClass',
+                RefMetadataComponentName: 'TestDep',
+              },
+              {
+                Id: 'dep2',
+                RefMetadataComponentType: 'StandardEntity',
+                RefMetadataComponentName: 'Account',
+              },
+              {
+                Id: 'dep3',
+                RefMetadataComponentType: 'CustomObject',
+                RefMetadataComponentName: 'Custom__c',
+              },
+            ] as MetadataComponentDependency[]),
           }))
           ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
             compute: jest.fn().mockReturnValue([mockMutation]),
@@ -143,8 +161,8 @@ describe('MutationTestingService', () => {
             testFile: 'TestClassTest',
             mutants: expectedMutants,
           })
-          expect(spinner.start).toHaveBeenCalledTimes(4)
-          expect(spinner.stop).toHaveBeenCalledTimes(4)
+          expect(spinner.start).toHaveBeenCalledTimes(5)
+          expect(spinner.stop).toHaveBeenCalledTimes(5)
           expect(progress.start).toHaveBeenCalled()
           expect(progress.finish).toHaveBeenCalled()
         }

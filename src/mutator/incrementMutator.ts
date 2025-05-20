@@ -33,7 +33,7 @@ export class IncrementMutator extends BaseListener {
       if (symbol !== null && symbol.text in this.REPLACEMENT_MAP) {
         this._mutations.push({
           mutationName: this.constructor.name,
-          token: symbol,
+          target: symbol,
           replacement: this.REPLACEMENT_MAP[symbol.text],
         })
       }
