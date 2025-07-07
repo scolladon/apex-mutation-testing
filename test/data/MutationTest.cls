@@ -11,6 +11,6 @@ private class MutationTest {
        
         
         // Assert
-        Assert.areEqual(result, 7);
+        Assert.areEqual(7, result);
     }
 }

@@ -37,12 +37,36 @@ export class ApexClassRepository {
     })
 
     // Create ContainerAsyncRequest to deploy
-    return await this.connection.tooling
+    const asyncRequest = await this.connection.tooling
       .sobject('ContainerAsyncRequest')
       .create({
         IsCheckOnly: false,
         MetadataContainerId: container.id,
         IsRunTests: true,
       })
+
+    if (!asyncRequest.id) {
+      throw new Error('ContainerAsyncRequest did not return an ID')
+    }
+
+    const result = await this.connection.tooling
+      .sobject('ContainerAsyncRequest')
+      .retrieve(asyncRequest.id)
+
+    if (result['State'] === 'Failed') {
+      const messages = result['DeployDetails']?.['allComponentMessages']
+      const formattedErrors = Array.isArray(messages)
+        ? messages
+            .map(
+              m =>
+                `[${m.fileName}:${m.lineNumber}:${m.columnNumber}] ${m.problem}`
+            )
+            .join('\n')
+        : result['ErrorMsg'] || 'Unknown error'
+
+      throw new Error(`Deployment failed:\n${formattedErrors}`)
+    }
+
+    return result
   }
 }

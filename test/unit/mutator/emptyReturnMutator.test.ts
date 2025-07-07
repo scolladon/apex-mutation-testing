@@ -247,13 +247,13 @@ describe('EmptyReturnMutator', () => {
       expect(emptyReturnMutator._mutations.length).toBe(0)
     })
 
-    it('should handle return statement without children', () => {
+    it('should handle return statement with no children', () => {
+      // Setup
       const methodCtx = TestUtil.createMethodDeclaration(
         'Integer',
         'testMethod'
       )
       emptyReturnMutator.enterMethodDeclaration(methodCtx)
-
       const typeTable = new Map<string, ApexMethod>()
       typeTable.set('testMethod', {
         returnType: 'Integer',
@@ -261,17 +261,22 @@ describe('EmptyReturnMutator', () => {
         endLine: 5,
         type: ApexType.INTEGER,
       })
-
       emptyReturnMutator.setTypeTable(typeTable)
 
-      const returnCtx = { children: [] } as unknown as ParserRuleContext
-      emptyReturnMutator._mutations = []
-
       // Act
+      const returnCtx = {
+        children: null,
+        childCount: 0,
+      } as unknown as ParserRuleContext
       emptyReturnMutator.enterReturnStatement(returnCtx)
 
       // Assert
       expect(emptyReturnMutator._mutations.length).toBe(0)
+    })
+
+    it('should detect null as empty value', () => {
+      // Act & Assert
+      expect(emptyReturnMutator.isEmptyValue('String', 'null')).toBe(true)
     })
 
     it('should handle non-ParserRuleContext expression node', () => {

@@ -49,7 +49,7 @@ export class ApexMutationHTMLReporter {
       })),
     }
 
-    mutationTestResult.files[`${apexMutationTestResult.sourceFile}.java`] =
+    mutationTestResult.files[`${apexMutationTestResult.sourceFile}.cls`] =
       fileResult
 
     return mutationTestResult

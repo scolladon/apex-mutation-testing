@@ -23,18 +23,22 @@ export class IncrementMutator extends BaseListener {
 
   private processOperation(ctx: ParserRuleContext) {
     if (ctx.childCount === 2) {
-      let symbol: TerminalNode | null = null
+      let operatorNode: TerminalNode | null = null
       if (ctx.getChild(0) instanceof TerminalNode) {
-        symbol = ctx.getChild(0) as TerminalNode
+        operatorNode = ctx.getChild(0) as TerminalNode
       } else if (ctx.getChild(1) instanceof TerminalNode) {
-        symbol = ctx.getChild(1) as TerminalNode
+        operatorNode = ctx.getChild(1) as TerminalNode
       }
 
-      if (symbol !== null && symbol.text in this.REPLACEMENT_MAP) {
+      if (operatorNode !== null && operatorNode.text in this.REPLACEMENT_MAP) {
         this._mutations.push({
           mutationName: this.constructor.name,
-          target: symbol,
-          replacement: this.REPLACEMENT_MAP[symbol.text],
+          target: {
+            startToken: operatorNode.symbol,
+            endToken: operatorNode.symbol,
+            text: operatorNode.text,
+          },
+          replacement: this.REPLACEMENT_MAP[operatorNode.text],
         })
       }
     }

@@ -20,6 +20,7 @@ interface TokenTargetInfo {
 export class MutationTestingService {
   protected readonly apexClassName: string
   protected readonly apexTestClassName: string
+  private apexClassContent: string = ''
 
   constructor(
     protected readonly progress: Progress,
@@ -34,7 +35,6 @@ export class MutationTestingService {
   public async process() {
     const apexClassRepository = new ApexClassRepository(this.connection)
     const apexTestRunner = new ApexTestRunner(this.connection)
-
     this.spinner.start(
       `Fetching "${this.apexClassName}" ApexClass content`,
       undefined,
@@ -46,6 +46,9 @@ export class MutationTestingService {
     const apexClass: ApexClass = (await apexClassRepository.read(
       this.apexClassName
     )) as unknown as ApexClass
+
+    this.apexClassContent = apexClass.Body
+
     this.spinner.stop('Done')
 
     this.spinner.start(
@@ -78,6 +81,33 @@ export class MutationTestingService {
     )
     this.spinner.stop('Done')
 
+    this.spinner.start(`Testing original code"`, undefined, {
+      stdout: true,
+    })
+
+    const originalTestResult = await apexTestRunner.run(this.apexTestClassName)
+
+    if (originalTestResult.summary.outcome !== 'Passed') {
+      this.spinner.stop()
+      throw new Error(
+        `Original tests failed! Cannot proceed with mutation testing.\n` +
+          `Test outcome: ${originalTestResult.summary.outcome}\n` +
+          `Failing tests: ${originalTestResult.summary.failing}\n`
+      )
+    }
+
+    if (originalTestResult.summary.testsRan === 0) {
+      this.spinner.stop()
+      throw new Error(
+        `No tests were executed! Check that:\n` +
+          `- Test class '${this.apexTestClassName}' exists\n` +
+          `- Test methods have @IsTest annotation\n` +
+          `- Test class is properly deployed`
+      )
+    }
+
+    this.spinner.stop('Original tests passed')
+
     this.spinner.start(
       `Computing coverage from "${this.apexTestClassName}" Test class`,
       undefined,
@@ -88,6 +118,7 @@ export class MutationTestingService {
     const coveredLines = await apexTestRunner.getCoveredLines(
       this.apexTestClassName
     )
+
     this.spinner.stop('Done')
 
     this.spinner.start(
@@ -124,20 +155,12 @@ export class MutationTestingService {
     for (const mutation of mutations) {
       const mutatedVersion = mutantGenerator.mutate(mutation)
 
-      const targetInfo: TokenTargetInfo =
-        'symbol' in mutation.target
-          ? {
-              line: mutation.target.symbol.line,
-              column: mutation.target.symbol.charPositionInLine,
-              tokenIndex: mutation.target.symbol.tokenIndex,
-              text: mutation.target.text,
-            }
-          : {
-              line: mutation.target.startToken.line,
-              column: mutation.target.startToken.charPositionInLine,
-              tokenIndex: mutation.target.startToken.tokenIndex,
-              text: mutation.target.text,
-            }
+      const targetInfo: TokenTargetInfo = {
+        line: mutation.target.startToken.line,
+        column: mutation.target.startToken.charPositionInLine,
+        tokenIndex: mutation.target.startToken.tokenIndex,
+        text: mutation.target.text,
+      }
 
       this.progress.update(mutationCount, {
         info: `Deploying "${mutation.replacement}" mutation at line ${targetInfo.line}`,
@@ -164,7 +187,7 @@ export class MutationTestingService {
         )
         mutationResults.mutants.push(mutantResult)
 
-        progressMessage = `Mutation result: ${testResult.summary.outcome === 'Pass' ? 'zombie' : 'mutant killed'}`
+        progressMessage = `Mutation result: ${testResult.summary.outcome === 'Passed' ? 'zombie' : 'mutant killed'}`
       } catch {
         progressMessage = `Issue while computing "${mutation.replacement}" mutation at line ${targetInfo.line}`
       }
@@ -208,26 +231,82 @@ export class MutationTestingService {
     testResult: TestResult,
     targetInfo: TokenTargetInfo
   ) {
-    // TODO Handle NoCoverage
     const mutationStatus: 'Killed' | 'Survived' | 'NoCoverage' =
-      testResult.summary.outcome === 'Pass' ? 'Survived' : 'Killed'
+      testResult.summary.outcome === 'Passed' ? 'Survived' : 'Killed'
 
+    const location = this.calculateMutationPosition(
+      mutation,
+      this.apexClassContent
+    )
+    const originalText = this.extractMutationOriginalText(mutation)
     return {
       id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
       mutatorName: mutation.mutationName,
       status: mutationStatus,
-      location: {
-        start: {
-          line: targetInfo.line,
-          column: targetInfo.column,
-        },
-        end: {
-          line: targetInfo.line,
-          column: targetInfo.column + targetInfo.text.length,
-        },
-      },
+      location,
       replacement: mutation.replacement,
-      original: targetInfo.text,
+      original: originalText,
     }
+  }
+
+  private calculateMutationPosition(
+    mutation: ApexMutation,
+    sourceContent: string
+  ): {
+    start: { line: number; column: number }
+    end: { line: number; column: number }
+  } {
+    const start = mutation.target.startToken
+    const end = mutation.target.endToken
+
+    if (start.startIndex !== undefined && end.stopIndex !== undefined) {
+      const startPos = this.convertAbsoluteIndexToLineColumn(
+        sourceContent,
+        start.startIndex
+      )
+      const endPos = this.convertAbsoluteIndexToLineColumn(
+        sourceContent,
+        end.stopIndex + 1
+      )
+
+      return { start: startPos, end: endPos }
+    }
+
+    throw new Error(
+      `Failed to calculate position for mutation: ${mutation.mutationName}`
+    )
+  }
+
+  private convertAbsoluteIndexToLineColumn(
+    sourceContent: string,
+    absoluteIndex: number
+  ): { line: number; column: number } {
+    const textBeforeIndex = sourceContent.substring(0, absoluteIndex)
+    const lines = textBeforeIndex.split('\n')
+
+    return {
+      line: lines.length,
+      column: lines[lines.length - 1].length + 1,
+    }
+  }
+
+  private extractMutationOriginalText(mutation: ApexMutation): string {
+    const start = mutation.target.startToken
+    const end = mutation.target.endToken
+
+    if (
+      start.startIndex !== undefined &&
+      end.stopIndex !== undefined &&
+      this.apexClassContent
+    ) {
+      return this.apexClassContent.substring(
+        start.startIndex,
+        end.stopIndex + 1
+      )
+    }
+
+    throw new Error(
+      `Failed to extract original text for mutation: ${mutation.mutationName}`
+    )
   }
 }

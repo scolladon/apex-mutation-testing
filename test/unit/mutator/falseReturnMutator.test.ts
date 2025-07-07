@@ -146,8 +146,8 @@ describe('FalseReturnMutator', () => {
       expect(falseReturnMutator._mutations.length).toBe(0)
     })
 
-    it('should handle return statement without children', () => {
-      // Setup
+    // NEW: Test for missing children coverage
+    it('should handle return statement with no children', () => {
       const methodCtx = TestUtil.createMethodDeclaration(
         'Boolean',
         'testMethod'
@@ -164,7 +164,42 @@ describe('FalseReturnMutator', () => {
 
       falseReturnMutator.setTypeTable(typeTable)
 
-      const returnCtx = { children: [] } as unknown as ParserRuleContext
+      const returnCtx = {
+        children: null,
+        childCount: 0,
+      } as unknown as ParserRuleContext
+
+      falseReturnMutator._mutations = []
+
+      // Act
+      falseReturnMutator.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(falseReturnMutator._mutations.length).toBe(0)
+    })
+
+    it('should handle return statement with insufficient children', () => {
+      const methodCtx = TestUtil.createMethodDeclaration(
+        'Boolean',
+        'testMethod'
+      )
+      falseReturnMutator.enterMethodDeclaration(methodCtx)
+
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Boolean',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.BOOLEAN,
+      })
+
+      falseReturnMutator.setTypeTable(typeTable)
+
+      const returnCtx = {
+        children: [{ text: 'return' }],
+        childCount: 1,
+      } as unknown as ParserRuleContext
+
       falseReturnMutator._mutations = []
 
       // Act

@@ -1,5 +1,6 @@
 import { BoundaryConditionMutator } from '../mutator/boundaryConditionMutator.js'
 import { EmptyReturnMutator } from '../mutator/emptyReturnMutator.js'
+import { EqualityConditionMutator } from '../mutator/equalityConditionMutator.js'
 import { FalseReturnMutator } from '../mutator/falseReturnMutator.js'
 import { IncrementMutator } from '../mutator/incrementMutator.js'
 import { MutationListener } from '../mutator/mutationListener.js'
@@ -23,6 +24,10 @@ import { ApexMutation } from '../type/ApexMutation.js'
 export class MutantGenerator {
   private tokenStream?: CommonTokenStream
 
+  public getTokenStream() {
+    return this.tokenStream
+  }
+
   public compute(
     classContent: string,
     coveredLines: Set<number>,
@@ -45,11 +50,13 @@ export class MutantGenerator {
     const trueReturnListener = new TrueReturnMutator()
     const falseReturnListener = new FalseReturnMutator()
     const nullReturnListener = new NullReturnMutator()
+    const equalityListener = new EqualityConditionMutator()
 
     const listener = new MutationListener(
       [
-        incrementListener,
         boundaryListener,
+        incrementListener,
+        equalityListener,
         emptyReturnListener,
         trueReturnListener,
         falseReturnListener,
@@ -68,21 +75,11 @@ export class MutantGenerator {
     // Create a new token stream rewriter
     const rewriter = new TokenStreamRewriter(this.tokenStream!)
 
-    if ('symbol' in mutation.target) {
-      // Single token (Terminal Node)
-      rewriter.replace(
-        mutation.target.symbol.tokenIndex,
-        mutation.target.symbol.tokenIndex,
-        mutation.replacement
-      )
-    } else {
-      // Expression
-      rewriter.replace(
-        mutation.target.startToken.tokenIndex,
-        mutation.target.endToken.tokenIndex,
-        mutation.replacement
-      )
-    }
+    rewriter.replace(
+      mutation.target.startToken.tokenIndex,
+      mutation.target.endToken.tokenIndex,
+      mutation.replacement
+    )
 
     // Get the mutated code
     return rewriter.getText()

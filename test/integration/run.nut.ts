@@ -51,6 +51,6 @@ describe('apex mutation test run NUTs', () => {
 
     const jsonResult = JSON.parse(result.stdout)
 
-    expect(jsonResult.result).to.have.property('score', 100)
+    expect(jsonResult.result).to.have.property('score', 80)
   })
 })

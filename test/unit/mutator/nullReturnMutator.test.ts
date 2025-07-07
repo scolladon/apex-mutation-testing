@@ -198,10 +198,10 @@ describe('NullReturnMutator', () => {
       expect(nullReturnMutator._mutations.length).toBe(0)
     })
 
-    it('should handle return statement without children', () => {
+    it('should handle return statement with no children', () => {
+      // Setup
       const methodCtx = TestUtil.createMethodDeclaration('String', 'testMethod')
       nullReturnMutator.enterMethodDeclaration(methodCtx)
-
       const typeTable = new Map<string, ApexMethod>()
       typeTable.set('testMethod', {
         returnType: 'String',
@@ -209,13 +209,12 @@ describe('NullReturnMutator', () => {
         endLine: 5,
         type: ApexType.STRING,
       })
-
       nullReturnMutator.setTypeTable(typeTable)
 
-      const returnCtx = { children: [] } as unknown as ParserRuleContext
-      nullReturnMutator._mutations = []
-
-      // Act
+      const returnCtx = {
+        children: null,
+        childCount: 0,
+      } as unknown as ParserRuleContext
       nullReturnMutator.enterReturnStatement(returnCtx)
 
       // Assert

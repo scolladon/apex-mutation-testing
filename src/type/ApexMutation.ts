@@ -1,6 +1,4 @@
 import { Token } from 'antlr4ts'
-import { TerminalNode } from 'antlr4ts/tree/index.js'
-
 export interface TokenRange {
   startToken: Token
   endToken: Token
@@ -8,6 +6,6 @@ export interface TokenRange {
 }
 export interface ApexMutation {
   mutationName: string
-  target: TerminalNode | TokenRange
+  target: TokenRange
   replacement: string
 }
