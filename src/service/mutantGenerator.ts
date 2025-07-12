@@ -40,9 +40,7 @@ export class MutantGenerator {
     const parser = new ApexParser(this.tokenStream)
     const tree = parser.compilationUnit()
 
-    const methodTypeTable = typeResolver
-      ? typeResolver.analyzeMethodTypes(tree)
-      : undefined
+    const methodTypeTable = typeResolver?.analyzeMethodTypes(tree)
 
     const incrementListener = new IncrementMutator()
     const boundaryListener = new BoundaryConditionMutator()

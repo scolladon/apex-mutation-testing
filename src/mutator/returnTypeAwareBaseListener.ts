@@ -22,9 +22,7 @@ export class ReturnTypeAwareBaseListener extends BaseListener {
 
   protected isCurrentMethodTypeKnown(): boolean {
     return !!(
-      this.currentMethodName &&
-      this.typeTable &&
-      this.typeTable.has(this.currentMethodName)
+      this.currentMethodName && this.typeTable.has(this.currentMethodName)
     )
   }
 
