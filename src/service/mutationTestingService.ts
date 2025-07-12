@@ -188,8 +188,36 @@ export class MutationTestingService {
         mutationResults.mutants.push(mutantResult)
 
         progressMessage = `Mutation result: ${testResult.summary.outcome === 'Passed' ? 'zombie' : 'mutant killed'}`
-      } catch {
-        progressMessage = `Issue while computing "${mutation.replacement}" mutation at line ${targetInfo.line}`
+      } catch (error: unknown) {
+        // Handle CPU timeout and other Salesforce exceptions
+        const errorMessage =
+          error instanceof Error ? error.message : String(error)
+
+        if (
+          errorMessage.includes('Apex CPU time limit exceeded') ||
+          errorMessage.includes('LIMIT_USAGE_FOR_NS')
+        ) {
+          // Treat CPU timeout as killed mutation
+          const killedMutant = {
+            id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
+            mutatorName: mutation.mutationName,
+            status: 'Killed' as const,
+            location: {
+              start: { line: targetInfo.line, column: targetInfo.column },
+              end: {
+                line: targetInfo.line,
+                column: targetInfo.column + targetInfo.text.length,
+              },
+            },
+            replacement: mutation.replacement,
+            original: targetInfo.text,
+          }
+
+          mutationResults.mutants.push(killedMutant)
+          progressMessage = `Mutation result: mutant killed (CPU timeout)`
+        } else {
+          progressMessage = `Issue while computing "${mutation.replacement}" mutation at line ${targetInfo.line}`
+        }
       }
       ++mutationCount
       this.progress.update(mutationCount, {
