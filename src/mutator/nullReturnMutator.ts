@@ -26,16 +26,6 @@ export class NullReturnMutator extends ReturnTypeAwareBaseListener {
       return
     }
 
-    if (expressionNode.start && expressionNode.stop) {
-      this._mutations.push({
-        mutationName: 'NullReturn',
-        target: {
-          startToken: expressionNode.start,
-          endToken: expressionNode.stop,
-          text: expressionNode.text,
-        },
-        replacement: 'null',
-      })
-    }
+    this.createMutationFromParserRuleContext(expressionNode, 'null')
   }
 }

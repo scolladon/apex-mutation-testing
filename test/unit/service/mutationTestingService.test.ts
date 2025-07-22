@@ -27,7 +27,7 @@ describe('MutationTestingService', () => {
 
   const mockMutation = {
     mutationName: 'TestMutation',
-    replacement: 'newCode',
+    replacement: '0',
     target: {
       startToken: {
         line: 1,
@@ -88,7 +88,7 @@ describe('MutationTestingService', () => {
             expect.objectContaining({
               mutatorName: 'TestMutation',
               status: 'Killed',
-              replacement: 'newCode',
+              replacement: '0',
               original: '42',
             }),
           ],
@@ -111,7 +111,7 @@ describe('MutationTestingService', () => {
             expect.objectContaining({
               mutatorName: 'TestMutation',
               status: 'Survived',
-              replacement: 'newCode',
+              replacement: '0',
               original: '42',
             }),
           ],

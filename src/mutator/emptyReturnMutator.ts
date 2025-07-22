@@ -43,20 +43,8 @@ export class EmptyReturnMutator extends ReturnTypeAwareBaseListener {
     }
 
     const emptyValue = this.generateEmptyValue(typeInfo)
-    if (!emptyValue) {
-      return
-    }
-
-    if (expressionNode.start && expressionNode.stop) {
-      this._mutations.push({
-        mutationName: 'EmptyReturn',
-        target: {
-          startToken: expressionNode.start,
-          endToken: expressionNode.stop,
-          text: expressionNode.text,
-        },
-        replacement: emptyValue,
-      })
+    if (emptyValue) {
+      this.createMutationFromParserRuleContext(expressionNode, emptyValue)
     }
   }
 

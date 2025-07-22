@@ -80,7 +80,7 @@ describe('NullReturnMutator Integration', () => {
 
       // Assert
       const nullReturnMutations = mutations.filter(
-        m => m.mutationName === 'NullReturn'
+        m => m.mutationName === 'NullReturnMutator'
       )
       expect(nullReturnMutations.length).toBeGreaterThan(0)
 
@@ -141,7 +141,7 @@ describe('NullReturnMutator Integration', () => {
 
       // Assert
       const nullReturnMutations = mutations.filter(
-        m => m.mutationName === 'NullReturn'
+        m => m.mutationName === 'NullReturnMutator'
       )
       expect(nullReturnMutations.length).toBeGreaterThan(0)
 
@@ -201,7 +201,7 @@ describe('NullReturnMutator Integration', () => {
 
       // Assert
       const nullReturnMutations = mutations.filter(
-        m => m.mutationName === 'NullReturn'
+        m => m.mutationName === 'NullReturnMutator'
       )
       expect(nullReturnMutations.length).toBeGreaterThan(0)
 
@@ -263,7 +263,7 @@ describe('NullReturnMutator Integration', () => {
 
       // Assert
       const nullReturnMutations = mutations.filter(
-        m => m.mutationName === 'NullReturn'
+        m => m.mutationName === 'NullReturnMutator'
       )
       expect(nullReturnMutations.length).toBeGreaterThan(0)
 
@@ -323,7 +323,7 @@ describe('NullReturnMutator Integration', () => {
 
       // Assert
       const nullReturnMutations = mutations.filter(
-        m => m.mutationName === 'NullReturn'
+        m => m.mutationName === 'NullReturnMutator'
       )
       expect(nullReturnMutations.length).toBeGreaterThan(0)
 
@@ -383,7 +383,7 @@ describe('NullReturnMutator Integration', () => {
 
       // Assert
       const nullReturnMutations = mutations.filter(
-        m => m.mutationName === 'NullReturn'
+        m => m.mutationName === 'NullReturnMutator'
       )
       expect(nullReturnMutations.length).toBe(0)
     })
@@ -436,7 +436,7 @@ describe('NullReturnMutator Integration', () => {
 
       // Assert
       const nullReturnMutations = mutations.filter(
-        m => m.mutationName === 'NullReturn'
+        m => m.mutationName === 'NullReturnMutator'
       )
       expect(nullReturnMutations.length).toBe(0)
     })

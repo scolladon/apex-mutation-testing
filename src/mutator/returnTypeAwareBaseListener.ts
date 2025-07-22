@@ -21,15 +21,13 @@ export class ReturnTypeAwareBaseListener extends BaseListener {
   }
 
   protected isCurrentMethodTypeKnown(): boolean {
-    return !!(
-      this.currentMethodName && this.typeTable.has(this.currentMethodName)
+    return (
+      this.currentMethodName !== null &&
+      this.typeTable.has(this.currentMethodName)
     )
   }
 
   protected getCurrentMethodReturnTypeInfo(): ApexMethod | null {
-    if (!this.isCurrentMethodTypeKnown()) {
-      return null
-    }
-    return this.typeTable.get(this.currentMethodName!) || null
+    return this.typeTable.get(this.currentMethodName!) ?? null
   }
 }

@@ -109,7 +109,7 @@ describe('EmptyReturnMutator Integration', () => {
 
       // Assert
       const emptyReturnMutations = mutations.filter(
-        m => m.mutationName === 'EmptyReturn'
+        m => m.mutationName === 'EmptyReturnMutator'
       )
       expect(emptyReturnMutations.length).toBeGreaterThan(0)
 

@@ -30,16 +30,6 @@ export class TrueReturnMutator extends ReturnTypeAwareBaseListener {
       return
     }
 
-    if (expressionNode.start && expressionNode.stop) {
-      this._mutations.push({
-        mutationName: 'TrueReturn',
-        target: {
-          startToken: expressionNode.start,
-          endToken: expressionNode.stop,
-          text: expressionNode.text,
-        },
-        replacement: 'true',
-      })
-    }
+    this.createMutationFromParserRuleContext(expressionNode, 'true')
   }
 }

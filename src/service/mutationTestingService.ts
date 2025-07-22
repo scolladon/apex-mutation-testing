@@ -193,10 +193,7 @@ export class MutationTestingService {
         const errorMessage =
           error instanceof Error ? error.message : String(error)
 
-        if (
-          errorMessage.includes('Apex CPU time limit exceeded') ||
-          errorMessage.includes('LIMIT_USAGE_FOR_NS')
-        ) {
+        if (errorMessage.includes('LIMIT_USAGE_FOR_NS')) {
           // Treat CPU timeout as killed mutation
           const killedMutant = {
             id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
@@ -214,7 +211,7 @@ export class MutationTestingService {
           }
 
           mutationResults.mutants.push(killedMutant)
-          progressMessage = `Mutation result: mutant killed (CPU timeout)`
+          progressMessage = `Mutation result: mutant killed (${errorMessage})`
         } else {
           progressMessage = `Issue while computing "${mutation.replacement}" mutation at line ${targetInfo.line}`
         }

@@ -80,7 +80,7 @@ describe('FalseReturnMutator Integration', () => {
 
       // Assert
       const falseReturnMutations = mutations.filter(
-        m => m.mutationName === 'FalseReturn'
+        m => m.mutationName === 'FalseReturnMutator'
       )
       expect(falseReturnMutations.length).toBeGreaterThan(0)
 
@@ -140,7 +140,7 @@ describe('FalseReturnMutator Integration', () => {
 
       // Assert
       const falseReturnMutations = mutations.filter(
-        m => m.mutationName === 'FalseReturn'
+        m => m.mutationName === 'FalseReturnMutator'
       )
       expect(falseReturnMutations.length).toBeGreaterThan(0)
 
@@ -200,7 +200,7 @@ describe('FalseReturnMutator Integration', () => {
 
       // Assert
       const falseReturnMutations = mutations.filter(
-        m => m.mutationName === 'FalseReturn'
+        m => m.mutationName === 'FalseReturnMutator'
       )
       expect(falseReturnMutations.length).toBe(0)
     })
@@ -256,7 +256,7 @@ describe('FalseReturnMutator Integration', () => {
 
       // Assert
       const falseReturnMutations = mutations.filter(
-        m => m.mutationName === 'FalseReturn'
+        m => m.mutationName === 'FalseReturnMutator'
       )
 
       expect(falseReturnMutations.length).toBe(1)

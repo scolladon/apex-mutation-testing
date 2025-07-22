@@ -36,16 +36,7 @@ export class BoundaryConditionMutator extends BaseListener {
     if (replacement && operatorTokens.length > 0) {
       const startToken = operatorTokens[0].token
       const endToken = operatorTokens[operatorTokens.length - 1].token
-
-      this._mutations.push({
-        mutationName: this.constructor.name,
-        target: {
-          startToken,
-          endToken,
-          text: operatorText,
-        },
-        replacement,
-      })
+      this.createMutation(startToken, endToken, operatorText, replacement)
     }
   }
 }

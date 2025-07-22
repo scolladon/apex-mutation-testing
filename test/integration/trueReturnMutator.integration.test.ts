@@ -80,7 +80,7 @@ describe('TrueReturnMutator Integration', () => {
 
       // Assert
       const trueReturnMutations = mutations.filter(
-        m => m.mutationName === 'TrueReturn'
+        m => m.mutationName === 'TrueReturnMutator'
       )
       expect(trueReturnMutations.length).toBeGreaterThan(0)
 
@@ -141,7 +141,7 @@ describe('TrueReturnMutator Integration', () => {
 
       // Assert
       const trueReturnMutations = mutations.filter(
-        m => m.mutationName === 'TrueReturn'
+        m => m.mutationName === 'TrueReturnMutator'
       )
       expect(trueReturnMutations.length).toBeGreaterThan(0)
 
@@ -203,7 +203,7 @@ describe('TrueReturnMutator Integration', () => {
 
       // Assert
       const trueReturnMutations = mutations.filter(
-        m => m.mutationName === 'TrueReturn'
+        m => m.mutationName === 'TrueReturnMutator'
       )
       expect(trueReturnMutations.length).toBe(0)
     })
@@ -259,7 +259,7 @@ describe('TrueReturnMutator Integration', () => {
 
       // Assert
       const trueReturnMutations = mutations.filter(
-        m => m.mutationName === 'TrueReturn'
+        m => m.mutationName === 'TrueReturnMutator'
       )
 
       // Should only mutate the "false" return, not the "true" return
@@ -320,7 +320,7 @@ describe('TrueReturnMutator Integration', () => {
 
       // Assert
       const trueReturnMutations = mutations.filter(
-        m => m.mutationName === 'TrueReturn'
+        m => m.mutationName === 'TrueReturnMutator'
       )
 
       expect(trueReturnMutations.length).toBeGreaterThanOrEqual(0)
@@ -379,7 +379,7 @@ describe('TrueReturnMutator Integration', () => {
 
       // Assert
       const trueReturnMutations = mutations.filter(
-        m => m.mutationName === 'TrueReturn'
+        m => m.mutationName === 'TrueReturnMutator'
       )
 
       expect(trueReturnMutations.length).toBeGreaterThan(0)

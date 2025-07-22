@@ -31,15 +31,10 @@ export class IncrementMutator extends BaseListener {
       }
 
       if (operatorNode !== null && operatorNode.text in this.REPLACEMENT_MAP) {
-        this._mutations.push({
-          mutationName: this.constructor.name,
-          target: {
-            startToken: operatorNode.symbol,
-            endToken: operatorNode.symbol,
-            text: operatorNode.text,
-          },
-          replacement: this.REPLACEMENT_MAP[operatorNode.text],
-        })
+        this.createMutationFromTerminalNode(
+          operatorNode,
+          this.REPLACEMENT_MAP[operatorNode.text]
+        )
       }
     }
   }

@@ -30,16 +30,6 @@ export class FalseReturnMutator extends ReturnTypeAwareBaseListener {
       return
     }
 
-    if (expressionNode.start && expressionNode.stop) {
-      this._mutations.push({
-        mutationName: 'FalseReturn',
-        target: {
-          startToken: expressionNode.start,
-          endToken: expressionNode.stop,
-          text: expressionNode.text,
-        },
-        replacement: 'false',
-      })
-    }
+    this.createMutationFromParserRuleContext(expressionNode, 'false')
   }
 }

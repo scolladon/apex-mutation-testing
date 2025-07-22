@@ -351,7 +351,7 @@ describe('EmptyReturnMutator', () => {
 
       // Act
       emptyReturnMutator._mutations.push({
-        mutationName: 'EmptyReturn',
+        mutationName: 'EmptyReturnMutator',
         target: tokenRange,
         replacement: '0',
       })
