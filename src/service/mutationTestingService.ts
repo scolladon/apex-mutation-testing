@@ -189,12 +189,11 @@ export class MutationTestingService {
 
         progressMessage = `Mutation result: ${testResult.summary.outcome === 'Passed' ? 'zombie' : 'mutant killed'}`
       } catch (error: unknown) {
-        // Handle CPU timeout and other Salesforce exceptions
         const errorMessage =
           error instanceof Error ? error.message : String(error)
 
         if (errorMessage.includes('LIMIT_USAGE_FOR_NS')) {
-          // Treat CPU timeout as killed mutation
+          // Treat exceptions as killed mutation
           const killedMutant = {
             id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
             mutatorName: mutation.mutationName,
