@@ -1,7 +1,11 @@
-import { TerminalNode } from 'antlr4ts/tree'
-
+import { Token } from 'antlr4ts'
+export interface TokenRange {
+  startToken: Token
+  endToken: Token
+  text: string
+}
 export interface ApexMutation {
   mutationName: string
-  token: TerminalNode
+  target: TokenRange
   replacement: string
 }

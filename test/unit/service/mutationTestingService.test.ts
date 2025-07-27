@@ -7,6 +7,7 @@ import { MutantGenerator } from '../../../src/service/mutantGenerator.js'
 import { MutationTestingService } from '../../../src/service/mutationTestingService.js'
 import { ApexMutationParameter } from '../../../src/type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult.js'
+import { MetadataComponentDependency } from '../../../src/type/MetadataComponentDependency.js'
 
 jest.mock('../../../src/adapter/apexClassRepository.js')
 jest.mock('../../../src/adapter/apexTestRunner.js')
@@ -21,19 +22,28 @@ describe('MutationTestingService', () => {
   const mockApexClass = {
     Id: '123',
     Name: 'TestClass',
-    Body: 'class TestClass { }',
+    Body: 'class TestClass { public static Integer getValue() { return 42; } }',
   }
 
   const mockMutation = {
     mutationName: 'TestMutation',
-    replacement: 'newCode',
-    token: {
-      text: 'oldCode',
-      symbol: {
+    replacement: '0',
+    target: {
+      startToken: {
         line: 1,
-        charPositionInLine: 0,
-        tokenIndex: 0,
+        charPositionInLine: 50,
+        tokenIndex: 5,
+        startIndex: 60, // Position of "42" in the string
+        stopIndex: 61, // End position of "42" (inclusive)
       },
+      endToken: {
+        line: 1,
+        charPositionInLine: 51,
+        tokenIndex: 5,
+        startIndex: 60, // Position of "42" in the string
+        stopIndex: 61, // End position of "42" (inclusive)
+      },
+      text: '42',
     },
   }
 
@@ -62,31 +72,47 @@ describe('MutationTestingService', () => {
       const testCases = [
         {
           description: 'when test is failing',
-          testResult: { summary: { outcome: 'Fail' } } as TestResult,
+          testResult: {
+            summary: {
+              outcome: 'Failed',
+              passing: 0,
+              failing: 1,
+              testsRan: 1,
+            },
+          } as TestResult,
           expectedStatus: 'Killed',
           error: null,
           updateError: null,
+          expectedSpinnerStops: 6,
           expectedMutants: [
             expect.objectContaining({
               mutatorName: 'TestMutation',
               status: 'Killed',
-              replacement: 'newCode',
-              original: 'oldCode',
+              replacement: '0',
+              original: '42',
             }),
           ],
         },
         {
           description: 'when test is passing',
-          testResult: { summary: { outcome: 'Pass' } } as TestResult,
+          testResult: {
+            summary: {
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+            },
+          } as TestResult,
           expectedStatus: 'Survived',
           error: null,
           updateError: null,
+          expectedSpinnerStops: 6,
           expectedMutants: [
             expect.objectContaining({
               mutatorName: 'TestMutation',
               status: 'Survived',
-              replacement: 'newCode',
-              original: 'oldCode',
+              replacement: '0',
+              original: '42',
             }),
           ],
         },
@@ -96,21 +122,36 @@ describe('MutationTestingService', () => {
           expectedStatus: 'Survived',
           error: new Error('Test runner failed'),
           updateError: null,
+          expectedSpinnerStops: 6,
           expectedMutants: [],
         },
         {
           description: 'when update fails',
-          testResult: {},
+          testResult: {
+            summary: {
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+            },
+          } as TestResult,
           expectedStatus: 'Survived',
           error: null,
           updateError: new Error('Update failed'),
+          expectedSpinnerStops: 6,
           expectedMutants: [],
         },
       ]
 
       it.each(testCases)(
         'should handle $description',
-        async ({ testResult, expectedMutants, error, updateError }) => {
+        async ({
+          testResult,
+          expectedMutants,
+          error,
+          updateError,
+          expectedSpinnerStops,
+        }) => {
           // Arrange
           ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
             read: jest.fn().mockResolvedValue(mockApexClass),
@@ -119,6 +160,23 @@ describe('MutationTestingService', () => {
               [updateError ? 'mockRejectedValue' : 'mockResolvedValue'](
                 updateError || {}
               ),
+            getApexClassDependencies: jest.fn().mockResolvedValue([
+              {
+                Id: 'dep1',
+                RefMetadataComponentType: 'ApexClass',
+                RefMetadataComponentName: 'TestDep',
+              },
+              {
+                Id: 'dep2',
+                RefMetadataComponentType: 'StandardEntity',
+                RefMetadataComponentName: 'Account',
+              },
+              {
+                Id: 'dep3',
+                RefMetadataComponentType: 'CustomObject',
+                RefMetadataComponentName: 'Custom__c',
+              },
+            ] as MetadataComponentDependency[]),
           }))
           ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
             compute: jest.fn().mockReturnValue([mockMutation]),
@@ -127,9 +185,22 @@ describe('MutationTestingService', () => {
           ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
             run: jest
               .fn()
-              [error ? 'mockRejectedValue' : 'mockResolvedValue'](
-                error || testResult
-              ),
+              .mockResolvedValueOnce({
+                // First call - original test run
+                summary: {
+                  outcome: 'Passed',
+                  passing: 1,
+                  failing: 0,
+                  testsRan: 1,
+                },
+              })
+              .mockImplementation(() => {
+                // Subsequent calls - mutation tests
+                if (error) {
+                  return Promise.reject(error)
+                }
+                return Promise.resolve(testResult)
+              }),
             getCoveredLines: jest.fn().mockResolvedValue(new Set([1])),
           }))
 
@@ -143,8 +214,8 @@ describe('MutationTestingService', () => {
             testFile: 'TestClassTest',
             mutants: expectedMutants,
           })
-          expect(spinner.start).toHaveBeenCalledTimes(4)
-          expect(spinner.stop).toHaveBeenCalledTimes(4)
+          expect(spinner.start).toHaveBeenCalledTimes(6)
+          expect(spinner.stop).toHaveBeenCalledTimes(expectedSpinnerStops)
           expect(progress.start).toHaveBeenCalled()
           expect(progress.finish).toHaveBeenCalled()
         }

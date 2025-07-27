@@ -91,7 +91,7 @@ describe('ApexTestRunner', () => {
         // Arrange
         const mockTestResult = {
           summary: {
-            outcome: 'Pass',
+            outcome: 'Passed',
           },
         }
         runTestAsynchronousMock.mockResolvedValue(mockTestResult)
