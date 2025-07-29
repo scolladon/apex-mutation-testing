@@ -16,7 +16,7 @@ sf plugins install apex-mutation-testing
 ```
 
 ```sh
-sf apex mutation test run --class-file MyClass --test-file MyClassTest
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest
 ```
 
 ## What is it mutation testing ?
@@ -104,7 +104,7 @@ DESCRIPTION
 EXAMPLES
   Run mutation testing on a class with its test file:
 
-    $ sf apex mutation test run --class-file MyClass --test-file MyClassTest
+    $ sf apex mutation test run --apex-class MyClass --test-class MyClassTest
 ```
 <!-- commandsstop -->
 
@@ -128,6 +128,7 @@ Versioning follows [SemVer](http://semver.org/) specification.
 ## Authors
 
 - **Sebastien Colladon** - Developer - [scolladon](https://github.com/scolladon)
+- **Saman Attar** - Developer - [saman](https://github.com/SamanAttar)
 
 Special thanks to **Sara Sali** for her [presentation at Dreamforce](https://www.youtube.com/watch?v=8PjzrTaNNns) about apex mutation testing
 This repository is basically a port of her idea / repo to a sf plugin.
