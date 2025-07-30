@@ -24,7 +24,7 @@ Path to the directory where mutation test reports will be generated
 
 - Run mutation testing on a class with its test file:
 
-  <%= config.bin %> <%= command.id %> --class-file MyClass --test-file MyClassTest
+  <%= config.bin %> <%= command.id %> --apex-class MyClass --test-class MyClassTest
 
 # info.reportGenerated
 

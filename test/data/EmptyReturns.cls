@@ -91,4 +91,14 @@ public class EmptyReturns {
     public static Integer complexExpression(Integer a, Integer b, Integer c) {
         return a + b * c - (a / 2);
     }
+
+    public interface ILogger {
+        void debug(String message);
+    }
+
+    public class ConsoleLogger implements ILogger {
+        public void debug(String message) {
+            System.debug(message);
+        }
+    }
 }

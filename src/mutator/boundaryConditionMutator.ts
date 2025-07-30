@@ -1,7 +1,6 @@
-import { BaseListener } from './baseListener.js'
-
 import { ParserRuleContext, Token } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
+import { BaseListener } from './baseListener.js'
 
 export class BoundaryConditionMutator extends BaseListener {
   private readonly REPLACEMENT_MAP: Record<string, string> = {
