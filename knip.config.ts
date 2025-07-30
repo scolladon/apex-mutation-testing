@@ -11,5 +11,5 @@ export default {
     '@commitlint/config-conventional',
     '@stryker-mutator/core',
   ],
-  ignoreBinaries: ['commitlint', 'npm-check-updates'],
+  ignoreBinaries: ['commitlint', 'npm-check-updates', 'sf'],
 }
