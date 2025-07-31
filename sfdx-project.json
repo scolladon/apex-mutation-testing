@@ -1,0 +1,12 @@
+{
+  "packageDirectories": [
+    {
+      "path": "test/classes",
+      "default": true
+    }
+  ],
+  "name": "apex-mutation-testing-src",
+  "namespace": "",
+  "sfdcLoginUrl": "https://login.salesforce.com",
+  "sourceApiVersion": "64.0"
+}

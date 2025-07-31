@@ -1,5 +1,4 @@
 export default {
-  packageManager: 'npm',
   entry: [
     'src/commands/apex/mutation/test/run.ts',
     'bin/dev.js',
@@ -11,7 +10,6 @@ export default {
   ignoreDependencies: [
     '@commitlint/config-conventional',
     '@stryker-mutator/core',
-    'ts-node',
   ],
-  ignoreBinaries: ['commitlint', 'npm-check-updates'],
+  ignoreBinaries: ['commitlint', 'npm-check-updates', 'sf'],
 }

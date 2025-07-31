@@ -1,3 +1,12 @@
+import { TokenStreamRewriter } from 'antlr4ts'
+import {
+  ApexLexer,
+  ApexParser,
+  ApexParserListener,
+  CaseInsensitiveInputStream,
+  CommonTokenStream,
+  ParseTreeWalker,
+} from 'apex-parser'
 import { ArithmeticOperatorMutator } from '../mutator/arithmeticOperatorMutator.js'
 import { BoundaryConditionMutator } from '../mutator/boundaryConditionMutator.js'
 import { EmptyReturnMutator } from '../mutator/emptyReturnMutator.js'
@@ -7,20 +16,8 @@ import { IncrementMutator } from '../mutator/incrementMutator.js'
 import { MutationListener } from '../mutator/mutationListener.js'
 import { NullReturnMutator } from '../mutator/nullReturnMutator.js'
 import { TrueReturnMutator } from '../mutator/trueReturnMutator.js'
-
-import { ApexTypeResolver } from './apexTypeResolver.js'
-
-import {
-  ApexLexer,
-  ApexParser,
-  ApexParserListener,
-  CaseInsensitiveInputStream,
-  CommonTokenStream,
-  ParseTreeWalker,
-} from 'apex-parser'
-
-import { TokenStreamRewriter } from 'antlr4ts'
 import { ApexMutation } from '../type/ApexMutation.js'
+import { ApexTypeResolver } from './apexTypeResolver.js'
 
 export class MutantGenerator {
   private tokenStream?: CommonTokenStream

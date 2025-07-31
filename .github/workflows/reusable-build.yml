@@ -16,7 +16,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 24
 
       - uses: google/wireit@setup-github-actions-caching/v2
 
@@ -38,10 +38,16 @@ jobs:
       - name: Authenticate to NUT test org
         run: echo "${{ secrets.SFDX_AUTH_URL }}" | sf org login sfdx-url --alias apex-mutation-testing --set-default --sfdx-url-stdin
 
+      - name: Reset test classes
+        run: npm run deploy:testclasses
+
       - name: Integration test
         run: |
           mkdir reports/nut
           npm run test:nut
+
+      - name: Reset test classes
+        run: npm run deploy:testclasses
 
       - uses: actions/upload-artifact@v4
         with:

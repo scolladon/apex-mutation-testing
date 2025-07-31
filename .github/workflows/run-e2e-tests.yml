@@ -11,10 +11,13 @@ jobs:
   e2e-test:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 24
 
       - name: Set environment variables
         run: |
@@ -33,7 +36,18 @@ jobs:
       - name: Authenticate to E2E test org
         run: echo "${{ secrets.SFDX_AUTH_URL }}" | sf org login sfdx-url --alias e2e-test-org --set-default --sfdx-url-stdin
 
+      - name: Reset test classes
+        run: npm run deploy:testclasses
+
       - name: E2E Tests
         run: |
           mkdir -p reports/e2e
           sf apex mutation test run --target-org e2e-test-org --apex-class Mutation --test-class MutationTest --report-dir reports/e2e --json
+      
+      - name: Reset test classes
+        run: npm run deploy:testclasses
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-report
+          path: reports/e2e
