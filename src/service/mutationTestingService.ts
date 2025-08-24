@@ -161,14 +161,14 @@ export class MutationTestingService {
           Body: mutatedVersion,
         })
 
-        const testMethods = testMethodsPerLine.get(targetInfo.line)
+        const testMethods = testMethodsPerLine.get(targetInfo.line)!
 
         this.progress.update(mutationCount, {
-          info: `Running ${testMethods?.size} tests methods for "${mutation.replacement}" mutation at line ${targetInfo.line}`,
+          info: `Running ${testMethods.size} tests methods for "${mutation.replacement}" mutation at line ${targetInfo.line}`,
         })
         const testResult: TestResult = await apexTestRunner.runTestMethods(
           this.apexTestClassName,
-          testMethods!
+          testMethods
         )
 
         const mutantResult = this.buildMutantResult(
