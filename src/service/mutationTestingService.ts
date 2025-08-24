@@ -85,18 +85,19 @@ export class MutationTestingService {
       stdout: true,
     })
 
-    const originalTestResult = await apexTestRunner.run(this.apexTestClassName)
+    const { outcome, testsRan, failing, testMethodsPerLine } =
+      await apexTestRunner.getTestMethodsPerLines(this.apexTestClassName)
 
-    if (originalTestResult.summary.outcome !== 'Passed') {
+    if (outcome !== 'Passed') {
       this.spinner.stop()
       throw new Error(
         `Original tests failed! Cannot proceed with mutation testing.\n` +
-          `Test outcome: ${originalTestResult.summary.outcome}\n` +
-          `Failing tests: ${originalTestResult.summary.failing}\n`
+          `Test outcome: ${outcome}\n` +
+          `Failing tests: ${failing}\n`
       )
     }
 
-    if (originalTestResult.summary.testsRan === 0) {
+    if (testsRan === 0) {
       this.spinner.stop()
       throw new Error(
         `No tests were executed! Check that:\n` +
@@ -109,19 +110,6 @@ export class MutationTestingService {
     this.spinner.stop('Original tests passed')
 
     this.spinner.start(
-      `Computing coverage from "${this.apexTestClassName}" Test class`,
-      undefined,
-      {
-        stdout: true,
-      }
-    )
-    const coveredLines = await apexTestRunner.getCoveredLines(
-      this.apexTestClassName
-    )
-
-    this.spinner.stop('Done')
-
-    this.spinner.start(
       `Generating mutants for "${this.apexClassName}" ApexClass`,
       undefined,
       {
@@ -131,7 +119,7 @@ export class MutationTestingService {
     const mutantGenerator = new MutantGenerator()
     const mutations = mutantGenerator.compute(
       apexClass.Body,
-      coveredLines,
+      new Set(testMethodsPerLine.keys()),
       typeResolver
     )
     const mutationResults: ApexMutationTestResult = {
@@ -173,11 +161,14 @@ export class MutationTestingService {
           Body: mutatedVersion,
         })
 
+        const testMethods = testMethodsPerLine.get(targetInfo.line)
+
         this.progress.update(mutationCount, {
-          info: `Running tests for "${mutation.replacement}" mutation at line ${targetInfo.line}`,
+          info: `Running ${testMethods?.size} tests methods for "${mutation.replacement}" mutation at line ${targetInfo.line}`,
         })
-        const testResult: TestResult = await apexTestRunner.run(
-          this.apexTestClassName
+        const testResult: TestResult = await apexTestRunner.runTestMethods(
+          this.apexTestClassName,
+          testMethods!
         )
 
         const mutantResult = this.buildMutantResult(
