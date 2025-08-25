@@ -33,15 +33,51 @@ describe('ApexTestRunner', () => {
       it('then should return a set of covered lines', async () => {
         // Arrange
         const mockTestResult = {
-          codecoverage: [{ coveredLines: [1, 2, 3] }, { coveredLines: [4, 5] }],
+          summary: {
+            outcome: 'Passed',
+            passing: 1,
+            failing: 0,
+            testsRan: 1,
+          },
+          tests: [
+            {
+              perClassCoverage: [
+                {
+                  className: 'TestClass',
+                  apexTestMethodName: 'testMethodA',
+                  coverage: {
+                    coveredLines: [1, 2, 3],
+                  },
+                },
+                {
+                  className: 'TestClass',
+                  apexTestMethodName: 'testMethodB',
+                  coverage: {
+                    coveredLines: [4, 5],
+                  },
+                },
+              ],
+            },
+          ],
         }
         runTestAsynchronousMock.mockResolvedValue(mockTestResult)
 
         // Act
-        const result = await sut.getCoveredLines('TestClass')
+        const result = await sut.getTestMethodsPerLines('TestClass')
 
         // Assert
-        expect(result).toEqual(new Set([1, 2, 3, 4, 5]))
+        expect(result).toEqual({
+          outcome: 'Passed',
+          testsRan: 1,
+          failing: 0,
+          testMethodsPerLine: new Map([
+            [1, new Set(['testMethodA'])],
+            [2, new Set(['testMethodA'])],
+            [3, new Set(['testMethodA'])],
+            [4, new Set(['testMethodB'])],
+            [5, new Set(['testMethodB'])],
+          ]),
+        })
         expect(runTestAsynchronousMock).toHaveBeenCalledWith(
           {
             tests: [{ className: 'TestClass' }],
@@ -62,7 +98,7 @@ describe('ApexTestRunner', () => {
         )
 
         // Act & Assert
-        await expect(sut.getCoveredLines('TestClass')).rejects.toThrow(
+        await expect(sut.getTestMethodsPerLines('TestClass')).rejects.toThrow(
           'Test execution failed'
         )
       })
@@ -72,15 +108,26 @@ describe('ApexTestRunner', () => {
       it('then should return an empty set', async () => {
         // Arrange
         const mockTestResult = {
-          codecoverage: undefined,
+          summary: {
+            outcome: 'Passed',
+            passing: 0,
+            failing: 0,
+            testsRan: 0,
+          },
+          tests: [],
         }
         runTestAsynchronousMock.mockResolvedValue(mockTestResult)
 
         // Act
-        const result = await sut.getCoveredLines('TestClass')
+        const result = await sut.getTestMethodsPerLines('TestClass')
 
         // Assert
-        expect(result).toEqual(new Set())
+        expect(result).toEqual({
+          failing: 0,
+          outcome: 'Passed',
+          testMethodsPerLine: new Map(),
+          testsRan: 0,
+        })
       })
     })
   })
@@ -97,13 +144,16 @@ describe('ApexTestRunner', () => {
         runTestAsynchronousMock.mockResolvedValue(mockTestResult)
 
         // Act
-        const result = await sut.run('TestClass')
+        const result = await sut.runTestMethods(
+          'TestClass',
+          new Set<string>(['testMethod'])
+        )
 
         // Assert
         expect(result).toEqual(mockTestResult)
         expect(runTestAsynchronousMock).toHaveBeenCalledWith(
           {
-            tests: [{ className: 'TestClass' }],
+            tests: [{ className: 'TestClass', testMethods: ['testMethod'] }],
             testLevel: TestLevel.RunSpecifiedTests,
             skipCodeCoverage: true,
             maxFailedTests: 0,
@@ -121,9 +171,9 @@ describe('ApexTestRunner', () => {
         )
 
         // Act & Assert
-        await expect(sut.run('TestClass')).rejects.toThrow(
-          'Test execution failed'
-        )
+        await expect(
+          sut.runTestMethods('TestClass', new Set<string>(['testMethod']))
+        ).rejects.toThrow('Test execution failed')
       })
     })
   })
