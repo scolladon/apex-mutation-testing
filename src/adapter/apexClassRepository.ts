@@ -49,9 +49,18 @@ export class ApexClassRepository {
       throw new Error('ContainerAsyncRequest did not return an ID')
     }
 
-    const result = await this.connection.tooling
-      .sobject('ContainerAsyncRequest')
-      .retrieve(asyncRequest.id)
+    // Poll until deployment reaches terminal state
+    const terminalStates = ['Completed', 'Failed', 'Aborted', 'Invalidated']
+    let result: Record<string, unknown>
+
+    do {
+      result = await this.connection.tooling
+        .sobject('ContainerAsyncRequest')
+        .retrieve(asyncRequest.id)
+      if (!terminalStates.includes(result['State'] as string)) {
+        await this.delay(1000)
+      }
+    } while (!terminalStates.includes(result['State'] as string))
 
     if (result['State'] === 'Failed') {
       const messages = result['DeployDetails']?.['allComponentMessages']
@@ -68,5 +77,9 @@ export class ApexClassRepository {
     }
 
     return result
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms))
   }
 }
