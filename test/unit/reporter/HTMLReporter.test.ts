@@ -33,6 +33,32 @@ describe('HTMLReporter', () => {
         replacement: '>=',
         original: '<',
       },
+      {
+        id: '3',
+        mutatorName: 'ArithmeticOperatorMutator',
+        status: 'CompileError',
+        statusReason:
+          'Deployment failed:\n[TestClass.cls:3:5] Invalid operation',
+        location: {
+          start: { line: 3, column: 0 },
+          end: { line: 3, column: 10 },
+        },
+        replacement: '-',
+        original: '+',
+      },
+      {
+        id: '4',
+        mutatorName: 'NullReturnMutator',
+        status: 'RuntimeError',
+        statusReason:
+          'System.NullPointerException: Attempt to de-reference a null object',
+        location: {
+          start: { line: 4, column: 0 },
+          end: { line: 4, column: 10 },
+        },
+        replacement: 'null',
+        original: 'new Object()',
+      },
     ],
   }
 

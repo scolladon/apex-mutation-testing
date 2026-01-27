@@ -183,27 +183,53 @@ export class MutationTestingService {
         const errorMessage =
           error instanceof Error ? error.message : String(error)
 
-        if (errorMessage.includes('LIMIT_USAGE_FOR_NS')) {
-          // Treat exceptions as killed mutation
+        const location = this.calculateMutationPosition(
+          mutation,
+          this.apexClassContent
+        )
+        const originalText = this.extractMutationOriginalText(mutation)
+
+        if (errorMessage.startsWith('Deployment failed:')) {
+          // Deployment/compile failures -> CompileError
+          const compileErrorMutant = {
+            id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
+            mutatorName: mutation.mutationName,
+            status: 'CompileError' as const,
+            statusReason: errorMessage,
+            location,
+            replacement: mutation.replacement,
+            original: originalText,
+          }
+
+          mutationResults.mutants.push(compileErrorMutant)
+          progressMessage = `Mutation result: compile error at line ${targetInfo.line}`
+        } else if (errorMessage.includes('LIMIT_USAGE_FOR_NS')) {
+          // Governor limit exceptions -> Killed
           const killedMutant = {
             id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
             mutatorName: mutation.mutationName,
             status: 'Killed' as const,
-            location: {
-              start: { line: targetInfo.line, column: targetInfo.column },
-              end: {
-                line: targetInfo.line,
-                column: targetInfo.column + targetInfo.text.length,
-              },
-            },
+            location,
             replacement: mutation.replacement,
-            original: targetInfo.text,
+            original: originalText,
           }
 
           mutationResults.mutants.push(killedMutant)
           progressMessage = `Mutation result: mutant killed (${errorMessage})`
         } else {
-          progressMessage = `Issue while computing "${mutation.replacement}" mutation at line ${targetInfo.line}`
+          // Other runtime exceptions -> RuntimeError
+          const runtimeErrorMutant = {
+            id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
+            mutatorName: mutation.mutationName,
+            status: 'RuntimeError' as const,
+            statusReason: errorMessage,
+            location,
+            replacement: mutation.replacement,
+            original: originalText,
+          }
+
+          mutationResults.mutants.push(runtimeErrorMutant)
+          progressMessage = `Mutation result: runtime error at line ${targetInfo.line}`
         }
       }
       ++mutationCount
@@ -233,11 +259,17 @@ export class MutationTestingService {
   }
 
   public calculateScore(mutationResult: ApexMutationTestResult) {
+    const validMutants = mutationResult.mutants.filter(
+      mutant =>
+        mutant.status !== 'CompileError' && mutant.status !== 'RuntimeError'
+    )
+    if (validMutants.length === 0) {
+      return 0
+    }
     return (
-      (mutationResult.mutants.filter(mutant => mutant.status === 'Killed')
-        .length /
-        mutationResult.mutants.length) *
-        100 || 0
+      (validMutants.filter(mutant => mutant.status === 'Killed').length /
+        validMutants.length) *
+      100
     )
   }
 

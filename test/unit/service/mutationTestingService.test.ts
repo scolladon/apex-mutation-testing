@@ -169,16 +169,45 @@ describe('MutationTestingService', () => {
           ],
         },
         {
-          description: 'when test runner throws exception',
+          description: 'when test runner throws runtime exception',
           testResult: null,
-          expectedStatus: 'Survived',
-          error: new Error('Test runner failed'),
+          expectedStatus: 'RuntimeError',
+          error: new Error(
+            'System.NullPointerException: Attempt to de-reference a null object'
+          ),
           updateError: null,
           expectedSpinnerStops: 5,
-          expectedMutants: [],
+          expectedMutants: [
+            expect.objectContaining({
+              mutatorName: 'TestMutation',
+              status: 'RuntimeError',
+              statusReason:
+                'System.NullPointerException: Attempt to de-reference a null object',
+              replacement: '0',
+              original: '42',
+            }),
+          ],
         },
         {
-          description: 'when update fails',
+          description: 'when test runner throws governor limit exception',
+          testResult: null,
+          expectedStatus: 'Killed',
+          error: new Error(
+            'System.LimitException: LIMIT_USAGE_FOR_NS : Too many SOQL queries'
+          ),
+          updateError: null,
+          expectedSpinnerStops: 5,
+          expectedMutants: [
+            expect.objectContaining({
+              mutatorName: 'TestMutation',
+              status: 'Killed',
+              replacement: '0',
+              original: '42',
+            }),
+          ],
+        },
+        {
+          description: 'when deployment fails with compile error',
           testResult: {
             summary: {
               outcome: 'Passed',
@@ -187,11 +216,22 @@ describe('MutationTestingService', () => {
               testsRan: 1,
             },
           } as TestResult,
-          expectedStatus: 'Survived',
+          expectedStatus: 'CompileError',
           error: null,
-          updateError: new Error('Update failed'),
+          updateError: new Error(
+            'Deployment failed:\n[TestClass.cls:1:50] Invalid syntax'
+          ),
           expectedSpinnerStops: 5,
-          expectedMutants: [],
+          expectedMutants: [
+            expect.objectContaining({
+              mutatorName: 'TestMutation',
+              status: 'CompileError',
+              statusReason:
+                'Deployment failed:\n[TestClass.cls:1:50] Invalid syntax',
+              replacement: '0',
+              original: '42',
+            }),
+          ],
         },
       ]
 
@@ -284,6 +324,44 @@ describe('MutationTestingService', () => {
           description: 'with no mutants',
           mutants: [],
           expectedScore: 0,
+        },
+        {
+          description: 'with compile errors excluded from score',
+          mutants: [
+            { status: 'Killed' },
+            { status: 'Survived' },
+            { status: 'CompileError' },
+          ],
+          expectedScore: 50,
+        },
+        {
+          description: 'with only compile errors',
+          mutants: [{ status: 'CompileError' }, { status: 'CompileError' }],
+          expectedScore: 0,
+        },
+        {
+          description: 'with runtime errors excluded from score',
+          mutants: [
+            { status: 'Killed' },
+            { status: 'Survived' },
+            { status: 'RuntimeError' },
+          ],
+          expectedScore: 50,
+        },
+        {
+          description: 'with only runtime errors',
+          mutants: [{ status: 'RuntimeError' }, { status: 'RuntimeError' }],
+          expectedScore: 0,
+        },
+        {
+          description: 'with mixed compile and runtime errors excluded',
+          mutants: [
+            { status: 'Killed' },
+            { status: 'CompileError' },
+            { status: 'RuntimeError' },
+            { status: 'Survived' },
+          ],
+          expectedScore: 50,
         },
       ]
 

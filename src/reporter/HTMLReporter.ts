@@ -32,10 +32,17 @@ export class ApexMutationHTMLReporter {
         mutatorName: mutant.mutatorName,
         replacement: mutant.replacement,
         status: mutant.status,
+        statusReason: mutant.statusReason,
         static: false,
-        coveredBy: ['0'],
+        coveredBy:
+          mutant.status === 'CompileError' || mutant.status === 'RuntimeError'
+            ? undefined
+            : ['0'],
         killedBy: mutant.status === 'Killed' ? ['0'] : undefined,
-        testsCompleted: 1,
+        testsCompleted:
+          mutant.status === 'CompileError' || mutant.status === 'RuntimeError'
+            ? 0
+            : 1,
         location: {
           start: {
             line: mutant.location.start.line,
