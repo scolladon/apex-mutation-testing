@@ -269,6 +269,61 @@ describe('MutationTestingService', () => {
       )
     })
 
+    describe('When no coverage exists on the class', () => {
+      it('then should throw an error with helpful message', async () => {
+        // Arrange
+        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
+          read: jest.fn().mockResolvedValue(mockApexClass),
+          getApexClassDependencies: jest
+            .fn()
+            .mockResolvedValue([] as MetadataComponentDependency[]),
+        }))
+        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
+          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+            outcome: 'Passed',
+            passing: 1,
+            failing: 0,
+            testsRan: 1,
+            testMethodsPerLine: new Map(), // Empty - no coverage
+          }),
+        }))
+
+        // Act & Assert
+        await expect(sut.process()).rejects.toThrow(
+          "No test coverage found for 'TestClass'"
+        )
+      })
+    })
+
+    describe('When coverage exists but no mutations are generated', () => {
+      it('then should throw an error with helpful message', async () => {
+        // Arrange
+        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
+          read: jest.fn().mockResolvedValue(mockApexClass),
+          update: jest.fn().mockResolvedValue({}),
+          getApexClassDependencies: jest.fn().mockResolvedValue([]),
+        }))
+        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
+          compute: jest.fn().mockReturnValue([]), // No mutations
+          mutate: jest.fn(),
+        }))
+        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
+          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+            outcome: 'Passed',
+            passing: 1,
+            failing: 0,
+            testsRan: 1,
+            testMethodsPerLine: new Map([[1, new Set(['testMethod'])]]),
+          }),
+        }))
+
+        // Act & Assert
+        await expect(sut.process()).rejects.toThrow(
+          'No mutations could be generated'
+        )
+      })
+    })
+
     describe('When calculating mutation score', () => {
       const scoreTestCases = [
         {

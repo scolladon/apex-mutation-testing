@@ -109,6 +109,16 @@ export class MutationTestingService {
 
     this.spinner.stop('Original tests passed')
 
+    const coveredLines = new Set(testMethodsPerLine.keys())
+
+    if (coveredLines.size === 0) {
+      throw new Error(
+        `No test coverage found for '${this.apexClassName}'.\n` +
+          `The test class '${this.apexTestClassName}' does not cover any lines in '${this.apexClassName}'.\n` +
+          `Ensure your tests exercise the code you want to mutation test.`
+      )
+    }
+
     this.spinner.start(
       `Generating mutants for "${this.apexClassName}" ApexClass`,
       undefined,
@@ -119,9 +129,23 @@ export class MutationTestingService {
     const mutantGenerator = new MutantGenerator()
     const mutations = mutantGenerator.compute(
       apexClass.Body,
-      new Set(testMethodsPerLine.keys()),
+      coveredLines,
       typeResolver
     )
+
+    if (mutations.length === 0) {
+      this.spinner.stop('0 mutations generated')
+      throw new Error(
+        `No mutations could be generated for '${this.apexClassName}'.\n` +
+          `${coveredLines.size} line(s) are covered by tests, but no mutable patterns were found.\n` +
+          `This can happen when covered code contains no:\n` +
+          `  - Arithmetic operators (+, -, *, /)\n` +
+          `  - Comparison operators (<, >, <=, >=, ==, !=)\n` +
+          `  - Increment/decrement operators (++, --)\n` +
+          `  - Return statements (true, false, null, empty)`
+      )
+    }
+
     const mutationResults: ApexMutationTestResult = {
       sourceFile: this.apexClassName,
       sourceFileContent: apexClass.Body,
