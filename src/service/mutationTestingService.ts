@@ -1,5 +1,5 @@
 import { TestResult } from '@salesforce/apex-node'
-import { Connection } from '@salesforce/core'
+import { Connection, Messages } from '@salesforce/core'
 import { Progress, Spinner } from '@salesforce/sf-plugins-core'
 import { ApexClassRepository } from '../adapter/apexClassRepository.js'
 import { ApexTestRunner } from '../adapter/apexTestRunner.js'
@@ -26,7 +26,8 @@ export class MutationTestingService {
     protected readonly progress: Progress,
     protected readonly spinner: Spinner,
     protected readonly connection: Connection,
-    { apexClassName, apexTestClassName }: ApexMutationParameter
+    { apexClassName, apexTestClassName }: ApexMutationParameter,
+    protected readonly messages: Messages<string>
   ) {
     this.apexClassName = apexClassName
     this.apexTestClassName = apexTestClassName
@@ -113,7 +114,10 @@ export class MutationTestingService {
 
     if (coveredLines.size === 0) {
       throw new Error(
-        `No test coverage found for '${this.apexClassName}'. Ensure '${this.apexTestClassName}' tests exercise the code you want to mutation test.`
+        this.messages.getMessage('error.noCoverage', [
+          this.apexClassName,
+          this.apexTestClassName,
+        ])
       )
     }
 
@@ -134,7 +138,10 @@ export class MutationTestingService {
     if (mutations.length === 0) {
       this.spinner.stop('0 mutations generated')
       throw new Error(
-        `No mutations could be generated for '${this.apexClassName}'. ${coveredLines.size} line(s) covered but no mutable patterns found.`
+        this.messages.getMessage('error.noMutations', [
+          this.apexClassName,
+          coveredLines.size,
+        ])
       )
     }
 
