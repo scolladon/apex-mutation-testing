@@ -10,6 +10,7 @@ import {
 import { ArithmeticOperatorMutator } from '../mutator/arithmeticOperatorMutator.js'
 import { BoundaryConditionMutator } from '../mutator/boundaryConditionMutator.js'
 import { EmptyReturnMutator } from '../mutator/emptyReturnMutator.js'
+import { EmptyStringReturnMutator } from '../mutator/emptyStringReturnMutator.js'
 import { EqualityConditionMutator } from '../mutator/equalityConditionMutator.js'
 import { FalseReturnMutator } from '../mutator/falseReturnMutator.js'
 import { IncrementMutator } from '../mutator/incrementMutator.js'
@@ -43,6 +44,7 @@ export class MutantGenerator {
     const incrementListener = new IncrementMutator()
     const boundaryListener = new BoundaryConditionMutator()
     const emptyReturnListener = new EmptyReturnMutator()
+    const emptyStringReturnListener = new EmptyStringReturnMutator()
     const trueReturnListener = new TrueReturnMutator()
     const falseReturnListener = new FalseReturnMutator()
     const nullReturnListener = new NullReturnMutator()
@@ -55,6 +57,7 @@ export class MutantGenerator {
         incrementListener,
         equalityListener,
         emptyReturnListener,
+        emptyStringReturnListener,
         trueReturnListener,
         falseReturnListener,
         nullReturnListener,
