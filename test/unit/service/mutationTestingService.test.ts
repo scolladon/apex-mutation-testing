@@ -290,7 +290,7 @@ describe('MutationTestingService', () => {
 
         // Act & Assert
         await expect(sut.process()).rejects.toThrow(
-          "No test coverage found for 'TestClass'"
+          "No test coverage found for 'TestClass'. Ensure 'TestClassTest' tests exercise the code you want to mutation test."
         )
       })
     })
@@ -319,7 +319,7 @@ describe('MutationTestingService', () => {
 
         // Act & Assert
         await expect(sut.process()).rejects.toThrow(
-          'No mutations could be generated'
+          "No mutations could be generated for 'TestClass'. 1 line(s) covered but no mutable patterns found."
         )
       })
     })

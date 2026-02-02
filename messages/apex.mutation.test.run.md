@@ -47,3 +47,11 @@ Failure
 💡 Enjoying apex-mutation-testing?
 Your contribution helps us provide fast support 🚀 and high quality features 🔥
 Become a sponsor: https://github.com/sponsors/scolladon 💙
+
+# error.noCoverage
+
+No test coverage found for '%s'. Ensure '%s' tests exercise the code you want to mutation test.
+
+# error.noMutations
+
+No mutations could be generated for '%s'. %s line(s) covered but no mutable patterns found.

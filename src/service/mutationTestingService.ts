@@ -113,9 +113,7 @@ export class MutationTestingService {
 
     if (coveredLines.size === 0) {
       throw new Error(
-        `No test coverage found for '${this.apexClassName}'.\n` +
-          `The test class '${this.apexTestClassName}' does not cover any lines in '${this.apexClassName}'.\n` +
-          `Ensure your tests exercise the code you want to mutation test.`
+        `No test coverage found for '${this.apexClassName}'. Ensure '${this.apexTestClassName}' tests exercise the code you want to mutation test.`
       )
     }
 
@@ -136,13 +134,7 @@ export class MutationTestingService {
     if (mutations.length === 0) {
       this.spinner.stop('0 mutations generated')
       throw new Error(
-        `No mutations could be generated for '${this.apexClassName}'.\n` +
-          `${coveredLines.size} line(s) are covered by tests, but no mutable patterns were found.\n` +
-          `This can happen when covered code contains no:\n` +
-          `  - Arithmetic operators (+, -, *, /)\n` +
-          `  - Comparison operators (<, >, <=, >=, ==, !=)\n` +
-          `  - Increment/decrement operators (++, --)\n` +
-          `  - Return statements (true, false, null, empty)`
+        `No mutations could be generated for '${this.apexClassName}'. ${coveredLines.size} line(s) covered but no mutable patterns found.`
       )
     }
 
