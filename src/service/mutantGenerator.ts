@@ -9,6 +9,7 @@ import {
 } from 'apex-parser'
 import { ArithmeticOperatorMutator } from '../mutator/arithmeticOperatorMutator.js'
 import { BoundaryConditionMutator } from '../mutator/boundaryConditionMutator.js'
+import { EmptyCollectionReturnMutator } from '../mutator/emptyCollectionReturnMutator.js'
 import { EmptyReturnMutator } from '../mutator/emptyReturnMutator.js'
 import { EqualityConditionMutator } from '../mutator/equalityConditionMutator.js'
 import { FalseReturnMutator } from '../mutator/falseReturnMutator.js'
@@ -43,6 +44,7 @@ export class MutantGenerator {
     const incrementListener = new IncrementMutator()
     const boundaryListener = new BoundaryConditionMutator()
     const emptyReturnListener = new EmptyReturnMutator()
+    const emptyCollectionReturnListener = new EmptyCollectionReturnMutator()
     const trueReturnListener = new TrueReturnMutator()
     const falseReturnListener = new FalseReturnMutator()
     const nullReturnListener = new NullReturnMutator()
@@ -55,6 +57,7 @@ export class MutantGenerator {
         incrementListener,
         equalityListener,
         emptyReturnListener,
+        emptyCollectionReturnListener,
         trueReturnListener,
         falseReturnListener,
         nullReturnListener,
