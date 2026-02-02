@@ -19,6 +19,7 @@ import { LogicalOperatorMutator } from '../mutator/logicalOperatorMutator.js'
 import { MutationListener } from '../mutator/mutationListener.js'
 import { NegationMutator } from '../mutator/negationMutator.js'
 import { NullReturnMutator } from '../mutator/nullReturnMutator.js'
+import { RemoveConditionalsMutator } from '../mutator/removeConditionalsMutator.js'
 import { RemoveIncrementsMutator } from '../mutator/removeIncrementsMutator.js'
 import { TrueReturnMutator } from '../mutator/trueReturnMutator.js'
 import { VoidMethodCallMutator } from '../mutator/voidMethodCallMutator.js'
@@ -60,6 +61,7 @@ export class MutantGenerator {
     const removeIncrementsListener = new RemoveIncrementsMutator()
     const voidMethodCallListener = new VoidMethodCallMutator()
     const constructorCallListener = new ConstructorCallMutator()
+    const removeConditionalsListener = new RemoveConditionalsMutator()
 
     const listener = new MutationListener(
       [
@@ -77,6 +79,7 @@ export class MutantGenerator {
         removeIncrementsListener,
         voidMethodCallListener,
         constructorCallListener,
+        removeConditionalsListener,
       ],
       coveredLines,
       methodTypeTable
