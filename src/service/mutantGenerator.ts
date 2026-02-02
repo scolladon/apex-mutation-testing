@@ -21,6 +21,7 @@ import { NegationMutator } from '../mutator/negationMutator.js'
 import { NullReturnMutator } from '../mutator/nullReturnMutator.js'
 import { RemoveConditionalsMutator } from '../mutator/removeConditionalsMutator.js'
 import { RemoveIncrementsMutator } from '../mutator/removeIncrementsMutator.js'
+import { SwitchMutator } from '../mutator/switchMutator.js'
 import { TrueReturnMutator } from '../mutator/trueReturnMutator.js'
 import { VoidMethodCallMutator } from '../mutator/voidMethodCallMutator.js'
 import { ApexMutation } from '../type/ApexMutation.js'
@@ -62,6 +63,7 @@ export class MutantGenerator {
     const voidMethodCallListener = new VoidMethodCallMutator()
     const constructorCallListener = new ConstructorCallMutator()
     const removeConditionalsListener = new RemoveConditionalsMutator()
+    const switchListener = new SwitchMutator()
 
     const listener = new MutationListener(
       [
@@ -80,6 +82,7 @@ export class MutantGenerator {
         voidMethodCallListener,
         constructorCallListener,
         removeConditionalsListener,
+        switchListener,
       ],
       coveredLines,
       methodTypeTable
