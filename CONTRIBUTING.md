@@ -15,6 +15,7 @@ We encourage the developer community to contribute to this repository. This guid
 ## Installation
 
 ### 1) Download the repository
+
 ```bash
 git clone git@github.com:scolladon/apex-mutation-testing.git
 ```
@@ -88,11 +89,13 @@ You can use an interactive command line to help you create supported commit mess
 ```bash
 npm run commit
 ```
+
 ### PR linting
 
 When a PR is ready for merge we use the PR name to create the squash and merge commit message.
 We use the commit convention to auto-generate the content and the type of each release
 It needs to follow our commit lint convention and it will be check at the PR level
+
 ## Git Workflow
 
 The process of submitting a pull request is straightforward and
@@ -151,6 +154,7 @@ git pull upstream main
 git checkout feature/<name-of-the-feature>
 git rebase upstream/main
 ```
+
 _note: If no conflicts arise, these commands will apply your changes on top of the main branch. Resolve any conflicts._
 
 ### Check your submission
@@ -166,6 +170,7 @@ The recommended way to avoid lint issues is to [configure your
 editor](https://biomejs.dev/guides/integrate-in-vcs/) to warn you in real time as you edit the file.
 
 the plugin lint all those things :
+
 - typescript files
 - folder structure
 - plugin parameters
@@ -175,6 +180,7 @@ the plugin lint all those things :
 
 Fixing all existing lint issues is a tedious task so please pitch in by fixing
 the ones related to the files you make changes to!
+
 #### Run tests
 
 Test your change by running the unit tests and integration tests. Instructions [here](#testing).
@@ -193,6 +199,7 @@ git rebase origin/${base_branch}
 # Then force push it
 git push origin ${feature_branch} --force-with-lease
 ```
+
 _note: If your pull request needs more changes, keep working on your feature branch as described above._
 
 CI validates prettifying, linting and tests
@@ -213,3 +220,14 @@ To test SGD as a Salesforce CLI plugin from a pending pull request:
 1. locate the comment with the beta version published in the pull request
 2. install the beta version `sf plugins install apex-mutation-testing@<beta-channel>`
 3. test the plugin!
+
+## How to modify npm tags
+
+Allow to add / move tags to a version
+`npm dist-tag add "sf-git-merge-driver@<version-number>" <tag-name>`
+Ex: npm dist-tag add "sf-git-merge-driver@1.0.0" stable
+
+Used for :
+
+- Moving `stable` and `latest` tags to a version
+- Downgrade `latest-rc` tag to a previous version
