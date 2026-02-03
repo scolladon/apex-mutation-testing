@@ -243,5 +243,9 @@
     }
   },
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scolladon/apex-mutation-testing.git"
+  },
   "author": "Sébastien Colladon (colladonsebastien@gmail.com)"
 }
