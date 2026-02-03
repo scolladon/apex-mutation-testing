@@ -13,6 +13,7 @@ import { EmptyReturnMutator } from '../mutator/emptyReturnMutator.js'
 import { EqualityConditionMutator } from '../mutator/equalityConditionMutator.js'
 import { FalseReturnMutator } from '../mutator/falseReturnMutator.js'
 import { IncrementMutator } from '../mutator/incrementMutator.js'
+import { LogicalOperatorMutator } from '../mutator/logicalOperatorMutator.js'
 import { MutationListener } from '../mutator/mutationListener.js'
 import { NullReturnMutator } from '../mutator/nullReturnMutator.js'
 import { TrueReturnMutator } from '../mutator/trueReturnMutator.js'
@@ -48,6 +49,7 @@ export class MutantGenerator {
     const nullReturnListener = new NullReturnMutator()
     const equalityListener = new EqualityConditionMutator()
     const arithmeticListener = new ArithmeticOperatorMutator()
+    const logicalOperatorListener = new LogicalOperatorMutator()
 
     const listener = new MutationListener(
       [
@@ -59,6 +61,7 @@ export class MutantGenerator {
         falseReturnListener,
         nullReturnListener,
         arithmeticListener,
+        logicalOperatorListener,
       ],
       coveredLines,
       methodTypeTable
