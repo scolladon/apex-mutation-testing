@@ -16,6 +16,7 @@ import { IncrementMutator } from '../mutator/incrementMutator.js'
 import { InvertNegativesMutator } from '../mutator/invertNegativesMutator.js'
 import { LogicalOperatorMutator } from '../mutator/logicalOperatorMutator.js'
 import { MutationListener } from '../mutator/mutationListener.js'
+import { NegationMutator } from '../mutator/negationMutator.js'
 import { NullReturnMutator } from '../mutator/nullReturnMutator.js'
 import { TrueReturnMutator } from '../mutator/trueReturnMutator.js'
 import { ApexMutation } from '../type/ApexMutation.js'
@@ -52,6 +53,7 @@ export class MutantGenerator {
     const arithmeticListener = new ArithmeticOperatorMutator()
     const invertNegativesListener = new InvertNegativesMutator()
     const logicalOperatorListener = new LogicalOperatorMutator()
+    const negationListener = new NegationMutator()
 
     const listener = new MutationListener(
       [
@@ -65,6 +67,7 @@ export class MutantGenerator {
         arithmeticListener,
         invertNegativesListener,
         logicalOperatorListener,
+        negationListener,
       ],
       coveredLines,
       methodTypeTable
