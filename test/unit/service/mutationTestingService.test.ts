@@ -1,5 +1,5 @@
 import { TestResult } from '@salesforce/apex-node'
-import { Connection } from '@salesforce/core'
+import { Connection, Messages } from '@salesforce/core'
 import { Progress, Spinner } from '@salesforce/sf-plugins-core'
 import { ApexClassRepository } from '../../../src/adapter/apexClassRepository.js'
 import { ApexTestRunner } from '../../../src/adapter/apexTestRunner.js'
@@ -18,6 +18,7 @@ describe('MutationTestingService', () => {
   let progress: Progress
   let spinner: Spinner
   let connection: Connection
+  let messagesMock: Messages<string>
 
   const mockApexClass = {
     Id: '123',
@@ -61,10 +62,26 @@ describe('MutationTestingService', () => {
 
     connection = {} as Connection
 
-    sut = new MutationTestingService(progress, spinner, connection, {
-      apexClassName: 'TestClass',
-      apexTestClassName: 'TestClassTest',
-    } as ApexMutationParameter)
+    messagesMock = {
+      getMessage: jest.fn((key: string, args?: string[]) => {
+        const templates: Record<string, string> = {
+          'error.noCoverage': `No test coverage found for '${args?.[0]}'. Ensure '${args?.[1]}' tests exercise the code you want to mutation test.`,
+          'error.noMutations': `No mutations could be generated for '${args?.[0]}'. ${args?.[1]} line(s) covered but no mutable patterns found.`,
+        }
+        return templates[key] || key
+      }),
+    } as unknown as Messages<string>
+
+    sut = new MutationTestingService(
+      progress,
+      spinner,
+      connection,
+      {
+        apexClassName: 'TestClass',
+        apexTestClassName: 'TestClassTest',
+      } as ApexMutationParameter,
+      messagesMock
+    )
   })
 
   describe('Given a mutation testing service', () => {
@@ -267,6 +284,61 @@ describe('MutationTestingService', () => {
           expect(progress.finish).toHaveBeenCalled()
         }
       )
+    })
+
+    describe('When no coverage exists on the class', () => {
+      it('then should throw an error with helpful message', async () => {
+        // Arrange
+        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
+          read: jest.fn().mockResolvedValue(mockApexClass),
+          getApexClassDependencies: jest
+            .fn()
+            .mockResolvedValue([] as MetadataComponentDependency[]),
+        }))
+        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
+          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+            outcome: 'Passed',
+            passing: 1,
+            failing: 0,
+            testsRan: 1,
+            testMethodsPerLine: new Map(), // Empty - no coverage
+          }),
+        }))
+
+        // Act & Assert
+        await expect(sut.process()).rejects.toThrow(
+          "No test coverage found for 'TestClass'. Ensure 'TestClassTest' tests exercise the code you want to mutation test."
+        )
+      })
+    })
+
+    describe('When coverage exists but no mutations are generated', () => {
+      it('then should throw an error with helpful message', async () => {
+        // Arrange
+        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
+          read: jest.fn().mockResolvedValue(mockApexClass),
+          update: jest.fn().mockResolvedValue({}),
+          getApexClassDependencies: jest.fn().mockResolvedValue([]),
+        }))
+        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
+          compute: jest.fn().mockReturnValue([]), // No mutations
+          mutate: jest.fn(),
+        }))
+        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
+          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+            outcome: 'Passed',
+            passing: 1,
+            failing: 0,
+            testsRan: 1,
+            testMethodsPerLine: new Map([[1, new Set(['testMethod'])]]),
+          }),
+        }))
+
+        // Act & Assert
+        await expect(sut.process()).rejects.toThrow(
+          "No mutations could be generated for 'TestClass'. 1 line(s) covered but no mutable patterns found."
+        )
+      })
     })
 
     describe('When calculating mutation score', () => {

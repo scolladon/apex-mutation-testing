@@ -68,6 +68,21 @@ Before running mutation testing:
 
 Remember, mutation testing complements but doesn't replace good test coverage. It helps identify weaknesses in your existing tests, but only for the code they already cover.
 
+### Supported Mutation Operators
+
+The plugin currently supports the following mutation operators. If your code doesn't contain any of these patterns on covered lines, no mutations will be generated:
+
+| Operator | Description | Example |
+|----------|-------------|---------|
+| **Arithmetic** | Swaps arithmetic operators | `a + b` → `a - b`, `a * b` → `a / b` |
+| **Boundary** | Modifies comparison boundaries | `<` → `<=`, `>` → `>=` |
+| **Equality** | Swaps equality operators | `==` → `!=`, `!=` → `==` |
+| **Increment** | Swaps increment/decrement | `i++` → `i--`, `--i` → `++i` |
+| **True Return** | Replaces true returns | `return true` → `return false` |
+| **False Return** | Replaces false returns | `return false` → `return true` |
+| **Null Return** | Replaces object returns with null | `return obj` → `return null` |
+| **Empty Return** | Removes return values for void methods | `return value` → `return` |
+
 <!-- commands -->
 * [`sf apex mutation test run`](#sf-apex-mutation-test-run)
 

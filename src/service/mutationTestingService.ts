@@ -1,5 +1,5 @@
 import { TestResult } from '@salesforce/apex-node'
-import { Connection } from '@salesforce/core'
+import { Connection, Messages } from '@salesforce/core'
 import { Progress, Spinner } from '@salesforce/sf-plugins-core'
 import { ApexClassRepository } from '../adapter/apexClassRepository.js'
 import { ApexTestRunner } from '../adapter/apexTestRunner.js'
@@ -26,7 +26,8 @@ export class MutationTestingService {
     protected readonly progress: Progress,
     protected readonly spinner: Spinner,
     protected readonly connection: Connection,
-    { apexClassName, apexTestClassName }: ApexMutationParameter
+    { apexClassName, apexTestClassName }: ApexMutationParameter,
+    protected readonly messages: Messages<string>
   ) {
     this.apexClassName = apexClassName
     this.apexTestClassName = apexTestClassName
@@ -109,6 +110,17 @@ export class MutationTestingService {
 
     this.spinner.stop('Original tests passed')
 
+    const coveredLines = new Set(testMethodsPerLine.keys())
+
+    if (coveredLines.size === 0) {
+      throw new Error(
+        this.messages.getMessage('error.noCoverage', [
+          this.apexClassName,
+          this.apexTestClassName,
+        ])
+      )
+    }
+
     this.spinner.start(
       `Generating mutants for "${this.apexClassName}" ApexClass`,
       undefined,
@@ -119,9 +131,20 @@ export class MutationTestingService {
     const mutantGenerator = new MutantGenerator()
     const mutations = mutantGenerator.compute(
       apexClass.Body,
-      new Set(testMethodsPerLine.keys()),
+      coveredLines,
       typeResolver
     )
+
+    if (mutations.length === 0) {
+      this.spinner.stop('0 mutations generated')
+      throw new Error(
+        this.messages.getMessage('error.noMutations', [
+          this.apexClassName,
+          coveredLines.size,
+        ])
+      )
+    }
+
     const mutationResults: ApexMutationTestResult = {
       sourceFile: this.apexClassName,
       sourceFileContent: apexClass.Body,
