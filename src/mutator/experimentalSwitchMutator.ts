@@ -45,5 +45,35 @@ export class ExperimentalSwitchMutator extends BaseListener {
         }
       }
     }
+
+    // Mutation 3: Swap adjacent when values
+    this.createSwapAdjacentValuesMutations(whenControls)
+  }
+
+  private isElseCase(whenCtx: ParserRuleContext): boolean {
+    const whenValue = whenCtx.getChild(1) as WhenValueContext
+    return whenValue?.ELSE?.() !== undefined
+  }
+
+  private createSwapAdjacentValuesMutations(
+    whenControls: ParserRuleContext[]
+  ): void {
+    const nonElseCases = whenControls.filter(
+      whenCtx => !this.isElseCase(whenCtx)
+    )
+
+    for (let i = 0; i < nonElseCases.length - 1; i++) {
+      const currentCase = nonElseCases[i]
+      const nextCase = nonElseCases[i + 1]
+
+      const currentValue = currentCase.getChild(1) as ParserRuleContext
+      const nextValue = nextCase.getChild(1) as ParserRuleContext
+
+      if (currentValue && nextValue) {
+        // Swap current value with next value
+        this.createMutationFromParserRuleContext(currentValue, nextValue.text)
+        this.createMutationFromParserRuleContext(nextValue, currentValue.text)
+      }
+    }
   }
 }
