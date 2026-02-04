@@ -259,9 +259,15 @@ describe('ExperimentalSwitchMutator', () => {
   describe('Swap adjacent when values mutation', () => {
     describe('Given a switch statement with two adjacent non-else cases', () => {
       describe('When entering the switch statement', () => {
-        it('Then should create mutations to swap the when values', () => {
+        it('Then should create a single atomic mutation that swaps both when clauses', () => {
           // Arrange
           const whenKeyword = new TerminalNode({ text: 'when' } as Token)
+
+          const firstBlockCtx = {
+            text: '{ handle1(); }',
+            start: { tokenIndex: 4 } as Token,
+            stop: { tokenIndex: 6 } as Token,
+          } as unknown as ParserRuleContext
 
           const firstWhenValueCtx = {
             text: '1',
@@ -278,12 +284,14 @@ describe('ExperimentalSwitchMutator', () => {
             getChild: jest.fn().mockImplementation(index => {
               if (index === 0) return whenKeyword
               if (index === 1) return firstWhenValueCtx
-              return {
-                text: '{ handle1(); }',
-                start: { tokenIndex: 4 } as Token,
-                stop: { tokenIndex: 6 } as Token,
-              } as unknown as ParserRuleContext
+              return firstBlockCtx
             }),
+          } as unknown as ParserRuleContext
+
+          const secondBlockCtx = {
+            text: '{ handle2(); }',
+            start: { tokenIndex: 9 } as Token,
+            stop: { tokenIndex: 11 } as Token,
           } as unknown as ParserRuleContext
 
           const secondWhenValueCtx = {
@@ -301,11 +309,7 @@ describe('ExperimentalSwitchMutator', () => {
             getChild: jest.fn().mockImplementation(index => {
               if (index === 0) return whenKeyword
               if (index === 1) return secondWhenValueCtx
-              return {
-                text: '{ handle2(); }',
-                start: { tokenIndex: 9 } as Token,
-                stop: { tokenIndex: 11 } as Token,
-              } as unknown as ParserRuleContext
+              return secondBlockCtx
             }),
           } as unknown as ParserRuleContext
 
@@ -319,16 +323,23 @@ describe('ExperimentalSwitchMutator', () => {
           // Act
           sut.enterSwitchStatement(switchCtx)
 
-          // Assert - should have swap mutations
-          const swapFirstMutation = sut._mutations.find(
-            m => m.target.text === '1' && m.replacement === '2'
+          // Assert - should have ONE atomic swap mutation spanning both when clauses
+          // The mutation should swap the entire clauses to avoid duplicate value compilation errors
+          const swapMutation = sut._mutations.find(
+            m =>
+              m.target.text === 'when 1 { handle1(); }when 2 { handle2(); }' &&
+              m.replacement === 'when 2 { handle1(); }when 1 { handle2(); }'
           )
-          expect(swapFirstMutation).toBeDefined()
+          expect(swapMutation).toBeDefined()
+          expect(swapMutation?.mutationName).toBe('ExperimentalSwitchMutator')
 
-          const swapSecondMutation = sut._mutations.find(
-            m => m.target.text === '2' && m.replacement === '1'
+          // Should NOT have individual swap mutations that would cause compilation errors
+          const individualSwapMutation = sut._mutations.find(
+            m =>
+              (m.target.text === '1' && m.replacement === '2') ||
+              (m.target.text === '2' && m.replacement === '1')
           )
-          expect(swapSecondMutation).toBeDefined()
+          expect(individualSwapMutation).toBeUndefined()
         })
       })
     })

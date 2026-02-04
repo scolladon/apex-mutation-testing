@@ -68,11 +68,23 @@ export class ExperimentalSwitchMutator extends BaseListener {
 
       const currentValue = currentCase.getChild(1) as ParserRuleContext
       const nextValue = nextCase.getChild(1) as ParserRuleContext
+      const currentBlock = currentCase.getChild(2) as ParserRuleContext
+      const nextBlock = nextCase.getChild(2) as ParserRuleContext
 
-      if (currentValue && nextValue) {
-        // Swap current value with next value
-        this.createMutationFromParserRuleContext(currentValue, nextValue.text)
-        this.createMutationFromParserRuleContext(nextValue, currentValue.text)
+      if (currentValue && nextValue && currentBlock && nextBlock) {
+        // Create atomic swap: replace entire span of both when clauses
+        // with swapped values (keeping blocks in original positions)
+        const originalText = currentCase.text + nextCase.text
+        const swappedText = `when ${nextValue.text} ${currentBlock.text}when ${currentValue.text} ${nextBlock.text}`
+
+        if (currentCase.start && nextCase.stop) {
+          this.createMutation(
+            currentCase.start,
+            nextCase.stop,
+            originalText,
+            swappedText
+          )
+        }
       }
     }
   }
