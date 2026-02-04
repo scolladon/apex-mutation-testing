@@ -190,7 +190,7 @@ describe('MutationTestingService', () => {
           testResult: null,
           expectedStatus: 'RuntimeError',
           error: new Error(
-            'System.NullPointerException: Attempt to de-reference a null object'
+            'Unable to refresh session due to: Error authenticating with the refresh token due to: expired access/refresh token'
           ),
           updateError: null,
           expectedSpinnerStops: 5,
@@ -199,7 +199,7 @@ describe('MutationTestingService', () => {
               mutatorName: 'TestMutation',
               status: 'RuntimeError',
               statusReason:
-                'System.NullPointerException: Attempt to de-reference a null object',
+                'Unable to refresh session due to: Error authenticating with the refresh token due to: expired access/refresh token',
               replacement: '0',
               original: '42',
             }),
