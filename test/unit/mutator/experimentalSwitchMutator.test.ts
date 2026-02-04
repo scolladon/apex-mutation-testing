@@ -255,4 +255,193 @@ describe('ExperimentalSwitchMutator', () => {
       })
     })
   })
+
+  describe('Swap adjacent when values mutation', () => {
+    describe('Given a switch statement with two adjacent non-else cases', () => {
+      describe('When entering the switch statement', () => {
+        it('Then should create mutations to swap the when values', () => {
+          // Arrange
+          const whenKeyword = new TerminalNode({ text: 'when' } as Token)
+
+          const firstWhenValueCtx = {
+            text: '1',
+            start: { tokenIndex: 3 } as Token,
+            stop: { tokenIndex: 3 } as Token,
+            ELSE: () => undefined,
+          } as unknown as ParserRuleContext
+
+          const firstWhenCtx = {
+            childCount: 3,
+            text: 'when 1 { handle1(); }',
+            start: { tokenIndex: 2, line: 5 } as Token,
+            stop: { tokenIndex: 6 } as Token,
+            getChild: jest.fn().mockImplementation(index => {
+              if (index === 0) return whenKeyword
+              if (index === 1) return firstWhenValueCtx
+              return {
+                text: '{ handle1(); }',
+                start: { tokenIndex: 4 } as Token,
+                stop: { tokenIndex: 6 } as Token,
+              } as unknown as ParserRuleContext
+            }),
+          } as unknown as ParserRuleContext
+
+          const secondWhenValueCtx = {
+            text: '2',
+            start: { tokenIndex: 8 } as Token,
+            stop: { tokenIndex: 8 } as Token,
+            ELSE: () => undefined,
+          } as unknown as ParserRuleContext
+
+          const secondWhenCtx = {
+            childCount: 3,
+            text: 'when 2 { handle2(); }',
+            start: { tokenIndex: 7, line: 8 } as Token,
+            stop: { tokenIndex: 11 } as Token,
+            getChild: jest.fn().mockImplementation(index => {
+              if (index === 0) return whenKeyword
+              if (index === 1) return secondWhenValueCtx
+              return {
+                text: '{ handle2(); }',
+                start: { tokenIndex: 9 } as Token,
+                stop: { tokenIndex: 11 } as Token,
+              } as unknown as ParserRuleContext
+            }),
+          } as unknown as ParserRuleContext
+
+          const switchCtx = {
+            childCount: 6,
+            whenControl: jest
+              .fn()
+              .mockReturnValue([firstWhenCtx, secondWhenCtx]),
+          } as unknown as ParserRuleContext
+
+          // Act
+          sut.enterSwitchStatement(switchCtx)
+
+          // Assert - should have swap mutations
+          const swapFirstMutation = sut._mutations.find(
+            m => m.target.text === '1' && m.replacement === '2'
+          )
+          expect(swapFirstMutation).toBeDefined()
+
+          const swapSecondMutation = sut._mutations.find(
+            m => m.target.text === '2' && m.replacement === '1'
+          )
+          expect(swapSecondMutation).toBeDefined()
+        })
+      })
+    })
+
+    describe('Given a switch statement with only one non-else case', () => {
+      describe('When entering the switch statement', () => {
+        it('Then should not create swap mutations', () => {
+          // Arrange
+          const whenKeyword = new TerminalNode({ text: 'when' } as Token)
+
+          const firstWhenValueCtx = {
+            text: '1',
+            start: { tokenIndex: 3 } as Token,
+            stop: { tokenIndex: 3 } as Token,
+            ELSE: () => undefined,
+          } as unknown as ParserRuleContext
+
+          const firstWhenCtx = {
+            childCount: 3,
+            text: 'when 1 { handle1(); }',
+            start: { tokenIndex: 2, line: 5 } as Token,
+            stop: { tokenIndex: 6 } as Token,
+            getChild: jest.fn().mockImplementation(index => {
+              if (index === 0) return whenKeyword
+              if (index === 1) return firstWhenValueCtx
+              return {
+                text: '{ handle1(); }',
+              } as unknown as ParserRuleContext
+            }),
+          } as unknown as ParserRuleContext
+
+          const switchCtx = {
+            childCount: 5,
+            whenControl: jest.fn().mockReturnValue([firstWhenCtx]),
+          } as unknown as ParserRuleContext
+
+          // Act
+          sut.enterSwitchStatement(switchCtx)
+
+          // Assert - no swap mutations
+          expect(sut._mutations).toHaveLength(0)
+        })
+      })
+    })
+
+    describe('Given a switch with non-else case followed by else case', () => {
+      describe('When entering the switch statement', () => {
+        it('Then should not create swap mutation between them', () => {
+          // Arrange
+          const whenKeyword = new TerminalNode({ text: 'when' } as Token)
+          const elseKeyword = new TerminalNode({ text: 'else' } as Token)
+
+          const firstWhenValueCtx = {
+            text: '1',
+            start: { tokenIndex: 3 } as Token,
+            stop: { tokenIndex: 3 } as Token,
+            ELSE: () => undefined,
+          } as unknown as ParserRuleContext
+
+          const firstWhenCtx = {
+            childCount: 3,
+            text: 'when 1 { handle1(); }',
+            start: { tokenIndex: 2, line: 5 } as Token,
+            stop: { tokenIndex: 6 } as Token,
+            getChild: jest.fn().mockImplementation(index => {
+              if (index === 0) return whenKeyword
+              if (index === 1) return firstWhenValueCtx
+              return {
+                text: '{ handle1(); }',
+                start: { tokenIndex: 4 } as Token,
+                stop: { tokenIndex: 6 } as Token,
+              } as unknown as ParserRuleContext
+            }),
+          } as unknown as ParserRuleContext
+
+          const elseWhenValueCtx = {
+            text: 'else',
+            start: { tokenIndex: 8 } as Token,
+            stop: { tokenIndex: 8 } as Token,
+            ELSE: () => elseKeyword,
+          } as unknown as ParserRuleContext
+
+          const elseWhenCtx = {
+            childCount: 3,
+            text: 'when else { handleDefault(); }',
+            start: { tokenIndex: 7, line: 8 } as Token,
+            stop: { tokenIndex: 12 } as Token,
+            getChild: jest.fn().mockImplementation(index => {
+              if (index === 0) return whenKeyword
+              if (index === 1) return elseWhenValueCtx
+              return {
+                text: '{ handleDefault(); }',
+                start: { tokenIndex: 9 } as Token,
+                stop: { tokenIndex: 12 } as Token,
+              } as unknown as ParserRuleContext
+            }),
+          } as unknown as ParserRuleContext
+
+          const switchCtx = {
+            childCount: 6,
+            whenControl: jest.fn().mockReturnValue([firstWhenCtx, elseWhenCtx]),
+          } as unknown as ParserRuleContext
+
+          // Act
+          sut.enterSwitchStatement(switchCtx)
+
+          // Assert - no swap mutations (only remove-else and duplicate mutations)
+          const swapMutation = sut._mutations.find(
+            m => m.target.text === '1' && m.replacement === 'else'
+          )
+          expect(swapMutation).toBeUndefined()
+        })
+      })
+    })
+  })
 })
