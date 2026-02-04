@@ -10,6 +10,13 @@ export class MutationListener implements ApexParserListener {
   private listeners: BaseListener[]
   _mutations: ApexMutation[] = []
 
+  // Methods that should always be called regardless of covered lines
+  // These are needed for tracking method context in type-aware mutators
+  private static readonly ALWAYS_FORWARD_METHODS = new Set([
+    'enterMethodDeclaration',
+    'exitMethodDeclaration',
+  ])
+
   public getMutations() {
     return this._mutations
   }
@@ -46,7 +53,11 @@ export class MutationListener implements ApexParserListener {
         return (...args: unknown[]) => {
           if (Array.isArray(args) && args.length > 0) {
             const ctx = args[0] as ParserRuleContext
-            if (this.coveredLines.has(ctx?.start?.line)) {
+            const shouldForward =
+              MutationListener.ALWAYS_FORWARD_METHODS.has(prop as string) ||
+              this.coveredLines.has(ctx?.start?.line)
+
+            if (shouldForward) {
               this.listeners.forEach(listener => {
                 if (prop in listener && typeof listener[prop] === 'function') {
                   ;(listener[prop] as Function).apply(listener, args)
