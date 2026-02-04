@@ -265,10 +265,9 @@ export class MutationTestingService {
     if (validMutants.length === 0) {
       return 0
     }
+    const killedStatuses = new Set(['Killed', 'RuntimeError'])
     return (
-      (validMutants.filter(
-        mutant => mutant.status === 'Killed' || mutant.status === 'RuntimeError'
-      ).length /
+      (validMutants.filter(mutant => killedStatuses.has(mutant.status)).length /
         validMutants.length) *
       100
     )
