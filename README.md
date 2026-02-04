@@ -85,6 +85,56 @@ The plugin currently supports the following mutation operators. If your code doe
 | **Null Return**  | Replaces object returns with null      | `return obj` → `return null`         |
 | **Empty Return** | Removes return values for void methods | `return value` → `return`            |
 
+### Mutation Result Statuses
+
+Each mutant is assigned a status after evaluation:
+
+#### Killed
+
+A **Killed** mutant means your tests detected the mutation and failed as a result. This is the ideal outcome. It proves your tests are actively verifying the behavior that was changed. For example, if `subTotal + tax` is mutated to `subTotal - tax` and your test fails, the mutant is killed.
+
+**What to look for:** A high number of killed mutants indicates strong, assertion-rich tests that validate actual logic and branch coverage rather than just executing code paths.
+
+#### Survived
+
+A **Survived** mutant means the mutation was introduced, your tests ran against it, and they all still passed. This is the most actionable status. It reveals a gap in your test assertions. The code was changed, but no test noticed. 
+
+**What to look for:** Survived mutants highlight areas where you need stronger assertions. Common causes include:
+- Missing assertions on return values or side effects
+- Tests that only check happy-path structure without verifying computed values
+- Assertions that are too broad (e.g. checking not-null instead of checking the exact value)
+
+#### CompileError
+
+A **CompileError** mutant means the mutated code failed to compile during deployment, so no tests were run against it. This typically happens when a mutation tool produces syntactically invalid Apex code. You may ignore these and report them as an issue to us. 
+
+**What to look for:** Compile errors are excluded from the score entirely. They do not indicate a problem with your tests. The mutation simply wasn't valid for that code.
+
+#### RuntimeError
+
+A **RuntimeError** means an unexpected error occurred during the mutation evaluation. These errors are the result of networking issues, authorization issues, or other issues not directly related to your code. 
+
+**What to look for:** A high number of runtime errors may indicate connectivity or org stability issues. If you see many runtime errors, consider re-running the mutation test when the environment is more stable to get more accurate results.
+
+#### NoCoverage
+
+A **NoCoverage** mutant means the mutated line is not covered by any of your test methods. Since the test never executes that line, the mutation cannot be detected. These mutants count against your score the same way survived mutants do.
+
+**What to look for:** NoCoverage mutants point to lines your tests never reach. Adding tests that exercise those code paths will both improve your code coverage and your mutation score.
+
+#### Mutation Score
+
+The mutation score measures how effective your tests are at detecting code changes:
+
+```
+Score = (Killed + RuntimeError) / (Total - CompileError) * 100
+```
+
+- **CompileError** mutants are excluded from the total since they represent invalid mutations, not test gaps.
+- **Survived** and **NoCoverage** mutants lower your score because they represent undetected changes.
+
+A higher score means your tests are better at catching real bugs. Aim to reduce survived mutants by adding targeted assertions for the specific logic each surviving mutation affected.
+
 <!-- commands -->
 * [`sf apex mutation test run`](#sf-apex-mutation-test-run)
 

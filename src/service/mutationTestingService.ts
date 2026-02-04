@@ -17,6 +17,46 @@ interface TokenTargetInfo {
   text: string
 }
 
+interface ErrorClassification {
+  status: 'CompileError' | 'Killed' | 'RuntimeError'
+  statusReason?: string
+  progressMessage: string
+}
+
+interface ErrorClassificationStrategy {
+  matches(errorMessage: string): boolean
+  classify(
+    errorMessage: string,
+    targetInfo: TokenTargetInfo
+  ): ErrorClassification
+}
+
+const errorStrategies: ErrorClassificationStrategy[] = [
+  {
+    matches: msg => msg.startsWith('Deployment failed:'),
+    classify: (msg, targetInfo) => ({
+      status: 'CompileError',
+      statusReason: msg,
+      progressMessage: `Mutation result: compile error at line ${targetInfo.line}`,
+    }),
+  },
+  {
+    matches: msg => msg.includes('LIMIT_USAGE_FOR_NS'),
+    classify: msg => ({
+      status: 'Killed',
+      progressMessage: `Mutation result: mutant killed (${msg})`,
+    }),
+  },
+  {
+    matches: () => true,
+    classify: (msg) => ({
+      status: 'RuntimeError',
+      statusReason: msg,
+      progressMessage: `Mutation result: runtime error (${msg})`,
+    }),
+  },
+]
+
 export class MutationTestingService {
   protected readonly apexClassName: string
   protected readonly apexTestClassName: string
@@ -212,48 +252,21 @@ export class MutationTestingService {
         )
         const originalText = this.extractMutationOriginalText(mutation)
 
-        if (errorMessage.startsWith('Deployment failed:')) {
-          // Deployment/compile failures -> CompileError
-          const compileErrorMutant = {
-            id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
-            mutatorName: mutation.mutationName,
-            status: 'CompileError' as const,
-            statusReason: errorMessage,
-            location,
-            replacement: mutation.replacement,
-            original: originalText,
-          }
+        const strategy = errorStrategies.find(s => s.matches(errorMessage))!
+        const classification = strategy.classify(errorMessage, targetInfo)
 
-          mutationResults.mutants.push(compileErrorMutant)
-          progressMessage = `Mutation result: compile error at line ${targetInfo.line}`
-        } else if (errorMessage.includes('LIMIT_USAGE_FOR_NS')) {
-          // Governor limit exceptions -> Killed
-          const killedMutant = {
-            id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
-            mutatorName: mutation.mutationName,
-            status: 'Killed' as const,
-            location,
-            replacement: mutation.replacement,
-            original: originalText,
-          }
-
-          mutationResults.mutants.push(killedMutant)
-          progressMessage = `Mutation result: mutant killed (${errorMessage})`
-        } else {
-          // Other runtime exceptions -> RuntimeError
-          const runtimeErrorMutant = {
-            id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
-            mutatorName: mutation.mutationName,
-            status: 'RuntimeError' as const,
-            statusReason: errorMessage,
-            location,
-            replacement: mutation.replacement,
-            original: originalText,
-          }
-
-          mutationResults.mutants.push(runtimeErrorMutant)
-          progressMessage = `Mutation result: runtime error at line ${targetInfo.line}`
-        }
+        mutationResults.mutants.push({
+          id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
+          mutatorName: mutation.mutationName,
+          status: classification.status,
+          ...(classification.statusReason && {
+            statusReason: classification.statusReason,
+          }),
+          location,
+          replacement: mutation.replacement,
+          original: originalText,
+        })
+        progressMessage = classification.progressMessage
       }
       ++mutationCount
       this.progress.update(mutationCount, {
