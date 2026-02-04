@@ -166,5 +166,70 @@ describe('ApexClassRepository', () => {
         )
       })
     })
+
+    describe('given the deployment is initially queued', () => {
+      it('then should poll until completed', async () => {
+        // Arrange
+        const mockApexClass = {
+          Id: '123',
+          Body: 'public class TestClass {}',
+        }
+
+        createMock
+          .mockResolvedValueOnce({ id: 'container123' })
+          .mockResolvedValueOnce({ id: 'member123' })
+          .mockResolvedValueOnce({ id: 'request123' })
+
+        retrieveMock
+          .mockResolvedValueOnce({ State: 'Queued', Id: 'request123' })
+          .mockResolvedValueOnce({ State: 'InProgress', Id: 'request123' })
+          .mockResolvedValueOnce({ State: 'Completed', Id: 'request123' })
+
+        // Act
+        const result = await sut.update(mockApexClass)
+
+        // Assert
+        expect(result).toEqual({ State: 'Completed', Id: 'request123' })
+        expect(retrieveMock).toHaveBeenCalledTimes(3)
+      })
+    })
+
+    describe('given the deployment fails after being queued', () => {
+      it('then should poll until failed and throw error', async () => {
+        // Arrange
+        const mockApexClass = {
+          Id: '123',
+          Body: 'public class TestClass {}',
+        }
+
+        createMock
+          .mockResolvedValueOnce({ id: 'container123' })
+          .mockResolvedValueOnce({ id: 'member123' })
+          .mockResolvedValueOnce({ id: 'request123' })
+
+        retrieveMock
+          .mockResolvedValueOnce({ State: 'Queued', Id: 'request123' })
+          .mockResolvedValueOnce({
+            State: 'Failed',
+            ErrorMsg: 'Compilation error',
+            DeployDetails: {
+              allComponentMessages: [
+                {
+                  fileName: 'TestClass.cls',
+                  lineNumber: 5,
+                  columnNumber: 15,
+                  problem: 'Invalid operator for String',
+                },
+              ],
+            },
+          })
+
+        // Act & Assert
+        await expect(sut.update(mockApexClass)).rejects.toThrow(
+          'Deployment failed:\n[TestClass.cls:5:15] Invalid operator for String'
+        )
+        expect(retrieveMock).toHaveBeenCalledTimes(2)
+      })
+    })
   })
 })

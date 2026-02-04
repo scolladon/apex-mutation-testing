@@ -67,7 +67,8 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       this.progress,
       this.spinner,
       connection,
-      parameters
+      parameters,
+      messages
     )
     const mutationResult = await mutationTestingService.process()
 

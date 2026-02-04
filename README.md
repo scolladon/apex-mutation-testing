@@ -30,9 +30,9 @@ The apex-mutation-testing plugin implements this technique for Salesforce Apex c
 3. Deploying each mutated version to a Salesforce org
 4. Running your test class against each mutation
 5. Analyzing the results to determine if your tests:
-    - Detected the mutation (killed the mutant)
-    - Failed to detect the mutation (created a zombie)
-    - Caused a test failure unrelated to the mutation
+   - Detected the mutation (killed the mutant)
+   - Failed to detect the mutation (created a zombie)
+   - Caused a test failure unrelated to the mutation
 6. Generating a detailed report showing mutation coverage and test effectiveness
 
 This process helps you identify areas where your tests may be insufficient and provides insights into improving your test quality.
@@ -42,6 +42,7 @@ cf this [idea](https://ideas.salesforce.com/s/idea/a0B8W00000GdmxmUAB/use-mutati
 ## How to use it?
 
 Fast unit tests are crucial for mutation testing as each detected mutation is deployed and tested individually. The plugin generates numerous mutations, and having quick-running tests allows for:
+
 1. Efficient execution of the mutation testing process
 2. Faster feedback on test coverage quality
 3. Ability to test more mutations within time constraints
@@ -61,12 +62,28 @@ To maximize the benefits of mutation testing, your test class should have very h
 3. **Mutation Detection**: Mutations detection can be optimized by being scoped to code that is executed by your tests. Uncovered code means not relevant mutations for your tests.
 
 Before running mutation testing:
+
 - Ensure your test class achieves maximum coverage
 - Verify all critical paths are tested
 - Include edge case scenarios
 - Validate test assertions are comprehensive
 
 Remember, mutation testing complements but doesn't replace good test coverage. It helps identify weaknesses in your existing tests, but only for the code they already cover.
+
+### Supported Mutation Operators
+
+The plugin currently supports the following mutation operators. If your code doesn't contain any of these patterns on covered lines, no mutations will be generated:
+
+| Operator         | Description                            | Example                              |
+| ---------------- | -------------------------------------- | ------------------------------------ |
+| **Arithmetic**   | Swaps arithmetic operators             | `a + b` → `a - b`, `a * b` → `a / b` |
+| **Boundary**     | Modifies comparison boundaries         | `<` → `<=`, `>` → `>=`               |
+| **Equality**     | Swaps equality operators               | `==` → `!=`, `!=` → `==`             |
+| **Increment**    | Swaps increment/decrement              | `i++` → `i--`, `--i` → `++i`         |
+| **True Return**  | Replaces true returns                  | `return true` → `return false`       |
+| **False Return** | Replaces false returns                 | `return false` → `return true`       |
+| **Null Return**  | Replaces object returns with null      | `return obj` → `return null`         |
+| **Empty Return** | Removes return values for void methods | `return value` → `return`            |
 
 <!-- commands -->
 * [`sf apex mutation test run`](#sf-apex-mutation-test-run)
@@ -106,6 +123,9 @@ EXAMPLES
 
     $ sf apex mutation test run --apex-class MyClass --test-class MyClassTest
 ```
+
+_See code: [src/commands/apex/mutation/test/run.ts](https://github.com/scolladon/apex-mutation-testing/blob/main/src/commands/apex/mutation/test/run.ts)_
+
 <!-- commandsstop -->
 
 ## Backlog

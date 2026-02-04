@@ -64,8 +64,8 @@ describe('MutantGenerator', () => {
       // Act
       const result = sut.compute(classContent, coveredLines)
 
-      // Assert
-      expect(result).toHaveLength(2) // Both < and ++ should be found
+      // Assert - at least 3 mutations: < -> <=, ++ -> --, ++i -> i
+      expect(result.length).toBeGreaterThanOrEqual(3)
 
       const incrementMutation = result.find(
         m => m.mutationName === 'IncrementMutator'
@@ -73,12 +73,18 @@ describe('MutantGenerator', () => {
       const boundaryMutation = result.find(
         m => m.mutationName === 'BoundaryConditionMutator'
       )
+      const removeIncrementsMutation = result.find(
+        m => m.mutationName === 'RemoveIncrementsMutator'
+      )
 
       expect(incrementMutation).toBeDefined()
       expect(incrementMutation?.replacement).toBe('--')
 
       expect(boundaryMutation).toBeDefined()
       expect(boundaryMutation?.replacement).toBe('<=')
+
+      expect(removeIncrementsMutation).toBeDefined()
+      expect(removeIncrementsMutation?.replacement).toBe('i')
     })
   })
 

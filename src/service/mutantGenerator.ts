@@ -9,13 +9,21 @@ import {
 } from 'apex-parser'
 import { ArithmeticOperatorMutator } from '../mutator/arithmeticOperatorMutator.js'
 import { BoundaryConditionMutator } from '../mutator/boundaryConditionMutator.js'
+import { ConstructorCallMutator } from '../mutator/constructorCallMutator.js'
 import { EmptyReturnMutator } from '../mutator/emptyReturnMutator.js'
 import { EqualityConditionMutator } from '../mutator/equalityConditionMutator.js'
 import { FalseReturnMutator } from '../mutator/falseReturnMutator.js'
 import { IncrementMutator } from '../mutator/incrementMutator.js'
+import { InvertNegativesMutator } from '../mutator/invertNegativesMutator.js'
+import { LogicalOperatorMutator } from '../mutator/logicalOperatorMutator.js'
 import { MutationListener } from '../mutator/mutationListener.js'
+import { NegationMutator } from '../mutator/negationMutator.js'
 import { NullReturnMutator } from '../mutator/nullReturnMutator.js'
+import { RemoveConditionalsMutator } from '../mutator/removeConditionalsMutator.js'
+import { RemoveIncrementsMutator } from '../mutator/removeIncrementsMutator.js'
+import { SwitchMutator } from '../mutator/switchMutator.js'
 import { TrueReturnMutator } from '../mutator/trueReturnMutator.js'
+import { VoidMethodCallMutator } from '../mutator/voidMethodCallMutator.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexTypeResolver } from './apexTypeResolver.js'
 
@@ -48,6 +56,14 @@ export class MutantGenerator {
     const nullReturnListener = new NullReturnMutator()
     const equalityListener = new EqualityConditionMutator()
     const arithmeticListener = new ArithmeticOperatorMutator()
+    const invertNegativesListener = new InvertNegativesMutator()
+    const logicalOperatorListener = new LogicalOperatorMutator()
+    const negationListener = new NegationMutator()
+    const removeIncrementsListener = new RemoveIncrementsMutator()
+    const voidMethodCallListener = new VoidMethodCallMutator()
+    const constructorCallListener = new ConstructorCallMutator()
+    const removeConditionalsListener = new RemoveConditionalsMutator()
+    const switchListener = new SwitchMutator()
 
     const listener = new MutationListener(
       [
@@ -59,6 +75,14 @@ export class MutantGenerator {
         falseReturnListener,
         nullReturnListener,
         arithmeticListener,
+        invertNegativesListener,
+        logicalOperatorListener,
+        negationListener,
+        removeIncrementsListener,
+        voidMethodCallListener,
+        constructorCallListener,
+        removeConditionalsListener,
+        switchListener,
       ],
       coveredLines,
       methodTypeTable
