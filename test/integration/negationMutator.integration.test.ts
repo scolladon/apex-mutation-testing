@@ -1,3 +1,4 @@
+import { ParserRuleContext } from 'antlr4ts'
 import {
   ApexLexer,
   ApexParser,
@@ -8,6 +9,7 @@ import {
 } from 'apex-parser'
 import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { NegationMutator } from '../../src/mutator/negationMutator.js'
+import { ApexTypeResolver } from '../../src/service/apexTypeResolver.js'
 
 describe('NegationMutator Integration', () => {
   const parseAndMutate = (code: string, coveredLines: Set<number>) => {
@@ -16,8 +18,15 @@ describe('NegationMutator Integration', () => {
     const parser = new ApexParser(tokenStream)
     const tree = parser.compilationUnit()
 
+    const resolver = new ApexTypeResolver()
+    const typeTable = resolver.analyzeMethodTypes(tree as ParserRuleContext)
+
     const negationMutator = new NegationMutator()
-    const listener = new MutationListener([negationMutator], coveredLines)
+    const listener = new MutationListener(
+      [negationMutator],
+      coveredLines,
+      typeTable
+    )
 
     ParseTreeWalker.DEFAULT.walk(listener as ApexParserListener, tree)
     return listener.getMutations()
@@ -108,7 +117,7 @@ describe('NegationMutator Integration', () => {
   })
 
   describe('Given Apex code with return statement returning boolean', () => {
-    it('Then should not generate mutation for true', () => {
+    it('Then should not generate mutation for Boolean return type', () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -144,7 +153,7 @@ describe('NegationMutator Integration', () => {
   })
 
   describe('Given Apex code with return statement returning null', () => {
-    it('Then should not generate mutation', () => {
+    it('Then should not generate mutation for Object return type', () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -163,7 +172,7 @@ describe('NegationMutator Integration', () => {
   })
 
   describe('Given Apex code with return statement returning string', () => {
-    it('Then should not generate mutation', () => {
+    it('Then should not generate mutation for String return type', () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -220,7 +229,7 @@ describe('NegationMutator Integration', () => {
   })
 
   describe('Given Apex code with return statement returning expression', () => {
-    it('Then should generate mutation to negate the expression', () => {
+    it('Then should generate mutation with parentheses around the expression', () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -235,7 +244,133 @@ describe('NegationMutator Integration', () => {
 
       // Assert
       expect(mutations.length).toBe(1)
-      expect(mutations[0].replacement).toBe('-a+b')
+      expect(mutations[0].replacement).toBe('-(a+b)')
+    })
+  })
+
+  describe('Given Apex code with various numeric types', () => {
+    it('Then should generate mutation for Long return type', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public Long test() {
+            return x;
+          }
+        }
+      `
+
+      // Act
+      const mutations = parseAndMutate(code, new Set([4]))
+
+      // Assert
+      expect(mutations.length).toBe(1)
+      expect(mutations[0].replacement).toBe('-x')
+    })
+
+    it('Then should generate mutation for Double return type', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public Double test() {
+            return 3.14;
+          }
+        }
+      `
+
+      // Act
+      const mutations = parseAndMutate(code, new Set([4]))
+
+      // Assert
+      expect(mutations.length).toBe(1)
+      expect(mutations[0].replacement).toBe('-3.14')
+    })
+
+    it('Then should generate mutation for Decimal return type', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public Decimal test() {
+            return amount;
+          }
+        }
+      `
+
+      // Act
+      const mutations = parseAndMutate(code, new Set([4]))
+
+      // Assert
+      expect(mutations.length).toBe(1)
+      expect(mutations[0].replacement).toBe('-amount')
+    })
+  })
+
+  describe('Given Apex code with non-numeric return types', () => {
+    it('Then should not generate mutation for List return type', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public List<String> test() {
+            return items;
+          }
+        }
+      `
+
+      // Act
+      const mutations = parseAndMutate(code, new Set([4]))
+
+      // Assert
+      expect(mutations.length).toBe(0)
+    })
+
+    it('Then should not generate mutation for Map return type', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public Map<Id, Account> test() {
+            return records;
+          }
+        }
+      `
+
+      // Act
+      const mutations = parseAndMutate(code, new Set([4]))
+
+      // Assert
+      expect(mutations.length).toBe(0)
+    })
+
+    it('Then should not generate mutation for SObject return type', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public Account test() {
+            return acc;
+          }
+        }
+      `
+
+      // Act
+      const mutations = parseAndMutate(code, new Set([4]))
+
+      // Assert
+      expect(mutations.length).toBe(0)
+    })
+
+    it('Then should not generate mutation for Date return type', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public Date test() {
+            return d;
+          }
+        }
+      `
+
+      // Act
+      const mutations = parseAndMutate(code, new Set([4]))
+
+      // Assert
+      expect(mutations.length).toBe(0)
     })
   })
 })
