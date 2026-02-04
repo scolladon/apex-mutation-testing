@@ -260,14 +260,15 @@ export class MutationTestingService {
 
   public calculateScore(mutationResult: ApexMutationTestResult) {
     const validMutants = mutationResult.mutants.filter(
-      mutant =>
-        mutant.status !== 'CompileError' && mutant.status !== 'RuntimeError'
+      mutant => mutant.status !== 'CompileError'
     )
     if (validMutants.length === 0) {
       return 0
     }
     return (
-      (validMutants.filter(mutant => mutant.status === 'Killed').length /
+      (validMutants.filter(
+        mutant => mutant.status === 'Killed' || mutant.status === 'RuntimeError'
+      ).length /
         validMutants.length) *
       100
     )

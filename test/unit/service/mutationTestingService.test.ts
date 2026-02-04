@@ -340,28 +340,28 @@ describe('MutationTestingService', () => {
           expectedScore: 0,
         },
         {
-          description: 'with runtime errors excluded from score',
+          description: 'with runtime errors counted as killed in score',
           mutants: [
             { status: 'Killed' },
             { status: 'Survived' },
             { status: 'RuntimeError' },
           ],
-          expectedScore: 50,
+          expectedScore: 66.66666666666666,
         },
         {
           description: 'with only runtime errors',
           mutants: [{ status: 'RuntimeError' }, { status: 'RuntimeError' }],
-          expectedScore: 0,
+          expectedScore: 100,
         },
         {
-          description: 'with mixed compile and runtime errors excluded',
+          description: 'with mixed compile and runtime errors',
           mutants: [
             { status: 'Killed' },
             { status: 'CompileError' },
             { status: 'RuntimeError' },
             { status: 'Survived' },
           ],
-          expectedScore: 50,
+          expectedScore: 66.66666666666666,
         },
       ]
 
