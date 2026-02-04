@@ -24,7 +24,26 @@ export class ExperimentalSwitchMutator extends BaseListener {
     })
 
     if (elseCase) {
+      // Mutation 1: Remove else case entirely
       this.createMutationFromParserRuleContext(elseCase, '')
+
+      // Mutation 2: Duplicate first case block into else block
+      const firstNonElseCase = whenControls.find(whenCtx => {
+        const whenValue = whenCtx.getChild(1) as WhenValueContext
+        return whenValue?.ELSE?.() === undefined
+      })
+
+      if (firstNonElseCase) {
+        const firstCaseBlock = firstNonElseCase.getChild(2) as ParserRuleContext
+        const elseBlock = elseCase.getChild(2) as ParserRuleContext
+
+        if (firstCaseBlock?.text && elseBlock) {
+          this.createMutationFromParserRuleContext(
+            elseBlock,
+            firstCaseBlock.text
+          )
+        }
+      }
     }
   }
 }

@@ -77,15 +77,21 @@ describe('ExperimentalSwitchMutator', () => {
           // Act
           sut.enterSwitchStatement(switchCtx)
 
-          // Assert
-          expect(sut._mutations).toHaveLength(1)
-          expect(sut._mutations[0].replacement).toBe('')
-          expect(sut._mutations[0].target.text).toBe(
+          // Assert - 2 mutations: remove else + duplicate first into else
+          expect(sut._mutations).toHaveLength(2)
+
+          const removeMutation = sut._mutations.find(m => m.replacement === '')
+          expect(removeMutation).toBeDefined()
+          expect(removeMutation?.target.text).toBe(
             'when else { handleDefault(); }'
           )
-          expect(sut._mutations[0].mutationName).toBe(
-            'ExperimentalSwitchMutator'
+          expect(removeMutation?.mutationName).toBe('ExperimentalSwitchMutator')
+
+          const duplicateMutation = sut._mutations.find(
+            m => m.replacement === '{ handle1(); }'
           )
+          expect(duplicateMutation).toBeDefined()
+          expect(duplicateMutation?.target.text).toBe('{ handleDefault(); }')
         })
       })
     })
