@@ -49,7 +49,7 @@ const errorStrategies: ErrorClassificationStrategy[] = [
   },
   {
     matches: () => true,
-    classify: (msg) => ({
+    classify: msg => ({
       status: 'RuntimeError',
       statusReason: msg,
       progressMessage: `Mutation result: runtime error (${msg})`,
