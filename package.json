@@ -67,6 +67,8 @@
     "compile": "wireit",
     "dependencies:upgrade": "npx npm-check-updates -u ; npm install ; npm audit fix",
     "deploy:testclasses": "sf project deploy start -d test/classes",
+    "devops:cleanup:dev-tag": "./tooling/devops-cleanup.sh",
+    "devops:move-tag": "./tooling/devops-movetag.sh",
     "lint": "wireit",
     "lint:dependencies": "wireit",
     "lint:fix": "wireit",
