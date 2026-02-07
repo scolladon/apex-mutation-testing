@@ -127,7 +127,7 @@ A **NoCoverage** mutant means the mutated line is not covered by any of your tes
 The mutation score measures how effective your tests are at detecting code changes:
 
 ```
-Score = (Killed + RuntimeError) / (Total - CompileError) * 100
+Score = (Killed + RuntimeError) / (Killed + RuntimeError + Survived + NoCoverage) * 100
 ```
 
 - **CompileError** mutants are excluded from the total since they represent invalid mutations, not test gaps.
