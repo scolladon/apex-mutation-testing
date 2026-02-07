@@ -1,5 +1,7 @@
-import { ParserRuleContext, Token } from 'antlr4ts'
+import { ParserRuleContext } from 'antlr4ts'
 import { NegationMutator } from '../../../src/mutator/negationMutator.js'
+import { ApexMethod, ApexType } from '../../../src/type/ApexMethod.js'
+import { TestUtil } from '../../utils/testUtil.js'
 
 describe('NegationMutator', () => {
   let sut: NegationMutator
@@ -8,38 +10,31 @@ describe('NegationMutator', () => {
     sut = new NegationMutator()
   })
 
-  describe('Given a return statement with a variable', () => {
-    describe('When entering the statement', () => {
+  describe('Given a method returning Integer', () => {
+    beforeEach(() => {
+      const methodCtx = TestUtil.createMethodDeclaration(
+        'Integer',
+        'testMethod'
+      )
+      sut.enterMethodDeclaration(methodCtx)
+
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      sut.setTypeTable(typeTable)
+    })
+
+    describe('When returning a simple variable', () => {
       it('Then should create mutation to negate the value', () => {
         // Arrange
-        const mockToken = {
-          line: 1,
-          charPositionInLine: 10,
-          tokenIndex: 5,
-          startIndex: 10,
-          stopIndex: 10,
-        } as Token
-
-        const expressionCtx = {
-          text: 'x',
-          start: mockToken,
-          stop: { tokenIndex: 6 } as Token,
-        } as unknown as ParserRuleContext
-
-        const ctx = {
-          childCount: 3, // 'return', expression, ';'
-          getChild: jest.fn().mockImplementation(index => {
-            if (index === 1) return expressionCtx
-            return { text: index === 0 ? 'return' : ';' }
-          }),
-          start: mockToken,
-          stop: { tokenIndex: 7 } as Token,
-          text: 'return x;',
-          expression: jest.fn().mockReturnValue(expressionCtx),
-        } as unknown as ParserRuleContext
+        const returnCtx = TestUtil.createReturnStatement('x')
 
         // Act
-        sut.enterReturnStatement(ctx)
+        sut.enterReturnStatement(returnCtx)
 
         // Assert
         expect(sut._mutations).toHaveLength(1)
@@ -47,80 +42,44 @@ describe('NegationMutator', () => {
         expect(sut._mutations[0].mutationName).toBe('NegationMutator')
       })
     })
-  })
 
-  describe('Given a return statement with a numeric literal', () => {
-    describe('When entering the statement', () => {
+    describe('When returning a numeric literal', () => {
       it('Then should create mutation to negate the value', () => {
         // Arrange
-        const mockToken = {
-          line: 1,
-          charPositionInLine: 10,
-          tokenIndex: 5,
-          startIndex: 10,
-          stopIndex: 10,
-        } as Token
-
-        const expressionCtx = {
-          text: '5',
-          start: mockToken,
-          stop: { tokenIndex: 6 } as Token,
-        } as unknown as ParserRuleContext
-
-        const ctx = {
-          childCount: 3,
-          getChild: jest.fn().mockImplementation(index => {
-            if (index === 1) return expressionCtx
-            return { text: index === 0 ? 'return' : ';' }
-          }),
-          start: mockToken,
-          stop: { tokenIndex: 7 } as Token,
-          text: 'return 5;',
-          expression: jest.fn().mockReturnValue(expressionCtx),
-        } as unknown as ParserRuleContext
+        const returnCtx = TestUtil.createReturnStatement('42')
 
         // Act
-        sut.enterReturnStatement(ctx)
+        sut.enterReturnStatement(returnCtx)
 
         // Assert
         expect(sut._mutations).toHaveLength(1)
-        expect(sut._mutations[0].replacement).toBe('-5')
+        expect(sut._mutations[0].replacement).toBe('-42')
       })
     })
   })
 
-  describe('Given a return statement that already has negation', () => {
-    describe('When entering the statement', () => {
-      it('Then should not create mutation (avoid double negation)', () => {
+  describe('Given a method returning String', () => {
+    beforeEach(() => {
+      const methodCtx = TestUtil.createMethodDeclaration('String', 'testMethod')
+      sut.enterMethodDeclaration(methodCtx)
+
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'String',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.STRING,
+      })
+      sut.setTypeTable(typeTable)
+    })
+
+    describe('When returning a value', () => {
+      it('Then should NOT create mutation (non-numeric type)', () => {
         // Arrange
-        const mockToken = {
-          line: 1,
-          charPositionInLine: 10,
-          tokenIndex: 5,
-          startIndex: 10,
-          stopIndex: 10,
-        } as Token
-
-        const expressionCtx = {
-          text: '-x',
-          start: mockToken,
-          stop: { tokenIndex: 6 } as Token,
-        } as unknown as ParserRuleContext
-
-        const ctx = {
-          childCount: 3,
-          getChild: jest.fn().mockImplementation(index => {
-            if (index === 1) return expressionCtx
-            return { text: index === 0 ? 'return' : ';' }
-          }),
-          start: mockToken,
-          stop: { tokenIndex: 7 } as Token,
-          text: 'return -x;',
-          expression: jest.fn().mockReturnValue(expressionCtx),
-        } as unknown as ParserRuleContext
+        const returnCtx = TestUtil.createReturnStatement('name')
 
         // Act
-        sut.enterReturnStatement(ctx)
+        sut.enterReturnStatement(returnCtx)
 
         // Assert
         expect(sut._mutations).toHaveLength(0)
@@ -128,18 +87,31 @@ describe('NegationMutator', () => {
     })
   })
 
-  describe('Given an empty return statement', () => {
-    describe('When entering the statement', () => {
-      it('Then should not create any mutations', () => {
+  describe('Given a method returning Boolean', () => {
+    beforeEach(() => {
+      const methodCtx = TestUtil.createMethodDeclaration(
+        'Boolean',
+        'testMethod'
+      )
+      sut.enterMethodDeclaration(methodCtx)
+
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Boolean',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.BOOLEAN,
+      })
+      sut.setTypeTable(typeTable)
+    })
+
+    describe('When returning a value', () => {
+      it('Then should NOT create mutation (non-numeric type)', () => {
         // Arrange
-        const ctx = {
-          childCount: 2, // 'return', ';'
-          getChild: jest.fn(),
-          expression: jest.fn().mockReturnValue(null),
-        } as unknown as ParserRuleContext
+        const returnCtx = TestUtil.createReturnStatement('isActive')
 
         // Act
-        sut.enterReturnStatement(ctx)
+        sut.enterReturnStatement(returnCtx)
 
         // Assert
         expect(sut._mutations).toHaveLength(0)
@@ -147,38 +119,31 @@ describe('NegationMutator', () => {
     })
   })
 
-  describe('Given a return statement with a string literal', () => {
-    describe('When entering the statement', () => {
-      it('Then should not create mutation', () => {
+  describe('Given a method returning List', () => {
+    beforeEach(() => {
+      const methodCtx = TestUtil.createMethodDeclaration(
+        'List<String>',
+        'testMethod'
+      )
+      sut.enterMethodDeclaration(methodCtx)
+
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'List<String>',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.LIST,
+      })
+      sut.setTypeTable(typeTable)
+    })
+
+    describe('When returning a value', () => {
+      it('Then should NOT create mutation (non-numeric type)', () => {
         // Arrange
-        const mockToken = {
-          line: 1,
-          charPositionInLine: 10,
-          tokenIndex: 5,
-          startIndex: 10,
-          stopIndex: 10,
-        } as Token
-
-        const expressionCtx = {
-          text: "'hello'",
-          start: mockToken,
-          stop: { tokenIndex: 6 } as Token,
-        } as unknown as ParserRuleContext
-
-        const ctx = {
-          childCount: 3,
-          getChild: jest.fn().mockImplementation(index => {
-            if (index === 1) return expressionCtx
-            return { text: index === 0 ? 'return' : ';' }
-          }),
-          start: mockToken,
-          stop: { tokenIndex: 7 } as Token,
-          text: "return 'hello';",
-          expression: jest.fn().mockReturnValue(expressionCtx),
-        } as unknown as ParserRuleContext
+        const returnCtx = TestUtil.createReturnStatement('items')
 
         // Act
-        sut.enterReturnStatement(ctx)
+        sut.enterReturnStatement(returnCtx)
 
         // Assert
         expect(sut._mutations).toHaveLength(0)
@@ -186,112 +151,277 @@ describe('NegationMutator', () => {
     })
   })
 
-  describe('Given a return statement with a boolean', () => {
-    describe('When entering the statement', () => {
-      it('Then should not create mutation for true', () => {
+  describe('Given numeric type mutations', () => {
+    const numericTypes = [
+      { type: ApexType.INTEGER, typeName: 'Integer' },
+      { type: ApexType.LONG, typeName: 'Long' },
+      { type: ApexType.DOUBLE, typeName: 'Double' },
+      { type: ApexType.DECIMAL, typeName: 'Decimal' },
+    ]
+
+    for (const { type, typeName } of numericTypes) {
+      it(`Then should create mutation for ${typeName} return type`, () => {
         // Arrange
-        const mockToken = {
-          line: 1,
-          charPositionInLine: 10,
-          tokenIndex: 5,
-          startIndex: 10,
-          stopIndex: 10,
-        } as Token
+        sut._mutations = []
+        const methodCtx = TestUtil.createMethodDeclaration(
+          typeName,
+          'testMethod'
+        )
+        sut.enterMethodDeclaration(methodCtx)
 
-        const expressionCtx = {
-          text: 'true',
-          start: mockToken,
-          stop: { tokenIndex: 6 } as Token,
-        } as unknown as ParserRuleContext
+        const typeTable = new Map<string, ApexMethod>()
+        typeTable.set('testMethod', {
+          returnType: typeName,
+          startLine: 1,
+          endLine: 5,
+          type,
+        })
+        sut.setTypeTable(typeTable)
 
-        const ctx = {
-          childCount: 3,
-          getChild: jest.fn().mockImplementation(index => {
-            if (index === 1) return expressionCtx
-            return { text: index === 0 ? 'return' : ';' }
-          }),
-          start: mockToken,
-          stop: { tokenIndex: 7 } as Token,
-          text: 'return true;',
-          expression: jest.fn().mockReturnValue(expressionCtx),
-        } as unknown as ParserRuleContext
+        const returnCtx = TestUtil.createReturnStatement('value')
 
         // Act
-        sut.enterReturnStatement(ctx)
+        sut.enterReturnStatement(returnCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('-value')
+      })
+    }
+  })
+
+  describe('Given non-numeric type mutations', () => {
+    const nonNumericTypes = [
+      { type: ApexType.STRING, typeName: 'String' },
+      { type: ApexType.BOOLEAN, typeName: 'Boolean' },
+      { type: ApexType.DATE, typeName: 'Date' },
+      { type: ApexType.DATETIME, typeName: 'DateTime' },
+      { type: ApexType.ID, typeName: 'Id' },
+      { type: ApexType.LIST, typeName: 'List<String>' },
+      { type: ApexType.MAP, typeName: 'Map<Id, Account>' },
+      { type: ApexType.SET, typeName: 'Set<String>' },
+      { type: ApexType.OBJECT, typeName: 'Account' },
+      { type: ApexType.VOID, typeName: 'void' },
+    ]
+
+    for (const { type, typeName } of nonNumericTypes) {
+      it(`Then should NOT create mutation for ${typeName} return type`, () => {
+        // Arrange
+        sut._mutations = []
+        const methodCtx = TestUtil.createMethodDeclaration(
+          typeName,
+          'testMethod'
+        )
+        sut.enterMethodDeclaration(methodCtx)
+
+        const typeTable = new Map<string, ApexMethod>()
+        typeTable.set('testMethod', {
+          returnType: typeName,
+          startLine: 1,
+          endLine: 5,
+          type,
+        })
+        sut.setTypeTable(typeTable)
+
+        const returnCtx = TestUtil.createReturnStatement('value')
+
+        // Act
+        sut.enterReturnStatement(returnCtx)
 
         // Assert
         expect(sut._mutations).toHaveLength(0)
       })
+    }
+  })
 
-      it('Then should not create mutation for false', () => {
+  describe('Given already negated expressions (double negation prevention)', () => {
+    beforeEach(() => {
+      const methodCtx = TestUtil.createMethodDeclaration(
+        'Integer',
+        'testMethod'
+      )
+      sut.enterMethodDeclaration(methodCtx)
+
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      sut.setTypeTable(typeTable)
+    })
+
+    describe('When returning a PreOpExpression with unary minus', () => {
+      it('Then should NOT create mutation (avoid double negation)', () => {
         // Arrange
-        const mockToken = {
-          line: 1,
-          charPositionInLine: 10,
-          tokenIndex: 5,
-          startIndex: 10,
-          stopIndex: 10,
-        } as Token
-
-        const expressionCtx = {
-          text: 'false',
-          start: mockToken,
-          stop: { tokenIndex: 6 } as Token,
-        } as unknown as ParserRuleContext
-
-        const ctx = {
-          childCount: 3,
-          getChild: jest.fn().mockImplementation(index => {
-            if (index === 1) return expressionCtx
-            return { text: index === 0 ? 'return' : ';' }
-          }),
-          start: mockToken,
-          stop: { tokenIndex: 7 } as Token,
-          text: 'return false;',
-          expression: jest.fn().mockReturnValue(expressionCtx),
-        } as unknown as ParserRuleContext
+        const returnCtx = TestUtil.createReturnStatementWithPreOp('-', 'x')
 
         // Act
-        sut.enterReturnStatement(ctx)
+        sut.enterReturnStatement(returnCtx)
 
         // Assert
         expect(sut._mutations).toHaveLength(0)
       })
     })
+
+    describe('When returning a PreOpExpression with unary minus on literal', () => {
+      it('Then should NOT create mutation (avoid double negation)', () => {
+        // Arrange
+        const returnCtx = TestUtil.createReturnStatementWithPreOp('-', '42')
+
+        // Act
+        sut.enterReturnStatement(returnCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+
+    describe('When returning a PreOpExpression with other operator (++)', () => {
+      it('Then should create mutation (not a negation)', () => {
+        // Arrange
+        const returnCtx = TestUtil.createReturnStatementWithPreOp('++', 'x')
+
+        // Act
+        sut.enterReturnStatement(returnCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+      })
+    })
   })
 
-  describe('Given a return statement with null', () => {
-    describe('When entering the statement', () => {
-      it('Then should not create mutation', () => {
+  describe('Given complex expressions (smart wrapping)', () => {
+    beforeEach(() => {
+      const methodCtx = TestUtil.createMethodDeclaration(
+        'Integer',
+        'testMethod'
+      )
+      sut.enterMethodDeclaration(methodCtx)
+
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      sut.setTypeTable(typeTable)
+    })
+
+    describe('When returning a complex expression (a + b)', () => {
+      it('Then should wrap in parentheses: -(a + b)', () => {
         // Arrange
-        const mockToken = {
-          line: 1,
-          charPositionInLine: 10,
-          tokenIndex: 5,
-          startIndex: 10,
-          stopIndex: 10,
-        } as Token
+        const returnCtx = TestUtil.createReturnStatementWithComplexExpression(
+          'a + b',
+          3
+        )
 
-        const expressionCtx = {
-          text: 'null',
-          start: mockToken,
-          stop: { tokenIndex: 6 } as Token,
-        } as unknown as ParserRuleContext
+        // Act
+        sut.enterReturnStatement(returnCtx)
 
-        const ctx = {
-          childCount: 3,
-          getChild: jest.fn().mockImplementation(index => {
-            if (index === 1) return expressionCtx
-            return { text: index === 0 ? 'return' : ';' }
-          }),
-          start: mockToken,
-          stop: { tokenIndex: 7 } as Token,
-          text: 'return null;',
-          expression: jest.fn().mockReturnValue(expressionCtx),
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('-(a + b)')
+      })
+    })
+
+    describe('When returning a simple variable', () => {
+      it('Then should NOT wrap in parentheses: -x', () => {
+        // Arrange
+        const returnCtx = TestUtil.createReturnStatement('x')
+
+        // Act
+        sut.enterReturnStatement(returnCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('-x')
+      })
+    })
+
+    describe('When returning a simple literal', () => {
+      it('Then should NOT wrap in parentheses: -42', () => {
+        // Arrange
+        const returnCtx = TestUtil.createReturnStatement('42')
+
+        // Act
+        sut.enterReturnStatement(returnCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('-42')
+      })
+    })
+  })
+
+  describe('Given edge cases', () => {
+    describe('When no type table is set', () => {
+      it('Then should NOT create mutation', () => {
+        // Arrange
+        const methodCtx = TestUtil.createMethodDeclaration(
+          'Integer',
+          'testMethod'
+        )
+        sut.enterMethodDeclaration(methodCtx)
+        const returnCtx = TestUtil.createReturnStatement('x')
+
+        // Act
+        sut.enterReturnStatement(returnCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+
+    describe('When not inside a method', () => {
+      it('Then should NOT create mutation', () => {
+        // Arrange
+        const typeTable = new Map<string, ApexMethod>()
+        typeTable.set('testMethod', {
+          returnType: 'Integer',
+          startLine: 1,
+          endLine: 5,
+          type: ApexType.INTEGER,
+        })
+        sut.setTypeTable(typeTable)
+
+        const returnCtx = TestUtil.createReturnStatement('x')
+
+        // Act
+        sut.enterReturnStatement(returnCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+
+    describe('When return statement has no expression', () => {
+      it('Then should NOT create mutation', () => {
+        // Arrange
+        const methodCtx = TestUtil.createMethodDeclaration(
+          'Integer',
+          'testMethod'
+        )
+        sut.enterMethodDeclaration(methodCtx)
+
+        const typeTable = new Map<string, ApexMethod>()
+        typeTable.set('testMethod', {
+          returnType: 'Integer',
+          startLine: 1,
+          endLine: 5,
+          type: ApexType.INTEGER,
+        })
+        sut.setTypeTable(typeTable)
+
+        const returnCtx = {
+          children: [{ text: 'return' }],
+          childCount: 1,
         } as unknown as ParserRuleContext
 
         // Act
-        sut.enterReturnStatement(ctx)
+        sut.enterReturnStatement(returnCtx)
 
         // Assert
         expect(sut._mutations).toHaveLength(0)
