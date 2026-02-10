@@ -49,7 +49,7 @@ describe('HTMLReporter', () => {
       {
         id: '4',
         mutatorName: 'NullReturnMutator',
-        status: 'RuntimeError',
+        status: 'Killed',
         statusReason:
           'System.NullPointerException: Attempt to de-reference a null object',
         location: {
