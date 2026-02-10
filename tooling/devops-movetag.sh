@@ -2,5 +2,7 @@
 
 VERSION=$1
 TAG=$2
+OTP=$3
+PACKAGE="apex-mutation-testing"
 
-npm dist-tag add "sfdx-git-delta@${VERSION}" "${TAG}"
+npm dist-tag add "${PACKAGE}@${VERSION}" "${TAG}" --otp "${OTP}"
