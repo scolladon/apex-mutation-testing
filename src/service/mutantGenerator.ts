@@ -12,6 +12,7 @@ import { BoundaryConditionMutator } from '../mutator/boundaryConditionMutator.js
 import { ConstructorCallMutator } from '../mutator/constructorCallMutator.js'
 import { EmptyReturnMutator } from '../mutator/emptyReturnMutator.js'
 import { EqualityConditionMutator } from '../mutator/equalityConditionMutator.js'
+import { ExperimentalSwitchMutator } from '../mutator/experimentalSwitchMutator.js'
 import { FalseReturnMutator } from '../mutator/falseReturnMutator.js'
 import { IncrementMutator } from '../mutator/incrementMutator.js'
 import { InvertNegativesMutator } from '../mutator/invertNegativesMutator.js'
@@ -64,6 +65,7 @@ export class MutantGenerator {
     const constructorCallListener = new ConstructorCallMutator()
     const removeConditionalsListener = new RemoveConditionalsMutator()
     const switchListener = new SwitchMutator()
+    const experimentalSwitchListener = new ExperimentalSwitchMutator()
 
     const listener = new MutationListener(
       [
@@ -83,6 +85,7 @@ export class MutantGenerator {
         constructorCallListener,
         removeConditionalsListener,
         switchListener,
+        experimentalSwitchListener,
       ],
       coveredLines,
       methodTypeTable
