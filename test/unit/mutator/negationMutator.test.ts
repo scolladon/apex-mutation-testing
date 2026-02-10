@@ -356,6 +356,78 @@ describe('NegationMutator', () => {
     })
   })
 
+  describe('Given zero literal expressions (equivalent mutant prevention)', () => {
+    beforeEach(() => {
+      const methodCtx = TestUtil.createMethodDeclaration(
+        'Integer',
+        'testMethod'
+      )
+      sut.enterMethodDeclaration(methodCtx)
+
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      sut.setTypeTable(typeTable)
+    })
+
+    describe('When returning integer zero literal', () => {
+      it('Then should NOT create mutation (-0 is equivalent to 0)', () => {
+        // Arrange
+        const returnCtx = TestUtil.createReturnStatement('0')
+
+        // Act
+        sut.enterReturnStatement(returnCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+
+    describe('When returning double zero literal', () => {
+      it('Then should NOT create mutation (-0.0 is equivalent to 0.0)', () => {
+        // Arrange
+        const returnCtx = TestUtil.createReturnStatement('0.0')
+
+        // Act
+        sut.enterReturnStatement(returnCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+
+    describe('When returning long zero literal', () => {
+      it('Then should NOT create mutation (-0L is equivalent to 0L)', () => {
+        // Arrange
+        const returnCtx = TestUtil.createReturnStatement('0L')
+
+        // Act
+        sut.enterReturnStatement(returnCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+
+    describe('When returning non-zero literal', () => {
+      it('Then should create mutation', () => {
+        // Arrange
+        const returnCtx = TestUtil.createReturnStatement('10')
+
+        // Act
+        sut.enterReturnStatement(returnCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('-10')
+      })
+    })
+  })
+
   describe('Given edge cases', () => {
     describe('When no type table is set', () => {
       it('Then should NOT create mutation', () => {

@@ -11,6 +11,8 @@ export class NegationMutator extends ReturnTypeAwareBaseListener {
     ApexType.DECIMAL,
   ])
 
+  private static readonly ZERO_LITERAL = /^0+(\.0+)?[lLdD]?$/
+
   enterReturnStatement(ctx: ParserRuleContext): void {
     if (!this.isCurrentMethodTypeKnown()) {
       return
@@ -35,6 +37,10 @@ export class NegationMutator extends ReturnTypeAwareBaseListener {
     }
 
     const expressionText = expressionNode.text
+    if (NegationMutator.ZERO_LITERAL.test(expressionText)) {
+      return
+    }
+
     const replacement = this.formatNegation(expressionText, expressionNode)
 
     this.createMutationFromParserRuleContext(expressionNode, replacement)
