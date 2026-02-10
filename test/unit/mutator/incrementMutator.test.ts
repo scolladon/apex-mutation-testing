@@ -36,28 +36,29 @@ describe('IncrementMutator', () => {
     },
   ]
 
-  describe.each(testCases)(
-    '$method',
-    ({ method, operator, expectedReplacement }) => {
-      it(`should add mutation when encountering ${operator} operator`, () => {
-        // Arrange
-        const mockCtx = {
-          childCount: 2,
-          getChild: jest.fn(index => {
-            const terminalNode = new TerminalNode({ text: operator } as Token)
-            return index === 1 ? terminalNode : {}
-          }),
-        } as unknown as ParserRuleContext
+  describe.each(testCases)('$method', ({
+    method,
+    operator,
+    expectedReplacement,
+  }) => {
+    it(`should add mutation when encountering ${operator} operator`, () => {
+      // Arrange
+      const mockCtx = {
+        childCount: 2,
+        getChild: jest.fn(index => {
+          const terminalNode = new TerminalNode({ text: operator } as Token)
+          return index === 1 ? terminalNode : {}
+        }),
+      } as unknown as ParserRuleContext
 
-        // Act
-        sut[method](mockCtx)
+      // Act
+      sut[method](mockCtx)
 
-        // Assert
-        expect(sut['_mutations']).toHaveLength(1)
-        expect(sut['_mutations'][0].replacement).toBe(expectedReplacement)
-      })
-    }
-  )
+      // Assert
+      expect(sut['_mutations']).toHaveLength(1)
+      expect(sut['_mutations'][0].replacement).toBe(expectedReplacement)
+    })
+  })
 
   const invalidTestCases = [
     {

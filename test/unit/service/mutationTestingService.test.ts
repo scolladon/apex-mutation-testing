@@ -252,78 +252,75 @@ describe('MutationTestingService', () => {
         },
       ]
 
-      it.each(testCases)(
-        'should handle $description',
-        async ({
-          testResult,
-          expectedMutants,
-          error,
-          updateError,
-          expectedSpinnerStops,
-        }) => {
-          // Arrange
-          ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-            read: jest.fn().mockResolvedValue(mockApexClass),
-            update: jest
-              .fn()
-              [updateError ? 'mockRejectedValue' : 'mockResolvedValue'](
-                updateError || {}
-              ),
-            getApexClassDependencies: jest.fn().mockResolvedValue([
-              {
-                Id: 'dep1',
-                RefMetadataComponentType: 'ApexClass',
-                RefMetadataComponentName: 'TestDep',
-              },
-              {
-                Id: 'dep2',
-                RefMetadataComponentType: 'StandardEntity',
-                RefMetadataComponentName: 'Account',
-              },
-              {
-                Id: 'dep3',
-                RefMetadataComponentType: 'CustomObject',
-                RefMetadataComponentName: 'Custom__c',
-              },
-            ] as MetadataComponentDependency[]),
-          }))
-          ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
-            compute: jest.fn().mockReturnValue([mockMutation]),
-            mutate: jest.fn().mockReturnValue('mutated code'),
-          }))
-          ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
-            runTestMethods: jest.fn().mockImplementation(() => {
-              // Subsequent calls - mutation tests
-              if (error) {
-                return Promise.reject(error)
-              }
-              return Promise.resolve(testResult)
-            }),
-            getTestMethodsPerLines: jest.fn().mockResolvedValue({
-              outcome: 'Passed',
-              passing: 1,
-              failing: 0,
-              testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
-            }),
-          }))
+      it.each(testCases)('should handle $description', async ({
+        testResult,
+        expectedMutants,
+        error,
+        updateError,
+        expectedSpinnerStops,
+      }) => {
+        // Arrange
+        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
+          read: jest.fn().mockResolvedValue(mockApexClass),
+          update: jest
+            .fn()
+            [updateError ? 'mockRejectedValue' : 'mockResolvedValue'](
+              updateError || {}
+            ),
+          getApexClassDependencies: jest.fn().mockResolvedValue([
+            {
+              Id: 'dep1',
+              RefMetadataComponentType: 'ApexClass',
+              RefMetadataComponentName: 'TestDep',
+            },
+            {
+              Id: 'dep2',
+              RefMetadataComponentType: 'StandardEntity',
+              RefMetadataComponentName: 'Account',
+            },
+            {
+              Id: 'dep3',
+              RefMetadataComponentType: 'CustomObject',
+              RefMetadataComponentName: 'Custom__c',
+            },
+          ] as MetadataComponentDependency[]),
+        }))
+        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
+          compute: jest.fn().mockReturnValue([mockMutation]),
+          mutate: jest.fn().mockReturnValue('mutated code'),
+        }))
+        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
+          runTestMethods: jest.fn().mockImplementation(() => {
+            // Subsequent calls - mutation tests
+            if (error) {
+              return Promise.reject(error)
+            }
+            return Promise.resolve(testResult)
+          }),
+          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+            outcome: 'Passed',
+            passing: 1,
+            failing: 0,
+            testsRan: 1,
+            testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+          }),
+        }))
 
-          // Act
-          const result = await sut.process()
+        // Act
+        const result = await sut.process()
 
-          // Assert
-          expect(result).toEqual({
-            sourceFile: 'TestClass',
-            sourceFileContent: mockApexClass.Body,
-            testFile: 'TestClassTest',
-            mutants: expectedMutants,
-          })
-          expect(spinner.start).toHaveBeenCalledTimes(5)
-          expect(spinner.stop).toHaveBeenCalledTimes(expectedSpinnerStops)
-          expect(progress.start).toHaveBeenCalled()
-          expect(progress.finish).toHaveBeenCalled()
-        }
-      )
+        // Assert
+        expect(result).toEqual({
+          sourceFile: 'TestClass',
+          sourceFileContent: mockApexClass.Body,
+          testFile: 'TestClassTest',
+          mutants: expectedMutants,
+        })
+        expect(spinner.start).toHaveBeenCalledTimes(5)
+        expect(spinner.stop).toHaveBeenCalledTimes(expectedSpinnerStops)
+        expect(progress.start).toHaveBeenCalled()
+        expect(progress.finish).toHaveBeenCalled()
+      })
     })
 
     describe('When no coverage exists on the class', () => {
@@ -437,24 +434,24 @@ describe('MutationTestingService', () => {
         },
       ]
 
-      it.each(scoreTestCases)(
-        'should calculate correct score $description',
-        ({ mutants, expectedScore }) => {
-          // Arrange
-          const mockResult = {
-            sourceFile: 'TestClass',
-            sourceFileContent: 'content',
-            testFile: 'TestClassTest',
-            mutants,
-          } as ApexMutationTestResult
+      it.each(scoreTestCases)('should calculate correct score $description', ({
+        mutants,
+        expectedScore,
+      }) => {
+        // Arrange
+        const mockResult = {
+          sourceFile: 'TestClass',
+          sourceFileContent: 'content',
+          testFile: 'TestClassTest',
+          mutants,
+        } as ApexMutationTestResult
 
-          // Act
-          const score = sut.calculateScore(mockResult)
+        // Act
+        const score = sut.calculateScore(mockResult)
 
-          // Assert
-          expect(score).toBe(expectedScore)
-        }
-      )
+        // Assert
+        expect(score).toBe(expectedScore)
+      })
     })
   })
 })
