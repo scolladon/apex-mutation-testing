@@ -1,51 +1,74 @@
 import { ParserRuleContext } from 'antlr4ts'
-import { BaseListener } from './baseListener.js'
+import { TerminalNode } from 'antlr4ts/tree/index.js'
+import { ApexType } from '../type/ApexMethod.js'
+import { ReturnTypeAwareBaseListener } from './returnTypeAwareBaseListener.js'
 
-export class NegationMutator extends BaseListener {
-  // Values that should not be negated
-  private readonly EXCLUDED_VALUES = new Set(['true', 'false', 'null'])
+export class NegationMutator extends ReturnTypeAwareBaseListener {
+  private static readonly NUMERIC_TYPES = new Set([
+    ApexType.INTEGER,
+    ApexType.LONG,
+    ApexType.DOUBLE,
+    ApexType.DECIMAL,
+  ])
 
-  // Handle return statements: return x; -> return -x;
+  private static readonly ZERO_LITERAL = /^0+(\.0+)?[lLdD]?$/
+
   enterReturnStatement(ctx: ParserRuleContext): void {
-    // Get the expression from the return statement
-    const expression = (ctx as ReturnStatementContext).expression?.()
-
-    if (!expression) {
+    if (!this.isCurrentMethodTypeKnown()) {
       return
     }
 
-    const expressionText = expression.text
-
-    // Skip if already negated
-    if (expressionText.startsWith('-')) {
+    const typeInfo = this.getCurrentMethodReturnTypeInfo()
+    if (!typeInfo || !NegationMutator.NUMERIC_TYPES.has(typeInfo.type)) {
       return
     }
 
-    // Skip non-numeric values (strings, booleans, null)
-    if (this.shouldSkipExpression(expressionText)) {
+    if (!ctx.children || ctx.children.length < 2) {
       return
     }
 
-    // Create mutation: x -> -x
-    this.createMutationFromParserRuleContext(expression, `-${expressionText}`)
+    const expressionNode = ctx.children[1]
+    if (!(expressionNode instanceof ParserRuleContext)) {
+      return
+    }
+
+    if (this.isNegatedExpression(expressionNode)) {
+      return
+    }
+
+    const expressionText = expressionNode.text
+    if (NegationMutator.ZERO_LITERAL.test(expressionText)) {
+      return
+    }
+
+    const replacement = this.formatNegation(expressionText, expressionNode)
+
+    this.createMutationFromParserRuleContext(expressionNode, replacement)
   }
 
-  private shouldSkipExpression(text: string): boolean {
-    // Skip excluded values (true, false, null)
-    if (this.EXCLUDED_VALUES.has(text.toLowerCase())) {
-      return true
+  private isNegatedExpression(expr: ParserRuleContext): boolean {
+    if (expr.childCount !== 2) {
+      return false
     }
 
-    // Skip string literals
-    if (text.startsWith("'") || text.startsWith('"')) {
-      return true
+    const firstChild = expr.getChild(0)
+    if (!(firstChild instanceof TerminalNode)) {
+      return false
     }
 
-    return false
+    return firstChild.text === '-'
   }
-}
 
-// Type helper for ReturnStatement context
-interface ReturnStatementContext extends ParserRuleContext {
-  expression(): ParserRuleContext | null
+  private formatNegation(
+    expressionText: string,
+    expressionNode: ParserRuleContext
+  ): string {
+    const isComplexExpression = expressionNode.childCount > 1
+
+    if (isComplexExpression) {
+      return `-(${expressionText})`
+    }
+
+    return `-${expressionText}`
+  }
 }
