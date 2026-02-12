@@ -15,6 +15,10 @@ export class MutationListener implements ApexParserListener {
   private static readonly ALWAYS_FORWARD_METHODS = new Set([
     'enterMethodDeclaration',
     'exitMethodDeclaration',
+    'enterLocalVariableDeclaration',
+    'enterFormalParameter',
+    'enterFieldDeclaration',
+    'enterEnhancedForControl',
   ])
 
   public getMutations() {

@@ -1,4 +1,5 @@
 import { ParserRuleContext, Token } from 'antlr4ts'
+import { TerminalNode } from 'antlr4ts/tree/index.js'
 import { TokenRange } from '../../src/type/ApexMutation.js'
 
 export const TestUtil = {
@@ -157,6 +158,61 @@ export const TestUtil = {
       children: [{ text: 'return' }, expressionNode],
       childCount: 2,
       getChild: (i: number) => (i === 0 ? { text: 'return' } : expressionNode),
+    } as unknown as ParserRuleContext
+  },
+
+  createLocalVariableDeclaration(
+    type: string,
+    varName: string
+  ): ParserRuleContext {
+    return {
+      children: [{ text: type }, { text: varName }],
+      childCount: 2,
+      start: this.createToken(1, 0),
+    } as unknown as ParserRuleContext
+  },
+
+  createFormalParameter(type: string, paramName: string): ParserRuleContext {
+    return {
+      children: [{ text: type }, { text: paramName }],
+      childCount: 2,
+      start: this.createToken(1, 0),
+    } as unknown as ParserRuleContext
+  },
+
+  createFieldDeclaration(type: string, fieldName: string): ParserRuleContext {
+    return {
+      children: [{ text: type }, { text: fieldName }],
+      childCount: 2,
+      start: this.createToken(1, 0),
+    } as unknown as ParserRuleContext
+  },
+
+  createEnhancedForControl(type: string, varName: string): ParserRuleContext {
+    return {
+      children: [{ text: type }, { text: varName }],
+      childCount: 2,
+      start: this.createToken(1, 0),
+    } as unknown as ParserRuleContext
+  },
+
+  createArithmeticExpression(
+    left: string,
+    operator: string,
+    right: string
+  ): ParserRuleContext {
+    const operatorNode = new TerminalNode({ text: operator } as Token)
+    const leftNode = { text: left }
+    const rightNode = { text: right }
+
+    return {
+      childCount: 3,
+      children: [leftNode, operatorNode, rightNode],
+      getChild: (index: number) => {
+        if (index === 0) return leftNode
+        if (index === 1) return operatorNode
+        return rightNode
+      },
     } as unknown as ParserRuleContext
   },
 }
