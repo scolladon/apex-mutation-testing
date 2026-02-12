@@ -65,39 +65,35 @@ describe('EmptyReturnMutator', () => {
       },
     ]
 
-    for (const testCase of testTypes) {
-      it(`should handle ${testCase.returnType} type correctly`, () => {
-        emptyReturnMutator._mutations = []
-        const methodCtx = TestUtil.createMethodDeclaration(
-          testCase.returnType,
-          'testMethod'
-        )
-        emptyReturnMutator.enterMethodDeclaration(methodCtx)
+    it.each(testTypes)('should handle $returnType type correctly', testCase => {
+      emptyReturnMutator._mutations = []
+      const methodCtx = TestUtil.createMethodDeclaration(
+        testCase.returnType,
+        'testMethod'
+      )
+      emptyReturnMutator.enterMethodDeclaration(methodCtx)
 
-        const typeTable = new Map<string, ApexMethod>()
-        typeTable.set('testMethod', {
-          returnType: testCase.returnType,
-          startLine: 1,
-          endLine: 5,
-          type: testCase.type,
-          ...(testCase.elementType
-            ? { elementType: testCase.elementType }
-            : {}),
-        })
-
-        emptyReturnMutator.setTypeTable(typeTable)
-        const returnCtx = TestUtil.createReturnStatement(testCase.expression)
-
-        // Act
-        emptyReturnMutator.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(emptyReturnMutator._mutations.length).toBe(1)
-        expect(emptyReturnMutator._mutations[0].replacement).toBe(
-          testCase.expected
-        )
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: testCase.returnType,
+        startLine: 1,
+        endLine: 5,
+        type: testCase.type,
+        ...(testCase.elementType ? { elementType: testCase.elementType } : {}),
       })
-    }
+
+      emptyReturnMutator.setTypeTable(typeTable)
+      const returnCtx = TestUtil.createReturnStatement(testCase.expression)
+
+      // Act
+      emptyReturnMutator.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(emptyReturnMutator._mutations.length).toBe(1)
+      expect(emptyReturnMutator._mutations[0].replacement).toBe(
+        testCase.expected
+      )
+    })
 
     const excludedTypes = [
       { type: ApexType.VOID, name: 'void' },
@@ -110,33 +106,33 @@ describe('EmptyReturnMutator', () => {
       { type: ApexType.TIME, name: 'Time' },
     ]
 
-    for (const excluded of excludedTypes) {
-      it(`should not create mutations for ${excluded.name} type`, () => {
-        emptyReturnMutator._mutations = []
-        const methodCtx = TestUtil.createMethodDeclaration(
-          excluded.name,
-          'testMethod'
-        )
-        emptyReturnMutator.enterMethodDeclaration(methodCtx)
+    it.each(
+      excludedTypes
+    )('should not create mutations for $name type', excluded => {
+      emptyReturnMutator._mutations = []
+      const methodCtx = TestUtil.createMethodDeclaration(
+        excluded.name,
+        'testMethod'
+      )
+      emptyReturnMutator.enterMethodDeclaration(methodCtx)
 
-        const typeTable = new Map<string, ApexMethod>()
-        typeTable.set('testMethod', {
-          returnType: excluded.name,
-          startLine: 1,
-          endLine: 5,
-          type: excluded.type,
-        })
-
-        emptyReturnMutator.setTypeTable(typeTable)
-        const returnCtx = TestUtil.createReturnStatement('something')
-
-        // Act
-        emptyReturnMutator.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(emptyReturnMutator._mutations.length).toBe(0)
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: excluded.name,
+        startLine: 1,
+        endLine: 5,
+        type: excluded.type,
       })
-    }
+
+      emptyReturnMutator.setTypeTable(typeTable)
+      const returnCtx = TestUtil.createReturnStatement('something')
+
+      // Act
+      emptyReturnMutator.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(emptyReturnMutator._mutations.length).toBe(0)
+    })
   })
 
   describe('empty value detection', () => {
@@ -171,15 +167,15 @@ describe('EmptyReturnMutator', () => {
       },
     ]
 
-    for (const testCase of emptyValueCases) {
-      it(`should identify '${testCase.value}' as ${testCase.expected ? 'empty' : 'non-empty'} for ${testCase.type} type`, () => {
-        const result = emptyReturnMutator.isEmptyValue(
-          testCase.type,
-          testCase.value
-        )
-        expect(result).toBe(testCase.expected)
-      })
-    }
+    it.each(
+      emptyValueCases
+    )('should identify $value as expected for $type type', testCase => {
+      const result = emptyReturnMutator.isEmptyValue(
+        testCase.type,
+        testCase.value
+      )
+      expect(result).toBe(testCase.expected)
+    })
   })
 
   describe('validation and edge cases', () => {

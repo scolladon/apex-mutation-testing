@@ -22,36 +22,34 @@ describe('FalseReturnMutator', () => {
       },
     ]
 
-    for (const testCase of testCases) {
-      it(`should create mutation for ${testCase.name}`, () => {
-        falseReturnMutator._mutations = []
-        const methodCtx = TestUtil.createMethodDeclaration(
-          'Boolean',
-          'testMethod'
-        )
-        falseReturnMutator.enterMethodDeclaration(methodCtx)
+    it.each(testCases)('should create mutation for $name', testCase => {
+      falseReturnMutator._mutations = []
+      const methodCtx = TestUtil.createMethodDeclaration(
+        'Boolean',
+        'testMethod'
+      )
+      falseReturnMutator.enterMethodDeclaration(methodCtx)
 
-        const typeTable = new Map<string, ApexMethod>()
-        typeTable.set('testMethod', {
-          returnType: 'Boolean',
-          startLine: 1,
-          endLine: 5,
-          type: ApexType.BOOLEAN,
-        })
-
-        falseReturnMutator.setTypeTable(typeTable)
-        const returnCtx = TestUtil.createReturnStatement(testCase.expression)
-
-        // Act
-        falseReturnMutator.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(falseReturnMutator._mutations.length).toBe(1)
-        expect(falseReturnMutator._mutations[0].replacement).toBe(
-          testCase.expected
-        )
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Boolean',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.BOOLEAN,
       })
-    }
+
+      falseReturnMutator.setTypeTable(typeTable)
+      const returnCtx = TestUtil.createReturnStatement(testCase.expression)
+
+      // Act
+      falseReturnMutator.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(falseReturnMutator._mutations.length).toBe(1)
+      expect(falseReturnMutator._mutations[0].replacement).toBe(
+        testCase.expected
+      )
+    })
 
     it('should not create mutation for literal false', () => {
       falseReturnMutator._mutations = []
