@@ -313,6 +313,46 @@ describe('ArithmeticOperatorMutator Integration', () => {
     })
   })
 
+  describe('Given type-aware parsing with field access concatenation', () => {
+    it('Then should suppress + mutations for field access on SObject (acc.Name + 5)', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public String test() {
+            Account acc = new Account();
+            return acc.Name + 5;
+          }
+        }
+      `
+
+      // Act
+      const mutations = parseAndMutateTypeAware(code, new Set([4, 5]))
+
+      // Assert
+      expect(mutations.length).toBe(0)
+    })
+
+    it('Then should suppress all + mutations for chained string concatenation (acc.Name + literal + var + literal)', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public String test() {
+            Account acc = new Account();
+            Integer count = 3;
+            String result = acc.Name + ' has ' + count + ' related records';
+            return result;
+          }
+        }
+      `
+
+      // Act
+      const mutations = parseAndMutateTypeAware(code, new Set([4, 5, 6, 7]))
+
+      // Assert
+      expect(mutations.length).toBe(0)
+    })
+  })
+
   describe('Given type-aware parsing with numeric addition', () => {
     it('Then should generate mutations for Integer variable addition', () => {
       // Arrange

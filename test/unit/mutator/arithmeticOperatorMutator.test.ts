@@ -518,6 +518,94 @@ describe('ArithmeticOperatorMutator', () => {
     })
   })
 
+  describe('Given field access operands', () => {
+    it('Then should NOT mutate + when operand is a field access on a tracked non-numeric variable (acc.Name)', () => {
+      // Arrange
+      const methodCtx = TestUtil.createMethodDeclaration('void', 'testMethod')
+      sut.enterMethodDeclaration(methodCtx)
+
+      const varDecl = TestUtil.createLocalVariableDeclaration('Account', 'acc')
+      sut.enterLocalVariableDeclaration(varDecl)
+
+      const ctx = TestUtil.createArithmeticExpression('acc.Name', '+', '5')
+
+      // Act
+      sut.enterArth2Expression(ctx)
+
+      // Assert
+      expect(sut['_mutations']).toHaveLength(0)
+    })
+
+    it('Then should NOT mutate + when operand is a field access on a tracked String variable (obj.field)', () => {
+      // Arrange
+      const methodCtx = TestUtil.createMethodDeclaration('void', 'testMethod')
+      sut.enterMethodDeclaration(methodCtx)
+
+      const varDecl = TestUtil.createLocalVariableDeclaration('MyObject', 'obj')
+      sut.enterLocalVariableDeclaration(varDecl)
+
+      const ctx = TestUtil.createArithmeticExpression('obj.field', '+', 'x')
+
+      // Act
+      sut.enterArth2Expression(ctx)
+
+      // Assert
+      expect(sut['_mutations']).toHaveLength(0)
+    })
+
+    it('Then should mutate + when operand is a field access on a tracked numeric variable (wrapper.value)', () => {
+      // Arrange
+      const methodCtx = TestUtil.createMethodDeclaration('void', 'testMethod')
+      sut.enterMethodDeclaration(methodCtx)
+
+      const varDecl = TestUtil.createLocalVariableDeclaration(
+        'Integer',
+        'wrapper'
+      )
+      sut.enterLocalVariableDeclaration(varDecl)
+
+      const ctx = TestUtil.createArithmeticExpression('wrapper.value', '+', '1')
+
+      // Act
+      sut.enterArth2Expression(ctx)
+
+      // Assert
+      expect(sut['_mutations']).toHaveLength(3)
+    })
+  })
+
+  describe('Given compound sub-expression operands', () => {
+    it("Then should NOT mutate + when left operand is a compound expression containing a string literal (acc.Name+' has ')", () => {
+      // Arrange
+      const ctx = TestUtil.createArithmeticExpression(
+        "acc.Name+' has '",
+        '+',
+        'count'
+      )
+
+      // Act
+      sut.enterArth2Expression(ctx)
+
+      // Assert
+      expect(sut['_mutations']).toHaveLength(0)
+    })
+
+    it("Then should NOT mutate + when right operand is a compound expression containing a string literal (count+' items')", () => {
+      // Arrange
+      const ctx = TestUtil.createArithmeticExpression(
+        'total',
+        '+',
+        "count+' items'"
+      )
+
+      // Act
+      sut.enterArth2Expression(ctx)
+
+      // Assert
+      expect(sut['_mutations']).toHaveLength(0)
+    })
+  })
+
   describe('Given edge cases for type tracking', () => {
     it('Then should handle enterFormalParameter with no children gracefully', () => {
       // Arrange

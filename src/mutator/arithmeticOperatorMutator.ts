@@ -95,7 +95,7 @@ export class ArithmeticOperatorMutator extends ReturnTypeAwareBaseListener {
   }
 
   private isNonNumericOperand(text: string): boolean {
-    if (text.startsWith("'")) {
+    if (text.includes("'")) {
       return true
     }
 
@@ -105,6 +105,17 @@ export class ArithmeticOperatorMutator extends ReturnTypeAwareBaseListener {
       return !ArithmeticOperatorMutator.NUMERIC_TYPES.has(
         this.resolveApexType(variableType)
       )
+    }
+
+    if (text.includes('.')) {
+      const rootVar = text.split('.')[0]
+      const rootType =
+        this.methodScopeVariables.get(rootVar) ?? this.classFields.get(rootVar)
+      if (rootType !== undefined) {
+        return !ArithmeticOperatorMutator.NUMERIC_TYPES.has(
+          this.resolveApexType(rootType)
+        )
+      }
     }
 
     const methodCallMatch = text.match(/^(\w+)\(/)
