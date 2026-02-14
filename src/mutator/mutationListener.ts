@@ -1,5 +1,6 @@
 import { ParserRuleContext } from 'antlr4ts'
 import { ApexParserListener } from 'apex-parser'
+import { SObjectDescribeRepository } from '../adapter/sObjectDescribeRepository.js'
 import { ApexMethod } from '../type/ApexMethod.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { BaseListener } from './baseListener.js'
@@ -28,7 +29,8 @@ export class MutationListener implements ApexParserListener {
   constructor(
     listeners: BaseListener[],
     protected readonly coveredLines: Set<number>,
-    protected readonly typeTable?: Map<string, ApexMethod>
+    protected readonly typeTable?: Map<string, ApexMethod>,
+    sObjectDescribeRepository?: SObjectDescribeRepository
   ) {
     this.listeners = listeners
 
@@ -37,6 +39,11 @@ export class MutationListener implements ApexParserListener {
         if (listener instanceof ReturnTypeAwareBaseListener) {
           listener.setTypeTable(typeTable)
         }
+      })
+    }
+    if (sObjectDescribeRepository) {
+      this.listeners.forEach(listener => {
+        listener.setSObjectDescribeRepository(sObjectDescribeRepository)
       })
     }
     // Share mutations array across all listeners
