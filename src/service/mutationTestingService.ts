@@ -3,6 +3,7 @@ import { Connection, Messages } from '@salesforce/core'
 import { Progress, Spinner } from '@salesforce/sf-plugins-core'
 import { ApexClassRepository } from '../adapter/apexClassRepository.js'
 import { ApexTestRunner } from '../adapter/apexTestRunner.js'
+import { SObjectDescribeRepository } from '../adapter/sObjectDescribeRepository.js'
 import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
@@ -122,6 +123,18 @@ export class MutationTestingService {
     )
     this.spinner.stop('Done')
 
+    this.spinner.start(
+      `Describing sObject field types for "${this.apexClassName}"`,
+      undefined,
+      { stdout: true }
+    )
+    const sObjectDescribeRepository = new SObjectDescribeRepository(
+      this.connection
+    )
+    const allSObjectNames = [...standardEntityTypes, ...customObjectTypes]
+    await sObjectDescribeRepository.describe(allSObjectNames)
+    this.spinner.stop('Done')
+
     this.spinner.start(`Testing original code"`, undefined, {
       stdout: true,
     })
@@ -172,7 +185,8 @@ export class MutationTestingService {
     const mutations = mutantGenerator.compute(
       apexClass.Body,
       coveredLines,
-      typeResolver
+      typeResolver,
+      sObjectDescribeRepository
     )
 
     if (mutations.length === 0) {
