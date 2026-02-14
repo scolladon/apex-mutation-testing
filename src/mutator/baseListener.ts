@@ -8,6 +8,11 @@ import { ApexMutation } from '../type/ApexMutation.js'
 export class BaseListener implements ApexParserListener {
   _mutations: ApexMutation[] = []
   _sObjectDescribeRepository?: SObjectDescribeRepository
+  _coveredLines?: Set<number>
+
+  setCoveredLines(coveredLines: Set<number>): void {
+    this._coveredLines = coveredLines
+  }
 
   setSObjectDescribeRepository(repository: SObjectDescribeRepository): void {
     this._sObjectDescribeRepository = repository

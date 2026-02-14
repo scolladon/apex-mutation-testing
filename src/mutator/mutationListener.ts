@@ -46,6 +46,9 @@ export class MutationListener implements ApexParserListener {
         listener.setSObjectDescribeRepository(sObjectDescribeRepository)
       })
     }
+    this.listeners.forEach(listener => {
+      listener.setCoveredLines?.(coveredLines)
+    })
     // Share mutations array across all listeners
     this.listeners
       .filter(listener => '_mutations' in listener)
