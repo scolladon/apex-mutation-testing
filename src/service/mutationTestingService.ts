@@ -9,6 +9,7 @@ import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
 import { MutantGenerator } from './mutantGenerator.js'
+import type { TypeGatherResult } from './typeGatherer.js'
 import { TypeGatherer } from './typeGatherer.js'
 import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
 
@@ -122,9 +123,8 @@ export class MutationTestingService {
       new Set([...standardEntityTypes, ...customObjectTypes])
     )
     const typeGatherer = new TypeGatherer(apexClassMatcher, sObjectMatcher)
-    const { methodTypeTable, usedSObjectTypes } = typeGatherer.analyze(
-      apexClass.Body
-    )
+    const { methodTypeTable, usedSObjectTypes }: TypeGatherResult =
+      typeGatherer.analyze(apexClass.Body)
     this.spinner.stop('Done')
 
     this.spinner.start(
