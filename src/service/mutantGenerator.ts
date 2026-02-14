@@ -19,6 +19,7 @@ import { IncrementMutator } from '../mutator/incrementMutator.js'
 import { InvertNegativesMutator } from '../mutator/invertNegativesMutator.js'
 import { LogicalOperatorMutator } from '../mutator/logicalOperatorMutator.js'
 import { MutationListener } from '../mutator/mutationListener.js'
+import { NakedReceiverMutator } from '../mutator/nakedReceiverMutator.js'
 import { NegationMutator } from '../mutator/negationMutator.js'
 import { NullReturnMutator } from '../mutator/nullReturnMutator.js'
 import { RemoveConditionalsMutator } from '../mutator/removeConditionalsMutator.js'
@@ -66,6 +67,7 @@ export class MutantGenerator {
     const removeConditionalsListener = new RemoveConditionalsMutator()
     const switchListener = new SwitchMutator()
     const experimentalSwitchListener = new ExperimentalSwitchMutator()
+    const nakedReceiverListener = new NakedReceiverMutator()
 
     const listener = new MutationListener(
       [
@@ -86,6 +88,7 @@ export class MutantGenerator {
         removeConditionalsListener,
         switchListener,
         experimentalSwitchListener,
+        nakedReceiverListener,
       ],
       coveredLines,
       methodTypeTable,
