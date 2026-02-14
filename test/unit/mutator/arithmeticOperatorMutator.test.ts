@@ -518,14 +518,34 @@ describe('ArithmeticOperatorMutator', () => {
     })
   })
 
-  describe('Given field access operands', () => {
-    it('Then should NOT mutate + when operand is a field access on a tracked non-numeric variable (acc.Name)', () => {
+  describe('Given field access operands with sObject describe data', () => {
+    let mockRepository: {
+      isSObject: jest.Mock
+      resolveFieldType: jest.Mock
+      describe: jest.Mock
+    }
+
+    beforeEach(() => {
+      mockRepository = {
+        isSObject: jest.fn(),
+        resolveFieldType: jest.fn(),
+        describe: jest.fn(),
+      }
+      sut.setSObjectDescribeRepository(
+        mockRepository as unknown as import('../../../src/adapter/sObjectDescribeRepository.js').SObjectDescribeRepository
+      )
+    })
+
+    it('Then should NOT mutate + when sObject field is non-numeric (acc.Name)', () => {
       // Arrange
       const methodCtx = TestUtil.createMethodDeclaration('void', 'testMethod')
       sut.enterMethodDeclaration(methodCtx)
 
       const varDecl = TestUtil.createLocalVariableDeclaration('Account', 'acc')
       sut.enterLocalVariableDeclaration(varDecl)
+
+      mockRepository.isSObject.mockReturnValue(true)
+      mockRepository.resolveFieldType.mockReturnValue(ApexType.STRING)
 
       const ctx = TestUtil.createArithmeticExpression('acc.Name', '+', '5')
 
@@ -536,7 +556,57 @@ describe('ArithmeticOperatorMutator', () => {
       expect(sut['_mutations']).toHaveLength(0)
     })
 
-    it('Then should NOT mutate + when operand is a field access on a tracked String variable (obj.field)', () => {
+    it('Then should mutate + when sObject field is numeric (acc.NumberOfEmployees)', () => {
+      // Arrange
+      const methodCtx = TestUtil.createMethodDeclaration('void', 'testMethod')
+      sut.enterMethodDeclaration(methodCtx)
+
+      const varDecl = TestUtil.createLocalVariableDeclaration('Account', 'acc')
+      sut.enterLocalVariableDeclaration(varDecl)
+
+      mockRepository.isSObject.mockReturnValue(true)
+      mockRepository.resolveFieldType.mockReturnValue(ApexType.INTEGER)
+
+      const ctx = TestUtil.createArithmeticExpression(
+        'acc.NumberOfEmployees',
+        '+',
+        '5'
+      )
+
+      // Act
+      sut.enterArth2Expression(ctx)
+
+      // Assert
+      expect(sut['_mutations']).toHaveLength(3)
+    })
+
+    it('Then should NOT mutate + when sObject field is unknown (conservative)', () => {
+      // Arrange
+      const methodCtx = TestUtil.createMethodDeclaration('void', 'testMethod')
+      sut.enterMethodDeclaration(methodCtx)
+
+      const varDecl = TestUtil.createLocalVariableDeclaration('Account', 'acc')
+      sut.enterLocalVariableDeclaration(varDecl)
+
+      mockRepository.isSObject.mockReturnValue(true)
+      mockRepository.resolveFieldType.mockReturnValue(undefined)
+
+      const ctx = TestUtil.createArithmeticExpression(
+        'acc.UnknownField',
+        '+',
+        '5'
+      )
+
+      // Act
+      sut.enterArth2Expression(ctx)
+
+      // Assert
+      expect(sut['_mutations']).toHaveLength(0)
+    })
+  })
+
+  describe('Given field access operands without sObject describe data', () => {
+    it('Then should NOT mutate + when root type is non-numeric (obj.field, fallback)', () => {
       // Arrange
       const methodCtx = TestUtil.createMethodDeclaration('void', 'testMethod')
       sut.enterMethodDeclaration(methodCtx)
@@ -553,7 +623,7 @@ describe('ArithmeticOperatorMutator', () => {
       expect(sut['_mutations']).toHaveLength(0)
     })
 
-    it('Then should mutate + when operand is a field access on a tracked numeric variable (wrapper.value)', () => {
+    it('Then should mutate + when root type is numeric (wrapper.value, fallback)', () => {
       // Arrange
       const methodCtx = TestUtil.createMethodDeclaration('void', 'testMethod')
       sut.enterMethodDeclaration(methodCtx)

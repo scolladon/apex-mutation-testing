@@ -112,6 +112,17 @@ export class ArithmeticOperatorMutator extends ReturnTypeAwareBaseListener {
       const rootType =
         this.methodScopeVariables.get(rootVar) ?? this.classFields.get(rootVar)
       if (rootType !== undefined) {
+        if (this._sObjectDescribeRepository?.isSObject(rootType)) {
+          const fieldName = text.split('.').slice(1).join('.')
+          const fieldType = this._sObjectDescribeRepository.resolveFieldType(
+            rootType,
+            fieldName
+          )
+          if (fieldType !== undefined) {
+            return !ArithmeticOperatorMutator.NUMERIC_TYPES.has(fieldType)
+          }
+          return true
+        }
         return !ArithmeticOperatorMutator.NUMERIC_TYPES.has(
           this.resolveApexType(rootType)
         )
