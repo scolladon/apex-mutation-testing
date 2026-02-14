@@ -26,8 +26,8 @@ import { RemoveIncrementsMutator } from '../mutator/removeIncrementsMutator.js'
 import { SwitchMutator } from '../mutator/switchMutator.js'
 import { TrueReturnMutator } from '../mutator/trueReturnMutator.js'
 import { VoidMethodCallMutator } from '../mutator/voidMethodCallMutator.js'
+import { ApexMethod } from '../type/ApexMethod.js'
 import { ApexMutation } from '../type/ApexMutation.js'
-import { ApexTypeResolver } from './apexTypeResolver.js'
 
 export class MutantGenerator {
   private tokenStream?: CommonTokenStream
@@ -39,7 +39,7 @@ export class MutantGenerator {
   public compute(
     classContent: string,
     coveredLines: Set<number>,
-    typeResolver?: ApexTypeResolver,
+    methodTypeTable?: Map<string, ApexMethod>,
     sObjectDescribeRepository?: SObjectDescribeRepository
   ) {
     const lexer = new ApexLexer(
@@ -48,8 +48,6 @@ export class MutantGenerator {
     this.tokenStream = new CommonTokenStream(lexer)
     const parser = new ApexParser(this.tokenStream)
     const tree = parser.compilationUnit()
-
-    const methodTypeTable = typeResolver?.analyzeMethodTypes(tree)
 
     const incrementListener = new IncrementMutator()
     const boundaryListener = new BoundaryConditionMutator()

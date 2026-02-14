@@ -70,8 +70,7 @@ export class EmptyReturnMutator extends ReturnTypeAwareBaseListener {
       case ApexType.LIST:
       case ApexType.SET:
       case ApexType.MAP:
-      case ApexType.CUSTOM_OBJECT:
-      case ApexType.STANDARD_ENTITY:
+      case ApexType.SOBJECT:
         return `new ${typeInfo.returnType}()`
 
       default:

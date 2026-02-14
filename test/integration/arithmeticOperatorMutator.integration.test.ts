@@ -1,4 +1,3 @@
-import { ParserRuleContext } from 'antlr4ts'
 import {
   ApexLexer,
   ApexParser,
@@ -10,7 +9,11 @@ import {
 import { SObjectDescribeRepository } from '../../src/adapter/sObjectDescribeRepository.js'
 import { ArithmeticOperatorMutator } from '../../src/mutator/arithmeticOperatorMutator.js'
 import { MutationListener } from '../../src/mutator/mutationListener.js'
-import { ApexTypeResolver } from '../../src/service/apexTypeResolver.js'
+import { TypeGatherer } from '../../src/service/typeGatherer.js'
+import {
+  ApexClassTypeMatcher,
+  SObjectTypeMatcher,
+} from '../../src/service/typeMatcher.js'
 import { ApexType } from '../../src/type/ApexMethod.js'
 
 describe('ArithmeticOperatorMutator Integration', () => {
@@ -40,8 +43,11 @@ describe('ArithmeticOperatorMutator Integration', () => {
     const parser = new ApexParser(tokenStream)
     const tree = parser.compilationUnit()
 
-    const resolver = new ApexTypeResolver()
-    const typeTable = resolver.analyzeMethodTypes(tree as ParserRuleContext)
+    const typeGatherer = new TypeGatherer(
+      new ApexClassTypeMatcher(new Set()),
+      new SObjectTypeMatcher(new Set())
+    )
+    const { methodTypeTable: typeTable } = typeGatherer.analyze(code)
 
     const arithmeticOperatorMutator = new ArithmeticOperatorMutator()
     const listener = new MutationListener(

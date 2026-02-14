@@ -1,4 +1,3 @@
-import { ParserRuleContext } from 'antlr4ts'
 import {
   ApexLexer,
   ApexParser,
@@ -9,7 +8,11 @@ import {
 } from 'apex-parser'
 import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { NegationMutator } from '../../src/mutator/negationMutator.js'
-import { ApexTypeResolver } from '../../src/service/apexTypeResolver.js'
+import { TypeGatherer } from '../../src/service/typeGatherer.js'
+import {
+  ApexClassTypeMatcher,
+  SObjectTypeMatcher,
+} from '../../src/service/typeMatcher.js'
 
 describe('NegationMutator Integration', () => {
   const parseAndMutate = (code: string, coveredLines: Set<number>) => {
@@ -18,8 +21,11 @@ describe('NegationMutator Integration', () => {
     const parser = new ApexParser(tokenStream)
     const tree = parser.compilationUnit()
 
-    const resolver = new ApexTypeResolver()
-    const typeTable = resolver.analyzeMethodTypes(tree as ParserRuleContext)
+    const typeGatherer = new TypeGatherer(
+      new ApexClassTypeMatcher(new Set()),
+      new SObjectTypeMatcher(new Set())
+    )
+    const { methodTypeTable: typeTable } = typeGatherer.analyze(code)
 
     const negationMutator = new NegationMutator()
     const listener = new MutationListener(

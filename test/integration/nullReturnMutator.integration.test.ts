@@ -9,20 +9,21 @@ import {
 } from 'apex-parser'
 import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { NullReturnMutator } from '../../src/mutator/nullReturnMutator.js'
-import { ApexTypeResolver } from '../../src/service/apexTypeResolver.js'
 import { MutantGenerator } from '../../src/service/mutantGenerator.js'
+import { TypeGatherer } from '../../src/service/typeGatherer.js'
+import {
+  ApexClassTypeMatcher,
+  SObjectTypeMatcher,
+} from '../../src/service/typeMatcher.js'
 import { ApexMethod, ApexType } from '../../src/type/ApexMethod.js'
 
 function parseApexAndGetTypeTable(code: string): Map<string, ApexMethod> {
-  const input = new CaseInsensitiveInputStream('other', code)
-  const lexer = new ApexLexer(input)
-  const tokens = new CommonTokenStream(lexer)
-  const parser = new ApexParser(tokens)
-  const tree = parser.compilationUnit()
-
-  const resolver = new ApexTypeResolver()
-  const typeTable = resolver.analyzeMethodTypes(tree as ParserRuleContext)
-  return typeTable
+  const typeGatherer = new TypeGatherer(
+    new ApexClassTypeMatcher(new Set()),
+    new SObjectTypeMatcher(new Set())
+  )
+  const { methodTypeTable } = typeGatherer.analyze(code)
+  return methodTypeTable
 }
 
 describe('NullReturnMutator Integration', () => {

@@ -8,8 +8,9 @@ import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
-import { ApexTypeResolver } from './apexTypeResolver.js'
 import { MutantGenerator } from './mutantGenerator.js'
+import { TypeGatherer } from './typeGatherer.js'
+import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
 
 interface TokenTargetInfo {
   line: number
@@ -116,10 +117,13 @@ export class MutationTestingService {
       .filter(dep => dep.RefMetadataComponentType === 'CustomObject')
       .map(dep => dep.RefMetadataComponentName)
 
-    const typeResolver = new ApexTypeResolver(
-      apexClassTypes,
-      standardEntityTypes,
-      customObjectTypes
+    const apexClassMatcher = new ApexClassTypeMatcher(new Set(apexClassTypes))
+    const sObjectMatcher = new SObjectTypeMatcher(
+      new Set([...standardEntityTypes, ...customObjectTypes])
+    )
+    const typeGatherer = new TypeGatherer(apexClassMatcher, sObjectMatcher)
+    const { methodTypeTable, usedSObjectTypes } = typeGatherer.analyze(
+      apexClass.Body
     )
     this.spinner.stop('Done')
 
@@ -131,8 +135,7 @@ export class MutationTestingService {
     const sObjectDescribeRepository = new SObjectDescribeRepository(
       this.connection
     )
-    const allSObjectNames = [...standardEntityTypes, ...customObjectTypes]
-    await sObjectDescribeRepository.describe(allSObjectNames)
+    await sObjectDescribeRepository.describe([...usedSObjectTypes])
     this.spinner.stop('Done')
 
     this.spinner.start(`Testing original code"`, undefined, {
@@ -185,7 +188,7 @@ export class MutationTestingService {
     const mutations = mutantGenerator.compute(
       apexClass.Body,
       coveredLines,
-      typeResolver,
+      methodTypeTable,
       sObjectDescribeRepository
     )
 
