@@ -7,9 +7,11 @@ import {
   CommonTokenStream,
   ParseTreeWalker,
 } from 'apex-parser'
+import { SObjectDescribeRepository } from '../../src/adapter/sObjectDescribeRepository.js'
 import { ArithmeticOperatorMutator } from '../../src/mutator/arithmeticOperatorMutator.js'
 import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { ApexTypeResolver } from '../../src/service/apexTypeResolver.js'
+import { ApexType } from '../../src/type/ApexMethod.js'
 
 describe('ArithmeticOperatorMutator Integration', () => {
   const parseAndMutate = (code: string, coveredLines: Set<number>) => {
@@ -28,7 +30,11 @@ describe('ArithmeticOperatorMutator Integration', () => {
     return listener.getMutations()
   }
 
-  const parseAndMutateTypeAware = (code: string, coveredLines: Set<number>) => {
+  const parseAndMutateTypeAware = (
+    code: string,
+    coveredLines: Set<number>,
+    sObjectDescribeRepository?: SObjectDescribeRepository
+  ) => {
     const lexer = new ApexLexer(new CaseInsensitiveInputStream('test', code))
     const tokenStream = new CommonTokenStream(lexer)
     const parser = new ApexParser(tokenStream)
@@ -41,7 +47,8 @@ describe('ArithmeticOperatorMutator Integration', () => {
     const listener = new MutationListener(
       [arithmeticOperatorMutator],
       coveredLines,
-      typeTable
+      typeTable,
+      sObjectDescribeRepository
     )
 
     ParseTreeWalker.DEFAULT.walk(listener as ApexParserListener, tree)
@@ -350,6 +357,43 @@ describe('ArithmeticOperatorMutator Integration', () => {
 
       // Assert
       expect(mutations.length).toBe(0)
+    })
+
+    it('Then should generate mutations for numeric sObject field (acc.NumberOfEmployees + 1)', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public Integer test() {
+            Account acc = new Account();
+            return acc.NumberOfEmployees + 1;
+          }
+        }
+      `
+      const mockSObjectDescribeRepository = {
+        isSObject: (type: string) => type.toLowerCase() === 'account',
+        resolveFieldType: (type: string, field: string) => {
+          const t = type.toLowerCase()
+          const f = field.toLowerCase()
+          if (t === 'account' && f === 'numberofemployees')
+            return ApexType.INTEGER
+          if (t === 'account' && f === 'name') return ApexType.STRING
+          return undefined
+        },
+        describe: jest.fn(),
+      }
+
+      // Act
+      const mutations = parseAndMutateTypeAware(
+        code,
+        new Set([4, 5]),
+        mockSObjectDescribeRepository as unknown as SObjectDescribeRepository
+      )
+
+      // Assert
+      const addMutations = mutations.filter(
+        m => m.mutationName === 'ArithmeticOperatorMutator'
+      )
+      expect(addMutations.length).toBe(3)
     })
   })
 
