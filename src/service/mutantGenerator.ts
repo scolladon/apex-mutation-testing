@@ -17,6 +17,7 @@ import { FalseReturnMutator } from '../mutator/falseReturnMutator.js'
 import { IncrementMutator } from '../mutator/incrementMutator.js'
 import { InvertNegativesMutator } from '../mutator/invertNegativesMutator.js'
 import { LogicalOperatorMutator } from '../mutator/logicalOperatorMutator.js'
+import { MemberVariableMutator } from '../mutator/memberVariableMutator.js'
 import { MutationListener } from '../mutator/mutationListener.js'
 import { NegationMutator } from '../mutator/negationMutator.js'
 import { NonVoidMethodCallMutator } from '../mutator/nonVoidMethodCallMutator.js'
@@ -67,6 +68,7 @@ export class MutantGenerator {
     const removeConditionalsListener = new RemoveConditionalsMutator()
     const switchListener = new SwitchMutator()
     const experimentalSwitchListener = new ExperimentalSwitchMutator()
+    const memberVariableListener = new MemberVariableMutator()
 
     const listener = new MutationListener(
       [
@@ -88,6 +90,7 @@ export class MutantGenerator {
         removeConditionalsListener,
         switchListener,
         experimentalSwitchListener,
+        memberVariableListener,
       ],
       coveredLines
     )
