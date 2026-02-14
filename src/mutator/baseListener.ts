@@ -1,11 +1,17 @@
 import { ParserRuleContext, Token } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
 import { ApexParserListener } from 'apex-parser'
+import { SObjectDescribeRepository } from '../adapter/sObjectDescribeRepository.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 
 // @ts-ignore: Base type with just a common _mutations property
 export class BaseListener implements ApexParserListener {
   _mutations: ApexMutation[] = []
+  _sObjectDescribeRepository?: SObjectDescribeRepository
+
+  setSObjectDescribeRepository(repository: SObjectDescribeRepository): void {
+    this._sObjectDescribeRepository = repository
+  }
 
   protected createMutation(
     startToken: Token,

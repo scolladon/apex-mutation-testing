@@ -9,19 +9,20 @@ import {
 } from 'apex-parser'
 import { EmptyReturnMutator } from '../../src/mutator/emptyReturnMutator.js'
 import { MutationListener } from '../../src/mutator/mutationListener.js'
-import { ApexTypeResolver } from '../../src/service/apexTypeResolver.js'
 import { MutantGenerator } from '../../src/service/mutantGenerator.js'
+import { TypeGatherer } from '../../src/service/typeGatherer.js'
+import {
+  ApexClassTypeMatcher,
+  SObjectTypeMatcher,
+} from '../../src/service/typeMatcher.js'
 import { ApexMethod, ApexType } from '../../src/type/ApexMethod.js'
 
 function parseApexAndGetTypeTable(code: string): Map<string, ApexMethod> {
-  const input = new CaseInsensitiveInputStream('other', code)
-  const lexer = new ApexLexer(input)
-  const tokens = new CommonTokenStream(lexer)
-  const parser = new ApexParser(tokens)
-  const tree = parser.compilationUnit()
-
-  const resolver = new ApexTypeResolver()
-  const typeTable = resolver.analyzeMethodTypes(tree as ParserRuleContext)
+  const typeGatherer = new TypeGatherer(
+    new ApexClassTypeMatcher(new Set()),
+    new SObjectTypeMatcher(new Set())
+  )
+  const { methodTypeTable: typeTable } = typeGatherer.analyze(code)
 
   if (code.includes('getValue()')) {
     if (!typeTable.has('getValue')) {

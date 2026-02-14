@@ -15,11 +15,11 @@ export enum ApexType {
   SET = 'SET',
   MAP = 'MAP',
   SOBJECT = 'SOBJECT',
-  STANDARD_ENTITY = 'STANDARD_ENTITY',
-  CUSTOM_OBJECT = 'CUSTOM_OBJECT',
   OBJECT = 'OBJECT',
   APEX_CLASS = 'APEX_CLASS', //includes Interfaces & Enums
 }
+
+export type SObjectFieldTypes = Map<string, Map<string, ApexType>>
 
 export interface ApexMethod {
   returnType: string

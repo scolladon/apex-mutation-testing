@@ -9,7 +9,8 @@
     "@salesforce/sf-plugins-core": "^12.2.6",
     "@stryker-mutator/core": "^9.5.1",
     "antlr4ts": "^0.5.0-alpha.4",
-    "apex-parser": "^2.17.0"
+    "apex-parser": "^2.17.0",
+    "async": "^3.2.6"
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.14",
@@ -17,6 +18,7 @@
     "@oclif/plugin-help": "^6.2.37",
     "@salesforce/cli-plugins-testkit": "^5.3.41",
     "@salesforce/dev-config": "^4.3.2",
+    "@types/async": "^3.2.25",
     "@types/chai": "^5.2.3",
     "@types/jest": "^30.0.0",
     "chai": "^6.2.2",

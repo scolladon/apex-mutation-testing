@@ -3,12 +3,15 @@ import { Connection, Messages } from '@salesforce/core'
 import { Progress, Spinner } from '@salesforce/sf-plugins-core'
 import { ApexClassRepository } from '../adapter/apexClassRepository.js'
 import { ApexTestRunner } from '../adapter/apexTestRunner.js'
+import { SObjectDescribeRepository } from '../adapter/sObjectDescribeRepository.js'
 import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
-import { ApexTypeResolver } from './apexTypeResolver.js'
 import { MutantGenerator } from './mutantGenerator.js'
+import type { TypeGatherResult } from './typeGatherer.js'
+import { TypeGatherer } from './typeGatherer.js'
+import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
 
 interface TokenTargetInfo {
   line: number
@@ -115,11 +118,24 @@ export class MutationTestingService {
       .filter(dep => dep.RefMetadataComponentType === 'CustomObject')
       .map(dep => dep.RefMetadataComponentName)
 
-    const typeResolver = new ApexTypeResolver(
-      apexClassTypes,
-      standardEntityTypes,
-      customObjectTypes
+    const apexClassMatcher = new ApexClassTypeMatcher(new Set(apexClassTypes))
+    const sObjectMatcher = new SObjectTypeMatcher(
+      new Set([...standardEntityTypes, ...customObjectTypes])
     )
+    const typeGatherer = new TypeGatherer(apexClassMatcher, sObjectMatcher)
+    const { methodTypeTable, usedSObjectTypes }: TypeGatherResult =
+      typeGatherer.analyze(apexClass.Body)
+    this.spinner.stop('Done')
+
+    this.spinner.start(
+      `Describing sObject field types for "${this.apexClassName}"`,
+      undefined,
+      { stdout: true }
+    )
+    const sObjectDescribeRepository = new SObjectDescribeRepository(
+      this.connection
+    )
+    await sObjectDescribeRepository.describe([...usedSObjectTypes])
     this.spinner.stop('Done')
 
     this.spinner.start(`Testing original code"`, undefined, {
@@ -172,7 +188,8 @@ export class MutationTestingService {
     const mutations = mutantGenerator.compute(
       apexClass.Body,
       coveredLines,
-      typeResolver
+      methodTypeTable,
+      sObjectDescribeRepository
     )
 
     if (mutations.length === 0) {

@@ -38,36 +38,36 @@ describe('NullReturnMutator', () => {
       },
     ]
 
-    for (const testCase of testCases) {
-      it(`should create mutation for ${testCase.name} return type`, () => {
-        nullReturnMutator._mutations = []
-        const methodCtx = TestUtil.createMethodDeclaration(
-          testCase.name,
-          'testMethod'
-        )
-        nullReturnMutator.enterMethodDeclaration(methodCtx)
+    it.each(
+      testCases
+    )('should create mutation for $name return type', testCase => {
+      nullReturnMutator._mutations = []
+      const methodCtx = TestUtil.createMethodDeclaration(
+        testCase.name,
+        'testMethod'
+      )
+      nullReturnMutator.enterMethodDeclaration(methodCtx)
 
-        const typeTable = new Map<string, ApexMethod>()
-        typeTable.set('testMethod', {
-          returnType: testCase.name,
-          startLine: 1,
-          endLine: 5,
-          type: testCase.type,
-        })
-
-        nullReturnMutator.setTypeTable(typeTable)
-        const returnCtx = TestUtil.createReturnStatement(testCase.expression)
-
-        // Act
-        nullReturnMutator.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(nullReturnMutator._mutations.length).toBe(1)
-        expect(nullReturnMutator._mutations[0].replacement).toBe(
-          testCase.expected
-        )
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: testCase.name,
+        startLine: 1,
+        endLine: 5,
+        type: testCase.type,
       })
-    }
+
+      nullReturnMutator.setTypeTable(typeTable)
+      const returnCtx = TestUtil.createReturnStatement(testCase.expression)
+
+      // Act
+      nullReturnMutator.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(nullReturnMutator._mutations.length).toBe(1)
+      expect(nullReturnMutator._mutations[0].replacement).toBe(
+        testCase.expected
+      )
+    })
   })
 
   describe('primitive and non-primitive return types', () => {
@@ -102,40 +102,40 @@ describe('NullReturnMutator', () => {
       },
     ]
 
-    for (const testCase of testCases) {
-      it(`should ${testCase.shouldMutate ? '' : 'not '}create mutations for ${testCase.typeName} return type`, () => {
-        nullReturnMutator._mutations = []
-        const methodCtx = TestUtil.createMethodDeclaration(
-          testCase.typeName,
-          'testMethod'
-        )
-        nullReturnMutator.enterMethodDeclaration(methodCtx)
+    it.each(
+      testCases
+    )('should $shouldMutate create mutations for $typeName return type', testCase => {
+      nullReturnMutator._mutations = []
+      const methodCtx = TestUtil.createMethodDeclaration(
+        testCase.typeName,
+        'testMethod'
+      )
+      nullReturnMutator.enterMethodDeclaration(methodCtx)
 
-        const typeTable = new Map<string, ApexMethod>()
-        typeTable.set('testMethod', {
-          returnType: testCase.typeName,
-          startLine: 1,
-          endLine: 5,
-          type: testCase.type,
-        })
-
-        nullReturnMutator.setTypeTable(typeTable)
-        const returnCtx = TestUtil.createReturnStatement(testCase.expression)
-
-        // Act
-        nullReturnMutator.enterReturnStatement(returnCtx)
-
-        // Assert
-        if (testCase.shouldMutate) {
-          expect(nullReturnMutator._mutations.length).toBe(1)
-          expect(nullReturnMutator._mutations[0].replacement).toBe(
-            testCase.expected
-          )
-        } else {
-          expect(nullReturnMutator._mutations.length).toBe(0)
-        }
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: testCase.typeName,
+        startLine: 1,
+        endLine: 5,
+        type: testCase.type,
       })
-    }
+
+      nullReturnMutator.setTypeTable(typeTable)
+      const returnCtx = TestUtil.createReturnStatement(testCase.expression)
+
+      // Act
+      nullReturnMutator.enterReturnStatement(returnCtx)
+
+      // Assert
+      if (testCase.shouldMutate) {
+        expect(nullReturnMutator._mutations.length).toBe(1)
+        expect(nullReturnMutator._mutations[0].replacement).toBe(
+          testCase.expected
+        )
+      } else {
+        expect(nullReturnMutator._mutations.length).toBe(0)
+      }
+    })
   })
 
   describe('already null values', () => {
