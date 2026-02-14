@@ -395,6 +395,40 @@ describe('ArithmeticOperatorMutator Integration', () => {
       )
       expect(addMutations.length).toBe(3)
     })
+
+    it('Then should suppress + mutations for non-numeric sObject field (acc.Name + 5)', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public String test() {
+            Account acc = new Account();
+            return acc.Name + 5;
+          }
+        }
+      `
+      const mockSObjectDescribeRepository = {
+        isSObject: (type: string) => type.toLowerCase() === 'account',
+        resolveFieldType: (type: string, field: string) => {
+          const t = type.toLowerCase()
+          const f = field.toLowerCase()
+          if (t === 'account' && f === 'numberofemployees')
+            return ApexType.INTEGER
+          if (t === 'account' && f === 'name') return ApexType.STRING
+          return undefined
+        },
+        describe: jest.fn(),
+      }
+
+      // Act
+      const mutations = parseAndMutateTypeAware(
+        code,
+        new Set([4, 5]),
+        mockSObjectDescribeRepository as unknown as SObjectDescribeRepository
+      )
+
+      // Assert
+      expect(mutations.length).toBe(0)
+    })
   })
 
   describe('Given type-aware parsing with numeric addition', () => {
