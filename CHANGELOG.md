@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.3.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.2.0...v1.3.0) (2026-02-14)
+
+
+### Features
+
+* add experimental switch mutator ([#73](https://github.com/scolladon/apex-mutation-testing/issues/73)) ([d7fe14e](https://github.com/scolladon/apex-mutation-testing/commit/d7fe14e65a6a30098b652f3b0a986a19fd69fbdc))
+
+
+### Bug Fixes
+
+* mark compile errors ([#72](https://github.com/scolladon/apex-mutation-testing/issues/72)) ([eec6d4d](https://github.com/scolladon/apex-mutation-testing/commit/eec6d4d535f3f8ffcb2118af21c249bf922ee6cb))
+* **negation:** type-aware NegationMutator with double negation prevention ([#82](https://github.com/scolladon/apex-mutation-testing/issues/82)) ([d851ba7](https://github.com/scolladon/apex-mutation-testing/commit/d851ba71e464a64831d20e8e25c87a70ea3a4126))
+* type-aware ArithmeticOperatorMutator to suppress string concatenation mutations ([#84](https://github.com/scolladon/apex-mutation-testing/issues/84)) ([fe7de7e](https://github.com/scolladon/apex-mutation-testing/commit/fe7de7e536957f17a36c63950127dd0f150fccb9))
+
 ## [1.2.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.1.0...v1.2.0) (2026-02-03)
 
 
