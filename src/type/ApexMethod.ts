@@ -21,6 +21,8 @@ export enum ApexType {
   APEX_CLASS = 'APEX_CLASS', //includes Interfaces & Enums
 }
 
+export type SObjectFieldTypes = Map<string, Map<string, ApexType>>
+
 export interface ApexMethod {
   returnType: string
   startLine: number
