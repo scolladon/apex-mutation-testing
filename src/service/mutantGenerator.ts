@@ -7,6 +7,7 @@ import {
   CommonTokenStream,
   ParseTreeWalker,
 } from 'apex-parser'
+import { SObjectDescribeRepository } from '../adapter/sObjectDescribeRepository.js'
 import { ArithmeticOperatorMutator } from '../mutator/arithmeticOperatorMutator.js'
 import { BoundaryConditionMutator } from '../mutator/boundaryConditionMutator.js'
 import { ConstructorCallMutator } from '../mutator/constructorCallMutator.js'
@@ -38,7 +39,8 @@ export class MutantGenerator {
   public compute(
     classContent: string,
     coveredLines: Set<number>,
-    typeResolver?: ApexTypeResolver
+    typeResolver?: ApexTypeResolver,
+    sObjectDescribeRepository?: SObjectDescribeRepository
   ) {
     const lexer = new ApexLexer(
       new CaseInsensitiveInputStream('other', classContent)
@@ -88,7 +90,8 @@ export class MutantGenerator {
         experimentalSwitchListener,
       ],
       coveredLines,
-      methodTypeTable
+      methodTypeTable,
+      sObjectDescribeRepository
     )
 
     ParseTreeWalker.DEFAULT.walk(listener as ApexParserListener, tree)
