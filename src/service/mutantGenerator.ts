@@ -8,6 +8,7 @@ import {
   ParseTreeWalker,
 } from 'apex-parser'
 import { ArithmeticOperatorMutator } from '../mutator/arithmeticOperatorMutator.js'
+import { BitwiseOperatorMutator } from '../mutator/bitwiseOperatorMutator.js'
 import { BoundaryConditionMutator } from '../mutator/boundaryConditionMutator.js'
 import { ConstructorCallMutator } from '../mutator/constructorCallMutator.js'
 import { EmptyReturnMutator } from '../mutator/emptyReturnMutator.js'
@@ -67,6 +68,7 @@ export class MutantGenerator {
     const removeConditionalsListener = new RemoveConditionalsMutator()
     const switchListener = new SwitchMutator()
     const experimentalSwitchListener = new ExperimentalSwitchMutator()
+    const bitwiseListener = new BitwiseOperatorMutator()
 
     const listener = new MutationListener(
       [
@@ -88,6 +90,7 @@ export class MutantGenerator {
         removeConditionalsListener,
         switchListener,
         experimentalSwitchListener,
+        bitwiseListener,
       ],
       coveredLines
     )
