@@ -8,6 +8,7 @@ import {
   ParseTreeWalker,
 } from 'apex-parser'
 import { SObjectDescribeRepository } from '../adapter/sObjectDescribeRepository.js'
+import { ArgumentPropagationMutator } from '../mutator/argumentPropagationMutator.js'
 import { ArithmeticOperatorMutator } from '../mutator/arithmeticOperatorMutator.js'
 import { BoundaryConditionMutator } from '../mutator/boundaryConditionMutator.js'
 import { ConstructorCallMutator } from '../mutator/constructorCallMutator.js'
@@ -66,6 +67,7 @@ export class MutantGenerator {
     const removeConditionalsListener = new RemoveConditionalsMutator()
     const switchListener = new SwitchMutator()
     const experimentalSwitchListener = new ExperimentalSwitchMutator()
+    const argumentPropagationListener = new ArgumentPropagationMutator()
 
     const listener = new MutationListener(
       [
@@ -86,6 +88,7 @@ export class MutantGenerator {
         removeConditionalsListener,
         switchListener,
         experimentalSwitchListener,
+        argumentPropagationListener,
       ],
       coveredLines,
       methodTypeTable,
