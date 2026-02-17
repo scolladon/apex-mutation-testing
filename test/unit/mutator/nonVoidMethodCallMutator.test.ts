@@ -132,26 +132,26 @@ describe('NonVoidMethodCallMutator', () => {
         { typeName: 'CustomClass', expected: 'null' },
       ]
 
-      it.each(testCases)(
-        'should replace method call with $expected for $typeName type',
-        ({ typeName, expected }) => {
-          sut._mutations = []
-          const methodCall = createMethodCallExpression('getValue()')
-          const ctx = createVariableDeclarationStatement(
-            typeName,
-            'x',
-            methodCall
-          )
+      it.each(
+        testCases
+      )('should replace method call with $expected for $typeName type', ({
+        typeName,
+        expected,
+      }) => {
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('getValue()')
+        const ctx = createVariableDeclarationStatement(
+          typeName,
+          'x',
+          methodCall
+        )
 
-          sut.enterLocalVariableDeclarationStatement(ctx)
+        sut.enterLocalVariableDeclarationStatement(ctx)
 
-          expect(sut._mutations).toHaveLength(1)
-          expect(sut._mutations[0].replacement).toBe(expected)
-          expect(sut._mutations[0].mutationName).toBe(
-            'NonVoidMethodCallMutator'
-          )
-        }
-      )
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe(expected)
+        expect(sut._mutations[0].mutationName).toBe('NonVoidMethodCallMutator')
+      })
     })
 
     it('should handle dot expression method calls', () => {
@@ -658,38 +658,34 @@ describe('NonVoidMethodCallMutator', () => {
       { apexType: ApexType.DATE, expected: 'null' },
     ]
 
-    it.each(apexTypeTestCases)(
-      'should return $expected for ApexType.$apexType SObject field',
-      ({ apexType, expected }) => {
-        sut._mutations = []
+    it.each(
+      apexTypeTestCases
+    )('should return $expected for ApexType.$apexType SObject field', ({
+      apexType,
+      expected,
+    }) => {
+      sut._mutations = []
 
-        const mockSObjectRepo = {
-          isSObject: jest.fn().mockReturnValue(true),
-          resolveFieldType: jest.fn().mockReturnValue(apexType),
-        } as unknown as SObjectDescribeRepository
+      const mockSObjectRepo = {
+        isSObject: jest.fn().mockReturnValue(true),
+        resolveFieldType: jest.fn().mockReturnValue(apexType),
+      } as unknown as SObjectDescribeRepository
 
-        sut._sObjectDescribeRepository = mockSObjectRepo
+      sut._sObjectDescribeRepository = mockSObjectRepo
 
-        const methodDecl = TestUtil.createMethodDeclaration(
-          'void',
-          'testMethod'
-        )
-        sut.enterMethodDeclaration(methodDecl)
+      const methodDecl = TestUtil.createMethodDeclaration('void', 'testMethod')
+      sut.enterMethodDeclaration(methodDecl)
 
-        const varDecl = TestUtil.createLocalVariableDeclaration(
-          'Account',
-          'acc'
-        )
-        sut.enterLocalVariableDeclaration(varDecl)
+      const varDecl = TestUtil.createLocalVariableDeclaration('Account', 'acc')
+      sut.enterLocalVariableDeclaration(varDecl)
 
-        const methodCall = createMethodCallExpression('getValue()')
-        const assignCtx = createAssignExpression('acc.SomeField', methodCall)
+      const methodCall = createMethodCallExpression('getValue()')
+      const assignCtx = createAssignExpression('acc.SomeField', methodCall)
 
-        sut.enterAssignExpression(assignCtx)
+      sut.enterAssignExpression(assignCtx)
 
-        expect(sut._mutations).toHaveLength(1)
-        expect(sut._mutations[0].replacement).toBe(expected)
-      }
-    )
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe(expected)
+    })
   })
 })
