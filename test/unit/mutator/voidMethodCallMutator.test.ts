@@ -1,5 +1,6 @@
 import { ParserRuleContext, Token } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
+import { DotExpressionContext, MethodCallExpressionContext } from 'apex-parser'
 import { VoidMethodCallMutator } from '../../../src/mutator/voidMethodCallMutator.js'
 
 describe('VoidMethodCallMutator', () => {
@@ -23,8 +24,11 @@ describe('VoidMethodCallMutator', () => {
 
         const methodCallExpression = {
           text: 'doSomething()',
-          constructor: { name: 'MethodCallExpressionContext' },
         } as unknown as ParserRuleContext
+        Object.setPrototypeOf(
+          methodCallExpression,
+          MethodCallExpressionContext.prototype
+        )
 
         const semicolonNode = new TerminalNode({ text: ';' } as Token)
 
@@ -63,8 +67,8 @@ describe('VoidMethodCallMutator', () => {
 
         const dotExpression = {
           text: "System.debug('test')",
-          constructor: { name: 'DotExpressionContext' },
         } as unknown as ParserRuleContext
+        Object.setPrototypeOf(dotExpression, DotExpressionContext.prototype)
 
         const semicolonNode = new TerminalNode({ text: ';' } as Token)
 
@@ -94,7 +98,6 @@ describe('VoidMethodCallMutator', () => {
         // Arrange
         const assignExpression = {
           text: 'x = 5',
-          constructor: { name: 'AssignExpressionContext' },
         } as unknown as ParserRuleContext
 
         const semicolonNode = new TerminalNode({ text: ';' } as Token)
@@ -121,7 +124,6 @@ describe('VoidMethodCallMutator', () => {
         // Arrange
         const postOpExpression = {
           text: 'i++',
-          constructor: { name: 'PostOpExpressionContext' },
         } as unknown as ParserRuleContext
 
         const semicolonNode = new TerminalNode({ text: ';' } as Token)

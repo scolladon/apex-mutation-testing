@@ -1,9 +1,9 @@
 import { ParserRuleContext } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
 import { ApexType } from '../type/ApexMethod.js'
-import { ReturnTypeAwareBaseListener } from './returnTypeAwareBaseListener.js'
+import { TypeTrackingBaseListener } from './typeTrackingBaseListener.js'
 
-export class ArithmeticOperatorMutator extends ReturnTypeAwareBaseListener {
+export class ArithmeticOperatorMutator extends TypeTrackingBaseListener {
   private readonly REPLACEMENT_MAP: Record<string, string[]> = {
     '+': ['-', '*', '/'],
     '-': ['+', '*', '/'],
@@ -17,38 +17,6 @@ export class ArithmeticOperatorMutator extends ReturnTypeAwareBaseListener {
     ApexType.DOUBLE,
     ApexType.DECIMAL,
   ])
-
-  private methodScopeVariables: Map<string, string> = new Map()
-  private classFields: Map<string, string> = new Map()
-
-  override enterMethodDeclaration(ctx: ParserRuleContext): void {
-    super.enterMethodDeclaration(ctx)
-    this.methodScopeVariables = new Map()
-  }
-
-  enterLocalVariableDeclaration(ctx: ParserRuleContext): void {
-    this.trackVariableDeclaration(ctx, this.methodScopeVariables)
-  }
-
-  enterFormalParameter(ctx: ParserRuleContext): void {
-    if (ctx.children && ctx.children.length >= 2) {
-      const typeName = ctx.children[ctx.children.length - 2].text
-      const paramName = ctx.children[ctx.children.length - 1].text
-      this.methodScopeVariables.set(paramName, typeName.toLowerCase())
-    }
-  }
-
-  enterFieldDeclaration(ctx: ParserRuleContext): void {
-    this.trackVariableDeclaration(ctx, this.classFields)
-  }
-
-  enterEnhancedForControl(ctx: ParserRuleContext): void {
-    if (ctx.children && ctx.children.length >= 2) {
-      const typeName = ctx.children[0].text
-      const varName = ctx.children[1].text
-      this.methodScopeVariables.set(varName, typeName.toLowerCase())
-    }
-  }
 
   // Handle MUL, DIV, and MOD operations (*, /, %)
   enterArth1Expression(ctx: ParserRuleContext): void {
@@ -99,8 +67,7 @@ export class ArithmeticOperatorMutator extends ReturnTypeAwareBaseListener {
       return true
     }
 
-    const variableType =
-      this.methodScopeVariables.get(text) ?? this.classFields.get(text)
+    const variableType = this.resolveVariableType(text)
     if (variableType !== undefined) {
       return !ArithmeticOperatorMutator.NUMERIC_TYPES.has(
         this.resolveApexType(variableType)
@@ -109,8 +76,7 @@ export class ArithmeticOperatorMutator extends ReturnTypeAwareBaseListener {
 
     if (text.includes('.')) {
       const rootVar = text.split('.')[0]
-      const rootType =
-        this.methodScopeVariables.get(rootVar) ?? this.classFields.get(rootVar)
+      const rootType = this.resolveVariableType(rootVar)
       if (rootType !== undefined) {
         if (this._sObjectDescribeRepository?.isSObject(rootType)) {
           const fieldName = text.split('.').slice(1).join('.')
@@ -154,22 +120,5 @@ export class ArithmeticOperatorMutator extends ReturnTypeAwareBaseListener {
       id: ApexType.ID,
     }
     return typeMap[typeName] ?? ApexType.OBJECT
-  }
-
-  private trackVariableDeclaration(
-    ctx: ParserRuleContext,
-    target: Map<string, string>
-  ): void {
-    if (ctx.children && ctx.children.length >= 2) {
-      const typeName = ctx.children[0].text
-      for (let i = 1; i < ctx.children.length; i++) {
-        const child = ctx.children[i]
-        const childText = child.text
-        if (childText !== ',' && childText !== '=') {
-          const varName = childText.split('=')[0]
-          target.set(varName, typeName.toLowerCase())
-        }
-      }
-    }
   }
 }
