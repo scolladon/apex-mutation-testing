@@ -1,8 +1,6 @@
 import { MethodCallContext } from 'apex-parser'
 import { BaseListener } from '../../../src/mutator/baseListener.js'
 import { MutationListener } from '../../../src/mutator/mutationListener.js'
-import { ReturnTypeAwareBaseListener } from '../../../src/mutator/returnTypeAwareBaseListener.js'
-import { ApexMethod, ApexType } from '../../../src/type/ApexMethod.js'
 
 describe('MutationListener', () => {
   // Arrange
@@ -111,60 +109,8 @@ describe('MutationListener', () => {
     expect(mockListener2['enterMethodCall']).not.toHaveBeenCalled()
   })
 
-  it('should set typeTable only on ReturnTypeAwareBaseListener instances', () => {
-    // Arrange
-    const typeAwareListener = new ReturnTypeAwareBaseListener()
-    const plainListener = new BaseListener()
-    const typeTable = new Map<string, ApexMethod>()
-    typeTable.set('test', {
-      returnType: 'Integer',
-      startLine: 1,
-      endLine: 5,
-      type: ApexType.INTEGER,
-    })
-
-    // Act
-    new MutationListener(
-      [typeAwareListener, plainListener],
-      coveredLines,
-      typeTable
-    )
-
-    // Assert
-    expect(typeAwareListener['typeTable']).toBe(typeTable)
-    expect(
-      (plainListener as unknown as Record<string, unknown>)['typeTable']
-    ).toBeUndefined()
-  })
-
   it('should handle proxy method called with no arguments', () => {
     // Act & Assert
     expect(() => sut['someUnknownMethod']()).not.toThrow()
-  })
-
-  describe('Given always-forwarded methods for type tracking', () => {
-    it.each([
-      'enterLocalVariableDeclaration',
-      'enterFormalParameter',
-      'enterFieldDeclaration',
-      'enterEnhancedForControl',
-    ])('should forward %s regardless of coverage', method => {
-      // Arrange
-      const listener = {
-        [method]: jest.fn(),
-      } as unknown as jest.Mocked<BaseListener>
-      const uncoveredLine = 999
-      const listenerInstance = new MutationListener([listener], coveredLines)
-
-      const mockContext = {
-        start: { line: uncoveredLine },
-      } as unknown as MethodCallContext
-
-      // Act
-      listenerInstance[method](mockContext)
-
-      // Assert
-      expect(listener[method]).toHaveBeenCalledWith(mockContext)
-    })
   })
 })

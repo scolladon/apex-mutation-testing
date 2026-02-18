@@ -2,9 +2,9 @@ import { ParserRuleContext } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
 import { ApexType } from '../type/ApexMethod.js'
 import { TypeRegistry } from '../type/TypeRegistry.js'
-import { TypeTrackingBaseListener } from './typeTrackingBaseListener.js'
+import { BaseListener } from './baseListener.js'
 
-export class ArithmeticOperatorMutator extends TypeTrackingBaseListener {
+export class ArithmeticOperatorMutator extends BaseListener {
   private readonly REPLACEMENT_MAP: Record<string, string[]> = {
     '+': ['-', '*', '/'],
     '-': ['+', '*', '/'],
@@ -92,62 +92,6 @@ export class ArithmeticOperatorMutator extends TypeTrackingBaseListener {
       return false
     }
 
-    return this.isNonNumericOperandLegacy(text)
-  }
-
-  private isNonNumericOperandLegacy(text: string): boolean {
-    const variableType = this.resolveVariableType(text)
-    if (variableType !== undefined) {
-      return !ArithmeticOperatorMutator.NUMERIC_TYPES.has(
-        this.resolveApexType(variableType)
-      )
-    }
-
-    if (text.includes('.')) {
-      const rootVar = text.split('.')[0]
-      const rootType = this.resolveVariableType(rootVar)
-      if (rootType !== undefined) {
-        if (this._sObjectDescribeRepository?.isSObject(rootType)) {
-          const fieldName = text.split('.').slice(1).join('.')
-          const fieldType = this._sObjectDescribeRepository.resolveFieldType(
-            rootType,
-            fieldName
-          )
-          if (fieldType !== undefined) {
-            return !ArithmeticOperatorMutator.NUMERIC_TYPES.has(fieldType)
-          }
-          return true
-        }
-        return !ArithmeticOperatorMutator.NUMERIC_TYPES.has(
-          this.resolveApexType(rootType)
-        )
-      }
-    }
-
-    const methodCallMatch = text.match(/^(\w+)\(/)
-    if (methodCallMatch) {
-      const calledMethod = methodCallMatch[1]
-      const methodInfo = this.typeTable.get(calledMethod)
-      if (methodInfo) {
-        return !ArithmeticOperatorMutator.NUMERIC_TYPES.has(methodInfo.type)
-      }
-    }
-
     return false
-  }
-
-  private resolveApexType(typeName: string): ApexType {
-    const typeMap: Record<string, ApexType> = {
-      integer: ApexType.INTEGER,
-      long: ApexType.LONG,
-      double: ApexType.DOUBLE,
-      decimal: ApexType.DECIMAL,
-      string: ApexType.STRING,
-      boolean: ApexType.BOOLEAN,
-      date: ApexType.DATE,
-      datetime: ApexType.DATETIME,
-      id: ApexType.ID,
-    }
-    return typeMap[typeName] ?? ApexType.OBJECT
   }
 }

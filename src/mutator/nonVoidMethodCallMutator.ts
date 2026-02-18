@@ -6,9 +6,9 @@ import {
 } from 'apex-parser'
 import { ApexType } from '../type/ApexMethod.js'
 import { TypeRegistry } from '../type/TypeRegistry.js'
-import { TypeTrackingBaseListener } from './typeTrackingBaseListener.js'
+import { BaseListener } from './baseListener.js'
 
-export class NonVoidMethodCallMutator extends TypeTrackingBaseListener {
+export class NonVoidMethodCallMutator extends BaseListener {
   constructor(typeRegistry?: TypeRegistry) {
     super(typeRegistry)
   }
@@ -57,27 +57,17 @@ export class NonVoidMethodCallMutator extends TypeTrackingBaseListener {
       return
     }
 
-    const lhsText = lhs.text
-
-    if (this.typeRegistry) {
-      this.resolveAssignExpressionViaRegistry(ctx, lhsText, rhs)
+    if (!this.typeRegistry) {
       return
     }
 
-    this.resolveAssignExpressionViaLegacy(lhsText, rhs)
-  }
-
-  private resolveAssignExpressionViaRegistry(
-    ctx: ParserRuleContext,
-    lhsText: string,
-    rhs: ParserRuleContext
-  ): void {
+    const lhsText = lhs.text
     const methodName = this.getEnclosingMethodName(ctx)
     if (!methodName) {
       return
     }
 
-    const resolved = this.typeRegistry!.resolveType(methodName, lhsText)
+    const resolved = this.typeRegistry.resolveType(methodName, lhsText)
     if (!resolved) {
       return
     }
@@ -85,27 +75,6 @@ export class NonVoidMethodCallMutator extends TypeTrackingBaseListener {
     const defaultValue = lhsText.includes('.')
       ? this.generateDefaultValueFromApexType(resolved.apexType)
       : this.generateDefaultValue(resolved.typeName)
-
-    if (defaultValue !== null) {
-      this.createMutationFromParserRuleContext(rhs, defaultValue)
-    }
-  }
-
-  private resolveAssignExpressionViaLegacy(
-    lhsText: string,
-    rhs: ParserRuleContext
-  ): void {
-    let defaultValue: string | null
-
-    if (lhsText.includes('.')) {
-      defaultValue = this.resolveFieldAccessDefaultValue(lhsText)
-    } else {
-      const typeName = this.resolveVariableType(lhsText)
-      if (!typeName) {
-        return
-      }
-      defaultValue = this.generateDefaultValue(typeName)
-    }
 
     if (defaultValue !== null) {
       this.createMutationFromParserRuleContext(rhs, defaultValue)
@@ -177,33 +146,6 @@ export class NonVoidMethodCallMutator extends TypeTrackingBaseListener {
     if (defaultValue !== null) {
       this.createMutationFromParserRuleContext(expression, defaultValue)
     }
-  }
-
-  private resolveFieldAccessDefaultValue(fieldAccess: string): string | null {
-    const parts = fieldAccess.split('.')
-    if (parts.length < 2) {
-      return null
-    }
-
-    const rootVar = parts[0]
-    const rootType = this.resolveVariableType(rootVar)
-
-    if (!rootType) {
-      return null
-    }
-
-    if (this._sObjectDescribeRepository?.isSObject(rootType)) {
-      const fieldName = parts.slice(1).join('.')
-      const fieldType = this._sObjectDescribeRepository.resolveFieldType(
-        rootType,
-        fieldName
-      )
-      if (fieldType !== undefined) {
-        return this.generateDefaultValueFromApexType(fieldType)
-      }
-    }
-
-    return null
   }
 
   private generateDefaultValueFromApexType(apexType: ApexType): string {
