@@ -1,157 +1,86 @@
 import { ParserRuleContext } from 'antlr4ts'
+import { MethodDeclarationContext } from 'apex-parser'
 import { NegationMutator } from '../../../src/mutator/negationMutator.js'
 import { ApexMethod, ApexType } from '../../../src/type/ApexMethod.js'
+import { TypeRegistry } from '../../../src/type/TypeRegistry.js'
 import { TestUtil } from '../../utils/testUtil.js'
 
+function createTypeRegistry(
+  methodTypeTable: Map<string, ApexMethod>
+): TypeRegistry {
+  return new TypeRegistry(methodTypeTable, new Map(), new Map(), [])
+}
+
+function createReturnCtxInMethod(
+  expression: string,
+  methodName: string
+): ParserRuleContext {
+  const returnCtx = TestUtil.createReturnStatement(expression)
+  const methodCtx = Object.create(MethodDeclarationContext.prototype)
+  methodCtx.children = [
+    { text: 'Integer' },
+    { text: methodName },
+    { text: '(' },
+    { text: ')' },
+  ]
+  Object.defineProperty(returnCtx, 'parent', {
+    value: methodCtx,
+    writable: true,
+    configurable: true,
+  })
+  return returnCtx
+}
+
+function createPreOpReturnCtxInMethod(
+  operator: string,
+  innerExpression: string,
+  methodName: string
+): ParserRuleContext {
+  const returnCtx = TestUtil.createReturnStatementWithPreOp(
+    operator,
+    innerExpression
+  )
+  const methodCtx = Object.create(MethodDeclarationContext.prototype)
+  methodCtx.children = [
+    { text: 'Integer' },
+    { text: methodName },
+    { text: '(' },
+    { text: ')' },
+  ]
+  Object.defineProperty(returnCtx, 'parent', {
+    value: methodCtx,
+    writable: true,
+    configurable: true,
+  })
+  return returnCtx
+}
+
+function createComplexReturnCtxInMethod(
+  expression: string,
+  childCount: number,
+  methodName: string
+): ParserRuleContext {
+  const returnCtx = TestUtil.createReturnStatementWithComplexExpression(
+    expression,
+    childCount
+  )
+  const methodCtx = Object.create(MethodDeclarationContext.prototype)
+  methodCtx.children = [
+    { text: 'Integer' },
+    { text: methodName },
+    { text: '(' },
+    { text: ')' },
+  ]
+  Object.defineProperty(returnCtx, 'parent', {
+    value: methodCtx,
+    writable: true,
+    configurable: true,
+  })
+  return returnCtx
+}
+
 describe('NegationMutator', () => {
-  let sut: NegationMutator
-
-  beforeEach(() => {
-    sut = new NegationMutator()
-  })
-
-  describe('Given a method returning Integer', () => {
-    beforeEach(() => {
-      const methodCtx = TestUtil.createMethodDeclaration(
-        'Integer',
-        'testMethod'
-      )
-      sut.enterMethodDeclaration(methodCtx)
-
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: 'Integer',
-        startLine: 1,
-        endLine: 5,
-        type: ApexType.INTEGER,
-      })
-      sut.setTypeTable(typeTable)
-    })
-
-    describe('When returning a simple variable', () => {
-      it('Then should create mutation to negate the value', () => {
-        // Arrange
-        const returnCtx = TestUtil.createReturnStatement('x')
-
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(1)
-        expect(sut._mutations[0].replacement).toBe('-x')
-        expect(sut._mutations[0].mutationName).toBe('NegationMutator')
-      })
-    })
-
-    describe('When returning a numeric literal', () => {
-      it('Then should create mutation to negate the value', () => {
-        // Arrange
-        const returnCtx = TestUtil.createReturnStatement('42')
-
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(1)
-        expect(sut._mutations[0].replacement).toBe('-42')
-      })
-    })
-  })
-
-  describe('Given a method returning String', () => {
-    beforeEach(() => {
-      const methodCtx = TestUtil.createMethodDeclaration('String', 'testMethod')
-      sut.enterMethodDeclaration(methodCtx)
-
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: 'String',
-        startLine: 1,
-        endLine: 5,
-        type: ApexType.STRING,
-      })
-      sut.setTypeTable(typeTable)
-    })
-
-    describe('When returning a value', () => {
-      it('Then should NOT create mutation (non-numeric type)', () => {
-        // Arrange
-        const returnCtx = TestUtil.createReturnStatement('name')
-
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(0)
-      })
-    })
-  })
-
-  describe('Given a method returning Boolean', () => {
-    beforeEach(() => {
-      const methodCtx = TestUtil.createMethodDeclaration(
-        'Boolean',
-        'testMethod'
-      )
-      sut.enterMethodDeclaration(methodCtx)
-
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: 'Boolean',
-        startLine: 1,
-        endLine: 5,
-        type: ApexType.BOOLEAN,
-      })
-      sut.setTypeTable(typeTable)
-    })
-
-    describe('When returning a value', () => {
-      it('Then should NOT create mutation (non-numeric type)', () => {
-        // Arrange
-        const returnCtx = TestUtil.createReturnStatement('isActive')
-
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(0)
-      })
-    })
-  })
-
-  describe('Given a method returning List', () => {
-    beforeEach(() => {
-      const methodCtx = TestUtil.createMethodDeclaration(
-        'List<String>',
-        'testMethod'
-      )
-      sut.enterMethodDeclaration(methodCtx)
-
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: 'List<String>',
-        startLine: 1,
-        endLine: 5,
-        type: ApexType.LIST,
-      })
-      sut.setTypeTable(typeTable)
-    })
-
-    describe('When returning a value', () => {
-      it('Then should NOT create mutation (non-numeric type)', () => {
-        // Arrange
-        const returnCtx = TestUtil.createReturnStatement('items')
-
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(0)
-      })
-    })
-  })
-
-  describe('Given numeric type mutations', () => {
+  describe('numeric type mutations', () => {
     const numericTypes = [
       { type: ApexType.INTEGER, typeName: 'Integer' },
       { type: ApexType.LONG, typeName: 'Long' },
@@ -159,38 +88,34 @@ describe('NegationMutator', () => {
       { type: ApexType.DECIMAL, typeName: 'Decimal' },
     ]
 
-    for (const { type, typeName } of numericTypes) {
-      it(`Then should create mutation for ${typeName} return type`, () => {
-        // Arrange
-        sut._mutations = []
-        const methodCtx = TestUtil.createMethodDeclaration(
-          typeName,
-          'testMethod'
-        )
-        sut.enterMethodDeclaration(methodCtx)
-
-        const typeTable = new Map<string, ApexMethod>()
-        typeTable.set('testMethod', {
-          returnType: typeName,
-          startLine: 1,
-          endLine: 5,
-          type,
-        })
-        sut.setTypeTable(typeTable)
-
-        const returnCtx = TestUtil.createReturnStatement('value')
-
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(1)
-        expect(sut._mutations[0].replacement).toBe('-value')
+    it.each(
+      numericTypes
+    )('Given $typeName return type, When entering return statement, Then creates negation mutation', ({
+      type,
+      typeName,
+    }) => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: typeName,
+        startLine: 1,
+        endLine: 5,
+        type,
       })
-    }
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod('value', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('-value')
+    })
   })
 
-  describe('Given non-numeric type mutations', () => {
+  describe('non-numeric type mutations', () => {
     const nonNumericTypes = [
       { type: ApexType.STRING, typeName: 'String' },
       { type: ApexType.BOOLEAN, typeName: 'Boolean' },
@@ -204,38 +129,407 @@ describe('NegationMutator', () => {
       { type: ApexType.VOID, typeName: 'void' },
     ]
 
-    for (const { type, typeName } of nonNumericTypes) {
-      it(`Then should NOT create mutation for ${typeName} return type`, () => {
-        // Arrange
-        sut._mutations = []
-        const methodCtx = TestUtil.createMethodDeclaration(
-          typeName,
-          'testMethod'
-        )
-        sut.enterMethodDeclaration(methodCtx)
-
-        const typeTable = new Map<string, ApexMethod>()
-        typeTable.set('testMethod', {
-          returnType: typeName,
-          startLine: 1,
-          endLine: 5,
-          type,
-        })
-        sut.setTypeTable(typeTable)
-
-        const returnCtx = TestUtil.createReturnStatement('value')
-
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(0)
+    it.each(
+      nonNumericTypes
+    )('Given $typeName return type, When entering return statement, Then no mutation created', ({
+      type,
+      typeName,
+    }) => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: typeName,
+        startLine: 1,
+        endLine: 5,
+        type,
       })
-    }
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod('value', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
   })
 
-  describe('Given already negated expressions (double negation prevention)', () => {
-    beforeEach(() => {
+  describe('simple value negation', () => {
+    it('Given Integer method returning variable, When entering return statement, Then creates negation mutation', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod('x', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('-x')
+      expect(sut._mutations[0].mutationName).toBe('NegationMutator')
+    })
+
+    it('Given Integer method returning numeric literal, When entering return statement, Then creates negation mutation', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod('42', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('-42')
+    })
+  })
+
+  describe('double negation prevention', () => {
+    it('Given Integer method returning negated variable, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+      const returnCtx = createPreOpReturnCtxInMethod('-', 'x', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+
+    it('Given Integer method returning negated literal, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+      const returnCtx = createPreOpReturnCtxInMethod('-', '42', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+
+    it('Given Integer method returning pre-increment, When entering return statement, Then creates mutation', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+      const returnCtx = createPreOpReturnCtxInMethod('++', 'x', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+    })
+  })
+
+  describe('complex expressions (smart wrapping)', () => {
+    it('Given Integer method returning complex expression, When entering return statement, Then wraps in parentheses', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+      const returnCtx = createComplexReturnCtxInMethod('a + b', 3, 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('-(a + b)')
+    })
+
+    it('Given Integer method returning simple variable, When entering return statement, Then does not wrap in parentheses', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod('x', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('-x')
+    })
+
+    it('Given Integer method returning simple literal, When entering return statement, Then does not wrap in parentheses', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod('42', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('-42')
+    })
+  })
+
+  describe('zero literal prevention', () => {
+    it('Given Integer method returning 0, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod('0', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+
+    it('Given Integer method returning 0.0, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod('0.0', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+
+    it('Given Integer method returning 0L, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod('0L', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+
+    it('Given Integer method returning non-zero literal, When entering return statement, Then creates mutation', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod('10', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('-10')
+    })
+  })
+
+  describe('validation and edge cases', () => {
+    it('Given unknown method, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('otherMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod('x', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+
+    it('Given no enclosing method, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+      const returnCtx = TestUtil.createReturnStatement('x')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+
+    it('Given return statement with no children, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+
+      const returnCtx = {
+        children: null,
+        childCount: 0,
+      } as unknown as ParserRuleContext
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'Integer' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      Object.defineProperty(returnCtx, 'parent', {
+        value: methodCtx,
+        writable: true,
+        configurable: true,
+      })
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+
+    it('Given non-ParserRuleContext expression node, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+
+      const returnCtx = {
+        children: [{ text: 'return' }, { text: '42' }],
+        childCount: 2,
+        getChild: (i: number) =>
+          i === 0 ? { text: 'return' } : { text: '42' },
+      } as unknown as ParserRuleContext
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'Integer' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      Object.defineProperty(returnCtx, 'parent', {
+        value: methodCtx,
+        writable: true,
+        configurable: true,
+      })
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('backward compatibility (legacy typeTable path)', () => {
+    it('Given legacy typeTable with Integer method, When entering return statement, Then creates mutation', () => {
+      // Arrange
+      const sut = new NegationMutator()
       const methodCtx = TestUtil.createMethodDeclaration(
         'Integer',
         'testMethod'
@@ -250,254 +544,37 @@ describe('NegationMutator', () => {
         type: ApexType.INTEGER,
       })
       sut.setTypeTable(typeTable)
+      const returnCtx = TestUtil.createReturnStatement('x')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('-x')
     })
 
-    describe('When returning a PreOpExpression with unary minus', () => {
-      it('Then should NOT create mutation (avoid double negation)', () => {
-        // Arrange
-        const returnCtx = TestUtil.createReturnStatementWithPreOp('-', 'x')
-
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(0)
-      })
-    })
-
-    describe('When returning a PreOpExpression with unary minus on literal', () => {
-      it('Then should NOT create mutation (avoid double negation)', () => {
-        // Arrange
-        const returnCtx = TestUtil.createReturnStatementWithPreOp('-', '42')
-
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(0)
-      })
-    })
-
-    describe('When returning a PreOpExpression with other operator (++)', () => {
-      it('Then should create mutation (not a negation)', () => {
-        // Arrange
-        const returnCtx = TestUtil.createReturnStatementWithPreOp('++', 'x')
-
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(1)
-      })
-    })
-  })
-
-  describe('Given complex expressions (smart wrapping)', () => {
-    beforeEach(() => {
-      const methodCtx = TestUtil.createMethodDeclaration(
-        'Integer',
-        'testMethod'
-      )
+    it('Given legacy typeTable with String method, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const sut = new NegationMutator()
+      const methodCtx = TestUtil.createMethodDeclaration('String', 'testMethod')
       sut.enterMethodDeclaration(methodCtx)
 
       const typeTable = new Map<string, ApexMethod>()
       typeTable.set('testMethod', {
-        returnType: 'Integer',
+        returnType: 'String',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: ApexType.STRING,
       })
       sut.setTypeTable(typeTable)
-    })
+      const returnCtx = TestUtil.createReturnStatement('name')
 
-    describe('When returning a complex expression (a + b)', () => {
-      it('Then should wrap in parentheses: -(a + b)', () => {
-        // Arrange
-        const returnCtx = TestUtil.createReturnStatementWithComplexExpression(
-          'a + b',
-          3
-        )
+      // Act
+      sut.enterReturnStatement(returnCtx)
 
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(1)
-        expect(sut._mutations[0].replacement).toBe('-(a + b)')
-      })
-    })
-
-    describe('When returning a simple variable', () => {
-      it('Then should NOT wrap in parentheses: -x', () => {
-        // Arrange
-        const returnCtx = TestUtil.createReturnStatement('x')
-
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(1)
-        expect(sut._mutations[0].replacement).toBe('-x')
-      })
-    })
-
-    describe('When returning a simple literal', () => {
-      it('Then should NOT wrap in parentheses: -42', () => {
-        // Arrange
-        const returnCtx = TestUtil.createReturnStatement('42')
-
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(1)
-        expect(sut._mutations[0].replacement).toBe('-42')
-      })
-    })
-  })
-
-  describe('Given zero literal expressions (equivalent mutant prevention)', () => {
-    beforeEach(() => {
-      const methodCtx = TestUtil.createMethodDeclaration(
-        'Integer',
-        'testMethod'
-      )
-      sut.enterMethodDeclaration(methodCtx)
-
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: 'Integer',
-        startLine: 1,
-        endLine: 5,
-        type: ApexType.INTEGER,
-      })
-      sut.setTypeTable(typeTable)
-    })
-
-    describe('When returning integer zero literal', () => {
-      it('Then should NOT create mutation (-0 is equivalent to 0)', () => {
-        // Arrange
-        const returnCtx = TestUtil.createReturnStatement('0')
-
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(0)
-      })
-    })
-
-    describe('When returning double zero literal', () => {
-      it('Then should NOT create mutation (-0.0 is equivalent to 0.0)', () => {
-        // Arrange
-        const returnCtx = TestUtil.createReturnStatement('0.0')
-
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(0)
-      })
-    })
-
-    describe('When returning long zero literal', () => {
-      it('Then should NOT create mutation (-0L is equivalent to 0L)', () => {
-        // Arrange
-        const returnCtx = TestUtil.createReturnStatement('0L')
-
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(0)
-      })
-    })
-
-    describe('When returning non-zero literal', () => {
-      it('Then should create mutation', () => {
-        // Arrange
-        const returnCtx = TestUtil.createReturnStatement('10')
-
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(1)
-        expect(sut._mutations[0].replacement).toBe('-10')
-      })
-    })
-  })
-
-  describe('Given edge cases', () => {
-    describe('When no type table is set', () => {
-      it('Then should NOT create mutation', () => {
-        // Arrange
-        const methodCtx = TestUtil.createMethodDeclaration(
-          'Integer',
-          'testMethod'
-        )
-        sut.enterMethodDeclaration(methodCtx)
-        const returnCtx = TestUtil.createReturnStatement('x')
-
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(0)
-      })
-    })
-
-    describe('When not inside a method', () => {
-      it('Then should NOT create mutation', () => {
-        // Arrange
-        const typeTable = new Map<string, ApexMethod>()
-        typeTable.set('testMethod', {
-          returnType: 'Integer',
-          startLine: 1,
-          endLine: 5,
-          type: ApexType.INTEGER,
-        })
-        sut.setTypeTable(typeTable)
-
-        const returnCtx = TestUtil.createReturnStatement('x')
-
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(0)
-      })
-    })
-
-    describe('When return statement has no expression', () => {
-      it('Then should NOT create mutation', () => {
-        // Arrange
-        const methodCtx = TestUtil.createMethodDeclaration(
-          'Integer',
-          'testMethod'
-        )
-        sut.enterMethodDeclaration(methodCtx)
-
-        const typeTable = new Map<string, ApexMethod>()
-        typeTable.set('testMethod', {
-          returnType: 'Integer',
-          startLine: 1,
-          endLine: 5,
-          type: ApexType.INTEGER,
-        })
-        sut.setTypeTable(typeTable)
-
-        const returnCtx = {
-          children: [{ text: 'return' }],
-          childCount: 1,
-        } as unknown as ParserRuleContext
-
-        // Act
-        sut.enterReturnStatement(returnCtx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(0)
-      })
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
     })
   })
 })

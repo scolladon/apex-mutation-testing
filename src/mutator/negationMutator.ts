@@ -1,6 +1,7 @@
 import { ParserRuleContext } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
 import { ApexType } from '../type/ApexMethod.js'
+import { TypeRegistry } from '../type/TypeRegistry.js'
 import { ReturnTypeAwareBaseListener } from './returnTypeAwareBaseListener.js'
 
 export class NegationMutator extends ReturnTypeAwareBaseListener {
@@ -13,13 +14,12 @@ export class NegationMutator extends ReturnTypeAwareBaseListener {
 
   private static readonly ZERO_LITERAL = /^0+(\.0+)?[lLdD]?$/
 
-  enterReturnStatement(ctx: ParserRuleContext): void {
-    if (!this.isCurrentMethodTypeKnown()) {
-      return
-    }
+  constructor(typeRegistry?: TypeRegistry) {
+    super(typeRegistry)
+  }
 
-    const typeInfo = this.getCurrentMethodReturnTypeInfo()
-    if (!typeInfo || !NegationMutator.NUMERIC_TYPES.has(typeInfo.type)) {
+  enterReturnStatement(ctx: ParserRuleContext): void {
+    if (!this.isNumericReturn(ctx)) {
       return
     }
 
@@ -44,6 +44,23 @@ export class NegationMutator extends ReturnTypeAwareBaseListener {
     const replacement = this.formatNegation(expressionText, expressionNode)
 
     this.createMutationFromParserRuleContext(expressionNode, replacement)
+  }
+
+  private isNumericReturn(ctx: ParserRuleContext): boolean {
+    if (this.typeRegistry) {
+      const methodName = this.getEnclosingMethodName(ctx)
+      if (!methodName) {
+        return false
+      }
+      const typeInfo = this.typeRegistry.resolveType(methodName)
+      return !!typeInfo && NegationMutator.NUMERIC_TYPES.has(typeInfo.apexType)
+    }
+
+    if (!this.isCurrentMethodTypeKnown()) {
+      return false
+    }
+    const typeInfo = this.getCurrentMethodReturnTypeInfo()
+    return !!typeInfo && NegationMutator.NUMERIC_TYPES.has(typeInfo.type)
   }
 
   private isNegatedExpression(expr: ParserRuleContext): boolean {
