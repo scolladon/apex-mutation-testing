@@ -1,6 +1,7 @@
 import { ParserRuleContext } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
 import { ApexType } from '../type/ApexMethod.js'
+import { TypeRegistry } from '../type/TypeRegistry.js'
 import { TypeTrackingBaseListener } from './typeTrackingBaseListener.js'
 
 export class ArithmeticOperatorMutator extends TypeTrackingBaseListener {
@@ -17,6 +18,10 @@ export class ArithmeticOperatorMutator extends TypeTrackingBaseListener {
     ApexType.DOUBLE,
     ApexType.DECIMAL,
   ])
+
+  constructor(typeRegistry?: TypeRegistry) {
+    super(typeRegistry)
+  }
 
   // Handle MUL, DIV, and MOD operations (*, /, %)
   enterArth1Expression(ctx: ParserRuleContext): void {
@@ -41,8 +46,13 @@ export class ArithmeticOperatorMutator extends TypeTrackingBaseListener {
         const replacements = this.REPLACEMENT_MAP[operatorText]
 
         if (replacements) {
-          if (operatorText === '+' && this.isNonNumericContext(ctx)) {
-            return
+          if (operatorText === '+') {
+            const methodName = this.typeRegistry
+              ? this.getEnclosingMethodName(ctx)
+              : null
+            if (this.isNonNumericContext(ctx, methodName)) {
+              return
+            }
           }
 
           for (const replacement of replacements) {
@@ -53,20 +63,39 @@ export class ArithmeticOperatorMutator extends TypeTrackingBaseListener {
     }
   }
 
-  private isNonNumericContext(ctx: ParserRuleContext): boolean {
+  private isNonNumericContext(
+    ctx: ParserRuleContext,
+    methodName: string | null
+  ): boolean {
     const leftText = ctx.getChild(0).text
     const rightText = ctx.getChild(2).text
 
     return (
-      this.isNonNumericOperand(leftText) || this.isNonNumericOperand(rightText)
+      this.isNonNumericOperand(leftText, methodName) ||
+      this.isNonNumericOperand(rightText, methodName)
     )
   }
 
-  private isNonNumericOperand(text: string): boolean {
+  private isNonNumericOperand(
+    text: string,
+    methodName: string | null
+  ): boolean {
     if (text.includes("'")) {
       return true
     }
 
+    if (this.typeRegistry && methodName) {
+      const resolved = this.typeRegistry.resolveType(methodName, text)
+      if (resolved) {
+        return !ArithmeticOperatorMutator.NUMERIC_TYPES.has(resolved.apexType)
+      }
+      return false
+    }
+
+    return this.isNonNumericOperandLegacy(text)
+  }
+
+  private isNonNumericOperandLegacy(text: string): boolean {
     const variableType = this.resolveVariableType(text)
     if (variableType !== undefined) {
       return !ArithmeticOperatorMutator.NUMERIC_TYPES.has(
@@ -97,8 +126,8 @@ export class ArithmeticOperatorMutator extends TypeTrackingBaseListener {
 
     const methodCallMatch = text.match(/^(\w+)\(/)
     if (methodCallMatch) {
-      const methodName = methodCallMatch[1]
-      const methodInfo = this.typeTable.get(methodName)
+      const calledMethod = methodCallMatch[1]
+      const methodInfo = this.typeTable.get(calledMethod)
       if (methodInfo) {
         return !ArithmeticOperatorMutator.NUMERIC_TYPES.has(methodInfo.type)
       }
