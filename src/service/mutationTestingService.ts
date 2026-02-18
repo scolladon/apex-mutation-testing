@@ -9,8 +9,7 @@ import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
 import { MutantGenerator } from './mutantGenerator.js'
-import type { TypeGatherResult } from './typeGatherer.js'
-import { TypeGatherer } from './typeGatherer.js'
+import { TypeDiscoverer } from './typeDiscoverer.js'
 import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
 
 interface TokenTargetInfo {
@@ -118,24 +117,20 @@ export class MutationTestingService {
       .filter(dep => dep.RefMetadataComponentType === 'CustomObject')
       .map(dep => dep.RefMetadataComponentName)
 
-    const apexClassMatcher = new ApexClassTypeMatcher(new Set(apexClassTypes))
-    const sObjectMatcher = new SObjectTypeMatcher(
-      new Set([...standardEntityTypes, ...customObjectTypes])
-    )
-    const typeGatherer = new TypeGatherer(apexClassMatcher, sObjectMatcher)
-    const { methodTypeTable, usedSObjectTypes }: TypeGatherResult =
-      typeGatherer.analyze(apexClass.Body)
-    this.spinner.stop('Done')
-
-    this.spinner.start(
-      `Describing sObject field types for "${this.apexClassName}"`,
-      undefined,
-      { stdout: true }
-    )
     const sObjectDescribeRepository = new SObjectDescribeRepository(
       this.connection
     )
-    await sObjectDescribeRepository.describe([...usedSObjectTypes])
+    const apexClassMatcher = new ApexClassTypeMatcher(new Set(apexClassTypes))
+    const sObjectMatcher = new SObjectTypeMatcher(
+      new Set([...standardEntityTypes, ...customObjectTypes]),
+      sObjectDescribeRepository
+    )
+
+    const typeDiscoverer = new TypeDiscoverer()
+      .withMatcher(apexClassMatcher)
+      .withMatcher(sObjectMatcher)
+
+    const typeRegistry = await typeDiscoverer.analyze(apexClass.Body)
     this.spinner.stop('Done')
 
     this.spinner.start(`Testing original code"`, undefined, {
@@ -188,8 +183,7 @@ export class MutationTestingService {
     const mutations = mutantGenerator.compute(
       apexClass.Body,
       coveredLines,
-      methodTypeTable,
-      sObjectDescribeRepository
+      typeRegistry
     )
 
     if (mutations.length === 0) {

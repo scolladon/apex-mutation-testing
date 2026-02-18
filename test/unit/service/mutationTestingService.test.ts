@@ -6,6 +6,7 @@ import { ApexTestRunner } from '../../../src/adapter/apexTestRunner.js'
 import { SObjectDescribeRepository } from '../../../src/adapter/sObjectDescribeRepository.js'
 import { MutantGenerator } from '../../../src/service/mutantGenerator.js'
 import { MutationTestingService } from '../../../src/service/mutationTestingService.js'
+import { TypeDiscoverer } from '../../../src/service/typeDiscoverer.js'
 import { ApexMutationParameter } from '../../../src/type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult.js'
 import { MetadataComponentDependency } from '../../../src/type/MetadataComponentDependency.js'
@@ -14,6 +15,7 @@ jest.mock('../../../src/adapter/apexClassRepository.js')
 jest.mock('../../../src/adapter/apexTestRunner.js')
 jest.mock('../../../src/adapter/sObjectDescribeRepository.js')
 jest.mock('../../../src/service/mutantGenerator.js')
+jest.mock('../../../src/service/typeDiscoverer.js')
 
 describe('MutationTestingService', () => {
   let sut: MutationTestingService
@@ -76,6 +78,12 @@ describe('MutationTestingService', () => {
 
     ;(SObjectDescribeRepository as jest.Mock).mockImplementation(() => ({
       describe: jest.fn().mockResolvedValue(undefined),
+    }))
+
+    const mockTypeRegistry = {}
+    ;(TypeDiscoverer as jest.Mock).mockImplementation(() => ({
+      withMatcher: jest.fn().mockReturnThis(),
+      analyze: jest.fn().mockResolvedValue(mockTypeRegistry),
     }))
 
     sut = new MutationTestingService(
@@ -158,7 +166,7 @@ describe('MutationTestingService', () => {
           expectedStatus: 'Killed',
           error: null,
           updateError: null,
-          expectedSpinnerStops: 6,
+          expectedSpinnerStops: 5,
           expectedMutants: [
             expect.objectContaining({
               mutatorName: 'TestMutation',
@@ -181,7 +189,7 @@ describe('MutationTestingService', () => {
           expectedStatus: 'Survived',
           error: null,
           updateError: null,
-          expectedSpinnerStops: 6,
+          expectedSpinnerStops: 5,
           expectedMutants: [
             expect.objectContaining({
               mutatorName: 'TestMutation',
@@ -199,7 +207,7 @@ describe('MutationTestingService', () => {
             'Unable to refresh session due to: Error authenticating with the refresh token due to: expired access/refresh token'
           ),
           updateError: null,
-          expectedSpinnerStops: 6,
+          expectedSpinnerStops: 5,
           expectedMutants: [
             expect.objectContaining({
               mutatorName: 'TestMutation',
@@ -219,7 +227,7 @@ describe('MutationTestingService', () => {
             'System.LimitException: LIMIT_USAGE_FOR_NS : Too many SOQL queries'
           ),
           updateError: null,
-          expectedSpinnerStops: 6,
+          expectedSpinnerStops: 5,
           expectedMutants: [
             expect.objectContaining({
               mutatorName: 'TestMutation',
@@ -244,7 +252,7 @@ describe('MutationTestingService', () => {
           updateError: new Error(
             'Deployment failed:\n[TestClass.cls:1:50] Invalid syntax'
           ),
-          expectedSpinnerStops: 6,
+          expectedSpinnerStops: 5,
           expectedMutants: [
             expect.objectContaining({
               mutatorName: 'TestMutation',
@@ -322,7 +330,7 @@ describe('MutationTestingService', () => {
           testFile: 'TestClassTest',
           mutants: expectedMutants,
         })
-        expect(spinner.start).toHaveBeenCalledTimes(6)
+        expect(spinner.start).toHaveBeenCalledTimes(5)
         expect(spinner.stop).toHaveBeenCalledTimes(expectedSpinnerStops)
         expect(progress.start).toHaveBeenCalled()
         expect(progress.finish).toHaveBeenCalled()
