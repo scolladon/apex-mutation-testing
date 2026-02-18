@@ -10,21 +10,11 @@ import {
 import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { NullReturnMutator } from '../../src/mutator/nullReturnMutator.js'
 import { MutantGenerator } from '../../src/service/mutantGenerator.js'
-import { TypeGatherer } from '../../src/service/typeGatherer.js'
+import { TypeDiscoverer } from '../../src/service/typeDiscoverer.js'
 import {
   ApexClassTypeMatcher,
   SObjectTypeMatcher,
 } from '../../src/service/typeMatcher.js'
-import { ApexMethod, ApexType } from '../../src/type/ApexMethod.js'
-
-function parseApexAndGetTypeTable(code: string): Map<string, ApexMethod> {
-  const typeGatherer = new TypeGatherer(
-    new ApexClassTypeMatcher(new Set()),
-    new SObjectTypeMatcher(new Set())
-  )
-  const { methodTypeTable } = typeGatherer.analyze(code)
-  return methodTypeTable
-}
 
 describe('NullReturnMutator Integration', () => {
   let mutantGenerator: MutantGenerator
@@ -33,8 +23,18 @@ describe('NullReturnMutator Integration', () => {
     mutantGenerator = new MutantGenerator()
   })
 
+  const buildTypeRegistry = async (
+    code: string,
+    sObjectTypes: string[] = []
+  ) => {
+    const typeDiscoverer = new TypeDiscoverer()
+      .withMatcher(new ApexClassTypeMatcher(new Set()))
+      .withMatcher(new SObjectTypeMatcher(new Set(sObjectTypes)))
+    return typeDiscoverer.analyze(code)
+  }
+
   describe('when mutating non-primitive return statements', () => {
-    it('should create mutations for String return values', () => {
+    it('should create mutations for String return values', async () => {
       // Arrange
       const classContent = `
           public class TestClass {
@@ -51,26 +51,13 @@ describe('NullReturnMutator Integration', () => {
       const tokens = new CommonTokenStream(lexer)
       mutantGenerator['tokenStream'] = tokens
 
-      const typeTable = parseApexAndGetTypeTable(classContent)
-      typeTable.set('getName', {
-        returnType: 'String',
-        startLine: 3,
-        endLine: 5,
-        type: ApexType.STRING,
-      })
-
-      const nullReturnMutator = new NullReturnMutator()
-      nullReturnMutator.setTypeTable(typeTable)
-      nullReturnMutator['currentMethodName'] = 'getName'
+      const typeRegistry = await buildTypeRegistry(classContent)
+      const nullReturnMutator = new NullReturnMutator(typeRegistry)
 
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
 
-      const listener = new MutationListener(
-        [nullReturnMutator],
-        coveredLines,
-        typeTable
-      )
+      const listener = new MutationListener([nullReturnMutator], coveredLines)
 
       ParseTreeWalker.DEFAULT.walk(
         listener as ApexParserListener,
@@ -88,14 +75,13 @@ describe('NullReturnMutator Integration', () => {
       if (nullReturnMutations.length > 0) {
         expect(nullReturnMutations[0].replacement).toBe('null')
 
-        // Test actual mutation
         const result = mutantGenerator.mutate(nullReturnMutations[0])
         expect(result).toContain('return null;')
         expect(result).not.toContain("return 'FirstName LastName';")
       }
     })
 
-    it('should create mutations for Object return values', () => {
+    it('should create mutations for Object return values', async () => {
       // Arrange
       const classContent = `
           public class TestClass {
@@ -112,26 +98,13 @@ describe('NullReturnMutator Integration', () => {
       const tokens = new CommonTokenStream(lexer)
       mutantGenerator['tokenStream'] = tokens
 
-      const typeTable = parseApexAndGetTypeTable(classContent)
-      typeTable.set('getAccount', {
-        returnType: 'Account',
-        startLine: 3,
-        endLine: 5,
-        type: ApexType.OBJECT,
-      })
-
-      const nullReturnMutator = new NullReturnMutator()
-      nullReturnMutator.setTypeTable(typeTable)
-      nullReturnMutator['currentMethodName'] = 'getAccount'
+      const typeRegistry = await buildTypeRegistry(classContent, ['Account'])
+      const nullReturnMutator = new NullReturnMutator(typeRegistry)
 
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
 
-      const listener = new MutationListener(
-        [nullReturnMutator],
-        coveredLines,
-        typeTable
-      )
+      const listener = new MutationListener([nullReturnMutator], coveredLines)
 
       ParseTreeWalker.DEFAULT.walk(
         listener as ApexParserListener,
@@ -155,7 +128,7 @@ describe('NullReturnMutator Integration', () => {
       }
     })
 
-    it('should create mutations for List return values', () => {
+    it('should create mutations for List return values', async () => {
       // Arrange
       const classContent = `
           public class TestClass {
@@ -164,7 +137,7 @@ describe('NullReturnMutator Integration', () => {
             }
           }
         `
-      const coveredLines = new Set([4]) // "return [SELECT..."
+      const coveredLines = new Set([4])
 
       const lexer = new ApexLexer(
         new CaseInsensitiveInputStream('other', classContent)
@@ -172,26 +145,13 @@ describe('NullReturnMutator Integration', () => {
       const tokens = new CommonTokenStream(lexer)
       mutantGenerator['tokenStream'] = tokens
 
-      const typeTable = parseApexAndGetTypeTable(classContent)
-      typeTable.set('getAccounts', {
-        returnType: 'List<Account>',
-        startLine: 3,
-        endLine: 5,
-        type: ApexType.LIST,
-      })
-
-      const nullReturnMutator = new NullReturnMutator()
-      nullReturnMutator.setTypeTable(typeTable)
-      nullReturnMutator['currentMethodName'] = 'getAccounts'
+      const typeRegistry = await buildTypeRegistry(classContent)
+      const nullReturnMutator = new NullReturnMutator(typeRegistry)
 
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
 
-      const listener = new MutationListener(
-        [nullReturnMutator],
-        coveredLines,
-        typeTable
-      )
+      const listener = new MutationListener([nullReturnMutator], coveredLines)
 
       ParseTreeWalker.DEFAULT.walk(
         listener as ApexParserListener,
@@ -217,7 +177,7 @@ describe('NullReturnMutator Integration', () => {
   })
 
   describe('when mutating primitive return statements', () => {
-    it('should create mutations for Integer return values', () => {
+    it('should create mutations for Integer return values', async () => {
       // Arrange
       const classContent = `
           public class TestClass {
@@ -226,7 +186,7 @@ describe('NullReturnMutator Integration', () => {
             }
           }
         `
-      const coveredLines = new Set([4]) // "return 10;"
+      const coveredLines = new Set([4])
 
       const lexer = new ApexLexer(
         new CaseInsensitiveInputStream('other', classContent)
@@ -234,26 +194,13 @@ describe('NullReturnMutator Integration', () => {
       const tokens = new CommonTokenStream(lexer)
       mutantGenerator['tokenStream'] = tokens
 
-      const typeTable = parseApexAndGetTypeTable(classContent)
-      typeTable.set('getCount', {
-        returnType: 'Integer',
-        startLine: 3,
-        endLine: 5,
-        type: ApexType.INTEGER,
-      })
-
-      const nullReturnMutator = new NullReturnMutator()
-      nullReturnMutator.setTypeTable(typeTable)
-      nullReturnMutator['currentMethodName'] = 'getCount'
+      const typeRegistry = await buildTypeRegistry(classContent)
+      const nullReturnMutator = new NullReturnMutator(typeRegistry)
 
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
 
-      const listener = new MutationListener(
-        [nullReturnMutator],
-        coveredLines,
-        typeTable
-      )
+      const listener = new MutationListener([nullReturnMutator], coveredLines)
 
       ParseTreeWalker.DEFAULT.walk(
         listener as ApexParserListener,
@@ -277,7 +224,7 @@ describe('NullReturnMutator Integration', () => {
       }
     })
 
-    it('should create mutations for Boolean return values', () => {
+    it('should create mutations for Boolean return values', async () => {
       // Arrange
       const classContent = `
           public class TestClass {
@@ -294,26 +241,13 @@ describe('NullReturnMutator Integration', () => {
       const tokens = new CommonTokenStream(lexer)
       mutantGenerator['tokenStream'] = tokens
 
-      const typeTable = parseApexAndGetTypeTable(classContent)
-      typeTable.set('isValid', {
-        returnType: 'Boolean',
-        startLine: 3,
-        endLine: 5,
-        type: ApexType.BOOLEAN,
-      })
-
-      const nullReturnMutator = new NullReturnMutator()
-      nullReturnMutator.setTypeTable(typeTable)
-      nullReturnMutator['currentMethodName'] = 'isValid'
+      const typeRegistry = await buildTypeRegistry(classContent)
+      const nullReturnMutator = new NullReturnMutator(typeRegistry)
 
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
 
-      const listener = new MutationListener(
-        [nullReturnMutator],
-        coveredLines,
-        typeTable
-      )
+      const listener = new MutationListener([nullReturnMutator], coveredLines)
 
       ParseTreeWalker.DEFAULT.walk(
         listener as ApexParserListener,
@@ -337,7 +271,7 @@ describe('NullReturnMutator Integration', () => {
       }
     })
 
-    it('should not create mutations for void methods', () => {
+    it('should not create mutations for void methods', async () => {
       // Arrange
       const classContent = `
           public class TestClass {
@@ -354,26 +288,13 @@ describe('NullReturnMutator Integration', () => {
       )
       const tokens = new CommonTokenStream(lexer)
 
-      const typeTable = parseApexAndGetTypeTable(classContent)
-      typeTable.set('processData', {
-        returnType: 'void',
-        startLine: 3,
-        endLine: 6,
-        type: ApexType.VOID,
-      })
-
-      const nullReturnMutator = new NullReturnMutator()
-      nullReturnMutator.setTypeTable(typeTable)
-      nullReturnMutator['currentMethodName'] = 'processData'
+      const typeRegistry = await buildTypeRegistry(classContent)
+      const nullReturnMutator = new NullReturnMutator(typeRegistry)
 
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
 
-      const listener = new MutationListener(
-        [nullReturnMutator],
-        coveredLines,
-        typeTable
-      )
+      const listener = new MutationListener([nullReturnMutator], coveredLines)
 
       ParseTreeWalker.DEFAULT.walk(
         listener as ApexParserListener,
@@ -391,7 +312,7 @@ describe('NullReturnMutator Integration', () => {
   })
 
   describe('when handling already null returns', () => {
-    it('should not create mutations for already null returns', () => {
+    it('should not create mutations for already null returns', async () => {
       // Arrange
       const classContent = `
           public class TestClass {
@@ -407,26 +328,13 @@ describe('NullReturnMutator Integration', () => {
       )
       const tokens = new CommonTokenStream(lexer)
 
-      const typeTable = parseApexAndGetTypeTable(classContent)
-      typeTable.set('getNullString', {
-        returnType: 'String',
-        startLine: 3,
-        endLine: 5,
-        type: ApexType.STRING,
-      })
-
-      const nullReturnMutator = new NullReturnMutator()
-      nullReturnMutator.setTypeTable(typeTable)
-      nullReturnMutator['currentMethodName'] = 'getNullString'
+      const typeRegistry = await buildTypeRegistry(classContent)
+      const nullReturnMutator = new NullReturnMutator(typeRegistry)
 
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
 
-      const listener = new MutationListener(
-        [nullReturnMutator],
-        coveredLines,
-        typeTable
-      )
+      const listener = new MutationListener([nullReturnMutator], coveredLines)
 
       ParseTreeWalker.DEFAULT.walk(
         listener as ApexParserListener,

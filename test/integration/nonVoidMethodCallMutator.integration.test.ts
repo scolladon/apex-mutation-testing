@@ -10,10 +10,15 @@ import { SObjectDescribeRepository } from '../../src/adapter/sObjectDescribeRepo
 import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { NonVoidMethodCallMutator } from '../../src/mutator/nonVoidMethodCallMutator.js'
 import { MutantGenerator } from '../../src/service/mutantGenerator.js'
+import { TypeDiscoverer } from '../../src/service/typeDiscoverer.js'
+import {
+  ApexClassTypeMatcher,
+  SObjectTypeMatcher,
+} from '../../src/service/typeMatcher.js'
 import { ApexType } from '../../src/type/ApexMethod.js'
 
 describe('NonVoidMethodCallMutator Integration', () => {
-  const parseAndMutate = (
+  const parseAndMutate = async (
     code: string,
     coveredLines: Set<number>,
     sObjectDescribeRepository?: SObjectDescribeRepository
@@ -23,12 +28,20 @@ describe('NonVoidMethodCallMutator Integration', () => {
     const parser = new ApexParser(tokenStream)
     const tree = parser.compilationUnit()
 
-    const nonVoidMethodCallMutator = new NonVoidMethodCallMutator()
+    const sObjectTypes = sObjectDescribeRepository
+      ? new Set(['Account'])
+      : new Set<string>()
+    const typeDiscoverer = new TypeDiscoverer()
+      .withMatcher(new ApexClassTypeMatcher(new Set()))
+      .withMatcher(
+        new SObjectTypeMatcher(sObjectTypes, sObjectDescribeRepository)
+      )
+    const typeRegistry = await typeDiscoverer.analyze(code)
+
+    const nonVoidMethodCallMutator = new NonVoidMethodCallMutator(typeRegistry)
     const listener = new MutationListener(
       [nonVoidMethodCallMutator],
-      coveredLines,
-      undefined,
-      sObjectDescribeRepository
+      coveredLines
     )
 
     ParseTreeWalker.DEFAULT.walk(listener as ApexParserListener, tree)
@@ -36,7 +49,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
   }
 
   describe('variable declarations with method calls', () => {
-    it('should mutate Integer variable declaration with method call', () => {
+    it('should mutate Integer variable declaration with method call', async () => {
       const code = `
         public class TestClass {
           public void test() {
@@ -45,14 +58,14 @@ describe('NonVoidMethodCallMutator Integration', () => {
         }
       `
 
-      const mutations = parseAndMutate(code, new Set([4]))
+      const mutations = await parseAndMutate(code, new Set([4]))
 
       expect(mutations.length).toBe(1)
       expect(mutations[0].replacement).toBe('0')
       expect(mutations[0].mutationName).toBe('NonVoidMethodCallMutator')
     })
 
-    it('should mutate String variable declaration with method call', () => {
+    it('should mutate String variable declaration with method call', async () => {
       const code = `
         public class TestClass {
           public void test() {
@@ -61,13 +74,13 @@ describe('NonVoidMethodCallMutator Integration', () => {
         }
       `
 
-      const mutations = parseAndMutate(code, new Set([4]))
+      const mutations = await parseAndMutate(code, new Set([4]))
 
       expect(mutations.length).toBe(1)
       expect(mutations[0].replacement).toBe("''")
     })
 
-    it('should mutate Boolean variable declaration with method call', () => {
+    it('should mutate Boolean variable declaration with method call', async () => {
       const code = `
         public class TestClass {
           public void test() {
@@ -76,13 +89,13 @@ describe('NonVoidMethodCallMutator Integration', () => {
         }
       `
 
-      const mutations = parseAndMutate(code, new Set([4]))
+      const mutations = await parseAndMutate(code, new Set([4]))
 
       expect(mutations.length).toBe(1)
       expect(mutations[0].replacement).toBe('false')
     })
 
-    it('should mutate List variable declaration with method call', () => {
+    it('should mutate List variable declaration with method call', async () => {
       const code = `
         public class TestClass {
           public void test() {
@@ -91,13 +104,13 @@ describe('NonVoidMethodCallMutator Integration', () => {
         }
       `
 
-      const mutations = parseAndMutate(code, new Set([4]))
+      const mutations = await parseAndMutate(code, new Set([4]))
 
       expect(mutations.length).toBe(1)
       expect(mutations[0].replacement).toBe('new List<String>()')
     })
 
-    it('should mutate custom class variable declaration with method call', () => {
+    it('should mutate custom class variable declaration with method call', async () => {
       const code = `
         public class TestClass {
           public void test() {
@@ -106,13 +119,13 @@ describe('NonVoidMethodCallMutator Integration', () => {
         }
       `
 
-      const mutations = parseAndMutate(code, new Set([4]))
+      const mutations = await parseAndMutate(code, new Set([4]))
 
       expect(mutations.length).toBe(1)
       expect(mutations[0].replacement).toBe('null')
     })
 
-    it('should handle dot expression method calls', () => {
+    it('should handle dot expression method calls', async () => {
       const code = `
         public class TestClass {
           public void test() {
@@ -121,13 +134,13 @@ describe('NonVoidMethodCallMutator Integration', () => {
         }
       `
 
-      const mutations = parseAndMutate(code, new Set([4]))
+      const mutations = await parseAndMutate(code, new Set([4]))
 
       expect(mutations.length).toBe(1)
       expect(mutations[0].replacement).toBe('0')
     })
 
-    it('should handle chained method calls', () => {
+    it('should handle chained method calls', async () => {
       const code = `
         public class TestClass {
           public void test() {
@@ -136,7 +149,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
         }
       `
 
-      const mutations = parseAndMutate(code, new Set([4]))
+      const mutations = await parseAndMutate(code, new Set([4]))
 
       expect(mutations.length).toBe(1)
       expect(mutations[0].replacement).toBe("''")
@@ -144,7 +157,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
   })
 
   describe('assignment expressions with method calls', () => {
-    it('should mutate assignment to local variable', () => {
+    it('should mutate assignment to local variable', async () => {
       const code = `
         public class TestClass {
           public void test() {
@@ -154,7 +167,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
         }
       `
 
-      const mutations = parseAndMutate(code, new Set([4, 5]))
+      const mutations = await parseAndMutate(code, new Set([4, 5]))
 
       const assignMutations = mutations.filter(
         m => m.mutationName === 'NonVoidMethodCallMutator'
@@ -163,7 +176,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
       expect(assignMutations[0].replacement).toBe('0')
     })
 
-    it('should mutate assignment to class field', () => {
+    it('should mutate assignment to class field', async () => {
       const code = `
         public class TestClass {
           private String myField;
@@ -174,7 +187,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
         }
       `
 
-      const mutations = parseAndMutate(code, new Set([6]))
+      const mutations = await parseAndMutate(code, new Set([6]))
 
       expect(mutations.length).toBe(1)
       expect(mutations[0].replacement).toBe("''")
@@ -182,7 +195,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
   })
 
   describe('SObject field assignments', () => {
-    it('should mutate SObject String field assignment', () => {
+    it('should mutate SObject String field assignment', async () => {
       const mockSObjectRepo = {
         isSObject: (type: string) => type.toLowerCase() === 'account',
         resolveFieldType: (type: string, field: string) => {
@@ -193,6 +206,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
             return ApexType.STRING
           return undefined
         },
+        describe: jest.fn(),
       } as unknown as SObjectDescribeRepository
 
       const code = `
@@ -204,7 +218,11 @@ describe('NonVoidMethodCallMutator Integration', () => {
         }
       `
 
-      const mutations = parseAndMutate(code, new Set([4, 5]), mockSObjectRepo)
+      const mutations = await parseAndMutate(
+        code,
+        new Set([4, 5]),
+        mockSObjectRepo
+      )
 
       const fieldMutations = mutations.filter(
         m =>
@@ -214,7 +232,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
       expect(fieldMutations.length).toBe(1)
     })
 
-    it('should mutate SObject Integer field assignment', () => {
+    it('should mutate SObject Integer field assignment', async () => {
       const mockSObjectRepo = {
         isSObject: (type: string) => type.toLowerCase() === 'account',
         resolveFieldType: (type: string, field: string) => {
@@ -225,6 +243,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
             return ApexType.INTEGER
           return undefined
         },
+        describe: jest.fn(),
       } as unknown as SObjectDescribeRepository
 
       const code = `
@@ -236,7 +255,11 @@ describe('NonVoidMethodCallMutator Integration', () => {
         }
       `
 
-      const mutations = parseAndMutate(code, new Set([4, 5]), mockSObjectRepo)
+      const mutations = await parseAndMutate(
+        code,
+        new Set([4, 5]),
+        mockSObjectRepo
+      )
 
       const fieldMutations = mutations.filter(
         m =>
@@ -247,7 +270,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
   })
 
   describe('should NOT mutate', () => {
-    it('should NOT mutate constructor calls', () => {
+    it('should NOT mutate constructor calls', async () => {
       const code = `
         public class TestClass {
           public void test() {
@@ -256,12 +279,12 @@ describe('NonVoidMethodCallMutator Integration', () => {
         }
       `
 
-      const mutations = parseAndMutate(code, new Set([4]))
+      const mutations = await parseAndMutate(code, new Set([4]))
 
       expect(mutations.length).toBe(0)
     })
 
-    it('should NOT mutate literal assignments', () => {
+    it('should NOT mutate literal assignments', async () => {
       const code = `
         public class TestClass {
           public void test() {
@@ -270,12 +293,12 @@ describe('NonVoidMethodCallMutator Integration', () => {
         }
       `
 
-      const mutations = parseAndMutate(code, new Set([4]))
+      const mutations = await parseAndMutate(code, new Set([4]))
 
       expect(mutations.length).toBe(0)
     })
 
-    it('should NOT mutate void method calls', () => {
+    it('should NOT mutate void method calls', async () => {
       const code = `
         public class TestClass {
           public void test() {
@@ -284,7 +307,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
         }
       `
 
-      const mutations = parseAndMutate(code, new Set([4]))
+      const mutations = await parseAndMutate(code, new Set([4]))
 
       // NonVoidMethodCallMutator should not create mutations for void calls
       const nonVoidMutations = mutations.filter(
@@ -293,7 +316,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
       expect(nonVoidMutations.length).toBe(0)
     })
 
-    it('should NOT mutate lines not covered', () => {
+    it('should NOT mutate lines not covered', async () => {
       const code = `
         public class TestClass {
           public void test() {
@@ -303,14 +326,14 @@ describe('NonVoidMethodCallMutator Integration', () => {
       `
 
       // Line 4 is not in covered lines
-      const mutations = parseAndMutate(code, new Set([5]))
+      const mutations = await parseAndMutate(code, new Set([5]))
 
       expect(mutations.length).toBe(0)
     })
   })
 
   describe('multiple method calls', () => {
-    it('should mutate multiple declarations', () => {
+    it('should mutate multiple declarations', async () => {
       const code = `
         public class TestClass {
           public void test() {
@@ -321,7 +344,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
         }
       `
 
-      const mutations = parseAndMutate(code, new Set([4, 5, 6]))
+      const mutations = await parseAndMutate(code, new Set([4, 5, 6]))
 
       expect(mutations.length).toBe(3)
       expect(mutations.map(m => m.replacement).sort()).toEqual(
@@ -331,7 +354,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
   })
 
   describe('mutation application', () => {
-    it('should produce valid mutated code', () => {
+    it('should produce valid mutated code', async () => {
       const code = `public class TestClass {
   public void test() {
     Integer x = getValue();
@@ -346,7 +369,14 @@ describe('NonVoidMethodCallMutator Integration', () => {
       const parser = new ApexParser(tokenStream)
       const tree = parser.compilationUnit()
 
-      const nonVoidMethodCallMutator = new NonVoidMethodCallMutator()
+      const typeDiscoverer = new TypeDiscoverer()
+        .withMatcher(new ApexClassTypeMatcher(new Set()))
+        .withMatcher(new SObjectTypeMatcher(new Set()))
+      const typeRegistry = await typeDiscoverer.analyze(code)
+
+      const nonVoidMethodCallMutator = new NonVoidMethodCallMutator(
+        typeRegistry
+      )
       const listener = new MutationListener(
         [nonVoidMethodCallMutator],
         new Set([3])
