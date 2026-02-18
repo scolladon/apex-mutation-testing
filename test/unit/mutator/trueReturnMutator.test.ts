@@ -1,15 +1,37 @@
 import { ParserRuleContext } from 'antlr4ts'
+import { MethodDeclarationContext } from 'apex-parser'
 import { TrueReturnMutator } from '../../../src/mutator/trueReturnMutator.js'
 import { ApexMethod, ApexType } from '../../../src/type/ApexMethod.js'
+import { TypeRegistry } from '../../../src/type/TypeRegistry.js'
 import { TestUtil } from '../../utils/testUtil.js'
 
-describe('TrueReturnMutator', () => {
-  let trueReturnMutator: TrueReturnMutator
+function createTypeRegistry(
+  methodTypeTable: Map<string, ApexMethod>
+): TypeRegistry {
+  return new TypeRegistry(methodTypeTable, new Map(), new Map(), [])
+}
 
-  beforeEach(() => {
-    trueReturnMutator = new TrueReturnMutator()
+function createReturnCtxInMethod(
+  expression: string,
+  methodName: string
+): ParserRuleContext {
+  const returnCtx = TestUtil.createReturnStatement(expression)
+  const methodCtx = Object.create(MethodDeclarationContext.prototype)
+  methodCtx.children = [
+    { text: 'Boolean' },
+    { text: methodName },
+    { text: '(' },
+    { text: ')' },
+  ]
+  Object.defineProperty(returnCtx, 'parent', {
+    value: methodCtx,
+    writable: true,
+    configurable: true,
   })
+  return returnCtx
+}
 
+describe('TrueReturnMutator', () => {
   describe('boolean return mutations', () => {
     const testCases = [
       { name: 'literal false', expression: 'false', expected: 'true' },
@@ -22,14 +44,10 @@ describe('TrueReturnMutator', () => {
       },
     ]
 
-    it.each(testCases)('should create mutation for $name', testCase => {
-      trueReturnMutator._mutations = []
-      const methodCtx = TestUtil.createMethodDeclaration(
-        'Boolean',
-        'testMethod'
-      )
-      trueReturnMutator.enterMethodDeclaration(methodCtx)
-
+    it.each(
+      testCases
+    )('Given $name return value, When entering return statement, Then creates true mutation', testCase => {
+      // Arrange
       const typeTable = new Map<string, ApexMethod>()
       typeTable.set('testMethod', {
         returnType: 'Boolean',
@@ -37,28 +55,25 @@ describe('TrueReturnMutator', () => {
         endLine: 5,
         type: ApexType.BOOLEAN,
       })
-
-      trueReturnMutator.setTypeTable(typeTable)
-      const returnCtx = TestUtil.createReturnStatement(testCase.expression)
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new TrueReturnMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod(
+        testCase.expression,
+        'testMethod'
+      )
 
       // Act
-      trueReturnMutator.enterReturnStatement(returnCtx)
+      sut.enterReturnStatement(returnCtx)
 
       // Assert
-      expect(trueReturnMutator._mutations.length).toBe(1)
-      expect(trueReturnMutator._mutations[0].replacement).toBe(
-        testCase.expected
-      )
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe(testCase.expected)
     })
+  })
 
-    it('should not create mutation for literal true', () => {
-      trueReturnMutator._mutations = []
-      const methodCtx = TestUtil.createMethodDeclaration(
-        'Boolean',
-        'testMethod'
-      )
-      trueReturnMutator.enterMethodDeclaration(methodCtx)
-
+  describe('already true values', () => {
+    it('Given already true return value, When entering return statement, Then no mutation created', () => {
+      // Arrange
       const typeTable = new Map<string, ApexMethod>()
       typeTable.set('testMethod', {
         returnType: 'Boolean',
@@ -66,26 +81,220 @@ describe('TrueReturnMutator', () => {
         endLine: 5,
         type: ApexType.BOOLEAN,
       })
-
-      trueReturnMutator.setTypeTable(typeTable)
-      const returnCtx = TestUtil.createReturnStatement('true')
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new TrueReturnMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod('true', 'testMethod')
 
       // Act
-      trueReturnMutator.enterReturnStatement(returnCtx)
+      sut.enterReturnStatement(returnCtx)
 
       // Assert
-      expect(trueReturnMutator._mutations.length).toBe(0)
+      expect(sut._mutations).toHaveLength(0)
     })
   })
 
   describe('non-boolean return types', () => {
-    it('should not create mutations for non-boolean return types', () => {
-      trueReturnMutator._mutations = []
+    const testCases = [
+      {
+        type: ApexType.INTEGER,
+        typeName: 'Integer',
+        expression: '42',
+      },
+      {
+        type: ApexType.STRING,
+        typeName: 'String',
+        expression: '"test"',
+      },
+      {
+        type: ApexType.VOID,
+        typeName: 'void',
+        expression: '',
+      },
+      {
+        type: ApexType.OBJECT,
+        typeName: 'Account',
+        expression: 'new Account()',
+      },
+    ]
+
+    it.each(
+      testCases
+    )('Given $typeName return type, When entering return statement, Then no mutation created', testCase => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: testCase.typeName,
+        startLine: 1,
+        endLine: 5,
+        type: testCase.type,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new TrueReturnMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod(
+        testCase.expression,
+        'testMethod'
+      )
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('validation and edge cases', () => {
+    it('Given unknown method, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('otherMethod', {
+        returnType: 'Boolean',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.BOOLEAN,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new TrueReturnMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod('false', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+
+    it('Given no enclosing method, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Boolean',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.BOOLEAN,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new TrueReturnMutator(typeRegistry)
+      const returnCtx = TestUtil.createReturnStatement('false')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+
+    it('Given return statement with no children, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Boolean',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.BOOLEAN,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new TrueReturnMutator(typeRegistry)
+
+      const returnCtx = {
+        children: null,
+        childCount: 0,
+      } as unknown as ParserRuleContext
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'Boolean' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      Object.defineProperty(returnCtx, 'parent', {
+        value: methodCtx,
+        writable: true,
+        configurable: true,
+      })
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+
+    it('Given non-ParserRuleContext expression node, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Boolean',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.BOOLEAN,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new TrueReturnMutator(typeRegistry)
+
+      const returnCtx = {
+        children: [{ text: 'return' }, { text: 'false' }],
+        childCount: 2,
+        getChild: (i: number) =>
+          i === 0 ? { text: 'return' } : { text: 'false' },
+      } as unknown as ParserRuleContext
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'Boolean' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      Object.defineProperty(returnCtx, 'parent', {
+        value: methodCtx,
+        writable: true,
+        configurable: true,
+      })
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('backward compatibility (legacy typeTable path)', () => {
+    it('Given legacy typeTable setup, When entering return statement, Then creates mutation', () => {
+      // Arrange
+      const sut = new TrueReturnMutator()
+      const methodCtx = TestUtil.createMethodDeclaration(
+        'Boolean',
+        'testMethod'
+      )
+      sut.enterMethodDeclaration(methodCtx)
+
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Boolean',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.BOOLEAN,
+      })
+      sut.setTypeTable(typeTable)
+      const returnCtx = TestUtil.createReturnStatement('false')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('true')
+    })
+
+    it('Given legacy typeTable with non-boolean method, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const sut = new TrueReturnMutator()
       const methodCtx = TestUtil.createMethodDeclaration(
         'Integer',
         'testMethod'
       )
-      trueReturnMutator.enterMethodDeclaration(methodCtx)
+      sut.enterMethodDeclaration(methodCtx)
 
       const typeTable = new Map<string, ApexMethod>()
       typeTable.set('testMethod', {
@@ -94,169 +303,14 @@ describe('TrueReturnMutator', () => {
         endLine: 5,
         type: ApexType.INTEGER,
       })
-
-      trueReturnMutator.setTypeTable(typeTable)
+      sut.setTypeTable(typeTable)
       const returnCtx = TestUtil.createReturnStatement('42')
 
       // Act
-      trueReturnMutator.enterReturnStatement(returnCtx)
+      sut.enterReturnStatement(returnCtx)
 
       // Assert
-      expect(trueReturnMutator._mutations.length).toBe(0)
-    })
-  })
-
-  describe('validation and edge cases', () => {
-    it('should handle null type info', () => {
-      const methodCtx = TestUtil.createMethodDeclaration(
-        'Boolean',
-        'testMethod'
-      )
-      trueReturnMutator.enterMethodDeclaration(methodCtx)
-
-      const returnCtx = TestUtil.createReturnStatement('false')
-      trueReturnMutator._mutations = []
-
-      // Act
-      trueReturnMutator.enterReturnStatement(returnCtx)
-
-      // Assert
-      expect(trueReturnMutator._mutations.length).toBe(0)
-    })
-
-    it('should handle missing method context', () => {
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: 'Boolean',
-        startLine: 1,
-        endLine: 5,
-        type: ApexType.BOOLEAN,
-      })
-
-      trueReturnMutator.setTypeTable(typeTable)
-      const returnCtx = TestUtil.createReturnStatement('false')
-      trueReturnMutator._mutations = []
-
-      // Act
-      trueReturnMutator.enterReturnStatement(returnCtx)
-
-      // Assert
-      expect(trueReturnMutator._mutations.length).toBe(0)
-    })
-
-    it('should handle return statement without children', () => {
-      // Setup
-      const methodCtx = TestUtil.createMethodDeclaration(
-        'Boolean',
-        'testMethod'
-      )
-      trueReturnMutator.enterMethodDeclaration(methodCtx)
-
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: 'Boolean',
-        startLine: 1,
-        endLine: 5,
-        type: ApexType.BOOLEAN,
-      })
-
-      trueReturnMutator.setTypeTable(typeTable)
-
-      const returnCtx = { children: [] } as unknown as ParserRuleContext
-      trueReturnMutator._mutations = []
-
-      // Act
-      trueReturnMutator.enterReturnStatement(returnCtx)
-
-      // Assert
-      expect(trueReturnMutator._mutations.length).toBe(0)
-    })
-
-    it('should handle non-ParserRuleContext expression node', () => {
-      const methodCtx = TestUtil.createMethodDeclaration(
-        'Boolean',
-        'testMethod'
-      )
-      trueReturnMutator.enterMethodDeclaration(methodCtx)
-
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: 'Boolean',
-        startLine: 1,
-        endLine: 5,
-        type: ApexType.BOOLEAN,
-      })
-
-      trueReturnMutator.setTypeTable(typeTable)
-
-      const returnCtx = {
-        children: [
-          { text: 'return' },
-          { text: 'false' }, // Not a ParserRuleContext
-        ],
-        childCount: 2,
-        getChild: (i: number) =>
-          i === 0 ? { text: 'return' } : { text: 'false' },
-      } as unknown as ParserRuleContext
-
-      trueReturnMutator._mutations = []
-
-      // Act
-      trueReturnMutator.enterReturnStatement(returnCtx)
-
-      // Assert
-      expect(trueReturnMutator._mutations.length).toBe(0)
-    })
-  })
-
-  describe('method tracking', () => {
-    it('should set currentMethodName on enter', () => {
-      // Arrange
-      const methodCtx = TestUtil.createMethodDeclaration(
-        'Boolean',
-        'testMethod'
-      )
-
-      // Act
-      trueReturnMutator.enterMethodDeclaration(methodCtx)
-
-      // Assert
-      expect(trueReturnMutator['currentMethodName']).toBe('testMethod')
-    })
-
-    it('should clear currentMethodName on exit', () => {
-      // Arrange
-      trueReturnMutator['currentMethodName'] = 'testMethod'
-
-      // Act
-      trueReturnMutator.exitMethodDeclaration()
-
-      // Assert
-      expect(trueReturnMutator['currentMethodName']).toBeNull()
-    })
-  })
-
-  describe('token range handling', () => {
-    it('should work with TokenRange structure', () => {
-      // Arrange
-      const tokenRange = TestUtil.createTokenRange('false', 3, 10)
-      trueReturnMutator._mutations = []
-
-      // Act
-      trueReturnMutator._mutations.push({
-        mutationName: 'TrueReturn',
-        target: tokenRange,
-        replacement: 'true',
-      })
-
-      // Assert
-      expect(trueReturnMutator._mutations[0].target.text).toBe('false')
-      if ('startToken' in trueReturnMutator._mutations[0].target) {
-        expect(trueReturnMutator._mutations[0].target.startToken.line).toBe(3)
-        expect(
-          trueReturnMutator._mutations[0].target.startToken.charPositionInLine
-        ).toBe(10)
-      }
+      expect(sut._mutations).toHaveLength(0)
     })
   })
 })
