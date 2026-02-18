@@ -1,31 +1,36 @@
 import { ParserRuleContext } from 'antlr4ts'
-import { ApexMethod, ApexType } from '../type/ApexMethod.js'
+import { ApexType } from '../type/ApexMethod.js'
+import { TypeRegistry } from '../type/TypeRegistry.js'
 import { ReturnTypeAwareBaseListener } from './returnTypeAwareBaseListener.js'
 
-export class EmptyReturnMutator extends ReturnTypeAwareBaseListener {
-  enterReturnStatement(ctx: ParserRuleContext): void {
-    if (!this.isCurrentMethodTypeKnown()) {
-      return
-    }
+interface TypeInfo {
+  apexType: ApexType
+  typeName: string
+}
 
-    const typeInfo = this.getCurrentMethodReturnTypeInfo()
+const SKIP_TYPES: ReadonlySet<ApexType> = new Set([
+  ApexType.VOID,
+  ApexType.BOOLEAN,
+  ApexType.SOBJECT,
+  ApexType.OBJECT,
+  ApexType.APEX_CLASS,
+  ApexType.DATE,
+  ApexType.DATETIME,
+  ApexType.TIME,
+])
+
+export class EmptyReturnMutator extends ReturnTypeAwareBaseListener {
+  constructor(typeRegistry?: TypeRegistry) {
+    super(typeRegistry)
+  }
+
+  enterReturnStatement(ctx: ParserRuleContext): void {
+    const typeInfo = this.getTypeInfoForMutation(ctx)
     if (!typeInfo) {
       return
     }
 
-    // Skip types that can't be replaced
-    if (
-      [
-        ApexType.VOID,
-        ApexType.BOOLEAN,
-        ApexType.SOBJECT,
-        ApexType.OBJECT,
-        ApexType.APEX_CLASS,
-        ApexType.DATE,
-        ApexType.DATETIME,
-        ApexType.TIME,
-      ].includes(typeInfo.type)
-    ) {
+    if (SKIP_TYPES.has(typeInfo.apexType)) {
       return
     }
 
@@ -38,7 +43,7 @@ export class EmptyReturnMutator extends ReturnTypeAwareBaseListener {
       return
     }
 
-    if (this.isEmptyValue(typeInfo.returnType, expressionNode.text)) {
+    if (this.isEmptyValue(typeInfo.typeName, expressionNode.text)) {
       return
     }
 
@@ -48,8 +53,31 @@ export class EmptyReturnMutator extends ReturnTypeAwareBaseListener {
     }
   }
 
-  private generateEmptyValue(typeInfo: ApexMethod): string | null {
-    switch (typeInfo.type) {
+  private getTypeInfoForMutation(ctx: ParserRuleContext): TypeInfo | null {
+    if (this.typeRegistry) {
+      const methodName = this.getEnclosingMethodName(ctx)
+      if (!methodName) {
+        return null
+      }
+      const resolved = this.typeRegistry.resolveType(methodName)
+      if (!resolved) {
+        return null
+      }
+      return { apexType: resolved.apexType, typeName: resolved.typeName }
+    }
+
+    if (!this.isCurrentMethodTypeKnown()) {
+      return null
+    }
+    const method = this.getCurrentMethodReturnTypeInfo()
+    if (!method) {
+      return null
+    }
+    return { apexType: method.type, typeName: method.returnType }
+  }
+
+  private generateEmptyValue(typeInfo: TypeInfo): string | null {
+    switch (typeInfo.apexType) {
       case ApexType.STRING:
       case ApexType.ID:
         return "''"
@@ -71,7 +99,7 @@ export class EmptyReturnMutator extends ReturnTypeAwareBaseListener {
       case ApexType.SET:
       case ApexType.MAP:
       case ApexType.SOBJECT:
-        return `new ${typeInfo.returnType}()`
+        return `new ${typeInfo.typeName}()`
 
       default:
         return null

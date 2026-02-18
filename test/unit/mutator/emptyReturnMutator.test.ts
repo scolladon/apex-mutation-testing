@@ -1,15 +1,37 @@
 import { ParserRuleContext } from 'antlr4ts'
+import { MethodDeclarationContext } from 'apex-parser'
 import { EmptyReturnMutator } from '../../../src/mutator/emptyReturnMutator.js'
 import { ApexMethod, ApexType } from '../../../src/type/ApexMethod.js'
+import { TypeRegistry } from '../../../src/type/TypeRegistry.js'
 import { TestUtil } from '../../utils/testUtil.js'
 
-describe('EmptyReturnMutator', () => {
-  let emptyReturnMutator: EmptyReturnMutator
+function createTypeRegistry(
+  methodTypeTable: Map<string, ApexMethod>
+): TypeRegistry {
+  return new TypeRegistry(methodTypeTable, new Map(), new Map(), [])
+}
 
-  beforeEach(() => {
-    emptyReturnMutator = new EmptyReturnMutator()
+function createReturnCtxInMethod(
+  expression: string,
+  methodName: string
+): ParserRuleContext {
+  const returnCtx = TestUtil.createReturnStatement(expression)
+  const methodCtx = Object.create(MethodDeclarationContext.prototype)
+  methodCtx.children = [
+    { text: 'String' },
+    { text: methodName },
+    { text: '(' },
+    { text: ')' },
+  ]
+  Object.defineProperty(returnCtx, 'parent', {
+    value: methodCtx,
+    writable: true,
+    configurable: true,
   })
+  return returnCtx
+}
 
+describe('EmptyReturnMutator', () => {
   describe('return type handling', () => {
     const testTypes = [
       {
@@ -35,6 +57,18 @@ describe('EmptyReturnMutator', () => {
         returnType: 'Decimal',
         expression: '42.5',
         expected: '0.0',
+      },
+      {
+        type: ApexType.DOUBLE,
+        returnType: 'Double',
+        expression: '42.5',
+        expected: '0.0',
+      },
+      {
+        type: ApexType.ID,
+        returnType: 'ID',
+        expression: 'someId',
+        expected: "''",
       },
       {
         type: ApexType.LIST,
@@ -65,14 +99,10 @@ describe('EmptyReturnMutator', () => {
       },
     ]
 
-    it.each(testTypes)('should handle $returnType type correctly', testCase => {
-      emptyReturnMutator._mutations = []
-      const methodCtx = TestUtil.createMethodDeclaration(
-        testCase.returnType,
-        'testMethod'
-      )
-      emptyReturnMutator.enterMethodDeclaration(methodCtx)
-
+    it.each(
+      testTypes
+    )('Given $returnType return type, When entering return statement, Then creates empty mutation with $expected', testCase => {
+      // Arrange
       const typeTable = new Map<string, ApexMethod>()
       typeTable.set('testMethod', {
         returnType: testCase.returnType,
@@ -81,18 +111,19 @@ describe('EmptyReturnMutator', () => {
         type: testCase.type,
         ...(testCase.elementType ? { elementType: testCase.elementType } : {}),
       })
-
-      emptyReturnMutator.setTypeTable(typeTable)
-      const returnCtx = TestUtil.createReturnStatement(testCase.expression)
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new EmptyReturnMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod(
+        testCase.expression,
+        'testMethod'
+      )
 
       // Act
-      emptyReturnMutator.enterReturnStatement(returnCtx)
+      sut.enterReturnStatement(returnCtx)
 
       // Assert
-      expect(emptyReturnMutator._mutations.length).toBe(1)
-      expect(emptyReturnMutator._mutations[0].replacement).toBe(
-        testCase.expected
-      )
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe(testCase.expected)
     })
 
     const excludedTypes = [
@@ -108,14 +139,8 @@ describe('EmptyReturnMutator', () => {
 
     it.each(
       excludedTypes
-    )('should not create mutations for $name type', excluded => {
-      emptyReturnMutator._mutations = []
-      const methodCtx = TestUtil.createMethodDeclaration(
-        excluded.name,
-        'testMethod'
-      )
-      emptyReturnMutator.enterMethodDeclaration(methodCtx)
-
+    )('Given $name return type, When entering return statement, Then no mutation created', excluded => {
+      // Arrange
       const typeTable = new Map<string, ApexMethod>()
       typeTable.set('testMethod', {
         returnType: excluded.name,
@@ -123,15 +148,15 @@ describe('EmptyReturnMutator', () => {
         endLine: 5,
         type: excluded.type,
       })
-
-      emptyReturnMutator.setTypeTable(typeTable)
-      const returnCtx = TestUtil.createReturnStatement('something')
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new EmptyReturnMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod('something', 'testMethod')
 
       // Act
-      emptyReturnMutator.enterReturnStatement(returnCtx)
+      sut.enterReturnStatement(returnCtx)
 
       // Assert
-      expect(emptyReturnMutator._mutations.length).toBe(0)
+      expect(sut._mutations).toHaveLength(0)
     })
   })
 
@@ -169,34 +194,61 @@ describe('EmptyReturnMutator', () => {
 
     it.each(
       emptyValueCases
-    )('should identify $value as expected for $type type', testCase => {
-      const result = emptyReturnMutator.isEmptyValue(
-        testCase.type,
-        testCase.value
-      )
+    )('Given $type type with value $value, When checking isEmpty, Then returns $expected', testCase => {
+      // Arrange
+      const sut = new EmptyReturnMutator()
+
+      // Act
+      const result = sut.isEmptyValue(testCase.type, testCase.value)
+
+      // Assert
       expect(result).toBe(testCase.expected)
     })
   })
 
   describe('validation and edge cases', () => {
-    it('should handle null type info', () => {
-      const methodCtx = TestUtil.createMethodDeclaration(
-        'Integer',
-        'testMethod'
-      )
-      emptyReturnMutator.enterMethodDeclaration(methodCtx)
+    it('Given unknown method, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('otherMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new EmptyReturnMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod('42', 'testMethod')
 
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+
+    it('Given no enclosing method, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new EmptyReturnMutator(typeRegistry)
       const returnCtx = TestUtil.createReturnStatement('42')
-      emptyReturnMutator._mutations = []
 
       // Act
-      emptyReturnMutator.enterReturnStatement(returnCtx)
+      sut.enterReturnStatement(returnCtx)
 
       // Assert
-      expect(emptyReturnMutator._mutations.length).toBe(0)
+      expect(sut._mutations).toHaveLength(0)
     })
 
-    it('should handle missing method context', () => {
+    it('Given already empty value, When entering return statement, Then no mutation created', () => {
+      // Arrange
       const typeTable = new Map<string, ApexMethod>()
       typeTable.set('testMethod', {
         returnType: 'Integer',
@@ -204,26 +256,19 @@ describe('EmptyReturnMutator', () => {
         endLine: 5,
         type: ApexType.INTEGER,
       })
-
-      emptyReturnMutator.setTypeTable(typeTable)
-      const returnCtx = TestUtil.createReturnStatement('42')
-      emptyReturnMutator._mutations = []
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new EmptyReturnMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod('0', 'testMethod')
 
       // Act
-      emptyReturnMutator.enterReturnStatement(returnCtx)
+      sut.enterReturnStatement(returnCtx)
 
       // Assert
-      expect(emptyReturnMutator._mutations.length).toBe(0)
+      expect(sut._mutations).toHaveLength(0)
     })
 
-    it('should handle already empty values', () => {
-      // Setup
-      const methodCtx = TestUtil.createMethodDeclaration(
-        'Integer',
-        'testMethod'
-      )
-      emptyReturnMutator.enterMethodDeclaration(methodCtx)
-
+    it('Given return statement with no children, When entering return statement, Then no mutation created', () => {
+      // Arrange
       const typeTable = new Map<string, ApexMethod>()
       typeTable.set('testMethod', {
         returnType: 'Integer',
@@ -231,58 +276,43 @@ describe('EmptyReturnMutator', () => {
         endLine: 5,
         type: ApexType.INTEGER,
       })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new EmptyReturnMutator(typeRegistry)
 
-      emptyReturnMutator.setTypeTable(typeTable)
-      const returnCtx = TestUtil.createReturnStatement('0')
-      emptyReturnMutator._mutations = []
-
-      // Act
-      emptyReturnMutator.enterReturnStatement(returnCtx)
-
-      // Assert
-      expect(emptyReturnMutator._mutations.length).toBe(0)
-    })
-
-    it('should handle return statement with no children', () => {
-      // Setup
-      const methodCtx = TestUtil.createMethodDeclaration(
-        'Integer',
-        'testMethod'
-      )
-      emptyReturnMutator.enterMethodDeclaration(methodCtx)
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: 'Integer',
-        startLine: 1,
-        endLine: 5,
-        type: ApexType.INTEGER,
-      })
-      emptyReturnMutator.setTypeTable(typeTable)
-
-      // Act
       const returnCtx = {
         children: null,
         childCount: 0,
       } as unknown as ParserRuleContext
-      emptyReturnMutator.enterReturnStatement(returnCtx)
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'Integer' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      Object.defineProperty(returnCtx, 'parent', {
+        value: methodCtx,
+        writable: true,
+        configurable: true,
+      })
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
 
       // Assert
-      expect(emptyReturnMutator._mutations.length).toBe(0)
+      expect(sut._mutations).toHaveLength(0)
     })
 
-    it('should detect null as empty value', () => {
+    it('Given null expression text, When checking isEmpty, Then returns true', () => {
+      // Arrange
+      const sut = new EmptyReturnMutator()
+
       // Act & Assert
-      expect(emptyReturnMutator.isEmptyValue('String', 'null')).toBe(true)
+      expect(sut.isEmptyValue('String', 'null')).toBe(true)
     })
 
-    it('should handle non-ParserRuleContext expression node', () => {
-      // Setup
-      const methodCtx = TestUtil.createMethodDeclaration(
-        'Integer',
-        'testMethod'
-      )
-      emptyReturnMutator.enterMethodDeclaration(methodCtx)
-
+    it('Given non-ParserRuleContext expression node, When entering return statement, Then no mutation created', () => {
+      // Arrange
       const typeTable = new Map<string, ApexMethod>()
       typeTable.set('testMethod', {
         returnType: 'Integer',
@@ -290,35 +320,37 @@ describe('EmptyReturnMutator', () => {
         endLine: 5,
         type: ApexType.INTEGER,
       })
-
-      emptyReturnMutator.setTypeTable(typeTable)
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new EmptyReturnMutator(typeRegistry)
 
       const returnCtx = {
-        children: [
-          { text: 'return' },
-          { text: '42' }, // Not a ParserRuleContext
-        ],
+        children: [{ text: 'return' }, { text: '42' }],
         childCount: 2,
         getChild: (i: number) =>
           i === 0 ? { text: 'return' } : { text: '42' },
       } as unknown as ParserRuleContext
-
-      emptyReturnMutator._mutations = []
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'Integer' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      Object.defineProperty(returnCtx, 'parent', {
+        value: methodCtx,
+        writable: true,
+        configurable: true,
+      })
 
       // Act
-      emptyReturnMutator.enterReturnStatement(returnCtx)
+      sut.enterReturnStatement(returnCtx)
 
       // Assert
-      expect(emptyReturnMutator._mutations.length).toBe(0)
+      expect(sut._mutations).toHaveLength(0)
     })
 
-    it('should handle unknown type when generating empty value', () => {
-      const methodCtx = TestUtil.createMethodDeclaration(
-        'CustomType',
-        'testMethod'
-      )
-      emptyReturnMutator.enterMethodDeclaration(methodCtx)
-
+    it('Given unknown ApexType, When entering return statement, Then no mutation created', () => {
+      // Arrange
       const typeTable = new Map<string, ApexMethod>()
       typeTable.set('testMethod', {
         returnType: 'CustomType',
@@ -326,40 +358,109 @@ describe('EmptyReturnMutator', () => {
         endLine: 5,
         type: 'UNKNOWN' as ApexType,
       })
-
-      emptyReturnMutator.setTypeTable(typeTable)
-      const returnCtx = TestUtil.createReturnStatement('someValue')
-      emptyReturnMutator._mutations = []
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new EmptyReturnMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod('someValue', 'testMethod')
 
       // Act
-      emptyReturnMutator.enterReturnStatement(returnCtx)
+      sut.enterReturnStatement(returnCtx)
 
       // Assert
-      expect(emptyReturnMutator._mutations.length).toBe(0)
+      expect(sut._mutations).toHaveLength(0)
     })
   })
 
   describe('token range handling', () => {
-    it('should work with TokenRange structure', () => {
+    it('Given mutation with TokenRange, When inspecting target, Then contains correct token info', () => {
       // Arrange
       const tokenRange = TestUtil.createTokenRange('42', 3, 10)
-      emptyReturnMutator._mutations = []
+      const sut = new EmptyReturnMutator()
 
       // Act
-      emptyReturnMutator._mutations.push({
+      sut._mutations.push({
         mutationName: 'EmptyReturnMutator',
         target: tokenRange,
         replacement: '0',
       })
 
       // Assert
-      expect(emptyReturnMutator._mutations[0].target.text).toBe('42')
-      if ('startToken' in emptyReturnMutator._mutations[0].target) {
-        expect(emptyReturnMutator._mutations[0].target.startToken.line).toBe(3)
-        expect(
-          emptyReturnMutator._mutations[0].target.startToken.charPositionInLine
-        ).toBe(10)
+      expect(sut._mutations[0].target.text).toBe('42')
+      if ('startToken' in sut._mutations[0].target) {
+        expect(sut._mutations[0].target.startToken.line).toBe(3)
+        expect(sut._mutations[0].target.startToken.charPositionInLine).toBe(10)
       }
+    })
+  })
+
+  describe('backward compatibility (legacy typeTable path)', () => {
+    it('Given legacy typeTable setup, When entering return statement, Then creates mutation', () => {
+      // Arrange
+      const sut = new EmptyReturnMutator()
+      const methodCtx = TestUtil.createMethodDeclaration(
+        'Integer',
+        'testMethod'
+      )
+      sut.enterMethodDeclaration(methodCtx)
+
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      sut.setTypeTable(typeTable)
+      const returnCtx = TestUtil.createReturnStatement('42')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('0')
+    })
+
+    it('Given legacy typeTable with excluded type, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const sut = new EmptyReturnMutator()
+      const methodCtx = TestUtil.createMethodDeclaration('void', 'testMethod')
+      sut.enterMethodDeclaration(methodCtx)
+
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'void',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.VOID,
+      })
+      sut.setTypeTable(typeTable)
+      const returnCtx = TestUtil.createReturnStatement('something')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+
+    it('Given legacy typeTable with missing method context, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const sut = new EmptyReturnMutator()
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: ApexType.INTEGER,
+      })
+      sut.setTypeTable(typeTable)
+      const returnCtx = TestUtil.createReturnStatement('42')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
     })
   })
 })
