@@ -1,23 +1,25 @@
-export enum ApexType {
-  VOID = 'VOID',
-  BOOLEAN = 'BOOLEAN',
-  INTEGER = 'INTEGER',
-  LONG = 'LONG',
-  DOUBLE = 'DOUBLE',
-  DATE = 'DATE',
-  DATETIME = 'DATETIME',
-  TIME = 'TIME',
-  DECIMAL = 'DECIMAL',
-  STRING = 'STRING',
-  ID = 'ID',
-  BLOB = 'BLOB',
-  LIST = 'LIST',
-  SET = 'SET',
-  MAP = 'MAP',
-  SOBJECT = 'SOBJECT',
-  OBJECT = 'OBJECT',
-  APEX_CLASS = 'APEX_CLASS', //includes Interfaces & Enums
-}
+export const ApexType = {
+  VOID: 'VOID',
+  BOOLEAN: 'BOOLEAN',
+  INTEGER: 'INTEGER',
+  LONG: 'LONG',
+  DOUBLE: 'DOUBLE',
+  DATE: 'DATE',
+  DATETIME: 'DATETIME',
+  TIME: 'TIME',
+  DECIMAL: 'DECIMAL',
+  STRING: 'STRING',
+  ID: 'ID',
+  BLOB: 'BLOB',
+  LIST: 'LIST',
+  SET: 'SET',
+  MAP: 'MAP',
+  SOBJECT: 'SOBJECT',
+  OBJECT: 'OBJECT',
+  APEX_CLASS: 'APEX_CLASS', //includes Interfaces & Enums
+} as const
+
+export type ApexType = (typeof ApexType)[keyof typeof ApexType]
 
 export function getDefaultValueForApexType(
   apexType: ApexType,

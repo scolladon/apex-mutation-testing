@@ -12,7 +12,7 @@ export class ArithmeticOperatorMutator extends BaseListener {
     '/': ['+', '-', '*'],
   }
 
-  private static readonly NUMERIC_TYPES = new Set([
+  private static readonly NUMERIC_TYPES: ReadonlySet<ApexType> = new Set([
     ApexType.INTEGER,
     ApexType.LONG,
     ApexType.DOUBLE,
