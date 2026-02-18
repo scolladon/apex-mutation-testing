@@ -1,16 +1,32 @@
 import { ParserRuleContext, Token } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
-import { ApexParserListener } from 'apex-parser'
+import { ApexParserListener, MethodDeclarationContext } from 'apex-parser'
 import { SObjectDescribeRepository } from '../adapter/sObjectDescribeRepository.js'
 import { ApexMutation } from '../type/ApexMutation.js'
+import { TypeRegistry } from '../type/TypeRegistry.js'
 
 // @ts-ignore: Base type with just a common _mutations property
 export class BaseListener implements ApexParserListener {
   _mutations: ApexMutation[] = []
   _sObjectDescribeRepository?: SObjectDescribeRepository
 
+  constructor(protected typeRegistry?: TypeRegistry) {}
+
   setSObjectDescribeRepository(repository: SObjectDescribeRepository): void {
     this._sObjectDescribeRepository = repository
+  }
+
+  protected getEnclosingMethodName(ctx: ParserRuleContext): string | null {
+    let current: ParserRuleContext | undefined = ctx.parent as
+      | ParserRuleContext
+      | undefined
+    while (current) {
+      if (current instanceof MethodDeclarationContext) {
+        return current.children?.[1]?.text ?? null
+      }
+      current = current.parent as ParserRuleContext | undefined
+    }
+    return null
   }
 
   protected createMutation(
