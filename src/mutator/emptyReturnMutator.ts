@@ -1,5 +1,5 @@
 import { ParserRuleContext } from 'antlr4ts'
-import { ApexType } from '../type/ApexMethod.js'
+import { ApexType, getDefaultValueForApexType } from '../type/ApexMethod.js'
 import { TypeRegistry } from '../type/TypeRegistry.js'
 import { BaseListener } from './baseListener.js'
 
@@ -47,7 +47,10 @@ export class EmptyReturnMutator extends BaseListener {
       return
     }
 
-    const emptyValue = this.generateEmptyValue(typeInfo)
+    const emptyValue = getDefaultValueForApexType(
+      typeInfo.apexType,
+      typeInfo.typeName
+    )
     if (emptyValue) {
       this.createMutationFromParserRuleContext(expressionNode, emptyValue)
     }
@@ -66,36 +69,6 @@ export class EmptyReturnMutator extends BaseListener {
       return null
     }
     return { apexType: resolved.apexType, typeName: resolved.typeName }
-  }
-
-  private generateEmptyValue(typeInfo: TypeInfo): string | null {
-    switch (typeInfo.apexType) {
-      case ApexType.STRING:
-      case ApexType.ID:
-        return "''"
-
-      case ApexType.INTEGER:
-        return '0'
-
-      case ApexType.LONG:
-        return '0L'
-
-      case ApexType.DOUBLE:
-      case ApexType.DECIMAL:
-        return '0.0'
-
-      case ApexType.BLOB:
-        return "Blob.valueOf('')"
-
-      case ApexType.LIST:
-      case ApexType.SET:
-      case ApexType.MAP:
-      case ApexType.SOBJECT:
-        return `new ${typeInfo.typeName}()`
-
-      default:
-        return null
-    }
   }
 
   public isEmptyValue(type: string, expressionText: string): boolean {

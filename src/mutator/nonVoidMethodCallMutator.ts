@@ -4,7 +4,7 @@ import {
   MethodCallExpressionContext,
   NewExpressionContext,
 } from 'apex-parser'
-import { ApexType } from '../type/ApexMethod.js'
+import { getDefaultValueForApexType } from '../type/ApexMethod.js'
 import { TypeRegistry } from '../type/TypeRegistry.js'
 import { BaseListener } from './baseListener.js'
 
@@ -73,7 +73,7 @@ export class NonVoidMethodCallMutator extends BaseListener {
     }
 
     const defaultValue = lhsText.includes('.')
-      ? this.generateDefaultValueFromApexType(resolved.apexType)
+      ? (getDefaultValueForApexType(resolved.apexType) ?? 'null')
       : this.generateDefaultValue(resolved.typeName)
 
     if (defaultValue !== null) {
@@ -145,27 +145,6 @@ export class NonVoidMethodCallMutator extends BaseListener {
     const defaultValue = this.generateDefaultValue(typeName)
     if (defaultValue !== null) {
       this.createMutationFromParserRuleContext(expression, defaultValue)
-    }
-  }
-
-  private generateDefaultValueFromApexType(apexType: ApexType): string {
-    switch (apexType) {
-      case ApexType.STRING:
-      case ApexType.ID:
-        return "''"
-      case ApexType.INTEGER:
-        return '0'
-      case ApexType.LONG:
-        return '0L'
-      case ApexType.DOUBLE:
-      case ApexType.DECIMAL:
-        return '0.0'
-      case ApexType.BOOLEAN:
-        return 'false'
-      case ApexType.BLOB:
-        return "Blob.valueOf('')"
-      default:
-        return 'null'
     }
   }
 
