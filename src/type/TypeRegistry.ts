@@ -46,6 +46,36 @@ const APEX_TYPE_TO_NAME: ReadonlyMap<ApexType, string> = new Map([
   [ApexType.APEX_CLASS, 'Object'],
 ])
 
+export function classifyApexType(
+  typeName: string,
+  matchers: TypeMatcher[]
+): ApexType {
+  const lowerType = typeName.toLowerCase()
+
+  const primitiveType = PRIMITIVE_TYPE_MAP.get(lowerType)
+  if (primitiveType !== undefined) {
+    return primitiveType
+  }
+
+  if (lowerType.startsWith('list<') || typeName.endsWith('[]')) {
+    return ApexType.LIST
+  }
+  if (lowerType.startsWith('set<')) {
+    return ApexType.SET
+  }
+  if (lowerType.startsWith('map<')) {
+    return ApexType.MAP
+  }
+
+  for (const matcher of matchers) {
+    if (matcher.matches(typeName)) {
+      return ApexType.OBJECT
+    }
+  }
+
+  return ApexType.VOID
+}
+
 export class TypeRegistry {
   constructor(
     private methodTypeTable: Map<string, ApexMethod>,
@@ -145,29 +175,6 @@ export class TypeRegistry {
   }
 
   private classifyType(typeName: string): ApexType {
-    const lowerType = typeName.toLowerCase()
-
-    const primitiveType = PRIMITIVE_TYPE_MAP.get(lowerType)
-    if (primitiveType !== undefined) {
-      return primitiveType
-    }
-
-    if (lowerType.startsWith('list<') || typeName.endsWith('[]')) {
-      return ApexType.LIST
-    }
-    if (lowerType.startsWith('set<')) {
-      return ApexType.SET
-    }
-    if (lowerType.startsWith('map<')) {
-      return ApexType.MAP
-    }
-
-    for (const matcher of this.matchers) {
-      if (matcher.matches(typeName)) {
-        return ApexType.OBJECT
-      }
-    }
-
-    return ApexType.VOID
+    return classifyApexType(typeName, this.matchers)
   }
 }
