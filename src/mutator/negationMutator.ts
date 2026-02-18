@@ -1,15 +1,16 @@
 import { ParserRuleContext } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
-import { ApexType } from '../type/ApexMethod.js'
+import type { ApexType } from '../type/ApexMethod.js'
+import { APEX_TYPE } from '../type/ApexMethod.js'
 import { TypeRegistry } from '../type/TypeRegistry.js'
 import { BaseListener } from './baseListener.js'
 
 export class NegationMutator extends BaseListener {
   private static readonly NUMERIC_TYPES: ReadonlySet<ApexType> = new Set([
-    ApexType.INTEGER,
-    ApexType.LONG,
-    ApexType.DOUBLE,
-    ApexType.DECIMAL,
+    APEX_TYPE.INTEGER,
+    APEX_TYPE.LONG,
+    APEX_TYPE.DOUBLE,
+    APEX_TYPE.DECIMAL,
   ])
 
   private static readonly ZERO_LITERAL = /^0+(\.0+)?[lLdD]?$/

@@ -1,4 +1,4 @@
-export const ApexType = {
+export const APEX_TYPE = {
   VOID: 'VOID',
   BOOLEAN: 'BOOLEAN',
   INTEGER: 'INTEGER',
@@ -19,31 +19,31 @@ export const ApexType = {
   APEX_CLASS: 'APEX_CLASS', //includes Interfaces & Enums
 } as const
 
-export type ApexType = (typeof ApexType)[keyof typeof ApexType]
+export type ApexType = (typeof APEX_TYPE)[keyof typeof APEX_TYPE]
 
 export function getDefaultValueForApexType(
   apexType: ApexType,
   typeName?: string
 ): string | null {
   switch (apexType) {
-    case ApexType.STRING:
-    case ApexType.ID:
+    case APEX_TYPE.STRING:
+    case APEX_TYPE.ID:
       return "''"
-    case ApexType.INTEGER:
+    case APEX_TYPE.INTEGER:
       return '0'
-    case ApexType.LONG:
+    case APEX_TYPE.LONG:
       return '0L'
-    case ApexType.DOUBLE:
-    case ApexType.DECIMAL:
+    case APEX_TYPE.DOUBLE:
+    case APEX_TYPE.DECIMAL:
       return '0.0'
-    case ApexType.BOOLEAN:
+    case APEX_TYPE.BOOLEAN:
       return 'false'
-    case ApexType.BLOB:
+    case APEX_TYPE.BLOB:
       return "Blob.valueOf('')"
-    case ApexType.LIST:
-    case ApexType.SET:
-    case ApexType.MAP:
-    case ApexType.SOBJECT:
+    case APEX_TYPE.LIST:
+    case APEX_TYPE.SET:
+    case APEX_TYPE.MAP:
+    case APEX_TYPE.SOBJECT:
       return typeName ? `new ${typeName}()` : null
     default:
       return null

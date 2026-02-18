@@ -1,7 +1,7 @@
 import { ParserRuleContext } from 'antlr4ts'
 import { MethodDeclarationContext } from 'apex-parser'
 import { TrueReturnMutator } from '../../../src/mutator/trueReturnMutator.js'
-import { ApexMethod, ApexType } from '../../../src/type/ApexMethod.js'
+import { APEX_TYPE, ApexMethod } from '../../../src/type/ApexMethod.js'
 import { TypeRegistry } from '../../../src/type/TypeRegistry.js'
 import { TestUtil } from '../../utils/testUtil.js'
 
@@ -53,7 +53,7 @@ describe('TrueReturnMutator', () => {
         returnType: 'Boolean',
         startLine: 1,
         endLine: 5,
-        type: ApexType.BOOLEAN,
+        type: APEX_TYPE.BOOLEAN,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new TrueReturnMutator(typeRegistry)
@@ -79,7 +79,7 @@ describe('TrueReturnMutator', () => {
         returnType: 'Boolean',
         startLine: 1,
         endLine: 5,
-        type: ApexType.BOOLEAN,
+        type: APEX_TYPE.BOOLEAN,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new TrueReturnMutator(typeRegistry)
@@ -96,22 +96,22 @@ describe('TrueReturnMutator', () => {
   describe('non-boolean return types', () => {
     const testCases = [
       {
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
         typeName: 'Integer',
         expression: '42',
       },
       {
-        type: ApexType.STRING,
+        type: APEX_TYPE.STRING,
         typeName: 'String',
         expression: '"test"',
       },
       {
-        type: ApexType.VOID,
+        type: APEX_TYPE.VOID,
         typeName: 'void',
         expression: '',
       },
       {
-        type: ApexType.OBJECT,
+        type: APEX_TYPE.OBJECT,
         typeName: 'Account',
         expression: 'new Account()',
       },
@@ -151,7 +151,7 @@ describe('TrueReturnMutator', () => {
         returnType: 'Boolean',
         startLine: 1,
         endLine: 5,
-        type: ApexType.BOOLEAN,
+        type: APEX_TYPE.BOOLEAN,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new TrueReturnMutator(typeRegistry)
@@ -171,7 +171,7 @@ describe('TrueReturnMutator', () => {
         returnType: 'Boolean',
         startLine: 1,
         endLine: 5,
-        type: ApexType.BOOLEAN,
+        type: APEX_TYPE.BOOLEAN,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new TrueReturnMutator(typeRegistry)
@@ -191,7 +191,7 @@ describe('TrueReturnMutator', () => {
         returnType: 'Boolean',
         startLine: 1,
         endLine: 5,
-        type: ApexType.BOOLEAN,
+        type: APEX_TYPE.BOOLEAN,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new TrueReturnMutator(typeRegistry)
@@ -227,7 +227,7 @@ describe('TrueReturnMutator', () => {
         returnType: 'Boolean',
         startLine: 1,
         endLine: 5,
-        type: ApexType.BOOLEAN,
+        type: APEX_TYPE.BOOLEAN,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new TrueReturnMutator(typeRegistry)

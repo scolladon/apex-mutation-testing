@@ -3,7 +3,11 @@ import { TerminalNode } from 'antlr4ts/tree/index.js'
 import { MethodDeclarationContext } from 'apex-parser'
 import { ArithmeticOperatorMutator } from '../../../src/mutator/arithmeticOperatorMutator.js'
 import type { TypeMatcher } from '../../../src/service/typeMatcher.js'
-import { ApexMethod, ApexType } from '../../../src/type/ApexMethod.js'
+import {
+  APEX_TYPE,
+  ApexMethod,
+  ApexType,
+} from '../../../src/type/ApexMethod.js'
 import { TypeRegistry } from '../../../src/type/TypeRegistry.js'
 import { TestUtil } from '../../utils/testUtil.js'
 
@@ -458,7 +462,7 @@ describe('ArithmeticOperatorMutator', () => {
           returnType: 'String',
           startLine: 1,
           endLine: 5,
-          type: ApexType.STRING,
+          type: APEX_TYPE.STRING,
         })
         const typeRegistry = createTypeRegistry(typeTable)
         const sut = new ArithmeticOperatorMutator(typeRegistry)
@@ -483,7 +487,7 @@ describe('ArithmeticOperatorMutator', () => {
           returnType: 'Integer',
           startLine: 1,
           endLine: 5,
-          type: ApexType.INTEGER,
+          type: APEX_TYPE.INTEGER,
         })
         const typeRegistry = createTypeRegistry(typeTable)
         const sut = new ArithmeticOperatorMutator(typeRegistry)
@@ -657,8 +661,8 @@ describe('ArithmeticOperatorMutator', () => {
           [
             'account',
             new Map([
-              ['name', ApexType.STRING],
-              ['numberofemployees', ApexType.INTEGER],
+              ['name', APEX_TYPE.STRING],
+              ['numberofemployees', APEX_TYPE.INTEGER],
             ]),
           ],
         ])
@@ -696,8 +700,8 @@ describe('ArithmeticOperatorMutator', () => {
           [
             'account',
             new Map([
-              ['name', ApexType.STRING],
-              ['numberofemployees', ApexType.INTEGER],
+              ['name', APEX_TYPE.STRING],
+              ['numberofemployees', APEX_TYPE.INTEGER],
             ]),
           ],
         ])

@@ -1,7 +1,11 @@
 import { ParserRuleContext } from 'antlr4ts'
 import { MethodDeclarationContext } from 'apex-parser'
 import { EmptyReturnMutator } from '../../../src/mutator/emptyReturnMutator.js'
-import { ApexMethod, ApexType } from '../../../src/type/ApexMethod.js'
+import {
+  APEX_TYPE,
+  ApexMethod,
+  ApexType,
+} from '../../../src/type/ApexMethod.js'
 import { TypeRegistry } from '../../../src/type/TypeRegistry.js'
 import { TestUtil } from '../../utils/testUtil.js'
 
@@ -35,63 +39,63 @@ describe('EmptyReturnMutator', () => {
   describe('return type handling', () => {
     const testTypes = [
       {
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
         returnType: 'Integer',
         expression: '42',
         expected: '0',
       },
       {
-        type: ApexType.STRING,
+        type: APEX_TYPE.STRING,
         returnType: 'String',
         expression: 'Hello',
         expected: "''",
       },
       {
-        type: ApexType.LONG,
+        type: APEX_TYPE.LONG,
         returnType: 'Long',
         expression: '42L',
         expected: '0L',
       },
       {
-        type: ApexType.DECIMAL,
+        type: APEX_TYPE.DECIMAL,
         returnType: 'Decimal',
         expression: '42.5',
         expected: '0.0',
       },
       {
-        type: ApexType.DOUBLE,
+        type: APEX_TYPE.DOUBLE,
         returnType: 'Double',
         expression: '42.5',
         expected: '0.0',
       },
       {
-        type: ApexType.ID,
+        type: APEX_TYPE.ID,
         returnType: 'ID',
         expression: 'someId',
         expected: "''",
       },
       {
-        type: ApexType.LIST,
+        type: APEX_TYPE.LIST,
         returnType: 'List<String>',
         expression: 'myList',
         expected: 'new List<String>()',
         elementType: 'String',
       },
       {
-        type: ApexType.BLOB,
+        type: APEX_TYPE.BLOB,
         returnType: 'Blob',
         expression: 'myBlob',
         expected: "Blob.valueOf('')",
       },
       {
-        type: ApexType.SET,
+        type: APEX_TYPE.SET,
         returnType: 'Set<String>',
         expression: 'mySet',
         expected: 'new Set<String>()',
         elementType: 'String',
       },
       {
-        type: ApexType.MAP,
+        type: APEX_TYPE.MAP,
         returnType: 'Map<String, Integer>',
         expression: 'myMap',
         expected: 'new Map<String, Integer>()',
@@ -127,14 +131,14 @@ describe('EmptyReturnMutator', () => {
     })
 
     const excludedTypes = [
-      { type: ApexType.VOID, name: 'void' },
-      { type: ApexType.BOOLEAN, name: 'Boolean' },
-      { type: ApexType.SOBJECT, name: 'SObject' },
-      { type: ApexType.OBJECT, name: 'Object' },
-      { type: ApexType.APEX_CLASS, name: 'SomeClass' },
-      { type: ApexType.DATE, name: 'Date' },
-      { type: ApexType.DATETIME, name: 'DateTime' },
-      { type: ApexType.TIME, name: 'Time' },
+      { type: APEX_TYPE.VOID, name: 'void' },
+      { type: APEX_TYPE.BOOLEAN, name: 'Boolean' },
+      { type: APEX_TYPE.SOBJECT, name: 'SObject' },
+      { type: APEX_TYPE.OBJECT, name: 'Object' },
+      { type: APEX_TYPE.APEX_CLASS, name: 'SomeClass' },
+      { type: APEX_TYPE.DATE, name: 'Date' },
+      { type: APEX_TYPE.DATETIME, name: 'DateTime' },
+      { type: APEX_TYPE.TIME, name: 'Time' },
     ]
 
     it.each(
@@ -214,7 +218,7 @@ describe('EmptyReturnMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new EmptyReturnMutator(typeRegistry)
@@ -234,7 +238,7 @@ describe('EmptyReturnMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new EmptyReturnMutator(typeRegistry)
@@ -254,7 +258,7 @@ describe('EmptyReturnMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new EmptyReturnMutator(typeRegistry)
@@ -274,7 +278,7 @@ describe('EmptyReturnMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new EmptyReturnMutator(typeRegistry)
@@ -318,7 +322,7 @@ describe('EmptyReturnMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new EmptyReturnMutator(typeRegistry)

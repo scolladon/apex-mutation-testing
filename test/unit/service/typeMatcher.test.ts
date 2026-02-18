@@ -3,7 +3,7 @@ import {
   ApexClassTypeMatcher,
   SObjectTypeMatcher,
 } from '../../../src/service/typeMatcher.js'
-import { ApexType } from '../../../src/type/ApexMethod.js'
+import { APEX_TYPE } from '../../../src/type/ApexMethod.js'
 
 describe('ApexClassTypeMatcher', () => {
   let sut: ApexClassTypeMatcher
@@ -177,7 +177,7 @@ describe('SObjectTypeMatcher', () => {
   describe('getFieldType', () => {
     it('Given a described sObject, When getFieldType is called, Then it delegates to describeRepository.resolveFieldType', () => {
       // Arrange
-      mockDescribeRepository.resolveFieldType.mockReturnValue(ApexType.STRING)
+      mockDescribeRepository.resolveFieldType.mockReturnValue(APEX_TYPE.STRING)
 
       // Act
       const result = sut.getFieldType('Account', 'Name')
@@ -187,7 +187,7 @@ describe('SObjectTypeMatcher', () => {
         'Account',
         'Name'
       )
-      expect(result).toBe(ApexType.STRING)
+      expect(result).toBe(APEX_TYPE.STRING)
     })
 
     it('Given an unknown field, When getFieldType is called, Then it returns undefined', () => {

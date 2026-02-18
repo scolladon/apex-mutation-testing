@@ -1,6 +1,6 @@
 import { Connection } from '@salesforce/core'
 import { SObjectDescribeRepository } from '../../../src/adapter/sObjectDescribeRepository.js'
-import { ApexType } from '../../../src/type/ApexMethod.js'
+import { APEX_TYPE } from '../../../src/type/ApexMethod.js'
 
 describe('SObjectDescribeRepository', () => {
   let connectionStub: Connection
@@ -55,39 +55,41 @@ describe('SObjectDescribeRepository', () => {
       await sut.describe(['Account'])
 
       // Assert
-      expect(sut.resolveFieldType('account', 'name')).toBe(ApexType.STRING)
+      expect(sut.resolveFieldType('account', 'name')).toBe(APEX_TYPE.STRING)
       expect(sut.resolveFieldType('account', 'numberofemployees')).toBe(
-        ApexType.INTEGER
+        APEX_TYPE.INTEGER
       )
       expect(sut.resolveFieldType('account', 'annualrevenue')).toBe(
-        ApexType.DECIMAL
+        APEX_TYPE.DECIMAL
       )
       expect(sut.resolveFieldType('account', 'billinglatitude')).toBe(
-        ApexType.DOUBLE
+        APEX_TYPE.DOUBLE
       )
       expect(sut.resolveFieldType('account', 'createddate')).toBe(
-        ApexType.DATETIME
+        APEX_TYPE.DATETIME
       )
       expect(sut.resolveFieldType('account', 'isdeleted')).toBe(
-        ApexType.BOOLEAN
+        APEX_TYPE.BOOLEAN
       )
-      expect(sut.resolveFieldType('account', 'ownerid')).toBe(ApexType.ID)
-      expect(sut.resolveFieldType('account', 'phone')).toBe(ApexType.STRING)
-      expect(sut.resolveFieldType('account', 'website')).toBe(ApexType.STRING)
-      expect(sut.resolveFieldType('account', 'industry')).toBe(ApexType.STRING)
-      expect(sut.resolveFieldType('account', 'ownership')).toBe(ApexType.DOUBLE)
+      expect(sut.resolveFieldType('account', 'ownerid')).toBe(APEX_TYPE.ID)
+      expect(sut.resolveFieldType('account', 'phone')).toBe(APEX_TYPE.STRING)
+      expect(sut.resolveFieldType('account', 'website')).toBe(APEX_TYPE.STRING)
+      expect(sut.resolveFieldType('account', 'industry')).toBe(APEX_TYPE.STRING)
+      expect(sut.resolveFieldType('account', 'ownership')).toBe(
+        APEX_TYPE.DOUBLE
+      )
       expect(sut.resolveFieldType('account', 'billingaddress')).toBe(
-        ApexType.OBJECT
+        APEX_TYPE.OBJECT
       )
     })
 
     it.each([
-      ['id', ApexType.ID],
-      ['date', ApexType.DATE],
-      ['textarea', ApexType.STRING],
-      ['email', ApexType.STRING],
-      ['multipicklist', ApexType.STRING],
-      ['encryptedstring', ApexType.STRING],
+      ['id', APEX_TYPE.ID],
+      ['date', APEX_TYPE.DATE],
+      ['textarea', APEX_TYPE.STRING],
+      ['email', APEX_TYPE.STRING],
+      ['multipicklist', APEX_TYPE.STRING],
+      ['encryptedstring', APEX_TYPE.STRING],
     ])('Then should map describe type "%s" to %s', async (describeType, expectedApexType) => {
       // Arrange
       describeMock.mockResolvedValue({
@@ -119,7 +121,7 @@ describe('SObjectDescribeRepository', () => {
       // Assert
       expect(sut.isSObject('badobject')).toBe(false)
       expect(sut.isSObject('contact')).toBe(true)
-      expect(sut.resolveFieldType('contact', 'name')).toBe(ApexType.STRING)
+      expect(sut.resolveFieldType('contact', 'name')).toBe(APEX_TYPE.STRING)
     })
   })
 
@@ -173,10 +175,10 @@ describe('SObjectDescribeRepository', () => {
 
       // Assert
       expect(sut.resolveFieldType('account', 'numberofemployees')).toBe(
-        ApexType.INTEGER
+        APEX_TYPE.INTEGER
       )
       expect(sut.resolveFieldType('ACCOUNT', 'NUMBEROFEMPLOYEES')).toBe(
-        ApexType.INTEGER
+        APEX_TYPE.INTEGER
       )
     })
 
@@ -188,7 +190,7 @@ describe('SObjectDescribeRepository', () => {
       await sut.describe(['Account'])
 
       // Assert
-      expect(sut.resolveFieldType('account', 'custom')).toBe(ApexType.OBJECT)
+      expect(sut.resolveFieldType('account', 'custom')).toBe(APEX_TYPE.OBJECT)
     })
   })
 })

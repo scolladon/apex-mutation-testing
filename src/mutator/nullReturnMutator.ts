@@ -1,5 +1,5 @@
 import { ParserRuleContext } from 'antlr4ts'
-import { ApexType } from '../type/ApexMethod.js'
+import { APEX_TYPE } from '../type/ApexMethod.js'
 import { TypeRegistry } from '../type/TypeRegistry.js'
 import { BaseListener } from './baseListener.js'
 
@@ -38,6 +38,6 @@ export class NullReturnMutator extends BaseListener {
       return false
     }
     const typeInfo = this.typeRegistry.resolveType(methodName)
-    return !!typeInfo && typeInfo.apexType !== ApexType.VOID
+    return !!typeInfo && typeInfo.apexType !== APEX_TYPE.VOID
   }
 }

@@ -1,6 +1,6 @@
 import type { TypeMatcher } from '../service/typeMatcher.js'
-import type { ApexMethod } from './ApexMethod.js'
-import { ApexType } from './ApexMethod.js'
+import type { ApexMethod, ApexType } from './ApexMethod.js'
+import { APEX_TYPE } from './ApexMethod.js'
 
 export interface ResolvedType {
   apexType: ApexType
@@ -9,41 +9,41 @@ export interface ResolvedType {
 }
 
 const PRIMITIVE_TYPE_MAP: ReadonlyMap<string, ApexType> = new Map([
-  ['void', ApexType.VOID],
-  ['boolean', ApexType.BOOLEAN],
-  ['integer', ApexType.INTEGER],
-  ['long', ApexType.LONG],
-  ['double', ApexType.DOUBLE],
-  ['decimal', ApexType.DECIMAL],
-  ['string', ApexType.STRING],
-  ['id', ApexType.ID],
-  ['blob', ApexType.BLOB],
-  ['date', ApexType.DATE],
-  ['datetime', ApexType.DATETIME],
-  ['time', ApexType.TIME],
-  ['sobject', ApexType.SOBJECT],
-  ['object', ApexType.OBJECT],
+  ['void', APEX_TYPE.VOID],
+  ['boolean', APEX_TYPE.BOOLEAN],
+  ['integer', APEX_TYPE.INTEGER],
+  ['long', APEX_TYPE.LONG],
+  ['double', APEX_TYPE.DOUBLE],
+  ['decimal', APEX_TYPE.DECIMAL],
+  ['string', APEX_TYPE.STRING],
+  ['id', APEX_TYPE.ID],
+  ['blob', APEX_TYPE.BLOB],
+  ['date', APEX_TYPE.DATE],
+  ['datetime', APEX_TYPE.DATETIME],
+  ['time', APEX_TYPE.TIME],
+  ['sobject', APEX_TYPE.SOBJECT],
+  ['object', APEX_TYPE.OBJECT],
 ])
 
 const APEX_TYPE_TO_NAME: ReadonlyMap<ApexType, string> = new Map([
-  [ApexType.VOID, 'void'],
-  [ApexType.BOOLEAN, 'Boolean'],
-  [ApexType.INTEGER, 'Integer'],
-  [ApexType.LONG, 'Long'],
-  [ApexType.DOUBLE, 'Double'],
-  [ApexType.DECIMAL, 'Decimal'],
-  [ApexType.STRING, 'String'],
-  [ApexType.ID, 'ID'],
-  [ApexType.BLOB, 'Blob'],
-  [ApexType.DATE, 'Date'],
-  [ApexType.DATETIME, 'DateTime'],
-  [ApexType.TIME, 'Time'],
-  [ApexType.SOBJECT, 'SObject'],
-  [ApexType.OBJECT, 'Object'],
-  [ApexType.LIST, 'List'],
-  [ApexType.SET, 'Set'],
-  [ApexType.MAP, 'Map'],
-  [ApexType.APEX_CLASS, 'Object'],
+  [APEX_TYPE.VOID, 'void'],
+  [APEX_TYPE.BOOLEAN, 'Boolean'],
+  [APEX_TYPE.INTEGER, 'Integer'],
+  [APEX_TYPE.LONG, 'Long'],
+  [APEX_TYPE.DOUBLE, 'Double'],
+  [APEX_TYPE.DECIMAL, 'Decimal'],
+  [APEX_TYPE.STRING, 'String'],
+  [APEX_TYPE.ID, 'ID'],
+  [APEX_TYPE.BLOB, 'Blob'],
+  [APEX_TYPE.DATE, 'Date'],
+  [APEX_TYPE.DATETIME, 'DateTime'],
+  [APEX_TYPE.TIME, 'Time'],
+  [APEX_TYPE.SOBJECT, 'SObject'],
+  [APEX_TYPE.OBJECT, 'Object'],
+  [APEX_TYPE.LIST, 'List'],
+  [APEX_TYPE.SET, 'Set'],
+  [APEX_TYPE.MAP, 'Map'],
+  [APEX_TYPE.APEX_CLASS, 'Object'],
 ])
 
 export function classifyApexType(
@@ -58,22 +58,22 @@ export function classifyApexType(
   }
 
   if (lowerType.startsWith('list<') || typeName.endsWith('[]')) {
-    return ApexType.LIST
+    return APEX_TYPE.LIST
   }
   if (lowerType.startsWith('set<')) {
-    return ApexType.SET
+    return APEX_TYPE.SET
   }
   if (lowerType.startsWith('map<')) {
-    return ApexType.MAP
+    return APEX_TYPE.MAP
   }
 
   for (const matcher of matchers) {
     if (matcher.matches(typeName)) {
-      return ApexType.OBJECT
+      return APEX_TYPE.OBJECT
     }
   }
 
-  return ApexType.VOID
+  return APEX_TYPE.VOID
 }
 
 export class TypeRegistry {

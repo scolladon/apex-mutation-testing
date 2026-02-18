@@ -14,7 +14,7 @@ import {
   ApexClassTypeMatcher,
   SObjectTypeMatcher,
 } from '../../src/service/typeMatcher.js'
-import { ApexType } from '../../src/type/ApexMethod.js'
+import { APEX_TYPE } from '../../src/type/ApexMethod.js'
 
 describe('ArithmeticOperatorMutator Integration', () => {
   const parseAndMutate = (code: string, coveredLines: Set<number>) => {
@@ -348,7 +348,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
             type.toLowerCase() === 'account' &&
             field.toLowerCase() === 'name'
           )
-            return ApexType.STRING
+            return APEX_TYPE.STRING
           return undefined
         },
         describe: jest.fn(),
@@ -384,7 +384,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
             type.toLowerCase() === 'account' &&
             field.toLowerCase() === 'name'
           )
-            return ApexType.STRING
+            return APEX_TYPE.STRING
           return undefined
         },
         describe: jest.fn(),
@@ -417,8 +417,8 @@ describe('ArithmeticOperatorMutator Integration', () => {
           const t = type.toLowerCase()
           const f = field.toLowerCase()
           if (t === 'account' && f === 'numberofemployees')
-            return ApexType.INTEGER
-          if (t === 'account' && f === 'name') return ApexType.STRING
+            return APEX_TYPE.INTEGER
+          if (t === 'account' && f === 'name') return APEX_TYPE.STRING
           return undefined
         },
         describe: jest.fn(),
@@ -454,8 +454,8 @@ describe('ArithmeticOperatorMutator Integration', () => {
           const t = type.toLowerCase()
           const f = field.toLowerCase()
           if (t === 'account' && f === 'numberofemployees')
-            return ApexType.INTEGER
-          if (t === 'account' && f === 'name') return ApexType.STRING
+            return APEX_TYPE.INTEGER
+          if (t === 'account' && f === 'name') return APEX_TYPE.STRING
           return undefined
         },
         describe: jest.fn(),

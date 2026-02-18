@@ -15,7 +15,7 @@ import {
   ApexClassTypeMatcher,
   SObjectTypeMatcher,
 } from '../../src/service/typeMatcher.js'
-import { ApexType } from '../../src/type/ApexMethod.js'
+import { APEX_TYPE } from '../../src/type/ApexMethod.js'
 
 describe('NonVoidMethodCallMutator Integration', () => {
   const parseAndMutate = async (
@@ -203,7 +203,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
             type.toLowerCase() === 'account' &&
             field.toLowerCase() === 'name'
           )
-            return ApexType.STRING
+            return APEX_TYPE.STRING
           return undefined
         },
         describe: jest.fn(),
@@ -240,7 +240,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
             type.toLowerCase() === 'account' &&
             field.toLowerCase() === 'numberofemployees'
           )
-            return ApexType.INTEGER
+            return APEX_TYPE.INTEGER
           return undefined
         },
         describe: jest.fn(),

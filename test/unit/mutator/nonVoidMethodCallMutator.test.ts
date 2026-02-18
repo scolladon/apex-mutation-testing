@@ -7,7 +7,7 @@ import {
 } from 'apex-parser'
 import { NonVoidMethodCallMutator } from '../../../src/mutator/nonVoidMethodCallMutator.js'
 import type { TypeMatcher } from '../../../src/service/typeMatcher.js'
-import { ApexType } from '../../../src/type/ApexMethod.js'
+import { APEX_TYPE, ApexType } from '../../../src/type/ApexMethod.js'
 import { TypeRegistry } from '../../../src/type/TypeRegistry.js'
 import { TestUtil } from '../../utils/testUtil.js'
 
@@ -398,7 +398,7 @@ describe('NonVoidMethodCallMutator', () => {
       it('Given SObject field via matcher, When assigning method call to dotted field, Then should mutate with ApexType default', () => {
         // Arrange
         const fieldMap = new Map([
-          ['account', new Map([['name', ApexType.STRING]])],
+          ['account', new Map([['name', APEX_TYPE.STRING]])],
         ])
         const matcher = createSObjectFieldMatcher(
           new Set(['account']),
@@ -427,7 +427,7 @@ describe('NonVoidMethodCallMutator', () => {
       it('Given SObject numeric field via matcher, When assigning method call, Then should mutate with numeric default', () => {
         // Arrange
         const fieldMap = new Map([
-          ['account', new Map([['numberofemployees', ApexType.INTEGER]])],
+          ['account', new Map([['numberofemployees', APEX_TYPE.INTEGER]])],
         ])
         const matcher = createSObjectFieldMatcher(
           new Set(['account']),
@@ -527,23 +527,23 @@ describe('NonVoidMethodCallMutator', () => {
 
       describe('Given ApexType field defaults via TypeRegistry matcher', () => {
         const apexTypeTestCases = [
-          { apexType: ApexType.STRING, fieldName: 'name', expected: "''" },
-          { apexType: ApexType.ID, fieldName: 'extid', expected: "''" },
-          { apexType: ApexType.INTEGER, fieldName: 'count', expected: '0' },
-          { apexType: ApexType.LONG, fieldName: 'bignum', expected: '0L' },
-          { apexType: ApexType.DOUBLE, fieldName: 'rate', expected: '0.0' },
-          { apexType: ApexType.DECIMAL, fieldName: 'amount', expected: '0.0' },
+          { apexType: APEX_TYPE.STRING, fieldName: 'name', expected: "''" },
+          { apexType: APEX_TYPE.ID, fieldName: 'extid', expected: "''" },
+          { apexType: APEX_TYPE.INTEGER, fieldName: 'count', expected: '0' },
+          { apexType: APEX_TYPE.LONG, fieldName: 'bignum', expected: '0L' },
+          { apexType: APEX_TYPE.DOUBLE, fieldName: 'rate', expected: '0.0' },
+          { apexType: APEX_TYPE.DECIMAL, fieldName: 'amount', expected: '0.0' },
           {
-            apexType: ApexType.BOOLEAN,
+            apexType: APEX_TYPE.BOOLEAN,
             fieldName: 'active',
             expected: 'false',
           },
           {
-            apexType: ApexType.BLOB,
+            apexType: APEX_TYPE.BLOB,
             fieldName: 'data',
             expected: "Blob.valueOf('')",
           },
-          { apexType: ApexType.DATE, fieldName: 'created', expected: 'null' },
+          { apexType: APEX_TYPE.DATE, fieldName: 'created', expected: 'null' },
         ]
 
         it.each(

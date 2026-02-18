@@ -1,6 +1,6 @@
 import { TypeDiscoverer } from '../../../src/service/typeDiscoverer.js'
 import { TypeMatcher } from '../../../src/service/typeMatcher.js'
-import { ApexType } from '../../../src/type/ApexMethod.js'
+import { APEX_TYPE } from '../../../src/type/ApexMethod.js'
 
 describe('TypeDiscoverer', () => {
   describe('method return types', () => {
@@ -22,7 +22,7 @@ describe('TypeDiscoverer', () => {
       const result = registry.resolveType('calculate')
       expect(result).toEqual(
         expect.objectContaining({
-          apexType: ApexType.INTEGER,
+          apexType: APEX_TYPE.INTEGER,
           typeName: 'Integer',
         })
       )
@@ -46,7 +46,7 @@ describe('TypeDiscoverer', () => {
       const result = registry.resolveType('getNames')
       expect(result).toEqual(
         expect.objectContaining({
-          apexType: ApexType.LIST,
+          apexType: APEX_TYPE.LIST,
           typeName: 'List<String>',
           elementType: 'String',
         })
@@ -71,7 +71,7 @@ describe('TypeDiscoverer', () => {
       const result = registry.resolveType('getMapping')
       expect(result).toEqual(
         expect.objectContaining({
-          apexType: ApexType.MAP,
+          apexType: APEX_TYPE.MAP,
           typeName: 'Map<String,Integer>',
           elementType: 'String,Integer',
         })
@@ -96,7 +96,7 @@ describe('TypeDiscoverer', () => {
       const result = registry.resolveType('getItems')
       expect(result).toEqual(
         expect.objectContaining({
-          apexType: ApexType.LIST,
+          apexType: APEX_TYPE.LIST,
           typeName: 'String[]',
           elementType: 'String',
         })
@@ -126,7 +126,7 @@ describe('TypeDiscoverer', () => {
       const result = registry.resolveType('getData')
       expect(result).toEqual(
         expect.objectContaining({
-          apexType: ApexType.VOID,
+          apexType: APEX_TYPE.VOID,
           typeName: 'UnknownType',
         })
       )
@@ -168,7 +168,7 @@ describe('TypeDiscoverer', () => {
       // Assert
       const result = registry.resolveType('calculate', 'name')
       expect(result).toEqual({
-        apexType: ApexType.STRING,
+        apexType: APEX_TYPE.STRING,
         typeName: 'string',
       })
     })
@@ -190,7 +190,7 @@ describe('TypeDiscoverer', () => {
       // Assert
       const result = registry.resolveType('calculate', 'rate')
       expect(result).toEqual({
-        apexType: ApexType.DECIMAL,
+        apexType: APEX_TYPE.DECIMAL,
         typeName: 'decimal',
       })
     })
@@ -220,7 +220,7 @@ describe('TypeDiscoverer', () => {
       // Assert
       const result = registry.resolveType('process', 'a')
       expect(result).toEqual({
-        apexType: ApexType.VOID,
+        apexType: APEX_TYPE.VOID,
         typeName: 'account',
       })
     })
@@ -245,13 +245,13 @@ describe('TypeDiscoverer', () => {
       // Assert
       const resultA = registry.resolveType('methodA', 'x')
       expect(resultA).toEqual({
-        apexType: ApexType.STRING,
+        apexType: APEX_TYPE.STRING,
         typeName: 'string',
       })
 
       const resultB = registry.resolveType('methodB', 'x')
       expect(resultB).toEqual({
-        apexType: ApexType.INTEGER,
+        apexType: APEX_TYPE.INTEGER,
         typeName: 'integer',
       })
     })
@@ -276,7 +276,7 @@ describe('TypeDiscoverer', () => {
       // Assert
       const result = registry.resolveType('calculate', 'label')
       expect(result).toEqual({
-        apexType: ApexType.STRING,
+        apexType: APEX_TYPE.STRING,
         typeName: 'string',
       })
     })
@@ -299,7 +299,7 @@ describe('TypeDiscoverer', () => {
       // Assert
       const result = registry.resolveType('doWork', 'value')
       expect(result).toEqual({
-        apexType: ApexType.INTEGER,
+        apexType: APEX_TYPE.INTEGER,
         typeName: 'integer',
       })
     })
@@ -429,7 +429,7 @@ describe('TypeDiscoverer', () => {
       const result = registry.resolveType('getAccount')
       expect(result).toEqual(
         expect.objectContaining({
-          apexType: ApexType.OBJECT,
+          apexType: APEX_TYPE.OBJECT,
           typeName: 'Account',
         })
       )
@@ -479,23 +479,23 @@ describe('TypeDiscoverer', () => {
       // Assert
       expect(registry.resolveType('calculate')).toEqual(
         expect.objectContaining({
-          apexType: ApexType.INTEGER,
+          apexType: APEX_TYPE.INTEGER,
           typeName: 'Integer',
         })
       )
 
       expect(registry.resolveType('calculate', 'name')).toEqual({
-        apexType: ApexType.STRING,
+        apexType: APEX_TYPE.STRING,
         typeName: 'string',
       })
 
       expect(registry.resolveType('calculate', 'rate')).toEqual({
-        apexType: ApexType.DECIMAL,
+        apexType: APEX_TYPE.DECIMAL,
         typeName: 'decimal',
       })
 
       expect(registry.resolveType('calculate', 'label')).toEqual({
-        apexType: ApexType.STRING,
+        apexType: APEX_TYPE.STRING,
         typeName: 'string',
       })
     })

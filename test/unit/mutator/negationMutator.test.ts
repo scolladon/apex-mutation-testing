@@ -1,7 +1,7 @@
 import { ParserRuleContext } from 'antlr4ts'
 import { MethodDeclarationContext } from 'apex-parser'
 import { NegationMutator } from '../../../src/mutator/negationMutator.js'
-import { ApexMethod, ApexType } from '../../../src/type/ApexMethod.js'
+import { APEX_TYPE, ApexMethod } from '../../../src/type/ApexMethod.js'
 import { TypeRegistry } from '../../../src/type/TypeRegistry.js'
 import { TestUtil } from '../../utils/testUtil.js'
 
@@ -82,10 +82,10 @@ function createComplexReturnCtxInMethod(
 describe('NegationMutator', () => {
   describe('numeric type mutations', () => {
     const numericTypes = [
-      { type: ApexType.INTEGER, typeName: 'Integer' },
-      { type: ApexType.LONG, typeName: 'Long' },
-      { type: ApexType.DOUBLE, typeName: 'Double' },
-      { type: ApexType.DECIMAL, typeName: 'Decimal' },
+      { type: APEX_TYPE.INTEGER, typeName: 'Integer' },
+      { type: APEX_TYPE.LONG, typeName: 'Long' },
+      { type: APEX_TYPE.DOUBLE, typeName: 'Double' },
+      { type: APEX_TYPE.DECIMAL, typeName: 'Decimal' },
     ]
 
     it.each(
@@ -117,16 +117,16 @@ describe('NegationMutator', () => {
 
   describe('non-numeric type mutations', () => {
     const nonNumericTypes = [
-      { type: ApexType.STRING, typeName: 'String' },
-      { type: ApexType.BOOLEAN, typeName: 'Boolean' },
-      { type: ApexType.DATE, typeName: 'Date' },
-      { type: ApexType.DATETIME, typeName: 'DateTime' },
-      { type: ApexType.ID, typeName: 'Id' },
-      { type: ApexType.LIST, typeName: 'List<String>' },
-      { type: ApexType.MAP, typeName: 'Map<Id, Account>' },
-      { type: ApexType.SET, typeName: 'Set<String>' },
-      { type: ApexType.OBJECT, typeName: 'Account' },
-      { type: ApexType.VOID, typeName: 'void' },
+      { type: APEX_TYPE.STRING, typeName: 'String' },
+      { type: APEX_TYPE.BOOLEAN, typeName: 'Boolean' },
+      { type: APEX_TYPE.DATE, typeName: 'Date' },
+      { type: APEX_TYPE.DATETIME, typeName: 'DateTime' },
+      { type: APEX_TYPE.ID, typeName: 'Id' },
+      { type: APEX_TYPE.LIST, typeName: 'List<String>' },
+      { type: APEX_TYPE.MAP, typeName: 'Map<Id, Account>' },
+      { type: APEX_TYPE.SET, typeName: 'Set<String>' },
+      { type: APEX_TYPE.OBJECT, typeName: 'Account' },
+      { type: APEX_TYPE.VOID, typeName: 'void' },
     ]
 
     it.each(
@@ -163,7 +163,7 @@ describe('NegationMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NegationMutator(typeRegistry)
@@ -185,7 +185,7 @@ describe('NegationMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NegationMutator(typeRegistry)
@@ -208,7 +208,7 @@ describe('NegationMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NegationMutator(typeRegistry)
@@ -228,7 +228,7 @@ describe('NegationMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NegationMutator(typeRegistry)
@@ -248,7 +248,7 @@ describe('NegationMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NegationMutator(typeRegistry)
@@ -270,7 +270,7 @@ describe('NegationMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NegationMutator(typeRegistry)
@@ -291,7 +291,7 @@ describe('NegationMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NegationMutator(typeRegistry)
@@ -312,7 +312,7 @@ describe('NegationMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NegationMutator(typeRegistry)
@@ -335,7 +335,7 @@ describe('NegationMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NegationMutator(typeRegistry)
@@ -355,7 +355,7 @@ describe('NegationMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NegationMutator(typeRegistry)
@@ -375,7 +375,7 @@ describe('NegationMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NegationMutator(typeRegistry)
@@ -395,7 +395,7 @@ describe('NegationMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NegationMutator(typeRegistry)
@@ -418,7 +418,7 @@ describe('NegationMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NegationMutator(typeRegistry)
@@ -438,7 +438,7 @@ describe('NegationMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NegationMutator(typeRegistry)
@@ -458,7 +458,7 @@ describe('NegationMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NegationMutator(typeRegistry)
@@ -494,7 +494,7 @@ describe('NegationMutator', () => {
         returnType: 'Integer',
         startLine: 1,
         endLine: 5,
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NegationMutator(typeRegistry)

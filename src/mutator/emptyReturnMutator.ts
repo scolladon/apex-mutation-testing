@@ -1,5 +1,6 @@
 import { ParserRuleContext } from 'antlr4ts'
-import { ApexType, getDefaultValueForApexType } from '../type/ApexMethod.js'
+import type { ApexType } from '../type/ApexMethod.js'
+import { APEX_TYPE, getDefaultValueForApexType } from '../type/ApexMethod.js'
 import { TypeRegistry } from '../type/TypeRegistry.js'
 import { BaseListener } from './baseListener.js'
 
@@ -9,14 +10,14 @@ interface TypeInfo {
 }
 
 const SKIP_TYPES: ReadonlySet<ApexType> = new Set([
-  ApexType.VOID,
-  ApexType.BOOLEAN,
-  ApexType.SOBJECT,
-  ApexType.OBJECT,
-  ApexType.APEX_CLASS,
-  ApexType.DATE,
-  ApexType.DATETIME,
-  ApexType.TIME,
+  APEX_TYPE.VOID,
+  APEX_TYPE.BOOLEAN,
+  APEX_TYPE.SOBJECT,
+  APEX_TYPE.OBJECT,
+  APEX_TYPE.APEX_CLASS,
+  APEX_TYPE.DATE,
+  APEX_TYPE.DATETIME,
+  APEX_TYPE.TIME,
 ])
 
 export class EmptyReturnMutator extends BaseListener {

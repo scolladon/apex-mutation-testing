@@ -1,6 +1,6 @@
 import { TypeMatcher } from '../../../src/service/typeMatcher.js'
 import type { ApexMethod } from '../../../src/type/ApexMethod.js'
-import { ApexType } from '../../../src/type/ApexMethod.js'
+import { APEX_TYPE, ApexType } from '../../../src/type/ApexMethod.js'
 import { TypeRegistry } from '../../../src/type/TypeRegistry.js'
 
 describe('TypeRegistry', () => {
@@ -14,7 +14,7 @@ describe('TypeRegistry', () => {
             returnType: 'Integer',
             startLine: 1,
             endLine: 5,
-            type: ApexType.INTEGER,
+            type: APEX_TYPE.INTEGER,
           },
         ],
       ])
@@ -30,7 +30,7 @@ describe('TypeRegistry', () => {
 
       // Assert
       expect(result).toEqual({
-        apexType: ApexType.INTEGER,
+        apexType: APEX_TYPE.INTEGER,
         typeName: 'Integer',
       })
     })
@@ -44,7 +44,7 @@ describe('TypeRegistry', () => {
             returnType: 'List<String>',
             startLine: 1,
             endLine: 5,
-            type: ApexType.LIST,
+            type: APEX_TYPE.LIST,
             elementType: 'String',
           },
         ],
@@ -61,7 +61,7 @@ describe('TypeRegistry', () => {
 
       // Assert
       expect(result).toEqual({
-        apexType: ApexType.LIST,
+        apexType: APEX_TYPE.LIST,
         typeName: 'List<String>',
         elementType: 'String',
       })
@@ -89,7 +89,7 @@ describe('TypeRegistry', () => {
             returnType: 'void',
             startLine: 1,
             endLine: 5,
-            type: ApexType.VOID,
+            type: APEX_TYPE.VOID,
           },
         ],
       ])
@@ -108,7 +108,7 @@ describe('TypeRegistry', () => {
 
       // Assert
       expect(result).toEqual({
-        apexType: ApexType.STRING,
+        apexType: APEX_TYPE.STRING,
         typeName: 'String',
       })
     })
@@ -122,7 +122,7 @@ describe('TypeRegistry', () => {
             returnType: 'void',
             startLine: 1,
             endLine: 5,
-            type: ApexType.VOID,
+            type: APEX_TYPE.VOID,
           },
         ],
       ])
@@ -142,7 +142,7 @@ describe('TypeRegistry', () => {
 
       // Assert
       expect(result).toEqual({
-        apexType: ApexType.BOOLEAN,
+        apexType: APEX_TYPE.BOOLEAN,
         typeName: 'Boolean',
       })
     })
@@ -156,7 +156,7 @@ describe('TypeRegistry', () => {
             returnType: 'void',
             startLine: 1,
             endLine: 5,
-            type: ApexType.VOID,
+            type: APEX_TYPE.VOID,
           },
         ],
       ])
@@ -188,7 +188,7 @@ describe('TypeRegistry', () => {
             returnType: 'void',
             startLine: 1,
             endLine: 5,
-            type: ApexType.VOID,
+            type: APEX_TYPE.VOID,
           },
         ],
       ])
@@ -199,7 +199,7 @@ describe('TypeRegistry', () => {
         matches: jest.fn().mockReturnValue(true),
         collect: jest.fn(),
         collectedTypes: new Set(),
-        getFieldType: jest.fn().mockReturnValue(ApexType.STRING),
+        getFieldType: jest.fn().mockReturnValue(APEX_TYPE.STRING),
       }
       const registry = new TypeRegistry(
         methodTypeTable,
@@ -213,7 +213,7 @@ describe('TypeRegistry', () => {
 
       // Assert
       expect(result).toEqual({
-        apexType: ApexType.STRING,
+        apexType: APEX_TYPE.STRING,
         typeName: 'String',
       })
       expect(matcher.getFieldType).toHaveBeenCalledWith('Account', 'Name')
@@ -228,7 +228,7 @@ describe('TypeRegistry', () => {
             returnType: 'void',
             startLine: 1,
             endLine: 5,
-            type: ApexType.VOID,
+            type: APEX_TYPE.VOID,
           },
         ],
       ])
@@ -237,7 +237,7 @@ describe('TypeRegistry', () => {
         matches: jest.fn().mockReturnValue(true),
         collect: jest.fn(),
         collectedTypes: new Set(),
-        getFieldType: jest.fn().mockReturnValue(ApexType.STRING),
+        getFieldType: jest.fn().mockReturnValue(APEX_TYPE.STRING),
       }
       const registry = new TypeRegistry(
         methodTypeTable,
@@ -251,7 +251,7 @@ describe('TypeRegistry', () => {
 
       // Assert
       expect(result).toEqual({
-        apexType: ApexType.STRING,
+        apexType: APEX_TYPE.STRING,
         typeName: 'String',
       })
       expect(matcher.getFieldType).toHaveBeenCalledWith('Contact', 'Email')
@@ -267,7 +267,7 @@ describe('TypeRegistry', () => {
               returnType: 'void',
               startLine: 1,
               endLine: 5,
-              type: ApexType.VOID,
+              type: APEX_TYPE.VOID,
             },
           ],
         ]),
@@ -298,7 +298,7 @@ describe('TypeRegistry', () => {
               returnType: 'void',
               startLine: 1,
               endLine: 5,
-              type: ApexType.VOID,
+              type: APEX_TYPE.VOID,
             },
           ],
         ]),
@@ -325,7 +325,7 @@ describe('TypeRegistry', () => {
             returnType: 'void',
             startLine: 1,
             endLine: 5,
-            type: ApexType.VOID,
+            type: APEX_TYPE.VOID,
           },
         ],
         [
@@ -334,7 +334,7 @@ describe('TypeRegistry', () => {
             returnType: 'Decimal',
             startLine: 10,
             endLine: 15,
-            type: ApexType.DECIMAL,
+            type: APEX_TYPE.DECIMAL,
           },
         ],
       ])
@@ -350,7 +350,7 @@ describe('TypeRegistry', () => {
 
       // Assert
       expect(result).toEqual({
-        apexType: ApexType.DECIMAL,
+        apexType: APEX_TYPE.DECIMAL,
         typeName: 'Decimal',
       })
     })
@@ -365,7 +365,7 @@ describe('TypeRegistry', () => {
               returnType: 'void',
               startLine: 1,
               endLine: 5,
-              type: ApexType.VOID,
+              type: APEX_TYPE.VOID,
             },
           ],
         ]),
@@ -384,24 +384,24 @@ describe('TypeRegistry', () => {
 
   describe('type classification', () => {
     it.each([
-      ['void', ApexType.VOID],
-      ['Boolean', ApexType.BOOLEAN],
-      ['Integer', ApexType.INTEGER],
-      ['Long', ApexType.LONG],
-      ['Double', ApexType.DOUBLE],
-      ['Decimal', ApexType.DECIMAL],
-      ['String', ApexType.STRING],
-      ['ID', ApexType.ID],
-      ['Blob', ApexType.BLOB],
-      ['Date', ApexType.DATE],
-      ['DateTime', ApexType.DATETIME],
-      ['Time', ApexType.TIME],
-      ['SObject', ApexType.SOBJECT],
-      ['Object', ApexType.OBJECT],
-      ['List<String>', ApexType.LIST],
-      ['String[]', ApexType.LIST],
-      ['Set<Integer>', ApexType.SET],
-      ['Map<String,Integer>', ApexType.MAP],
+      ['void', APEX_TYPE.VOID],
+      ['Boolean', APEX_TYPE.BOOLEAN],
+      ['Integer', APEX_TYPE.INTEGER],
+      ['Long', APEX_TYPE.LONG],
+      ['Double', APEX_TYPE.DOUBLE],
+      ['Decimal', APEX_TYPE.DECIMAL],
+      ['String', APEX_TYPE.STRING],
+      ['ID', APEX_TYPE.ID],
+      ['Blob', APEX_TYPE.BLOB],
+      ['Date', APEX_TYPE.DATE],
+      ['DateTime', APEX_TYPE.DATETIME],
+      ['Time', APEX_TYPE.TIME],
+      ['SObject', APEX_TYPE.SOBJECT],
+      ['Object', APEX_TYPE.OBJECT],
+      ['List<String>', APEX_TYPE.LIST],
+      ['String[]', APEX_TYPE.LIST],
+      ['Set<Integer>', APEX_TYPE.SET],
+      ['Map<String,Integer>', APEX_TYPE.MAP],
     ])('Given variable of type %s, When resolveType, Then classifies as %s', (typeName: string, expectedType: ApexType) => {
       // Arrange
       const variableScopes = new Map([['myMethod', new Map([['x', typeName]])]])
@@ -413,7 +413,7 @@ describe('TypeRegistry', () => {
               returnType: 'void',
               startLine: 1,
               endLine: 5,
-              type: ApexType.VOID,
+              type: APEX_TYPE.VOID,
             },
           ],
         ]),
@@ -449,7 +449,7 @@ describe('TypeRegistry', () => {
               returnType: 'void',
               startLine: 1,
               endLine: 5,
-              type: ApexType.VOID,
+              type: APEX_TYPE.VOID,
             },
           ],
         ]),
@@ -463,7 +463,7 @@ describe('TypeRegistry', () => {
 
       // Assert
       expect(result).toEqual({
-        apexType: ApexType.OBJECT,
+        apexType: APEX_TYPE.OBJECT,
         typeName: 'Account',
       })
     })
@@ -486,7 +486,7 @@ describe('TypeRegistry', () => {
               returnType: 'void',
               startLine: 1,
               endLine: 5,
-              type: ApexType.VOID,
+              type: APEX_TYPE.VOID,
             },
           ],
         ]),
@@ -500,7 +500,7 @@ describe('TypeRegistry', () => {
 
       // Assert
       expect(result).toEqual({
-        apexType: ApexType.VOID,
+        apexType: APEX_TYPE.VOID,
         typeName: 'UnknownType',
       })
     })

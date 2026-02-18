@@ -1,7 +1,7 @@
 import { ParserRuleContext } from 'antlr4ts'
 import { MethodDeclarationContext } from 'apex-parser'
 import { NullReturnMutator } from '../../../src/mutator/nullReturnMutator.js'
-import { ApexMethod, ApexType } from '../../../src/type/ApexMethod.js'
+import { APEX_TYPE, ApexMethod } from '../../../src/type/ApexMethod.js'
 import { TypeRegistry } from '../../../src/type/TypeRegistry.js'
 import { TestUtil } from '../../utils/testUtil.js'
 
@@ -37,25 +37,25 @@ describe('NullReturnMutator', () => {
       {
         name: 'string',
         expression: '"Test String"',
-        type: ApexType.STRING,
+        type: APEX_TYPE.STRING,
         expected: 'null',
       },
       {
         name: 'object',
         expression: 'new Account()',
-        type: ApexType.OBJECT,
+        type: APEX_TYPE.OBJECT,
         expected: 'null',
       },
       {
         name: 'list',
         expression: 'new List<String>()',
-        type: ApexType.LIST,
+        type: APEX_TYPE.LIST,
         expected: 'null',
       },
       {
         name: 'map',
         expression: 'new Map<Id, Account>()',
-        type: ApexType.MAP,
+        type: APEX_TYPE.MAP,
         expected: 'null',
       },
     ]
@@ -90,28 +90,28 @@ describe('NullReturnMutator', () => {
   describe('primitive and non-primitive return types', () => {
     const testCases = [
       {
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
         typeName: 'Integer',
         expression: '42',
         shouldMutate: true,
         expected: 'null',
       },
       {
-        type: ApexType.DECIMAL,
+        type: APEX_TYPE.DECIMAL,
         typeName: 'Decimal',
         expression: '3.14',
         shouldMutate: true,
         expected: 'null',
       },
       {
-        type: ApexType.BOOLEAN,
+        type: APEX_TYPE.BOOLEAN,
         typeName: 'Boolean',
         expression: 'true',
         shouldMutate: true,
         expected: 'null',
       },
       {
-        type: ApexType.VOID,
+        type: APEX_TYPE.VOID,
         typeName: 'void',
         expression: '',
         shouldMutate: false,
@@ -158,7 +158,7 @@ describe('NullReturnMutator', () => {
         returnType: 'String',
         startLine: 1,
         endLine: 5,
-        type: ApexType.STRING,
+        type: APEX_TYPE.STRING,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NullReturnMutator(typeRegistry)
@@ -180,7 +180,7 @@ describe('NullReturnMutator', () => {
         returnType: 'String',
         startLine: 1,
         endLine: 5,
-        type: ApexType.STRING,
+        type: APEX_TYPE.STRING,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NullReturnMutator(typeRegistry)
@@ -200,7 +200,7 @@ describe('NullReturnMutator', () => {
         returnType: 'String',
         startLine: 1,
         endLine: 5,
-        type: ApexType.STRING,
+        type: APEX_TYPE.STRING,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NullReturnMutator(typeRegistry)
@@ -220,7 +220,7 @@ describe('NullReturnMutator', () => {
         returnType: 'String',
         startLine: 1,
         endLine: 5,
-        type: ApexType.STRING,
+        type: APEX_TYPE.STRING,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NullReturnMutator(typeRegistry)
@@ -256,7 +256,7 @@ describe('NullReturnMutator', () => {
         returnType: 'String',
         startLine: 1,
         endLine: 5,
-        type: ApexType.STRING,
+        type: APEX_TYPE.STRING,
       })
       const typeRegistry = createTypeRegistry(typeTable)
       const sut = new NullReturnMutator(typeRegistry)
