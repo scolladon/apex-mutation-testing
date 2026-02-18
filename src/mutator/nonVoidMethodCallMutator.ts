@@ -5,9 +5,14 @@ import {
   NewExpressionContext,
 } from 'apex-parser'
 import { ApexType } from '../type/ApexMethod.js'
+import { TypeRegistry } from '../type/TypeRegistry.js'
 import { TypeTrackingBaseListener } from './typeTrackingBaseListener.js'
 
 export class NonVoidMethodCallMutator extends TypeTrackingBaseListener {
+  constructor(typeRegistry?: TypeRegistry) {
+    super(typeRegistry)
+  }
+
   enterLocalVariableDeclarationStatement(ctx: ParserRuleContext): void {
     if (!ctx.children || ctx.children.length < 1) {
       return
@@ -53,6 +58,43 @@ export class NonVoidMethodCallMutator extends TypeTrackingBaseListener {
     }
 
     const lhsText = lhs.text
+
+    if (this.typeRegistry) {
+      this.resolveAssignExpressionViaRegistry(ctx, lhsText, rhs)
+      return
+    }
+
+    this.resolveAssignExpressionViaLegacy(lhsText, rhs)
+  }
+
+  private resolveAssignExpressionViaRegistry(
+    ctx: ParserRuleContext,
+    lhsText: string,
+    rhs: ParserRuleContext
+  ): void {
+    const methodName = this.getEnclosingMethodName(ctx)
+    if (!methodName) {
+      return
+    }
+
+    const resolved = this.typeRegistry!.resolveType(methodName, lhsText)
+    if (!resolved) {
+      return
+    }
+
+    const defaultValue = lhsText.includes('.')
+      ? this.generateDefaultValueFromApexType(resolved.apexType)
+      : this.generateDefaultValue(resolved.typeName)
+
+    if (defaultValue !== null) {
+      this.createMutationFromParserRuleContext(rhs, defaultValue)
+    }
+  }
+
+  private resolveAssignExpressionViaLegacy(
+    lhsText: string,
+    rhs: ParserRuleContext
+  ): void {
     let defaultValue: string | null
 
     if (lhsText.includes('.')) {
