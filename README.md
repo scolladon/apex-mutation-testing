@@ -175,7 +175,6 @@ EXAMPLES
 ```
 
 _See code: [src/commands/apex/mutation/test/run.ts](https://github.com/scolladon/apex-mutation-testing/blob/main/src/commands/apex/mutation/test/run.ts)_
-
 <!-- commandsstop -->
 
 ## Backlog

@@ -7,8 +7,8 @@ import {
   CommonTokenStream,
   ParseTreeWalker,
 } from 'apex-parser'
-import { ArithmeticOperatorDeletionMutator } from '../mutator/arithmeticOperatorDeletionMutator.js'
 import { ArgumentPropagationMutator } from '../mutator/argumentPropagationMutator.js'
+import { ArithmeticOperatorDeletionMutator } from '../mutator/arithmeticOperatorDeletionMutator.js'
 import { ArithmeticOperatorMutator } from '../mutator/arithmeticOperatorMutator.js'
 import { BitwiseOperatorMutator } from '../mutator/bitwiseOperatorMutator.js'
 import { BoundaryConditionMutator } from '../mutator/boundaryConditionMutator.js'
