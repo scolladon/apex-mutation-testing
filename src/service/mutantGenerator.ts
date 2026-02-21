@@ -7,6 +7,7 @@ import {
   CommonTokenStream,
   ParseTreeWalker,
 } from 'apex-parser'
+import { ArithmeticOperatorDeletionMutator } from '../mutator/arithmeticOperatorDeletionMutator.js'
 import { ArithmeticOperatorMutator } from '../mutator/arithmeticOperatorMutator.js'
 import { BitwiseOperatorMutator } from '../mutator/bitwiseOperatorMutator.js'
 import { BoundaryConditionMutator } from '../mutator/boundaryConditionMutator.js'
@@ -73,6 +74,9 @@ export class MutantGenerator {
     const memberVariableListener = new MemberVariableMutator()
     const bitwiseListener = new BitwiseOperatorMutator()
     const unaryOperatorInsertionListener = new UnaryOperatorInsertionMutator()
+    const arithmeticDeletionListener = new ArithmeticOperatorDeletionMutator(
+      typeRegistry
+    )
 
     const listener = new MutationListener(
       [
@@ -97,6 +101,7 @@ export class MutantGenerator {
         memberVariableListener,
         bitwiseListener,
         unaryOperatorInsertionListener,
+        arithmeticDeletionListener,
       ],
       coveredLines
     )
