@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.3.0...v1.4.0) (2026-02-21)
+
+
+### Features
+
+* add NonVoidMethodCallMutator with type aware defaults + refactor ([#91](https://github.com/scolladon/apex-mutation-testing/issues/91)) ([d3f6415](https://github.com/scolladon/apex-mutation-testing/commit/d3f6415029a1d91b458fbebc8b8aa0cb4c783870))
+
 ## [1.3.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.2.0...v1.3.0) (2026-02-14)
 
 
