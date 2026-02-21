@@ -8,6 +8,7 @@ import {
   ParseTreeWalker,
 } from 'apex-parser'
 import { ArithmeticOperatorDeletionMutator } from '../mutator/arithmeticOperatorDeletionMutator.js'
+import { ArgumentPropagationMutator } from '../mutator/argumentPropagationMutator.js'
 import { ArithmeticOperatorMutator } from '../mutator/arithmeticOperatorMutator.js'
 import { BitwiseOperatorMutator } from '../mutator/bitwiseOperatorMutator.js'
 import { BoundaryConditionMutator } from '../mutator/boundaryConditionMutator.js'
@@ -60,7 +61,9 @@ export class MutantGenerator {
     const arithmeticListener = new ArithmeticOperatorMutator(typeRegistry)
     const negationListener = new NegationMutator(typeRegistry)
     const nonVoidMethodCallListener = new NonVoidMethodCallMutator(typeRegistry)
-
+    const argumentPropagationListener = new ArgumentPropagationMutator(
+      typeRegistry
+    )
     const incrementListener = new IncrementMutator()
     const boundaryListener = new BoundaryConditionMutator()
     const equalityListener = new EqualityConditionMutator()
@@ -96,6 +99,7 @@ export class MutantGenerator {
         removeIncrementsListener,
         voidMethodCallListener,
         nonVoidMethodCallListener,
+        argumentPropagationListener,
         constructorCallListener,
         removeConditionalsListener,
         switchListener,
