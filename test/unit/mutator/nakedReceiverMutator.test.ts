@@ -1,5 +1,9 @@
 import { ParserRuleContext } from 'antlr4ts'
-import { DotMethodCallContext, MethodDeclarationContext } from 'apex-parser'
+import {
+  DotExpressionContext,
+  DotMethodCallContext,
+  MethodDeclarationContext,
+} from 'apex-parser'
 import { NakedReceiverMutator } from '../../../src/mutator/nakedReceiverMutator.js'
 import type { TypeMatcher } from '../../../src/service/typeMatcher.js'
 import { APEX_TYPE, ApexMethod } from '../../../src/type/ApexMethod.js'
@@ -93,7 +97,7 @@ describe('NakedReceiverMutator', () => {
       const ctx = createDotExpressionInMethod('account', 'clone', 'testMethod')
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(1)
@@ -120,7 +124,7 @@ describe('NakedReceiverMutator', () => {
       const ctx = createDotExpressionInMethod('s', 'toUpperCase', 'testMethod')
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(1)
@@ -146,7 +150,7 @@ describe('NakedReceiverMutator', () => {
       const ctx = createDotExpressionInMethod('num', 'toString', 'testMethod')
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -164,7 +168,7 @@ describe('NakedReceiverMutator', () => {
       } as unknown as ParserRuleContext
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -186,7 +190,7 @@ describe('NakedReceiverMutator', () => {
       )
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -204,7 +208,7 @@ describe('NakedReceiverMutator', () => {
       } as unknown as ParserRuleContext
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -219,7 +223,7 @@ describe('NakedReceiverMutator', () => {
       const ctx = { children: null } as unknown as ParserRuleContext
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -245,7 +249,7 @@ describe('NakedReceiverMutator', () => {
       } as unknown as ParserRuleContext
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -272,7 +276,7 @@ describe('NakedReceiverMutator', () => {
       )
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(1)
@@ -298,7 +302,7 @@ describe('NakedReceiverMutator', () => {
       const ctx = createDotExpressionInMethod('num', 'copy', 'testMethod')
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(1)
@@ -324,7 +328,7 @@ describe('NakedReceiverMutator', () => {
       const ctx = createDotExpressionInMethod('data', 'clone', 'methodB')
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -349,7 +353,7 @@ describe('NakedReceiverMutator', () => {
       const ctx = createDotExpressionInMethod('item', 'copy', 'testMethod')
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(1)
@@ -376,7 +380,7 @@ describe('NakedReceiverMutator', () => {
       )
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -390,7 +394,7 @@ describe('NakedReceiverMutator', () => {
       const ctx = createDotExpressionInMethod('account', 'clone', 'testMethod')
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)

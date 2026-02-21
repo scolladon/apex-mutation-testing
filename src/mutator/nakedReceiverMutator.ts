@@ -1,5 +1,4 @@
-import { ParserRuleContext } from 'antlr4ts'
-import { DotMethodCallContext } from 'apex-parser'
+import { DotExpressionContext, DotMethodCallContext } from 'apex-parser'
 import { TypeRegistry } from '../type/TypeRegistry.js'
 import { BaseListener } from './baseListener.js'
 
@@ -8,7 +7,7 @@ export class NakedReceiverMutator extends BaseListener {
     super(typeRegistry)
   }
 
-  enterDotExpression(ctx: ParserRuleContext): void {
+  enterDotExpression(ctx: DotExpressionContext): void {
     if (!ctx.children || ctx.children.length < 3) {
       return
     }
