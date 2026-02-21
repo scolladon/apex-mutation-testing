@@ -1,25 +1,26 @@
 import { Connection } from '@salesforce/core'
 import { mapLimit } from 'async'
-import { ApexType, SObjectFieldTypes } from '../type/ApexMethod.js'
+import type { ApexType } from '../type/ApexMethod.js'
+import { APEX_TYPE, SObjectFieldTypes } from '../type/ApexMethod.js'
 
 const DESCRIBE_FIELD_TYPE_MAP: Record<string, ApexType> = {
-  int: ApexType.INTEGER,
-  double: ApexType.DOUBLE,
-  currency: ApexType.DECIMAL,
-  percent: ApexType.DOUBLE,
-  date: ApexType.DATE,
-  datetime: ApexType.DATETIME,
-  boolean: ApexType.BOOLEAN,
-  id: ApexType.ID,
-  reference: ApexType.ID,
-  string: ApexType.STRING,
-  textarea: ApexType.STRING,
-  email: ApexType.STRING,
-  phone: ApexType.STRING,
-  url: ApexType.STRING,
-  picklist: ApexType.STRING,
-  multipicklist: ApexType.STRING,
-  encryptedstring: ApexType.STRING,
+  int: APEX_TYPE.INTEGER,
+  double: APEX_TYPE.DOUBLE,
+  currency: APEX_TYPE.DECIMAL,
+  percent: APEX_TYPE.DOUBLE,
+  date: APEX_TYPE.DATE,
+  datetime: APEX_TYPE.DATETIME,
+  boolean: APEX_TYPE.BOOLEAN,
+  id: APEX_TYPE.ID,
+  reference: APEX_TYPE.ID,
+  string: APEX_TYPE.STRING,
+  textarea: APEX_TYPE.STRING,
+  email: APEX_TYPE.STRING,
+  phone: APEX_TYPE.STRING,
+  url: APEX_TYPE.STRING,
+  picklist: APEX_TYPE.STRING,
+  multipicklist: APEX_TYPE.STRING,
+  encryptedstring: APEX_TYPE.STRING,
 }
 
 const MAX_CONCURRENT_DESCRIBE_CALLS = 25
@@ -40,7 +41,7 @@ export class SObjectDescribeRepository {
           for (const field of describeResult.fields) {
             fieldMap.set(
               field.name.toLowerCase(),
-              DESCRIBE_FIELD_TYPE_MAP[field.type] ?? ApexType.OBJECT
+              DESCRIBE_FIELD_TYPE_MAP[field.type] ?? APEX_TYPE.OBJECT
             )
           }
           this.fieldTypes.set(name.toLowerCase(), fieldMap)

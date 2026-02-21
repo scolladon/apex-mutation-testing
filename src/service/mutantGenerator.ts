@@ -7,7 +7,6 @@ import {
   CommonTokenStream,
   ParseTreeWalker,
 } from 'apex-parser'
-import { SObjectDescribeRepository } from '../adapter/sObjectDescribeRepository.js'
 import { ArithmeticOperatorMutator } from '../mutator/arithmeticOperatorMutator.js'
 import { BoundaryConditionMutator } from '../mutator/boundaryConditionMutator.js'
 import { ConstructorCallMutator } from '../mutator/constructorCallMutator.js'
@@ -20,14 +19,15 @@ import { InvertNegativesMutator } from '../mutator/invertNegativesMutator.js'
 import { LogicalOperatorMutator } from '../mutator/logicalOperatorMutator.js'
 import { MutationListener } from '../mutator/mutationListener.js'
 import { NegationMutator } from '../mutator/negationMutator.js'
+import { NonVoidMethodCallMutator } from '../mutator/nonVoidMethodCallMutator.js'
 import { NullReturnMutator } from '../mutator/nullReturnMutator.js'
 import { RemoveConditionalsMutator } from '../mutator/removeConditionalsMutator.js'
 import { RemoveIncrementsMutator } from '../mutator/removeIncrementsMutator.js'
 import { SwitchMutator } from '../mutator/switchMutator.js'
 import { TrueReturnMutator } from '../mutator/trueReturnMutator.js'
 import { VoidMethodCallMutator } from '../mutator/voidMethodCallMutator.js'
-import { ApexMethod } from '../type/ApexMethod.js'
 import { ApexMutation } from '../type/ApexMutation.js'
+import { TypeRegistry } from '../type/TypeRegistry.js'
 
 export class MutantGenerator {
   private tokenStream?: CommonTokenStream
@@ -39,8 +39,7 @@ export class MutantGenerator {
   public compute(
     classContent: string,
     coveredLines: Set<number>,
-    methodTypeTable?: Map<string, ApexMethod>,
-    sObjectDescribeRepository?: SObjectDescribeRepository
+    typeRegistry?: TypeRegistry
   ) {
     const lexer = new ApexLexer(
       new CaseInsensitiveInputStream('other', classContent)
@@ -49,17 +48,19 @@ export class MutantGenerator {
     const parser = new ApexParser(this.tokenStream)
     const tree = parser.compilationUnit()
 
+    const emptyReturnListener = new EmptyReturnMutator(typeRegistry)
+    const trueReturnListener = new TrueReturnMutator(typeRegistry)
+    const falseReturnListener = new FalseReturnMutator(typeRegistry)
+    const nullReturnListener = new NullReturnMutator(typeRegistry)
+    const arithmeticListener = new ArithmeticOperatorMutator(typeRegistry)
+    const negationListener = new NegationMutator(typeRegistry)
+    const nonVoidMethodCallListener = new NonVoidMethodCallMutator(typeRegistry)
+
     const incrementListener = new IncrementMutator()
     const boundaryListener = new BoundaryConditionMutator()
-    const emptyReturnListener = new EmptyReturnMutator()
-    const trueReturnListener = new TrueReturnMutator()
-    const falseReturnListener = new FalseReturnMutator()
-    const nullReturnListener = new NullReturnMutator()
     const equalityListener = new EqualityConditionMutator()
-    const arithmeticListener = new ArithmeticOperatorMutator()
     const invertNegativesListener = new InvertNegativesMutator()
     const logicalOperatorListener = new LogicalOperatorMutator()
-    const negationListener = new NegationMutator()
     const removeIncrementsListener = new RemoveIncrementsMutator()
     const voidMethodCallListener = new VoidMethodCallMutator()
     const constructorCallListener = new ConstructorCallMutator()
@@ -82,14 +83,13 @@ export class MutantGenerator {
         negationListener,
         removeIncrementsListener,
         voidMethodCallListener,
+        nonVoidMethodCallListener,
         constructorCallListener,
         removeConditionalsListener,
         switchListener,
         experimentalSwitchListener,
       ],
-      coveredLines,
-      methodTypeTable,
-      sObjectDescribeRepository
+      coveredLines
     )
 
     ParseTreeWalker.DEFAULT.walk(listener as ApexParserListener, tree)

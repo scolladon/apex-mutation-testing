@@ -10,56 +10,11 @@ import {
 import { EmptyReturnMutator } from '../../src/mutator/emptyReturnMutator.js'
 import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { MutantGenerator } from '../../src/service/mutantGenerator.js'
-import { TypeGatherer } from '../../src/service/typeGatherer.js'
+import { TypeDiscoverer } from '../../src/service/typeDiscoverer.js'
 import {
   ApexClassTypeMatcher,
   SObjectTypeMatcher,
 } from '../../src/service/typeMatcher.js'
-import { ApexMethod, ApexType } from '../../src/type/ApexMethod.js'
-
-function parseApexAndGetTypeTable(code: string): Map<string, ApexMethod> {
-  const typeGatherer = new TypeGatherer(
-    new ApexClassTypeMatcher(new Set()),
-    new SObjectTypeMatcher(new Set())
-  )
-  const { methodTypeTable: typeTable } = typeGatherer.analyze(code)
-
-  if (code.includes('getValue()')) {
-    if (!typeTable.has('getValue')) {
-      typeTable.set('getValue', {
-        returnType: 'Integer',
-        startLine: 3,
-        endLine: 5,
-        type: ApexType.INTEGER,
-      })
-    }
-  }
-
-  if (code.includes('getText()')) {
-    if (!typeTable.has('getText')) {
-      typeTable.set('getText', {
-        returnType: 'String',
-        startLine: 3,
-        endLine: 5,
-        type: ApexType.STRING,
-      })
-    }
-  }
-
-  if (code.includes('getList()')) {
-    if (!typeTable.has('getList')) {
-      typeTable.set('getList', {
-        returnType: 'List<String>',
-        startLine: 3,
-        endLine: 5,
-        type: ApexType.LIST,
-        elementType: 'String',
-      })
-    }
-  }
-
-  return typeTable
-}
 
 describe('EmptyReturnMutator Integration', () => {
   let mutantGenerator: MutantGenerator
@@ -68,8 +23,15 @@ describe('EmptyReturnMutator Integration', () => {
     mutantGenerator = new MutantGenerator()
   })
 
+  const buildTypeRegistry = async (code: string) => {
+    const typeDiscoverer = new TypeDiscoverer()
+      .withMatcher(new ApexClassTypeMatcher(new Set()))
+      .withMatcher(new SObjectTypeMatcher(new Set()))
+    return typeDiscoverer.analyze(code)
+  }
+
   describe('when mutating return statements', () => {
-    it('should create mutations for non-empty integer return values', () => {
+    it('should create mutations for non-empty integer return values', async () => {
       // Arrange
       const classContent = `
           public class TestClass {
@@ -86,20 +48,13 @@ describe('EmptyReturnMutator Integration', () => {
       const tokens = new CommonTokenStream(lexer)
       mutantGenerator['tokenStream'] = tokens
 
-      const typeTable = parseApexAndGetTypeTable(classContent)
-
-      const emptyReturnMutator = new EmptyReturnMutator()
-      emptyReturnMutator.setTypeTable(typeTable)
-      emptyReturnMutator['currentMethodName'] = 'getValue'
+      const typeRegistry = await buildTypeRegistry(classContent)
+      const emptyReturnMutator = new EmptyReturnMutator(typeRegistry)
 
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
 
-      const listener = new MutationListener(
-        [emptyReturnMutator],
-        coveredLines,
-        typeTable
-      )
+      const listener = new MutationListener([emptyReturnMutator], coveredLines)
 
       ParseTreeWalker.DEFAULT.walk(
         listener as ApexParserListener,

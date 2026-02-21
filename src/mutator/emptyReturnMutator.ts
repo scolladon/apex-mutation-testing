@@ -1,31 +1,37 @@
 import { ParserRuleContext } from 'antlr4ts'
-import { ApexMethod, ApexType } from '../type/ApexMethod.js'
-import { ReturnTypeAwareBaseListener } from './returnTypeAwareBaseListener.js'
+import type { ApexType } from '../type/ApexMethod.js'
+import { APEX_TYPE, getDefaultValueForApexType } from '../type/ApexMethod.js'
+import { TypeRegistry } from '../type/TypeRegistry.js'
+import { BaseListener } from './baseListener.js'
 
-export class EmptyReturnMutator extends ReturnTypeAwareBaseListener {
+interface TypeInfo {
+  apexType: ApexType
+  typeName: string
+}
+
+const SKIP_TYPES: ReadonlySet<ApexType> = new Set([
+  APEX_TYPE.VOID,
+  APEX_TYPE.BOOLEAN,
+  APEX_TYPE.SOBJECT,
+  APEX_TYPE.OBJECT,
+  APEX_TYPE.APEX_CLASS,
+  APEX_TYPE.DATE,
+  APEX_TYPE.DATETIME,
+  APEX_TYPE.TIME,
+])
+
+export class EmptyReturnMutator extends BaseListener {
+  constructor(typeRegistry?: TypeRegistry) {
+    super(typeRegistry)
+  }
+
   enterReturnStatement(ctx: ParserRuleContext): void {
-    if (!this.isCurrentMethodTypeKnown()) {
-      return
-    }
-
-    const typeInfo = this.getCurrentMethodReturnTypeInfo()
+    const typeInfo = this.getTypeInfoForMutation(ctx)
     if (!typeInfo) {
       return
     }
 
-    // Skip types that can't be replaced
-    if (
-      [
-        ApexType.VOID,
-        ApexType.BOOLEAN,
-        ApexType.SOBJECT,
-        ApexType.OBJECT,
-        ApexType.APEX_CLASS,
-        ApexType.DATE,
-        ApexType.DATETIME,
-        ApexType.TIME,
-      ].includes(typeInfo.type)
-    ) {
+    if (SKIP_TYPES.has(typeInfo.apexType)) {
       return
     }
 
@@ -38,44 +44,32 @@ export class EmptyReturnMutator extends ReturnTypeAwareBaseListener {
       return
     }
 
-    if (this.isEmptyValue(typeInfo.returnType, expressionNode.text)) {
+    if (this.isEmptyValue(typeInfo.typeName, expressionNode.text)) {
       return
     }
 
-    const emptyValue = this.generateEmptyValue(typeInfo)
+    const emptyValue = getDefaultValueForApexType(
+      typeInfo.apexType,
+      typeInfo.typeName
+    )
     if (emptyValue) {
       this.createMutationFromParserRuleContext(expressionNode, emptyValue)
     }
   }
 
-  private generateEmptyValue(typeInfo: ApexMethod): string | null {
-    switch (typeInfo.type) {
-      case ApexType.STRING:
-      case ApexType.ID:
-        return "''"
-
-      case ApexType.INTEGER:
-        return '0'
-
-      case ApexType.LONG:
-        return '0L'
-
-      case ApexType.DOUBLE:
-      case ApexType.DECIMAL:
-        return '0.0'
-
-      case ApexType.BLOB:
-        return "Blob.valueOf('')"
-
-      case ApexType.LIST:
-      case ApexType.SET:
-      case ApexType.MAP:
-      case ApexType.SOBJECT:
-        return `new ${typeInfo.returnType}()`
-
-      default:
-        return null
+  private getTypeInfoForMutation(ctx: ParserRuleContext): TypeInfo | null {
+    if (!this.typeRegistry) {
+      return null
     }
+    const methodName = this.getEnclosingMethodName(ctx)
+    if (!methodName) {
+      return null
+    }
+    const resolved = this.typeRegistry.resolveType(methodName)
+    if (!resolved) {
+      return null
+    }
+    return { apexType: resolved.apexType, typeName: resolved.typeName }
   }
 
   public isEmptyValue(type: string, expressionText: string): boolean {

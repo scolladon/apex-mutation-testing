@@ -1,53 +1,69 @@
 import { ParserRuleContext } from 'antlr4ts'
+import { MethodDeclarationContext } from 'apex-parser'
 import { NullReturnMutator } from '../../../src/mutator/nullReturnMutator.js'
-import { ApexMethod, ApexType } from '../../../src/type/ApexMethod.js'
+import { APEX_TYPE, ApexMethod } from '../../../src/type/ApexMethod.js'
+import { TypeRegistry } from '../../../src/type/TypeRegistry.js'
 import { TestUtil } from '../../utils/testUtil.js'
 
-describe('NullReturnMutator', () => {
-  let nullReturnMutator: NullReturnMutator
+function createTypeRegistry(
+  methodTypeTable: Map<string, ApexMethod>
+): TypeRegistry {
+  return new TypeRegistry(methodTypeTable, new Map(), new Map(), [])
+}
 
-  beforeEach(() => {
-    nullReturnMutator = new NullReturnMutator()
+function createReturnCtxInMethod(
+  expression: string,
+  methodName: string
+): ParserRuleContext {
+  const returnCtx = TestUtil.createReturnStatement(expression)
+  const methodCtx = Object.create(MethodDeclarationContext.prototype)
+  methodCtx.children = [
+    { text: 'String' },
+    { text: methodName },
+    { text: '(' },
+    { text: ')' },
+  ]
+  Object.defineProperty(returnCtx, 'parent', {
+    value: methodCtx,
+    writable: true,
+    configurable: true,
   })
+  return returnCtx
+}
 
+describe('NullReturnMutator', () => {
   describe('non-primitive return type mutations', () => {
     const testCases = [
       {
         name: 'string',
         expression: '"Test String"',
-        type: ApexType.STRING,
+        type: APEX_TYPE.STRING,
         expected: 'null',
       },
       {
         name: 'object',
         expression: 'new Account()',
-        type: ApexType.OBJECT,
+        type: APEX_TYPE.OBJECT,
         expected: 'null',
       },
       {
         name: 'list',
         expression: 'new List<String>()',
-        type: ApexType.LIST,
+        type: APEX_TYPE.LIST,
         expected: 'null',
       },
       {
         name: 'map',
         expression: 'new Map<Id, Account>()',
-        type: ApexType.MAP,
+        type: APEX_TYPE.MAP,
         expected: 'null',
       },
     ]
 
     it.each(
       testCases
-    )('should create mutation for $name return type', testCase => {
-      nullReturnMutator._mutations = []
-      const methodCtx = TestUtil.createMethodDeclaration(
-        testCase.name,
-        'testMethod'
-      )
-      nullReturnMutator.enterMethodDeclaration(methodCtx)
-
+    )('Given $name return type, When entering return statement, Then creates null mutation', testCase => {
+      // Arrange
       const typeTable = new Map<string, ApexMethod>()
       typeTable.set('testMethod', {
         returnType: testCase.name,
@@ -55,46 +71,47 @@ describe('NullReturnMutator', () => {
         endLine: 5,
         type: testCase.type,
       })
-
-      nullReturnMutator.setTypeTable(typeTable)
-      const returnCtx = TestUtil.createReturnStatement(testCase.expression)
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NullReturnMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod(
+        testCase.expression,
+        'testMethod'
+      )
 
       // Act
-      nullReturnMutator.enterReturnStatement(returnCtx)
+      sut.enterReturnStatement(returnCtx)
 
       // Assert
-      expect(nullReturnMutator._mutations.length).toBe(1)
-      expect(nullReturnMutator._mutations[0].replacement).toBe(
-        testCase.expected
-      )
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe(testCase.expected)
     })
   })
 
   describe('primitive and non-primitive return types', () => {
     const testCases = [
       {
-        type: ApexType.INTEGER,
+        type: APEX_TYPE.INTEGER,
         typeName: 'Integer',
         expression: '42',
         shouldMutate: true,
         expected: 'null',
       },
       {
-        type: ApexType.DECIMAL,
+        type: APEX_TYPE.DECIMAL,
         typeName: 'Decimal',
         expression: '3.14',
         shouldMutate: true,
         expected: 'null',
       },
       {
-        type: ApexType.BOOLEAN,
+        type: APEX_TYPE.BOOLEAN,
         typeName: 'Boolean',
         expression: 'true',
         shouldMutate: true,
         expected: 'null',
       },
       {
-        type: ApexType.VOID,
+        type: APEX_TYPE.VOID,
         typeName: 'void',
         expression: '',
         shouldMutate: false,
@@ -104,14 +121,8 @@ describe('NullReturnMutator', () => {
 
     it.each(
       testCases
-    )('should $shouldMutate create mutations for $typeName return type', testCase => {
-      nullReturnMutator._mutations = []
-      const methodCtx = TestUtil.createMethodDeclaration(
-        testCase.typeName,
-        'testMethod'
-      )
-      nullReturnMutator.enterMethodDeclaration(methodCtx)
-
+    )('Given $typeName return type, When entering return statement, Then shouldMutate=$shouldMutate', testCase => {
+      // Arrange
       const typeTable = new Map<string, ApexMethod>()
       typeTable.set('testMethod', {
         returnType: testCase.typeName,
@@ -119,121 +130,136 @@ describe('NullReturnMutator', () => {
         endLine: 5,
         type: testCase.type,
       })
-
-      nullReturnMutator.setTypeTable(typeTable)
-      const returnCtx = TestUtil.createReturnStatement(testCase.expression)
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NullReturnMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod(
+        testCase.expression,
+        'testMethod'
+      )
 
       // Act
-      nullReturnMutator.enterReturnStatement(returnCtx)
+      sut.enterReturnStatement(returnCtx)
 
       // Assert
       if (testCase.shouldMutate) {
-        expect(nullReturnMutator._mutations.length).toBe(1)
-        expect(nullReturnMutator._mutations[0].replacement).toBe(
-          testCase.expected
-        )
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe(testCase.expected)
       } else {
-        expect(nullReturnMutator._mutations.length).toBe(0)
+        expect(sut._mutations).toHaveLength(0)
       }
     })
   })
 
   describe('already null values', () => {
-    it('should not create mutation for already null return values', () => {
-      nullReturnMutator._mutations = []
-      const methodCtx = TestUtil.createMethodDeclaration('String', 'testMethod')
-      nullReturnMutator.enterMethodDeclaration(methodCtx)
-
+    it('Given already null return value, When entering return statement, Then no mutation created', () => {
+      // Arrange
       const typeTable = new Map<string, ApexMethod>()
       typeTable.set('testMethod', {
         returnType: 'String',
         startLine: 1,
         endLine: 5,
-        type: ApexType.STRING,
+        type: APEX_TYPE.STRING,
       })
-
-      nullReturnMutator.setTypeTable(typeTable)
-      const returnCtx = TestUtil.createReturnStatement('null')
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NullReturnMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod('null', 'testMethod')
 
       // Act
-      nullReturnMutator.enterReturnStatement(returnCtx)
+      sut.enterReturnStatement(returnCtx)
 
       // Assert
-      expect(nullReturnMutator._mutations.length).toBe(0)
+      expect(sut._mutations).toHaveLength(0)
     })
   })
 
   describe('validation and edge cases', () => {
-    it('should handle null type info', () => {
-      const methodCtx = TestUtil.createMethodDeclaration('String', 'testMethod')
-      nullReturnMutator.enterMethodDeclaration(methodCtx)
-
-      const returnCtx = TestUtil.createReturnStatement('"test"')
-      nullReturnMutator._mutations = []
+    it('Given unknown method, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('otherMethod', {
+        returnType: 'String',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.STRING,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NullReturnMutator(typeRegistry)
+      const returnCtx = createReturnCtxInMethod('"test"', 'testMethod')
 
       // Act
-      nullReturnMutator.enterReturnStatement(returnCtx)
+      sut.enterReturnStatement(returnCtx)
 
       // Assert
-      expect(nullReturnMutator._mutations.length).toBe(0)
+      expect(sut._mutations).toHaveLength(0)
     })
 
-    it('should handle missing method context', () => {
+    it('Given no enclosing method, When entering return statement, Then no mutation created', () => {
+      // Arrange
       const typeTable = new Map<string, ApexMethod>()
       typeTable.set('testMethod', {
         returnType: 'String',
         startLine: 1,
         endLine: 5,
-        type: ApexType.STRING,
+        type: APEX_TYPE.STRING,
       })
-
-      nullReturnMutator.setTypeTable(typeTable)
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NullReturnMutator(typeRegistry)
       const returnCtx = TestUtil.createReturnStatement('"test"')
-      nullReturnMutator._mutations = []
 
       // Act
-      nullReturnMutator.enterReturnStatement(returnCtx)
+      sut.enterReturnStatement(returnCtx)
 
       // Assert
-      expect(nullReturnMutator._mutations.length).toBe(0)
+      expect(sut._mutations).toHaveLength(0)
     })
 
-    it('should handle return statement with no children', () => {
-      // Setup
-      const methodCtx = TestUtil.createMethodDeclaration('String', 'testMethod')
-      nullReturnMutator.enterMethodDeclaration(methodCtx)
+    it('Given return statement with no children, When entering return statement, Then no mutation created', () => {
+      // Arrange
       const typeTable = new Map<string, ApexMethod>()
       typeTable.set('testMethod', {
         returnType: 'String',
         startLine: 1,
         endLine: 5,
-        type: ApexType.STRING,
+        type: APEX_TYPE.STRING,
       })
-      nullReturnMutator.setTypeTable(typeTable)
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NullReturnMutator(typeRegistry)
 
       const returnCtx = {
         children: null,
         childCount: 0,
       } as unknown as ParserRuleContext
-      nullReturnMutator.enterReturnStatement(returnCtx)
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'String' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      Object.defineProperty(returnCtx, 'parent', {
+        value: methodCtx,
+        writable: true,
+        configurable: true,
+      })
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
 
       // Assert
-      expect(nullReturnMutator._mutations.length).toBe(0)
+      expect(sut._mutations).toHaveLength(0)
     })
 
-    it('should handle non-ParserRuleContext expression node', () => {
-      const methodCtx = TestUtil.createMethodDeclaration('String', 'testMethod')
-      nullReturnMutator.enterMethodDeclaration(methodCtx)
-
+    it('Given non-ParserRuleContext expression node, When entering return statement, Then no mutation created', () => {
+      // Arrange
       const typeTable = new Map<string, ApexMethod>()
       typeTable.set('testMethod', {
         returnType: 'String',
         startLine: 1,
         endLine: 5,
-        type: ApexType.STRING,
+        type: APEX_TYPE.STRING,
       })
-
-      nullReturnMutator.setTypeTable(typeTable)
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NullReturnMutator(typeRegistry)
 
       const returnCtx = {
         children: [{ text: 'return' }, { text: '"test"' }],
@@ -241,38 +267,24 @@ describe('NullReturnMutator', () => {
         getChild: (i: number) =>
           i === 0 ? { text: 'return' } : { text: '"test"' },
       } as unknown as ParserRuleContext
-
-      nullReturnMutator._mutations = []
-
-      // Act
-      nullReturnMutator.enterReturnStatement(returnCtx)
-
-      // Assert
-      expect(nullReturnMutator._mutations.length).toBe(0)
-    })
-  })
-
-  describe('method tracking', () => {
-    it('should set currentMethodName on enter', () => {
-      // Arrange
-      const methodCtx = TestUtil.createMethodDeclaration('String', 'testMethod')
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'String' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      Object.defineProperty(returnCtx, 'parent', {
+        value: methodCtx,
+        writable: true,
+        configurable: true,
+      })
 
       // Act
-      nullReturnMutator.enterMethodDeclaration(methodCtx)
+      sut.enterReturnStatement(returnCtx)
 
       // Assert
-      expect(nullReturnMutator['currentMethodName']).toBe('testMethod')
-    })
-
-    it('should clear currentMethodName on exit', () => {
-      // Arrange
-      nullReturnMutator['currentMethodName'] = 'testMethod'
-
-      // Act
-      nullReturnMutator.exitMethodDeclaration()
-
-      // Assert
-      expect(nullReturnMutator['currentMethodName']).toBeNull()
+      expect(sut._mutations).toHaveLength(0)
     })
   })
 })

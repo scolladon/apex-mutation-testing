@@ -9,12 +9,12 @@ import {
 import { SObjectDescribeRepository } from '../../src/adapter/sObjectDescribeRepository.js'
 import { ArithmeticOperatorMutator } from '../../src/mutator/arithmeticOperatorMutator.js'
 import { MutationListener } from '../../src/mutator/mutationListener.js'
-import { TypeGatherer } from '../../src/service/typeGatherer.js'
+import { TypeDiscoverer } from '../../src/service/typeDiscoverer.js'
 import {
   ApexClassTypeMatcher,
   SObjectTypeMatcher,
 } from '../../src/service/typeMatcher.js'
-import { ApexType } from '../../src/type/ApexMethod.js'
+import { APEX_TYPE } from '../../src/type/ApexMethod.js'
 
 describe('ArithmeticOperatorMutator Integration', () => {
   const parseAndMutate = (code: string, coveredLines: Set<number>) => {
@@ -33,7 +33,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
     return listener.getMutations()
   }
 
-  const parseAndMutateTypeAware = (
+  const parseAndMutateTypeAware = async (
     code: string,
     coveredLines: Set<number>,
     sObjectDescribeRepository?: SObjectDescribeRepository
@@ -43,18 +43,22 @@ describe('ArithmeticOperatorMutator Integration', () => {
     const parser = new ApexParser(tokenStream)
     const tree = parser.compilationUnit()
 
-    const typeGatherer = new TypeGatherer(
-      new ApexClassTypeMatcher(new Set()),
-      new SObjectTypeMatcher(new Set())
-    )
-    const { methodTypeTable: typeTable } = typeGatherer.analyze(code)
+    const typeDiscoverer = new TypeDiscoverer()
+      .withMatcher(new ApexClassTypeMatcher(new Set()))
+      .withMatcher(
+        new SObjectTypeMatcher(
+          sObjectDescribeRepository ? new Set(['Account']) : new Set(),
+          sObjectDescribeRepository
+        )
+      )
+    const typeRegistry = await typeDiscoverer.analyze(code)
 
-    const arithmeticOperatorMutator = new ArithmeticOperatorMutator()
+    const arithmeticOperatorMutator = new ArithmeticOperatorMutator(
+      typeRegistry
+    )
     const listener = new MutationListener(
       [arithmeticOperatorMutator],
-      coveredLines,
-      typeTable,
-      sObjectDescribeRepository
+      coveredLines
     )
 
     ParseTreeWalker.DEFAULT.walk(listener as ApexParserListener, tree)
@@ -216,7 +220,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
   })
 
   describe('Given type-aware parsing with string concatenation', () => {
-    it('Then should suppress + mutations for string literal concatenation', () => {
+    it('Then should suppress + mutations for string literal concatenation', async () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -227,13 +231,13 @@ describe('ArithmeticOperatorMutator Integration', () => {
       `
 
       // Act
-      const mutations = parseAndMutateTypeAware(code, new Set([4]))
+      const mutations = await parseAndMutateTypeAware(code, new Set([4]))
 
       // Assert
       expect(mutations.length).toBe(0)
     })
 
-    it('Then should suppress + mutations for String variable concatenation', () => {
+    it('Then should suppress + mutations for String variable concatenation', async () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -246,13 +250,13 @@ describe('ArithmeticOperatorMutator Integration', () => {
       `
 
       // Act
-      const mutations = parseAndMutateTypeAware(code, new Set([4, 5, 6]))
+      const mutations = await parseAndMutateTypeAware(code, new Set([4, 5, 6]))
 
       // Assert
       expect(mutations.length).toBe(0)
     })
 
-    it('Then should suppress + mutations for mixed string literal concatenation', () => {
+    it('Then should suppress + mutations for mixed string literal concatenation', async () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -264,13 +268,13 @@ describe('ArithmeticOperatorMutator Integration', () => {
       `
 
       // Act
-      const mutations = parseAndMutateTypeAware(code, new Set([4, 5]))
+      const mutations = await parseAndMutateTypeAware(code, new Set([4, 5]))
 
       // Assert
       expect(mutations.length).toBe(0)
     })
 
-    it('Then should suppress + mutations for String method parameter concatenation', () => {
+    it('Then should suppress + mutations for String method parameter concatenation', async () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -281,13 +285,13 @@ describe('ArithmeticOperatorMutator Integration', () => {
       `
 
       // Act
-      const mutations = parseAndMutateTypeAware(code, new Set([4]))
+      const mutations = await parseAndMutateTypeAware(code, new Set([4]))
 
       // Assert
       expect(mutations.length).toBe(0)
     })
 
-    it('Then should suppress + mutations for String field concatenation', () => {
+    it('Then should suppress + mutations for String field concatenation', async () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -299,13 +303,13 @@ describe('ArithmeticOperatorMutator Integration', () => {
       `
 
       // Act
-      const mutations = parseAndMutateTypeAware(code, new Set([5]))
+      const mutations = await parseAndMutateTypeAware(code, new Set([5]))
 
       // Assert
       expect(mutations.length).toBe(0)
     })
 
-    it('Then should suppress + mutations for String method call return concatenation', () => {
+    it('Then should suppress + mutations for String method call return concatenation', async () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -319,7 +323,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
       `
 
       // Act
-      const mutations = parseAndMutateTypeAware(code, new Set([7]))
+      const mutations = await parseAndMutateTypeAware(code, new Set([7]))
 
       // Assert
       expect(mutations.length).toBe(0)
@@ -327,7 +331,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
   })
 
   describe('Given type-aware parsing with field access concatenation', () => {
-    it('Then should suppress + mutations for field access on SObject (acc.Name + 5)', () => {
+    it('Then should suppress + mutations for field access on SObject (acc.Name + 5)', async () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -337,15 +341,31 @@ describe('ArithmeticOperatorMutator Integration', () => {
           }
         }
       `
+      const mockSObjectDescribeRepository = {
+        isSObject: (type: string) => type.toLowerCase() === 'account',
+        resolveFieldType: (type: string, field: string) => {
+          if (
+            type.toLowerCase() === 'account' &&
+            field.toLowerCase() === 'name'
+          )
+            return APEX_TYPE.STRING
+          return undefined
+        },
+        describe: jest.fn(),
+      }
 
       // Act
-      const mutations = parseAndMutateTypeAware(code, new Set([4, 5]))
+      const mutations = await parseAndMutateTypeAware(
+        code,
+        new Set([4, 5]),
+        mockSObjectDescribeRepository as unknown as SObjectDescribeRepository
+      )
 
       // Assert
       expect(mutations.length).toBe(0)
     })
 
-    it('Then should suppress all + mutations for chained string concatenation (acc.Name + literal + var + literal)', () => {
+    it('Then should suppress all + mutations for chained string concatenation (acc.Name + literal + var + literal)', async () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -357,15 +377,31 @@ describe('ArithmeticOperatorMutator Integration', () => {
           }
         }
       `
+      const mockSObjectDescribeRepository = {
+        isSObject: (type: string) => type.toLowerCase() === 'account',
+        resolveFieldType: (type: string, field: string) => {
+          if (
+            type.toLowerCase() === 'account' &&
+            field.toLowerCase() === 'name'
+          )
+            return APEX_TYPE.STRING
+          return undefined
+        },
+        describe: jest.fn(),
+      }
 
       // Act
-      const mutations = parseAndMutateTypeAware(code, new Set([4, 5, 6, 7]))
+      const mutations = await parseAndMutateTypeAware(
+        code,
+        new Set([4, 5, 6, 7]),
+        mockSObjectDescribeRepository as unknown as SObjectDescribeRepository
+      )
 
       // Assert
       expect(mutations.length).toBe(0)
     })
 
-    it('Then should generate mutations for numeric sObject field (acc.NumberOfEmployees + 1)', () => {
+    it('Then should generate mutations for numeric sObject field (acc.NumberOfEmployees + 1)', async () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -381,15 +417,15 @@ describe('ArithmeticOperatorMutator Integration', () => {
           const t = type.toLowerCase()
           const f = field.toLowerCase()
           if (t === 'account' && f === 'numberofemployees')
-            return ApexType.INTEGER
-          if (t === 'account' && f === 'name') return ApexType.STRING
+            return APEX_TYPE.INTEGER
+          if (t === 'account' && f === 'name') return APEX_TYPE.STRING
           return undefined
         },
         describe: jest.fn(),
       }
 
       // Act
-      const mutations = parseAndMutateTypeAware(
+      const mutations = await parseAndMutateTypeAware(
         code,
         new Set([4, 5]),
         mockSObjectDescribeRepository as unknown as SObjectDescribeRepository
@@ -402,7 +438,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
       expect(addMutations.length).toBe(3)
     })
 
-    it('Then should suppress + mutations for non-numeric sObject field (acc.Name + 5)', () => {
+    it('Then should suppress + mutations for non-numeric sObject field (acc.Name + 5)', async () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -418,15 +454,15 @@ describe('ArithmeticOperatorMutator Integration', () => {
           const t = type.toLowerCase()
           const f = field.toLowerCase()
           if (t === 'account' && f === 'numberofemployees')
-            return ApexType.INTEGER
-          if (t === 'account' && f === 'name') return ApexType.STRING
+            return APEX_TYPE.INTEGER
+          if (t === 'account' && f === 'name') return APEX_TYPE.STRING
           return undefined
         },
         describe: jest.fn(),
       }
 
       // Act
-      const mutations = parseAndMutateTypeAware(
+      const mutations = await parseAndMutateTypeAware(
         code,
         new Set([4, 5]),
         mockSObjectDescribeRepository as unknown as SObjectDescribeRepository
@@ -438,7 +474,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
   })
 
   describe('Given type-aware parsing with numeric addition', () => {
-    it('Then should generate mutations for Integer variable addition', () => {
+    it('Then should generate mutations for Integer variable addition', async () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -451,13 +487,13 @@ describe('ArithmeticOperatorMutator Integration', () => {
       `
 
       // Act
-      const mutations = parseAndMutateTypeAware(code, new Set([4, 5, 6]))
+      const mutations = await parseAndMutateTypeAware(code, new Set([4, 5, 6]))
 
       // Assert
       expect(mutations.length).toBe(3)
     })
 
-    it('Then should generate mutations for numeric literal addition', () => {
+    it('Then should generate mutations for numeric literal addition', async () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -468,7 +504,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
       `
 
       // Act
-      const mutations = parseAndMutateTypeAware(code, new Set([4]))
+      const mutations = await parseAndMutateTypeAware(code, new Set([4]))
 
       // Assert
       expect(mutations.length).toBe(3)
@@ -476,7 +512,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
   })
 
   describe('Given type-aware parsing with non-addition operators', () => {
-    it('Then should always mutate subtraction regardless of operand types', () => {
+    it('Then should always mutate subtraction regardless of operand types', async () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -487,13 +523,13 @@ describe('ArithmeticOperatorMutator Integration', () => {
       `
 
       // Act
-      const mutations = parseAndMutateTypeAware(code, new Set([4]))
+      const mutations = await parseAndMutateTypeAware(code, new Set([4]))
 
       // Assert
       expect(mutations.length).toBe(3)
     })
 
-    it('Then should always mutate multiplication regardless of operand types', () => {
+    it('Then should always mutate multiplication regardless of operand types', async () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -504,13 +540,13 @@ describe('ArithmeticOperatorMutator Integration', () => {
       `
 
       // Act
-      const mutations = parseAndMutateTypeAware(code, new Set([4]))
+      const mutations = await parseAndMutateTypeAware(code, new Set([4]))
 
       // Assert
       expect(mutations.length).toBe(3)
     })
 
-    it('Then should always mutate division regardless of operand types', () => {
+    it('Then should always mutate division regardless of operand types', async () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -521,7 +557,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
       `
 
       // Act
-      const mutations = parseAndMutateTypeAware(code, new Set([4]))
+      const mutations = await parseAndMutateTypeAware(code, new Set([4]))
 
       // Assert
       expect(mutations.length).toBe(3)

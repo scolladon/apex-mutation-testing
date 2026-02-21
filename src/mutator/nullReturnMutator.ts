@@ -1,15 +1,15 @@
 import { ParserRuleContext } from 'antlr4ts'
-import { ApexType } from '../type/ApexMethod.js'
-import { ReturnTypeAwareBaseListener } from './returnTypeAwareBaseListener.js'
+import { APEX_TYPE } from '../type/ApexMethod.js'
+import { TypeRegistry } from '../type/TypeRegistry.js'
+import { BaseListener } from './baseListener.js'
 
-export class NullReturnMutator extends ReturnTypeAwareBaseListener {
+export class NullReturnMutator extends BaseListener {
+  constructor(typeRegistry?: TypeRegistry) {
+    super(typeRegistry)
+  }
+
   enterReturnStatement(ctx: ParserRuleContext): void {
-    if (!this.isCurrentMethodTypeKnown()) {
-      return
-    }
-
-    const typeInfo = this.getCurrentMethodReturnTypeInfo()
-    if (!typeInfo || typeInfo.type === ApexType.VOID) {
+    if (!this.shouldMutate(ctx)) {
       return
     }
 
@@ -27,5 +27,17 @@ export class NullReturnMutator extends ReturnTypeAwareBaseListener {
     }
 
     this.createMutationFromParserRuleContext(expressionNode, 'null')
+  }
+
+  private shouldMutate(ctx: ParserRuleContext): boolean {
+    if (!this.typeRegistry) {
+      return false
+    }
+    const methodName = this.getEnclosingMethodName(ctx)
+    if (!methodName) {
+      return false
+    }
+    const typeInfo = this.typeRegistry.resolveType(methodName)
+    return !!typeInfo && typeInfo.apexType !== APEX_TYPE.VOID
   }
 }

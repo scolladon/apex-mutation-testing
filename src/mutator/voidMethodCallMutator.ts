@@ -1,14 +1,8 @@
 import { ParserRuleContext } from 'antlr4ts'
+import { DotExpressionContext, MethodCallExpressionContext } from 'apex-parser'
 import { BaseListener } from './baseListener.js'
 
 export class VoidMethodCallMutator extends BaseListener {
-  // Expression contexts that represent method calls
-  private readonly METHOD_CALL_CONTEXTS = new Set([
-    'MethodCallExpressionContext',
-    'DotExpressionContext',
-  ])
-
-  // Handle expression statements (method();)
   enterExpressionStatement(ctx: ParserRuleContext): void {
     if (ctx.childCount !== 2) {
       return
@@ -16,13 +10,13 @@ export class VoidMethodCallMutator extends BaseListener {
 
     const expression = ctx.getChild(0)
 
-    // Check if the expression is a method call
-    const contextName = expression?.constructor?.name
-    if (!contextName || !this.METHOD_CALL_CONTEXTS.has(contextName)) {
+    if (
+      !(expression instanceof MethodCallExpressionContext) &&
+      !(expression instanceof DotExpressionContext)
+    ) {
       return
     }
 
-    // Remove the entire statement (replace with empty string)
     this.createMutationFromParserRuleContext(ctx, '')
   }
 }

@@ -10,21 +10,11 @@ import {
 import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { TrueReturnMutator } from '../../src/mutator/trueReturnMutator.js'
 import { MutantGenerator } from '../../src/service/mutantGenerator.js'
-import { TypeGatherer } from '../../src/service/typeGatherer.js'
+import { TypeDiscoverer } from '../../src/service/typeDiscoverer.js'
 import {
   ApexClassTypeMatcher,
   SObjectTypeMatcher,
 } from '../../src/service/typeMatcher.js'
-import { ApexMethod, ApexType } from '../../src/type/ApexMethod.js'
-
-function parseApexAndGetTypeTable(code: string): Map<string, ApexMethod> {
-  const typeGatherer = new TypeGatherer(
-    new ApexClassTypeMatcher(new Set()),
-    new SObjectTypeMatcher(new Set())
-  )
-  const { methodTypeTable } = typeGatherer.analyze(code)
-  return methodTypeTable
-}
 
 describe('TrueReturnMutator Integration', () => {
   let mutantGenerator: MutantGenerator
@@ -33,8 +23,15 @@ describe('TrueReturnMutator Integration', () => {
     mutantGenerator = new MutantGenerator()
   })
 
+  const buildTypeRegistry = async (code: string) => {
+    const typeDiscoverer = new TypeDiscoverer()
+      .withMatcher(new ApexClassTypeMatcher(new Set()))
+      .withMatcher(new SObjectTypeMatcher(new Set(['Account'])))
+    return typeDiscoverer.analyze(code)
+  }
+
   describe('when mutating boolean return statements', () => {
-    it('should create mutations for "false" boolean return values', () => {
+    it('should create mutations for "false" boolean return values', async () => {
       // Arrange
       const classContent = `
           public class TestClass {
@@ -43,7 +40,7 @@ describe('TrueReturnMutator Integration', () => {
             }
           }
         `
-      const coveredLines = new Set([4]) // "return false;"
+      const coveredLines = new Set([4])
 
       const lexer = new ApexLexer(
         new CaseInsensitiveInputStream('other', classContent)
@@ -51,26 +48,13 @@ describe('TrueReturnMutator Integration', () => {
       const tokens = new CommonTokenStream(lexer)
       mutantGenerator['tokenStream'] = tokens
 
-      const typeTable = parseApexAndGetTypeTable(classContent)
-      typeTable.set('isNegative', {
-        returnType: 'Boolean',
-        startLine: 3,
-        endLine: 5,
-        type: ApexType.BOOLEAN,
-      })
-
-      const trueReturnMutator = new TrueReturnMutator()
-      trueReturnMutator.setTypeTable(typeTable)
-      trueReturnMutator['currentMethodName'] = 'isNegative'
+      const typeRegistry = await buildTypeRegistry(classContent)
+      const trueReturnMutator = new TrueReturnMutator(typeRegistry)
 
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
 
-      const listener = new MutationListener(
-        [trueReturnMutator],
-        coveredLines,
-        typeTable
-      )
+      const listener = new MutationListener([trueReturnMutator], coveredLines)
 
       ParseTreeWalker.DEFAULT.walk(
         listener as ApexParserListener,
@@ -88,14 +72,13 @@ describe('TrueReturnMutator Integration', () => {
       if (trueReturnMutations.length > 0) {
         expect(trueReturnMutations[0].replacement).toBe('true')
 
-        // Test actual mutation
         const result = mutantGenerator.mutate(trueReturnMutations[0])
         expect(result).toContain('return true;')
         expect(result).not.toContain('return false;')
       }
     })
 
-    it('should create mutations for complex boolean expressions', () => {
+    it('should create mutations for complex boolean expressions', async () => {
       // Arrange
       const classContent = `
           public class TestClass {
@@ -104,7 +87,7 @@ describe('TrueReturnMutator Integration', () => {
             }
           }
         `
-      const coveredLines = new Set([4]) // "return value < 0;"
+      const coveredLines = new Set([4])
 
       const lexer = new ApexLexer(
         new CaseInsensitiveInputStream('other', classContent)
@@ -112,26 +95,13 @@ describe('TrueReturnMutator Integration', () => {
       const tokens = new CommonTokenStream(lexer)
       mutantGenerator['tokenStream'] = tokens
 
-      const typeTable = parseApexAndGetTypeTable(classContent)
-      typeTable.set('checkValue', {
-        returnType: 'Boolean',
-        startLine: 3,
-        endLine: 5,
-        type: ApexType.BOOLEAN,
-      })
-
-      const trueReturnMutator = new TrueReturnMutator()
-      trueReturnMutator.setTypeTable(typeTable)
-      trueReturnMutator['currentMethodName'] = 'checkValue'
+      const typeRegistry = await buildTypeRegistry(classContent)
+      const trueReturnMutator = new TrueReturnMutator(typeRegistry)
 
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
 
-      const listener = new MutationListener(
-        [trueReturnMutator],
-        coveredLines,
-        typeTable
-      )
+      const listener = new MutationListener([trueReturnMutator], coveredLines)
 
       ParseTreeWalker.DEFAULT.walk(
         listener as ApexParserListener,
@@ -149,14 +119,13 @@ describe('TrueReturnMutator Integration', () => {
       if (trueReturnMutations.length > 0) {
         expect(trueReturnMutations[0].replacement).toBe('true')
 
-        // Test actual mutation
         const result = mutantGenerator.mutate(trueReturnMutations[0])
         expect(result).toContain('return true;')
         expect(result).not.toContain('return value < 0;')
       }
     })
 
-    it('should not create mutations for "true" boolean returns', () => {
+    it('should not create mutations for "true" boolean returns', async () => {
       // Arrange
       const classContent = `
           public class TestClass {
@@ -165,7 +134,7 @@ describe('TrueReturnMutator Integration', () => {
             }
           }
         `
-      const coveredLines = new Set([4]) // "return true;"
+      const coveredLines = new Set([4])
 
       const lexer = new ApexLexer(
         new CaseInsensitiveInputStream('other', classContent)
@@ -173,27 +142,13 @@ describe('TrueReturnMutator Integration', () => {
       const tokens = new CommonTokenStream(lexer)
       mutantGenerator['tokenStream'] = tokens
 
-      const typeTable = parseApexAndGetTypeTable(classContent)
-      // Add type information directly here
-      typeTable.set('isValid', {
-        returnType: 'Boolean',
-        startLine: 3,
-        endLine: 5,
-        type: ApexType.BOOLEAN,
-      })
-
-      const trueReturnMutator = new TrueReturnMutator()
-      trueReturnMutator.setTypeTable(typeTable)
-      trueReturnMutator['currentMethodName'] = 'isValid'
+      const typeRegistry = await buildTypeRegistry(classContent)
+      const trueReturnMutator = new TrueReturnMutator(typeRegistry)
 
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
 
-      const listener = new MutationListener(
-        [trueReturnMutator],
-        coveredLines,
-        typeTable
-      )
+      const listener = new MutationListener([trueReturnMutator], coveredLines)
 
       ParseTreeWalker.DEFAULT.walk(
         listener as ApexParserListener,
@@ -209,7 +164,7 @@ describe('TrueReturnMutator Integration', () => {
       expect(trueReturnMutations.length).toBe(0)
     })
 
-    it('should handle if-else statements with boolean returns', () => {
+    it('should handle if-else statements with boolean returns', async () => {
       // Arrange
       const classContent = `
           public class TestClass {
@@ -230,26 +185,13 @@ describe('TrueReturnMutator Integration', () => {
       const tokens = new CommonTokenStream(lexer)
       mutantGenerator['tokenStream'] = tokens
 
-      const typeTable = parseApexAndGetTypeTable(classContent)
-      typeTable.set('isAdult', {
-        returnType: 'Boolean',
-        startLine: 3,
-        endLine: 8,
-        type: ApexType.BOOLEAN,
-      })
-
-      const trueReturnMutator = new TrueReturnMutator()
-      trueReturnMutator.setTypeTable(typeTable)
-      trueReturnMutator['currentMethodName'] = 'isAdult'
+      const typeRegistry = await buildTypeRegistry(classContent)
+      const trueReturnMutator = new TrueReturnMutator(typeRegistry)
 
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
 
-      const listener = new MutationListener(
-        [trueReturnMutator],
-        coveredLines,
-        typeTable
-      )
+      const listener = new MutationListener([trueReturnMutator], coveredLines)
 
       ParseTreeWalker.DEFAULT.walk(
         listener as ApexParserListener,
@@ -267,14 +209,13 @@ describe('TrueReturnMutator Integration', () => {
       expect(trueReturnMutations.length).toBe(1)
 
       if (trueReturnMutations.length > 0) {
-        // Test actual mutation
         const result = mutantGenerator.mutate(trueReturnMutations[0])
         expect(result).toContain('return true;')
         expect(result).not.toContain('return false;')
       }
     })
 
-    it('should handle ternary expressions with boolean returns', () => {
+    it('should handle ternary expressions with boolean returns', async () => {
       // Arrange
       const classContent = `
           public class TestClass {
@@ -291,26 +232,13 @@ describe('TrueReturnMutator Integration', () => {
       const tokens = new CommonTokenStream(lexer)
       mutantGenerator['tokenStream'] = tokens
 
-      const typeTable = parseApexAndGetTypeTable(classContent)
-      typeTable.set('hasPermissions', {
-        returnType: 'Boolean',
-        startLine: 3,
-        endLine: 5,
-        type: ApexType.BOOLEAN,
-      })
-
-      const trueReturnMutator = new TrueReturnMutator()
-      trueReturnMutator.setTypeTable(typeTable)
-      trueReturnMutator['currentMethodName'] = 'hasPermissions'
+      const typeRegistry = await buildTypeRegistry(classContent)
+      const trueReturnMutator = new TrueReturnMutator(typeRegistry)
 
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
 
-      const listener = new MutationListener(
-        [trueReturnMutator],
-        coveredLines,
-        typeTable
-      )
+      const listener = new MutationListener([trueReturnMutator], coveredLines)
 
       ParseTreeWalker.DEFAULT.walk(
         listener as ApexParserListener,
@@ -327,13 +255,12 @@ describe('TrueReturnMutator Integration', () => {
       expect(trueReturnMutations.length).toBeGreaterThanOrEqual(0)
 
       if (trueReturnMutations.length > 0) {
-        // Test actual mutation
         const result = mutantGenerator.mutate(trueReturnMutations[0])
         expect(result).toContain('true')
       }
     })
 
-    it('should handle logical expressions with boolean returns', () => {
+    it('should handle logical expressions with boolean returns', async () => {
       // Arrange
       const classContent = `
           public class TestClass {
@@ -350,26 +277,13 @@ describe('TrueReturnMutator Integration', () => {
       const tokens = new CommonTokenStream(lexer)
       mutantGenerator['tokenStream'] = tokens
 
-      const typeTable = parseApexAndGetTypeTable(classContent)
-      typeTable.set('isValidRecord', {
-        returnType: 'Boolean',
-        startLine: 3,
-        endLine: 5,
-        type: ApexType.BOOLEAN,
-      })
-
-      const trueReturnMutator = new TrueReturnMutator()
-      trueReturnMutator.setTypeTable(typeTable)
-      trueReturnMutator['currentMethodName'] = 'isValidRecord'
+      const typeRegistry = await buildTypeRegistry(classContent)
+      const trueReturnMutator = new TrueReturnMutator(typeRegistry)
 
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
 
-      const listener = new MutationListener(
-        [trueReturnMutator],
-        coveredLines,
-        typeTable
-      )
+      const listener = new MutationListener([trueReturnMutator], coveredLines)
 
       ParseTreeWalker.DEFAULT.walk(
         listener as ApexParserListener,

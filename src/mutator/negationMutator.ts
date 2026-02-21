@@ -1,25 +1,26 @@
 import { ParserRuleContext } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
-import { ApexType } from '../type/ApexMethod.js'
-import { ReturnTypeAwareBaseListener } from './returnTypeAwareBaseListener.js'
+import type { ApexType } from '../type/ApexMethod.js'
+import { APEX_TYPE } from '../type/ApexMethod.js'
+import { TypeRegistry } from '../type/TypeRegistry.js'
+import { BaseListener } from './baseListener.js'
 
-export class NegationMutator extends ReturnTypeAwareBaseListener {
-  private static readonly NUMERIC_TYPES = new Set([
-    ApexType.INTEGER,
-    ApexType.LONG,
-    ApexType.DOUBLE,
-    ApexType.DECIMAL,
+export class NegationMutator extends BaseListener {
+  private static readonly NUMERIC_TYPES: ReadonlySet<ApexType> = new Set([
+    APEX_TYPE.INTEGER,
+    APEX_TYPE.LONG,
+    APEX_TYPE.DOUBLE,
+    APEX_TYPE.DECIMAL,
   ])
 
   private static readonly ZERO_LITERAL = /^0+(\.0+)?[lLdD]?$/
 
-  enterReturnStatement(ctx: ParserRuleContext): void {
-    if (!this.isCurrentMethodTypeKnown()) {
-      return
-    }
+  constructor(typeRegistry?: TypeRegistry) {
+    super(typeRegistry)
+  }
 
-    const typeInfo = this.getCurrentMethodReturnTypeInfo()
-    if (!typeInfo || !NegationMutator.NUMERIC_TYPES.has(typeInfo.type)) {
+  enterReturnStatement(ctx: ParserRuleContext): void {
+    if (!this.isNumericReturn(ctx)) {
       return
     }
 
@@ -44,6 +45,18 @@ export class NegationMutator extends ReturnTypeAwareBaseListener {
     const replacement = this.formatNegation(expressionText, expressionNode)
 
     this.createMutationFromParserRuleContext(expressionNode, replacement)
+  }
+
+  private isNumericReturn(ctx: ParserRuleContext): boolean {
+    if (!this.typeRegistry) {
+      return false
+    }
+    const methodName = this.getEnclosingMethodName(ctx)
+    if (!methodName) {
+      return false
+    }
+    const typeInfo = this.typeRegistry.resolveType(methodName)
+    return !!typeInfo && NegationMutator.NUMERIC_TYPES.has(typeInfo.apexType)
   }
 
   private isNegatedExpression(expr: ParserRuleContext): boolean {

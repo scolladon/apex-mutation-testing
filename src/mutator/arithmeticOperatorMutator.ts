@@ -1,9 +1,11 @@
 import { ParserRuleContext } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
-import { ApexType } from '../type/ApexMethod.js'
-import { ReturnTypeAwareBaseListener } from './returnTypeAwareBaseListener.js'
+import type { ApexType } from '../type/ApexMethod.js'
+import { APEX_TYPE } from '../type/ApexMethod.js'
+import { TypeRegistry } from '../type/TypeRegistry.js'
+import { BaseListener } from './baseListener.js'
 
-export class ArithmeticOperatorMutator extends ReturnTypeAwareBaseListener {
+export class ArithmeticOperatorMutator extends BaseListener {
   private readonly REPLACEMENT_MAP: Record<string, string[]> = {
     '+': ['-', '*', '/'],
     '-': ['+', '*', '/'],
@@ -11,43 +13,15 @@ export class ArithmeticOperatorMutator extends ReturnTypeAwareBaseListener {
     '/': ['+', '-', '*'],
   }
 
-  private static readonly NUMERIC_TYPES = new Set([
-    ApexType.INTEGER,
-    ApexType.LONG,
-    ApexType.DOUBLE,
-    ApexType.DECIMAL,
+  private static readonly NUMERIC_TYPES: ReadonlySet<ApexType> = new Set([
+    APEX_TYPE.INTEGER,
+    APEX_TYPE.LONG,
+    APEX_TYPE.DOUBLE,
+    APEX_TYPE.DECIMAL,
   ])
 
-  private methodScopeVariables: Map<string, string> = new Map()
-  private classFields: Map<string, string> = new Map()
-
-  override enterMethodDeclaration(ctx: ParserRuleContext): void {
-    super.enterMethodDeclaration(ctx)
-    this.methodScopeVariables = new Map()
-  }
-
-  enterLocalVariableDeclaration(ctx: ParserRuleContext): void {
-    this.trackVariableDeclaration(ctx, this.methodScopeVariables)
-  }
-
-  enterFormalParameter(ctx: ParserRuleContext): void {
-    if (ctx.children && ctx.children.length >= 2) {
-      const typeName = ctx.children[ctx.children.length - 2].text
-      const paramName = ctx.children[ctx.children.length - 1].text
-      this.methodScopeVariables.set(paramName, typeName.toLowerCase())
-    }
-  }
-
-  enterFieldDeclaration(ctx: ParserRuleContext): void {
-    this.trackVariableDeclaration(ctx, this.classFields)
-  }
-
-  enterEnhancedForControl(ctx: ParserRuleContext): void {
-    if (ctx.children && ctx.children.length >= 2) {
-      const typeName = ctx.children[0].text
-      const varName = ctx.children[1].text
-      this.methodScopeVariables.set(varName, typeName.toLowerCase())
-    }
+  constructor(typeRegistry?: TypeRegistry) {
+    super(typeRegistry)
   }
 
   // Handle MUL, DIV, and MOD operations (*, /, %)
@@ -73,8 +47,13 @@ export class ArithmeticOperatorMutator extends ReturnTypeAwareBaseListener {
         const replacements = this.REPLACEMENT_MAP[operatorText]
 
         if (replacements) {
-          if (operatorText === '+' && this.isNonNumericContext(ctx)) {
-            return
+          if (operatorText === '+') {
+            const methodName = this.typeRegistry
+              ? this.getEnclosingMethodName(ctx)
+              : null
+            if (this.isNonNumericContext(ctx, methodName)) {
+              return
+            }
           }
 
           for (const replacement of replacements) {
@@ -85,91 +64,35 @@ export class ArithmeticOperatorMutator extends ReturnTypeAwareBaseListener {
     }
   }
 
-  private isNonNumericContext(ctx: ParserRuleContext): boolean {
+  private isNonNumericContext(
+    ctx: ParserRuleContext,
+    methodName: string | null
+  ): boolean {
     const leftText = ctx.getChild(0).text
     const rightText = ctx.getChild(2).text
 
     return (
-      this.isNonNumericOperand(leftText) || this.isNonNumericOperand(rightText)
+      this.isNonNumericOperand(leftText, methodName) ||
+      this.isNonNumericOperand(rightText, methodName)
     )
   }
 
-  private isNonNumericOperand(text: string): boolean {
+  private isNonNumericOperand(
+    text: string,
+    methodName: string | null
+  ): boolean {
     if (text.includes("'")) {
       return true
     }
 
-    const variableType =
-      this.methodScopeVariables.get(text) ?? this.classFields.get(text)
-    if (variableType !== undefined) {
-      return !ArithmeticOperatorMutator.NUMERIC_TYPES.has(
-        this.resolveApexType(variableType)
-      )
-    }
-
-    if (text.includes('.')) {
-      const rootVar = text.split('.')[0]
-      const rootType =
-        this.methodScopeVariables.get(rootVar) ?? this.classFields.get(rootVar)
-      if (rootType !== undefined) {
-        if (this._sObjectDescribeRepository?.isSObject(rootType)) {
-          const fieldName = text.split('.').slice(1).join('.')
-          const fieldType = this._sObjectDescribeRepository.resolveFieldType(
-            rootType,
-            fieldName
-          )
-          if (fieldType !== undefined) {
-            return !ArithmeticOperatorMutator.NUMERIC_TYPES.has(fieldType)
-          }
-          return true
-        }
-        return !ArithmeticOperatorMutator.NUMERIC_TYPES.has(
-          this.resolveApexType(rootType)
-        )
+    if (this.typeRegistry && methodName) {
+      const resolved = this.typeRegistry.resolveType(methodName, text)
+      if (resolved) {
+        return !ArithmeticOperatorMutator.NUMERIC_TYPES.has(resolved.apexType)
       }
-    }
-
-    const methodCallMatch = text.match(/^(\w+)\(/)
-    if (methodCallMatch) {
-      const methodName = methodCallMatch[1]
-      const methodInfo = this.typeTable.get(methodName)
-      if (methodInfo) {
-        return !ArithmeticOperatorMutator.NUMERIC_TYPES.has(methodInfo.type)
-      }
+      return false
     }
 
     return false
-  }
-
-  private resolveApexType(typeName: string): ApexType {
-    const typeMap: Record<string, ApexType> = {
-      integer: ApexType.INTEGER,
-      long: ApexType.LONG,
-      double: ApexType.DOUBLE,
-      decimal: ApexType.DECIMAL,
-      string: ApexType.STRING,
-      boolean: ApexType.BOOLEAN,
-      date: ApexType.DATE,
-      datetime: ApexType.DATETIME,
-      id: ApexType.ID,
-    }
-    return typeMap[typeName] ?? ApexType.OBJECT
-  }
-
-  private trackVariableDeclaration(
-    ctx: ParserRuleContext,
-    target: Map<string, string>
-  ): void {
-    if (ctx.children && ctx.children.length >= 2) {
-      const typeName = ctx.children[0].text
-      for (let i = 1; i < ctx.children.length; i++) {
-        const child = ctx.children[i]
-        const childText = child.text
-        if (childText !== ',' && childText !== '=') {
-          const varName = childText.split('=')[0]
-          target.set(varName, typeName.toLowerCase())
-        }
-      }
-    }
   }
 }
