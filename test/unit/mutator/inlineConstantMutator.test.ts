@@ -618,4 +618,102 @@ describe('InlineConstantMutator', () => {
       })
     })
   })
+
+  describe('Given a null literal in unrecognized parent context', () => {
+    describe('When entering the literal with TypeRegistry', () => {
+      it('Then should create no mutations', () => {
+        // Arrange
+        const typeRegistry = TestUtil.createTypeRegistry()
+        sut = new InlineConstantMutator(typeRegistry)
+        const nullNode = createTerminalNode('null')
+        const ctx = createLiteralCtx('null', nullNode)
+        const exprCtx = Object.create(ParserRuleContext.prototype)
+        Object.defineProperty(ctx, 'parent', {
+          value: exprCtx,
+          writable: true,
+          configurable: true,
+        })
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a null literal in return statement of unknown method', () => {
+    describe('When entering the literal with TypeRegistry', () => {
+      it('Then should create no mutations when method not in registry', () => {
+        // Arrange
+        const typeRegistry = TestUtil.createTypeRegistry()
+        sut = new InlineConstantMutator(typeRegistry)
+        const nullNode = createTerminalNode('null')
+        const ctx = createLiteralCtx('null', nullNode)
+        const returnCtx = Object.create(ReturnStatementContext.prototype)
+        const exprCtx = Object.create(ParserRuleContext.prototype)
+        Object.defineProperty(ctx, 'parent', {
+          value: exprCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(exprCtx, 'parent', {
+          value: returnCtx,
+          writable: true,
+          configurable: true,
+        })
+        const methodCtx = Object.create(MethodDeclarationContext.prototype)
+        methodCtx.children = [
+          { text: 'Integer' },
+          { text: 'unknownMethod' },
+          { text: '(' },
+          { text: ')' },
+        ]
+        Object.defineProperty(returnCtx, 'parent', {
+          value: methodCtx,
+          writable: true,
+          configurable: true,
+        })
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a null literal in declaration without children', () => {
+    describe('When entering the literal with TypeRegistry', () => {
+      it('Then should create no mutations', () => {
+        // Arrange
+        const typeRegistry = TestUtil.createTypeRegistry()
+        sut = new InlineConstantMutator(typeRegistry)
+        const nullNode = createTerminalNode('null')
+        const ctx = createLiteralCtx('null', nullNode)
+        const localVarCtx = Object.create(
+          LocalVariableDeclarationContext.prototype
+        )
+        const exprCtx = Object.create(ParserRuleContext.prototype)
+        Object.defineProperty(ctx, 'parent', {
+          value: exprCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(exprCtx, 'parent', {
+          value: localVarCtx,
+          writable: true,
+          configurable: true,
+        })
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
 })
