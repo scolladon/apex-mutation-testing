@@ -42,12 +42,19 @@ class NumberLiteralHandler implements LiteralHandler {
   }
 }
 
+class StringLiteralHandler implements LiteralHandler {
+  getReplacements(node: TerminalNode): string[] {
+    return node.text === "''" ? [] : ["''"]
+  }
+}
+
 type LiteralDetector = (ctx: LiteralContext) => TerminalNode | undefined
 
 const HANDLER_FACTORY: Map<LiteralDetector, LiteralHandler> = new Map([
   [(ctx: LiteralContext) => ctx.IntegerLiteral(), new IntegerLiteralHandler()],
   [(ctx: LiteralContext) => ctx.LongLiteral(), new LongLiteralHandler()],
   [(ctx: LiteralContext) => ctx.NumberLiteral(), new NumberLiteralHandler()],
+  [(ctx: LiteralContext) => ctx.StringLiteral(), new StringLiteralHandler()],
   [(ctx: LiteralContext) => ctx.BooleanLiteral(), new BooleanLiteralHandler()],
 ])
 

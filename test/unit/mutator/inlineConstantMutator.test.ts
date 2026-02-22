@@ -20,7 +20,7 @@ function createLiteralCtx(
   ctx.IntegerLiteral = () => (literalType === 'integer' ? node : undefined)
   ctx.LongLiteral = () => (literalType === 'long' ? node : undefined)
   ctx.NumberLiteral = () => (literalType === 'number' ? node : undefined)
-  ctx.StringLiteral = () => undefined
+  ctx.StringLiteral = () => (literalType === 'string' ? node : undefined)
   ctx.NULL = () => undefined
   return ctx
 }
@@ -209,6 +209,39 @@ describe('InlineConstantMutator', () => {
         expect(replacements).not.toContain('0.0')
         expect(replacements).toContain('1.0')
         expect(replacements).toContain('-1.0')
+      })
+    })
+  })
+
+  describe("Given a string literal 'hello'", () => {
+    describe('When entering the literal', () => {
+      it("Then should create 1 mutation replacing with ''", () => {
+        // Arrange
+        const strNode = createTerminalNode("'hello'")
+        const ctx = createLiteralCtx('string', strNode)
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe("''")
+      })
+    })
+  })
+
+  describe("Given an empty string literal ''", () => {
+    describe('When entering the literal', () => {
+      it('Then should create no mutations', () => {
+        // Arrange
+        const strNode = createTerminalNode("''")
+        const ctx = createLiteralCtx('string', strNode)
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
       })
     })
   })
