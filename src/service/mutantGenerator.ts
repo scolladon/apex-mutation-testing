@@ -83,7 +83,7 @@ export class MutantGenerator {
     const arithmeticDeletionListener = new ArithmeticOperatorDeletionMutator(
       typeRegistry
     )
-    const inlineConstantListener = new InlineConstantMutator()
+    const inlineConstantListener = new InlineConstantMutator(typeRegistry)
 
     const listener = new MutationListener(
       [
