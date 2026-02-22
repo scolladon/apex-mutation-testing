@@ -19,7 +19,7 @@ function createLiteralCtx(
   ctx.BooleanLiteral = () => (literalType === 'boolean' ? node : undefined)
   ctx.IntegerLiteral = () => (literalType === 'integer' ? node : undefined)
   ctx.LongLiteral = () => (literalType === 'long' ? node : undefined)
-  ctx.NumberLiteral = () => undefined
+  ctx.NumberLiteral = () => (literalType === 'number' ? node : undefined)
   ctx.StringLiteral = () => undefined
   ctx.NULL = () => undefined
   return ctx
@@ -166,6 +166,49 @@ describe('InlineConstantMutator', () => {
         expect(replacements).not.toContain('0L')
         expect(replacements).toContain('1L')
         expect(replacements).toContain('-1L')
+      })
+    })
+  })
+
+  describe('Given a number literal 3.14', () => {
+    describe('When entering the literal', () => {
+      it('Then should create 5 mutations: 0.0, 1.0, -1.0, 4.14, 2.14', () => {
+        // Arrange
+        const numNode = createTerminalNode('3.14')
+        const ctx = createLiteralCtx('number', numNode)
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(5)
+        const replacements = sut._mutations.map(m => m.replacement)
+        expect(replacements).toEqual([
+          '0.0',
+          '1.0',
+          '-1.0',
+          '4.140000000000001',
+          '2.14',
+        ])
+      })
+    })
+  })
+
+  describe('Given a number literal 0.0', () => {
+    describe('When entering the literal', () => {
+      it('Then should not include 0.0 in replacements', () => {
+        // Arrange
+        const numNode = createTerminalNode('0.0')
+        const ctx = createLiteralCtx('number', numNode)
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        const replacements = sut._mutations.map(m => m.replacement)
+        expect(replacements).not.toContain('0.0')
+        expect(replacements).toContain('1.0')
+        expect(replacements).toContain('-1.0')
       })
     })
   })

@@ -29,11 +29,25 @@ class LongLiteralHandler implements LiteralHandler {
   }
 }
 
+class NumberLiteralHandler implements LiteralHandler {
+  getReplacements(node: TerminalNode): string[] {
+    const value = Number.parseFloat(node.text)
+    const candidates = [0.0, 1.0, -1.0, value + 1.0, value - 1.0]
+    return [...new Set(candidates)]
+      .filter(c => c !== value)
+      .map(c => {
+        const str = String(c)
+        return str.includes('.') ? str : `${str}.0`
+      })
+  }
+}
+
 type LiteralDetector = (ctx: LiteralContext) => TerminalNode | undefined
 
 const HANDLER_FACTORY: Map<LiteralDetector, LiteralHandler> = new Map([
   [(ctx: LiteralContext) => ctx.IntegerLiteral(), new IntegerLiteralHandler()],
   [(ctx: LiteralContext) => ctx.LongLiteral(), new LongLiteralHandler()],
+  [(ctx: LiteralContext) => ctx.NumberLiteral(), new NumberLiteralHandler()],
   [(ctx: LiteralContext) => ctx.BooleanLiteral(), new BooleanLiteralHandler()],
 ])
 
