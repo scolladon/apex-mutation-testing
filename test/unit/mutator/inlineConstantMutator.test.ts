@@ -1,7 +1,15 @@
-import { Token } from 'antlr4ts'
+import { ParserRuleContext, Token } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
-import { LiteralContext } from 'apex-parser'
+import {
+  FieldDeclarationContext,
+  LiteralContext,
+  LocalVariableDeclarationContext,
+  MethodDeclarationContext,
+  ReturnStatementContext,
+} from 'apex-parser'
 import { InlineConstantMutator } from '../../../src/mutator/inlineConstantMutator.js'
+import { APEX_TYPE } from '../../../src/type/ApexMethod.js'
+import { TestUtil } from '../../utils/testUtil.js'
 
 function createLiteralCtx(
   literalType: string,
@@ -246,12 +254,361 @@ describe('InlineConstantMutator', () => {
     })
   })
 
-  describe('Given a null literal', () => {
+  describe('Given a null literal without TypeRegistry', () => {
     describe('When entering the literal', () => {
       it('Then should create no mutations', () => {
         // Arrange
         const nullNode = createTerminalNode('null')
         const ctx = createLiteralCtx('null', nullNode)
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a null literal in return statement of Integer method', () => {
+    describe('When entering the literal with TypeRegistry', () => {
+      it('Then should create mutation replacing null with 0', () => {
+        // Arrange
+        const typeRegistry = TestUtil.createTypeRegistry(
+          new Map([
+            [
+              'testMethod',
+              {
+                returnType: 'Integer',
+                startLine: 1,
+                endLine: 5,
+                type: APEX_TYPE.INTEGER,
+              },
+            ],
+          ])
+        )
+        sut = new InlineConstantMutator(typeRegistry)
+        const nullNode = createTerminalNode('null')
+        const ctx = createLiteralCtx('null', nullNode)
+        const returnCtx = Object.create(ReturnStatementContext.prototype)
+        const exprCtx = Object.create(ParserRuleContext.prototype)
+        Object.defineProperty(ctx, 'parent', {
+          value: exprCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(exprCtx, 'parent', {
+          value: returnCtx,
+          writable: true,
+          configurable: true,
+        })
+        const methodCtx = Object.create(MethodDeclarationContext.prototype)
+        methodCtx.children = [
+          { text: 'Integer' },
+          { text: 'testMethod' },
+          { text: '(' },
+          { text: ')' },
+        ]
+        Object.defineProperty(returnCtx, 'parent', {
+          value: methodCtx,
+          writable: true,
+          configurable: true,
+        })
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('0')
+      })
+    })
+  })
+
+  describe('Given a null literal in return statement of String method', () => {
+    describe('When entering the literal with TypeRegistry', () => {
+      it("Then should create mutation replacing null with ''", () => {
+        // Arrange
+        const typeRegistry = TestUtil.createTypeRegistry(
+          new Map([
+            [
+              'testMethod',
+              {
+                returnType: 'String',
+                startLine: 1,
+                endLine: 5,
+                type: APEX_TYPE.STRING,
+              },
+            ],
+          ])
+        )
+        sut = new InlineConstantMutator(typeRegistry)
+        const nullNode = createTerminalNode('null')
+        const ctx = createLiteralCtx('null', nullNode)
+        const returnCtx = Object.create(ReturnStatementContext.prototype)
+        const exprCtx = Object.create(ParserRuleContext.prototype)
+        Object.defineProperty(ctx, 'parent', {
+          value: exprCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(exprCtx, 'parent', {
+          value: returnCtx,
+          writable: true,
+          configurable: true,
+        })
+        const methodCtx = Object.create(MethodDeclarationContext.prototype)
+        methodCtx.children = [
+          { text: 'String' },
+          { text: 'testMethod' },
+          { text: '(' },
+          { text: ')' },
+        ]
+        Object.defineProperty(returnCtx, 'parent', {
+          value: methodCtx,
+          writable: true,
+          configurable: true,
+        })
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe("''")
+      })
+    })
+  })
+
+  describe('Given a null literal in return statement of Boolean method', () => {
+    describe('When entering the literal with TypeRegistry', () => {
+      it('Then should create mutation replacing null with false', () => {
+        // Arrange
+        const typeRegistry = TestUtil.createTypeRegistry(
+          new Map([
+            [
+              'testMethod',
+              {
+                returnType: 'Boolean',
+                startLine: 1,
+                endLine: 5,
+                type: APEX_TYPE.BOOLEAN,
+              },
+            ],
+          ])
+        )
+        sut = new InlineConstantMutator(typeRegistry)
+        const nullNode = createTerminalNode('null')
+        const ctx = createLiteralCtx('null', nullNode)
+        const returnCtx = Object.create(ReturnStatementContext.prototype)
+        const exprCtx = Object.create(ParserRuleContext.prototype)
+        Object.defineProperty(ctx, 'parent', {
+          value: exprCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(exprCtx, 'parent', {
+          value: returnCtx,
+          writable: true,
+          configurable: true,
+        })
+        const methodCtx = Object.create(MethodDeclarationContext.prototype)
+        methodCtx.children = [
+          { text: 'Boolean' },
+          { text: 'testMethod' },
+          { text: '(' },
+          { text: ')' },
+        ]
+        Object.defineProperty(returnCtx, 'parent', {
+          value: methodCtx,
+          writable: true,
+          configurable: true,
+        })
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('false')
+      })
+    })
+  })
+
+  describe('Given a null literal in local variable declaration', () => {
+    describe('When entering the literal with TypeRegistry', () => {
+      it('Then should create mutation replacing null with type default', () => {
+        // Arrange
+        const typeRegistry = TestUtil.createTypeRegistry()
+        sut = new InlineConstantMutator(typeRegistry)
+        const nullNode = createTerminalNode('null')
+        const ctx = createLiteralCtx('null', nullNode)
+        const localVarCtx = Object.create(
+          LocalVariableDeclarationContext.prototype
+        )
+        localVarCtx.children = [
+          { text: 'Integer' },
+          { text: 'x' },
+          { text: '=' },
+          { text: 'null' },
+        ]
+        const varDeclaratorsCtx = Object.create(ParserRuleContext.prototype)
+        const varDeclaratorCtx = Object.create(ParserRuleContext.prototype)
+        const exprCtx = Object.create(ParserRuleContext.prototype)
+        Object.defineProperty(ctx, 'parent', {
+          value: exprCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(exprCtx, 'parent', {
+          value: varDeclaratorCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(varDeclaratorCtx, 'parent', {
+          value: varDeclaratorsCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(varDeclaratorsCtx, 'parent', {
+          value: localVarCtx,
+          writable: true,
+          configurable: true,
+        })
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('0')
+      })
+    })
+  })
+
+  describe('Given a null literal in return statement of Date method', () => {
+    describe('When entering the literal with TypeRegistry', () => {
+      it('Then should create no mutations when no default literal exists', () => {
+        // Arrange
+        const typeRegistry = TestUtil.createTypeRegistry(
+          new Map([
+            [
+              'testMethod',
+              {
+                returnType: 'Date',
+                startLine: 1,
+                endLine: 5,
+                type: APEX_TYPE.DATE,
+              },
+            ],
+          ])
+        )
+        sut = new InlineConstantMutator(typeRegistry)
+        const nullNode = createTerminalNode('null')
+        const ctx = createLiteralCtx('null', nullNode)
+        const returnCtx = Object.create(ReturnStatementContext.prototype)
+        const exprCtx = Object.create(ParserRuleContext.prototype)
+        Object.defineProperty(ctx, 'parent', {
+          value: exprCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(exprCtx, 'parent', {
+          value: returnCtx,
+          writable: true,
+          configurable: true,
+        })
+        const methodCtx = Object.create(MethodDeclarationContext.prototype)
+        methodCtx.children = [
+          { text: 'Date' },
+          { text: 'testMethod' },
+          { text: '(' },
+          { text: ')' },
+        ]
+        Object.defineProperty(returnCtx, 'parent', {
+          value: methodCtx,
+          writable: true,
+          configurable: true,
+        })
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a null literal in field declaration', () => {
+    describe('When entering the literal with TypeRegistry', () => {
+      it('Then should create mutation replacing null with type default', () => {
+        // Arrange
+        const typeRegistry = TestUtil.createTypeRegistry()
+        sut = new InlineConstantMutator(typeRegistry)
+        const nullNode = createTerminalNode('null')
+        const ctx = createLiteralCtx('null', nullNode)
+        const fieldDeclCtx = Object.create(FieldDeclarationContext.prototype)
+        fieldDeclCtx.children = [
+          { text: 'String' },
+          { text: 'name' },
+          { text: '=' },
+          { text: 'null' },
+        ]
+        const varDeclaratorsCtx = Object.create(ParserRuleContext.prototype)
+        const varDeclaratorCtx = Object.create(ParserRuleContext.prototype)
+        const exprCtx = Object.create(ParserRuleContext.prototype)
+        Object.defineProperty(ctx, 'parent', {
+          value: exprCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(exprCtx, 'parent', {
+          value: varDeclaratorCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(varDeclaratorCtx, 'parent', {
+          value: varDeclaratorsCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(varDeclaratorsCtx, 'parent', {
+          value: fieldDeclCtx,
+          writable: true,
+          configurable: true,
+        })
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe("''")
+      })
+    })
+  })
+
+  describe('Given a null literal in return statement without enclosing method', () => {
+    describe('When entering the literal with TypeRegistry', () => {
+      it('Then should create no mutations', () => {
+        // Arrange
+        const typeRegistry = TestUtil.createTypeRegistry()
+        sut = new InlineConstantMutator(typeRegistry)
+        const nullNode = createTerminalNode('null')
+        const ctx = createLiteralCtx('null', nullNode)
+        const returnCtx = Object.create(ReturnStatementContext.prototype)
+        const exprCtx = Object.create(ParserRuleContext.prototype)
+        Object.defineProperty(ctx, 'parent', {
+          value: exprCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(exprCtx, 'parent', {
+          value: returnCtx,
+          writable: true,
+          configurable: true,
+        })
 
         // Act
         sut.enterLiteral(ctx)
