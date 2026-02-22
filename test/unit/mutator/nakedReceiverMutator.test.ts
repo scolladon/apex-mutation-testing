@@ -1,68 +1,9 @@
 import { ParserRuleContext } from 'antlr4ts'
-import {
-  DotExpressionContext,
-  DotMethodCallContext,
-  MethodDeclarationContext,
-} from 'apex-parser'
+import { DotExpressionContext, DotMethodCallContext } from 'apex-parser'
 import { NakedReceiverMutator } from '../../../src/mutator/nakedReceiverMutator.js'
 import type { TypeMatcher } from '../../../src/service/typeMatcher.js'
 import { APEX_TYPE, ApexMethod } from '../../../src/type/ApexMethod.js'
-import { TypeRegistry } from '../../../src/type/TypeRegistry.js'
 import { TestUtil } from '../../utils/testUtil.js'
-
-function createTypeRegistry(
-  methodTypeTable: Map<string, ApexMethod> = new Map(),
-  variableScopes: Map<string, Map<string, string>> = new Map(),
-  classFields: Map<string, string> = new Map(),
-  matchers: TypeMatcher[] = []
-): TypeRegistry {
-  return new TypeRegistry(
-    methodTypeTable,
-    variableScopes,
-    classFields,
-    matchers
-  )
-}
-
-function createDotMethodCallCtx(methodName: string): ParserRuleContext {
-  const node = Object.create(DotMethodCallContext.prototype)
-  Object.defineProperty(node, 'children', {
-    value: [{ text: methodName }, { text: '(' }, { text: ')' }],
-    writable: true,
-    configurable: true,
-  })
-  return node as ParserRuleContext
-}
-
-function createDotExpressionInMethod(
-  receiverText: string,
-  methodName: string,
-  enclosingMethodName: string
-): ParserRuleContext {
-  const dotMethodCall = createDotMethodCallCtx(methodName)
-
-  const ctx = {
-    children: [{ text: receiverText }, { text: '.' }, dotMethodCall],
-    childCount: 3,
-    text: `${receiverText}.${methodName}()`,
-    start: TestUtil.createToken(1, 0),
-    stop: TestUtil.createToken(1, 20),
-  } as unknown as ParserRuleContext
-
-  const methodCtx = Object.create(MethodDeclarationContext.prototype)
-  methodCtx.children = [
-    { text: 'void' },
-    { text: enclosingMethodName },
-    { text: '(' },
-    { text: ')' },
-  ]
-  Object.defineProperty(ctx, 'parent', {
-    value: methodCtx,
-    writable: true,
-    configurable: true,
-  })
-  return ctx
-}
 
 describe('NakedReceiverMutator', () => {
   describe('Given a dot expression where receiver type matches method return type', () => {
@@ -87,14 +28,18 @@ describe('NakedReceiverMutator', () => {
           collectedTypes: new Set(),
         },
       ]
-      const typeRegistry = createTypeRegistry(
+      const typeRegistry = TestUtil.createTypeRegistry(
         typeTable,
         variableScopes,
         new Map(),
         matchers
       )
       const sut = new NakedReceiverMutator(typeRegistry)
-      const ctx = createDotExpressionInMethod('account', 'clone', 'testMethod')
+      const ctx = TestUtil.createDotExpressionInMethod(
+        'account',
+        'clone',
+        'testMethod'
+      )
 
       // Act
       sut.enterDotExpression(ctx as unknown as DotExpressionContext)
@@ -119,9 +64,16 @@ describe('NakedReceiverMutator', () => {
       const variableScopes = new Map([
         ['testMethod', new Map([['s', 'string']])],
       ])
-      const typeRegistry = createTypeRegistry(typeTable, variableScopes)
+      const typeRegistry = TestUtil.createTypeRegistry(
+        typeTable,
+        variableScopes
+      )
       const sut = new NakedReceiverMutator(typeRegistry)
-      const ctx = createDotExpressionInMethod('s', 'toUpperCase', 'testMethod')
+      const ctx = TestUtil.createDotExpressionInMethod(
+        's',
+        'toUpperCase',
+        'testMethod'
+      )
 
       // Act
       sut.enterDotExpression(ctx as unknown as DotExpressionContext)
@@ -145,9 +97,16 @@ describe('NakedReceiverMutator', () => {
       const variableScopes = new Map([
         ['testMethod', new Map([['num', 'integer']])],
       ])
-      const typeRegistry = createTypeRegistry(typeTable, variableScopes)
+      const typeRegistry = TestUtil.createTypeRegistry(
+        typeTable,
+        variableScopes
+      )
       const sut = new NakedReceiverMutator(typeRegistry)
-      const ctx = createDotExpressionInMethod('num', 'toString', 'testMethod')
+      const ctx = TestUtil.createDotExpressionInMethod(
+        'num',
+        'toString',
+        'testMethod'
+      )
 
       // Act
       sut.enterDotExpression(ctx as unknown as DotExpressionContext)
@@ -160,7 +119,7 @@ describe('NakedReceiverMutator', () => {
   describe('Given a dot expression that is a field access (not method call)', () => {
     it('Then should not create any mutations', () => {
       // Arrange
-      const typeRegistry = createTypeRegistry()
+      const typeRegistry = TestUtil.createTypeRegistry()
       const sut = new NakedReceiverMutator(typeRegistry)
       const ctx = {
         children: [{ text: 'account' }, { text: '.' }, { text: 'Name' }],
@@ -181,9 +140,12 @@ describe('NakedReceiverMutator', () => {
       const variableScopes = new Map([
         ['testMethod', new Map([['account', 'account']])],
       ])
-      const typeRegistry = createTypeRegistry(new Map(), variableScopes)
+      const typeRegistry = TestUtil.createTypeRegistry(
+        new Map(),
+        variableScopes
+      )
       const sut = new NakedReceiverMutator(typeRegistry)
-      const ctx = createDotExpressionInMethod(
+      const ctx = TestUtil.createDotExpressionInMethod(
         'account',
         'unknownMethod',
         'testMethod'
@@ -200,7 +162,7 @@ describe('NakedReceiverMutator', () => {
   describe('Given a dot expression with insufficient children', () => {
     it('Then should not create any mutations', () => {
       // Arrange
-      const typeRegistry = createTypeRegistry()
+      const typeRegistry = TestUtil.createTypeRegistry()
       const sut = new NakedReceiverMutator(typeRegistry)
       const ctx = {
         children: [{ text: 'account' }],
@@ -218,7 +180,7 @@ describe('NakedReceiverMutator', () => {
   describe('Given a dot expression with null children', () => {
     it('Then should not create any mutations', () => {
       // Arrange
-      const typeRegistry = createTypeRegistry()
+      const typeRegistry = TestUtil.createTypeRegistry()
       const sut = new NakedReceiverMutator(typeRegistry)
       const ctx = { children: null } as unknown as ParserRuleContext
 
@@ -233,7 +195,7 @@ describe('NakedReceiverMutator', () => {
   describe('Given a dotMethodCall with insufficient children', () => {
     it('Then should not create any mutations', () => {
       // Arrange
-      const typeRegistry = createTypeRegistry()
+      const typeRegistry = TestUtil.createTypeRegistry()
       const sut = new NakedReceiverMutator(typeRegistry)
 
       const dotMethodCall = Object.create(DotMethodCallContext.prototype)
@@ -267,9 +229,13 @@ describe('NakedReceiverMutator', () => {
         type: APEX_TYPE.STRING,
       })
       const classFields = new Map([['builder', 'string']])
-      const typeRegistry = createTypeRegistry(typeTable, new Map(), classFields)
+      const typeRegistry = TestUtil.createTypeRegistry(
+        typeTable,
+        new Map(),
+        classFields
+      )
       const sut = new NakedReceiverMutator(typeRegistry)
-      const ctx = createDotExpressionInMethod(
+      const ctx = TestUtil.createDotExpressionInMethod(
         'builder',
         'deepClone',
         'testMethod'
@@ -297,9 +263,16 @@ describe('NakedReceiverMutator', () => {
       const variableScopes = new Map([
         ['testMethod', new Map([['num', 'integer']])],
       ])
-      const typeRegistry = createTypeRegistry(typeTable, variableScopes)
+      const typeRegistry = TestUtil.createTypeRegistry(
+        typeTable,
+        variableScopes
+      )
       const sut = new NakedReceiverMutator(typeRegistry)
-      const ctx = createDotExpressionInMethod('num', 'copy', 'testMethod')
+      const ctx = TestUtil.createDotExpressionInMethod(
+        'num',
+        'copy',
+        'testMethod'
+      )
 
       // Act
       sut.enterDotExpression(ctx as unknown as DotExpressionContext)
@@ -323,9 +296,16 @@ describe('NakedReceiverMutator', () => {
       const variableScopes = new Map([
         ['methodA', new Map([['data', 'string']])],
       ])
-      const typeRegistry = createTypeRegistry(typeTable, variableScopes)
+      const typeRegistry = TestUtil.createTypeRegistry(
+        typeTable,
+        variableScopes
+      )
       const sut = new NakedReceiverMutator(typeRegistry)
-      const ctx = createDotExpressionInMethod('data', 'clone', 'methodB')
+      const ctx = TestUtil.createDotExpressionInMethod(
+        'data',
+        'clone',
+        'methodB'
+      )
 
       // Act
       sut.enterDotExpression(ctx as unknown as DotExpressionContext)
@@ -348,9 +328,16 @@ describe('NakedReceiverMutator', () => {
       const variableScopes = new Map([
         ['testMethod', new Map([['item', 'string']])],
       ])
-      const typeRegistry = createTypeRegistry(typeTable, variableScopes)
+      const typeRegistry = TestUtil.createTypeRegistry(
+        typeTable,
+        variableScopes
+      )
       const sut = new NakedReceiverMutator(typeRegistry)
-      const ctx = createDotExpressionInMethod('item', 'copy', 'testMethod')
+      const ctx = TestUtil.createDotExpressionInMethod(
+        'item',
+        'copy',
+        'testMethod'
+      )
 
       // Act
       sut.enterDotExpression(ctx as unknown as DotExpressionContext)
@@ -371,9 +358,9 @@ describe('NakedReceiverMutator', () => {
         endLine: 5,
         type: APEX_TYPE.OBJECT,
       })
-      const typeRegistry = createTypeRegistry(typeTable)
+      const typeRegistry = TestUtil.createTypeRegistry(typeTable)
       const sut = new NakedReceiverMutator(typeRegistry)
-      const ctx = createDotExpressionInMethod(
+      const ctx = TestUtil.createDotExpressionInMethod(
         'unknownVar',
         'transform',
         'testMethod'
@@ -391,7 +378,11 @@ describe('NakedReceiverMutator', () => {
     it('Then should not create any mutations', () => {
       // Arrange
       const sut = new NakedReceiverMutator()
-      const ctx = createDotExpressionInMethod('account', 'clone', 'testMethod')
+      const ctx = TestUtil.createDotExpressionInMethod(
+        'account',
+        'clone',
+        'testMethod'
+      )
 
       // Act
       sut.enterDotExpression(ctx as unknown as DotExpressionContext)
