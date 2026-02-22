@@ -21,7 +21,7 @@ function createLiteralCtx(
   ctx.LongLiteral = () => (literalType === 'long' ? node : undefined)
   ctx.NumberLiteral = () => (literalType === 'number' ? node : undefined)
   ctx.StringLiteral = () => (literalType === 'string' ? node : undefined)
-  ctx.NULL = () => undefined
+  ctx.NULL = () => (literalType === 'null' ? node : undefined)
   return ctx
 }
 
@@ -236,6 +236,22 @@ describe('InlineConstantMutator', () => {
         // Arrange
         const strNode = createTerminalNode("''")
         const ctx = createLiteralCtx('string', strNode)
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a null literal', () => {
+    describe('When entering the literal', () => {
+      it('Then should create no mutations', () => {
+        // Arrange
+        const nullNode = createTerminalNode('null')
+        const ctx = createLiteralCtx('null', nullNode)
 
         // Act
         sut.enterLiteral(ctx)
