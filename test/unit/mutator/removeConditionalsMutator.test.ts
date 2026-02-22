@@ -149,4 +149,27 @@ describe('RemoveConditionalsMutator', () => {
       })
     })
   })
+
+  describe('Given an IfStatement where first child is TerminalNode but not if keyword', () => {
+    describe('When entering the statement', () => {
+      it('Then should not create any mutations', () => {
+        // Arrange
+        const notIfKeyword = new TerminalNode({ text: 'while' } as Token)
+
+        const ctx = {
+          childCount: 3,
+          getChild: jest.fn().mockImplementation(index => {
+            if (index === 0) return notIfKeyword
+            return { text: 'something' }
+          }),
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterIfStatement(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
 })

@@ -436,6 +436,105 @@ describe('TypeDiscoverer', () => {
     })
   })
 
+  describe('edge cases', () => {
+    it('Given List return type with malformed generic, When analyze, Then no elementType', async () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public List getItems() {
+            return null;
+          }
+        }
+      `
+      const sut = new TypeDiscoverer()
+
+      // Act
+      const registry = await sut.analyze(code)
+
+      // Assert
+      const result = registry.resolveType('getItems')
+      expect(result).toEqual(
+        expect.objectContaining({
+          typeName: 'List',
+        })
+      )
+      expect(result).not.toHaveProperty('elementType')
+    })
+
+    it('Given Set return type with malformed generic, When analyze, Then no elementType', async () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public Set getItems() {
+            return null;
+          }
+        }
+      `
+      const sut = new TypeDiscoverer()
+
+      // Act
+      const registry = await sut.analyze(code)
+
+      // Assert
+      const result = registry.resolveType('getItems')
+      expect(result).toEqual(
+        expect.objectContaining({
+          typeName: 'Set',
+        })
+      )
+      expect(result).not.toHaveProperty('elementType')
+    })
+
+    it('Given Map return type with malformed generic, When analyze, Then no elementType', async () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public Map getItems() {
+            return null;
+          }
+        }
+      `
+      const sut = new TypeDiscoverer()
+
+      // Act
+      const registry = await sut.analyze(code)
+
+      // Assert
+      const result = registry.resolveType('getItems')
+      expect(result).toEqual(
+        expect.objectContaining({
+          typeName: 'Map',
+        })
+      )
+      expect(result).not.toHaveProperty('elementType')
+    })
+
+    it('Given Set return type with proper generic, When analyze, Then elementType is extracted', async () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public Set<Id> getIds() {
+            return null;
+          }
+        }
+      `
+      const sut = new TypeDiscoverer()
+
+      // Act
+      const registry = await sut.analyze(code)
+
+      // Assert
+      const result = registry.resolveType('getIds')
+      expect(result).toEqual(
+        expect.objectContaining({
+          apexType: APEX_TYPE.SET,
+          typeName: 'Set<Id>',
+          elementType: 'Id',
+        })
+      )
+    })
+  })
+
   describe('withMatcher fluent API', () => {
     it('Given withMatcher call, When chaining, Then returns same instance', () => {
       // Arrange

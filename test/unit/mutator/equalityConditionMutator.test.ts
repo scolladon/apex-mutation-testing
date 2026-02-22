@@ -59,4 +59,28 @@ describe('EqualityConditionMutator', () => {
     mutator.enterEqualityExpression(mockCtx)
     expect(mutator['_mutations']).toHaveLength(0)
   })
+
+  it('should not mutate when operator has no replacement mapping', () => {
+    // Arrange
+    const unmappedOperator: TerminalNode = {
+      text: '+',
+      symbol: { text: '+' } as Token,
+    } as unknown as TerminalNode
+    Object.setPrototypeOf(unmappedOperator, TerminalNode.prototype)
+
+    const children = [{ text: 'a' }, unmappedOperator, { text: 'b' }]
+    const mockCtx = {
+      childCount: 3,
+      children,
+      getChild: jest
+        .fn()
+        .mockImplementation((index: number) => children[index]),
+    } as unknown as ParserRuleContext
+
+    // Act
+    mutator.enterEqualityExpression(mockCtx)
+
+    // Assert
+    expect(mutator['_mutations']).toHaveLength(0)
+  })
 })

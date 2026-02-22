@@ -283,6 +283,73 @@ describe('TypeRegistry', () => {
       expect(result).toBeNull()
     })
 
+    it('Given dotted expression where fieldType has no name mapping, When resolveType, Then falls back to rootType as typeName', () => {
+      // Arrange
+      const matcher: TypeMatcher = {
+        matches: jest.fn().mockReturnValue(true),
+        collect: jest.fn(),
+        collectedTypes: new Set(),
+        getFieldType: jest.fn().mockReturnValue('UNMAPPED_TYPE' as ApexType),
+      }
+      const registry = new TypeRegistry(
+        new Map([
+          [
+            'myMethod',
+            {
+              returnType: 'void',
+              startLine: 1,
+              endLine: 5,
+              type: APEX_TYPE.VOID,
+            },
+          ],
+        ]),
+        new Map([['myMethod', new Map([['account', 'Account']])]]),
+        new Map(),
+        [matcher]
+      )
+
+      // Act
+      const result = registry.resolveType('myMethod', 'account.Name')
+
+      // Assert
+      expect(result).toEqual({
+        apexType: 'UNMAPPED_TYPE',
+        typeName: 'Account',
+      })
+    })
+
+    it('Given dotted expression where getFieldType returns undefined, When resolveType, Then returns null', () => {
+      // Arrange
+      const matcher: TypeMatcher = {
+        matches: jest.fn().mockReturnValue(true),
+        collect: jest.fn(),
+        collectedTypes: new Set(),
+        getFieldType: jest.fn().mockReturnValue(undefined),
+      }
+      const registry = new TypeRegistry(
+        new Map([
+          [
+            'myMethod',
+            {
+              returnType: 'void',
+              startLine: 1,
+              endLine: 5,
+              type: APEX_TYPE.VOID,
+            },
+          ],
+        ]),
+        new Map([['myMethod', new Map([['account', 'Account']])]]),
+        new Map(),
+        [matcher]
+      )
+
+      // Act
+      const result = registry.resolveType('myMethod', 'account.Name')
+
+      // Assert
+      expect(result).toBeNull()
+    })
+
     it('Given dotted expression where no matcher has getFieldType, When resolveType, Then returns null', () => {
       // Arrange
       const matcher: TypeMatcher = {

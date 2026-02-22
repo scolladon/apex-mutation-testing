@@ -1,6 +1,14 @@
 import { ParserRuleContext, Token } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
+import {
+  DotMethodCallContext,
+  ExpressionListContext,
+  MethodDeclarationContext,
+} from 'apex-parser'
+import type { TypeMatcher } from '../../src/service/typeMatcher.js'
+import type { ApexMethod } from '../../src/type/ApexMethod.js'
 import { TokenRange } from '../../src/type/ApexMutation.js'
+import { TypeRegistry } from '../../src/type/TypeRegistry.js'
 
 export const TestUtil = {
   createToken(line: number = 1, column: number = 0): Token {
@@ -214,5 +222,150 @@ export const TestUtil = {
         return rightNode
       },
     } as unknown as ParserRuleContext
+  },
+
+  createTypeRegistry(
+    methodTypeTable: Map<string, ApexMethod> = new Map(),
+    variableScopes: Map<string, Map<string, string>> = new Map(),
+    classFields: Map<string, string> = new Map(),
+    matchers: TypeMatcher[] = []
+  ): TypeRegistry {
+    return new TypeRegistry(
+      methodTypeTable,
+      variableScopes,
+      classFields,
+      matchers
+    )
+  },
+
+  createArgNode(text: string): ParserRuleContext {
+    const node = {
+      text,
+      childCount: 0,
+      children: [],
+    } as unknown as ParserRuleContext
+    Object.setPrototypeOf(node, ParserRuleContext.prototype)
+    return node
+  },
+
+  createExpressionListCtx(args: ParserRuleContext[]): ParserRuleContext {
+    const commaInterleaved: unknown[] = []
+    args.forEach((arg, i) => {
+      commaInterleaved.push(arg)
+      if (i < args.length - 1) {
+        commaInterleaved.push({ text: ',' })
+      }
+    })
+
+    const node = Object.create(ExpressionListContext.prototype)
+    Object.defineProperty(node, 'children', {
+      value: commaInterleaved,
+      writable: true,
+      configurable: true,
+    })
+    return node as ParserRuleContext
+  },
+
+  createDotMethodCallCtx(
+    methodName: string,
+    args?: ParserRuleContext[]
+  ): ParserRuleContext {
+    const expressionList =
+      args && args.length > 0 ? this.createExpressionListCtx(args) : null
+    const children: unknown[] = [
+      { text: methodName },
+      { text: '(' },
+      ...(expressionList ? [expressionList] : []),
+      { text: ')' },
+    ]
+
+    const node = Object.create(DotMethodCallContext.prototype)
+    Object.defineProperty(node, 'children', {
+      value: children,
+      writable: true,
+      configurable: true,
+    })
+    return node as ParserRuleContext
+  },
+
+  createDotExpressionInMethod(
+    receiverText: string,
+    methodName: string,
+    enclosingMethodName: string,
+    args?: ParserRuleContext[]
+  ): ParserRuleContext {
+    const dotMethodCall = this.createDotMethodCallCtx(methodName, args)
+
+    const ctx = {
+      children: [{ text: receiverText }, { text: '.' }, dotMethodCall],
+      childCount: 3,
+      text: `${receiverText}.${methodName}(${args ? args.map(a => a.text).join(',') : ''})`,
+      start: this.createToken(1, 0),
+      stop: this.createToken(1, 30),
+    } as unknown as ParserRuleContext
+
+    const methodCtx = Object.create(MethodDeclarationContext.prototype)
+    methodCtx.children = [
+      { text: 'void' },
+      { text: enclosingMethodName },
+      { text: '(' },
+      { text: ')' },
+    ]
+    Object.defineProperty(ctx, 'parent', {
+      value: methodCtx,
+      writable: true,
+      configurable: true,
+    })
+    return ctx
+  },
+
+  createMethodCallExpressionInMethod(
+    methodName: string,
+    args: ParserRuleContext[],
+    enclosingMethodName: string
+  ): ParserRuleContext {
+    const expressionList =
+      args.length > 0 ? this.createExpressionListCtx(args) : null
+    const methodCallChildren: unknown[] = [
+      { text: methodName },
+      { text: '(' },
+      ...(expressionList ? [expressionList] : []),
+      { text: ')' },
+    ]
+    const methodCall = {
+      children: methodCallChildren,
+      childCount: methodCallChildren.length,
+    } as unknown as ParserRuleContext
+    Object.setPrototypeOf(methodCall, ParserRuleContext.prototype)
+
+    const ctx = {
+      childCount: 1,
+      text: `${methodName}(${args.map(a => a.text).join(',')})`,
+      start: this.createToken(1, 0),
+      stop: this.createToken(1, 20),
+      getChild: (index: number) => (index === 0 ? methodCall : null),
+    } as unknown as ParserRuleContext
+
+    const methodCtx = Object.create(MethodDeclarationContext.prototype)
+    methodCtx.children = [
+      { text: 'void' },
+      { text: enclosingMethodName },
+      { text: '(' },
+      { text: ')' },
+    ]
+    Object.defineProperty(ctx, 'parent', {
+      value: methodCtx,
+      writable: true,
+      configurable: true,
+    })
+    return ctx
+  },
+
+  setParent(child: ParserRuleContext, parent: ParserRuleContext): void {
+    Object.defineProperty(child, 'parent', {
+      value: parent,
+      writable: true,
+      configurable: true,
+    })
   },
 }

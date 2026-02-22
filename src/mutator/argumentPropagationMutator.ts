@@ -1,13 +1,12 @@
 import { ParserRuleContext } from 'antlr4ts'
-import {
-  DotExpressionContext,
-  DotMethodCallContext,
-  ExpressionListContext,
-  MethodCallExpressionContext,
-} from 'apex-parser'
+import { DotExpressionContext, MethodCallExpressionContext } from 'apex-parser'
 import type { ApexType } from '../type/ApexMethod.js'
-import { APEX_TYPE } from '../type/ApexMethod.js'
 import { TypeRegistry } from '../type/TypeRegistry.js'
+import {
+  extractArguments,
+  resolveDotMethodCall,
+  resolveExpressionApexType,
+} from './astUtils.js'
 import { BaseListener } from './baseListener.js'
 
 export class ArgumentPropagationMutator extends BaseListener {
@@ -42,7 +41,7 @@ export class ArgumentPropagationMutator extends BaseListener {
       return
     }
 
-    const args = this.extractArguments(methodCall)
+    const args = extractArguments(methodCall)
     if (args.length === 0) {
       return
     }
@@ -56,34 +55,16 @@ export class ArgumentPropagationMutator extends BaseListener {
   }
 
   enterDotExpression(ctx: DotExpressionContext): void {
-    if (!ctx.children || ctx.children.length < 3) {
+    if (!this.typeRegistry) {
       return
     }
 
-    const lastChild = ctx.children[ctx.children.length - 1]
-    if (!(lastChild instanceof DotMethodCallContext)) {
+    const info = resolveDotMethodCall(ctx, this.typeRegistry)
+    if (!info) {
       return
     }
 
-    if (!lastChild.children || lastChild.children.length < 3) {
-      return
-    }
-
-    const methodName = lastChild.children[0].text
-    const enclosingMethod = this.getEnclosingMethodName(ctx)
-    if (!this.typeRegistry || !enclosingMethod) {
-      return
-    }
-
-    const methodReturnType = this.typeRegistry.resolveType(
-      enclosingMethod,
-      `${methodName}()`
-    )
-    if (!methodReturnType) {
-      return
-    }
-
-    const args = this.extractArguments(lastChild)
+    const args = extractArguments(info.dotMethodCall)
     if (args.length === 0) {
       return
     }
@@ -91,29 +72,9 @@ export class ArgumentPropagationMutator extends BaseListener {
     this.createMutationsForMatchingArgs(
       ctx,
       args,
-      methodReturnType.apexType,
-      enclosingMethod
+      info.returnType.apexType,
+      info.enclosingMethod
     )
-  }
-
-  private extractArguments(
-    methodCallCtx: ParserRuleContext
-  ): ParserRuleContext[] {
-    if (!methodCallCtx.children) {
-      return []
-    }
-
-    for (const child of methodCallCtx.children) {
-      if (child instanceof ExpressionListContext) {
-        if (!child.children) {
-          return []
-        }
-        return child.children.filter(
-          c => c instanceof ParserRuleContext
-        ) as ParserRuleContext[]
-      }
-    }
-    return []
   }
 
   private createMutationsForMatchingArgs(
@@ -123,27 +84,14 @@ export class ArgumentPropagationMutator extends BaseListener {
     enclosingMethod: string
   ): void {
     for (const arg of args) {
-      const argType = this.resolveArgumentType(arg.text, enclosingMethod)
+      const argType = resolveExpressionApexType(
+        arg.text,
+        enclosingMethod,
+        this.typeRegistry!
+      )
       if (argType === returnType) {
         this.createMutationFromParserRuleContext(ctx, arg.text)
       }
     }
-  }
-
-  private resolveArgumentType(
-    text: string,
-    enclosingMethod: string
-  ): ApexType | null {
-    if (!this.typeRegistry) {
-      return null
-    }
-
-    if (/^\d/.test(text)) return APEX_TYPE.INTEGER
-    if (text.startsWith("'")) return APEX_TYPE.STRING
-    const lower = text.toLowerCase()
-    if (lower === 'true' || lower === 'false') return APEX_TYPE.BOOLEAN
-
-    const resolved = this.typeRegistry.resolveType(enclosingMethod, text)
-    return resolved?.apexType ?? null
   }
 }

@@ -604,6 +604,274 @@ describe('NonVoidMethodCallMutator', () => {
         expect(sut._mutations).toHaveLength(0)
       })
 
+      it('Given statement where first child is not ParserRuleContext, When entering, Then should not mutate', () => {
+        // Arrange
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const ctx = {
+          children: [{ text: 'notPRC' }],
+          childCount: 1,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given statement where declCtx has insufficient children, When entering, Then should not mutate', () => {
+        // Arrange
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const declCtx = {
+          children: [{ text: 'Integer' }],
+          childCount: 1,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declCtx, ParserRuleContext.prototype)
+        const ctx = {
+          children: [declCtx],
+          childCount: 1,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given statement where declarators is not ParserRuleContext, When entering, Then should not mutate', () => {
+        // Arrange
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const declCtx = {
+          children: [{ text: 'Integer' }, { text: 'x = getValue()' }],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declCtx, ParserRuleContext.prototype)
+        const ctx = {
+          children: [declCtx],
+          childCount: 1,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given no typeRegistry, When entering assign expression, Then should not mutate', () => {
+        // Arrange
+        const sut = new NonVoidMethodCallMutator()
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('getValue()')
+        const assignCtx = createAssignExpression('x', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given declarators containing non-ParserRuleContext children, When entering, Then should skip them', () => {
+        // Arrange
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        const commaNode = { text: ',' }
+        const methodCall = createMethodCallExpression('getValue()')
+        const declarator = {
+          text: 'x=getValue()',
+          children: [{ text: 'x' }, { text: '=' }, methodCall],
+          childCount: 3,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarator, ParserRuleContext.prototype)
+
+        const declarators = {
+          text: 'x=getValue()',
+          children: [declarator, commaNode],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarators, ParserRuleContext.prototype)
+
+        const declCtx = {
+          children: [{ text: 'Integer' }, declarators],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declCtx, ParserRuleContext.prototype)
+
+        const ctx = {
+          children: [declCtx, { text: ';' }],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+      })
+
+      it('Given declarator with fewer than 3 children, When entering, Then should not mutate', () => {
+        // Arrange
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        const declarator = {
+          text: 'x',
+          children: [{ text: 'x' }, { text: ';' }],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarator, ParserRuleContext.prototype)
+
+        const declarators = {
+          text: 'x',
+          children: [declarator],
+          childCount: 1,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarators, ParserRuleContext.prototype)
+
+        const declCtx = {
+          children: [{ text: 'Integer' }, declarators],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declCtx, ParserRuleContext.prototype)
+
+        const ctx = {
+          children: [declCtx, { text: ';' }],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given declarator with no equals sign, When entering, Then should not mutate', () => {
+        // Arrange
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        const declarator = {
+          text: 'x:Integer',
+          children: [{ text: 'x' }, { text: ':' }, { text: 'Integer' }],
+          childCount: 3,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarator, ParserRuleContext.prototype)
+
+        const declarators = {
+          text: 'x:Integer',
+          children: [declarator],
+          childCount: 1,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarators, ParserRuleContext.prototype)
+
+        const declCtx = {
+          children: [{ text: 'Integer' }, declarators],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declCtx, ParserRuleContext.prototype)
+
+        const ctx = {
+          children: [declCtx, { text: ';' }],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given declarator where = is last child, When entering, Then should not mutate', () => {
+        // Arrange
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        const declarator = {
+          text: 'x y =',
+          children: [{ text: 'x' }, { text: 'y' }, { text: '=' }],
+          childCount: 3,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarator, ParserRuleContext.prototype)
+
+        const declarators = {
+          text: 'x y =',
+          children: [declarator],
+          childCount: 1,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarators, ParserRuleContext.prototype)
+
+        const declCtx = {
+          children: [{ text: 'Integer' }, declarators],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declCtx, ParserRuleContext.prototype)
+
+        const ctx = {
+          children: [declCtx, { text: ';' }],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given declarator where initializer is not ParserRuleContext, When entering, Then should not mutate', () => {
+        // Arrange
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        const declarator = {
+          text: 'x=42',
+          children: [{ text: 'x' }, { text: '=' }, { text: '42' }],
+          childCount: 3,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarator, ParserRuleContext.prototype)
+
+        const declarators = {
+          text: 'x=42',
+          children: [declarator],
+          childCount: 1,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarators, ParserRuleContext.prototype)
+
+        const declCtx = {
+          children: [{ text: 'Integer' }, declarators],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declCtx, ParserRuleContext.prototype)
+
+        const ctx = {
+          children: [declCtx, { text: ';' }],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+
       it('Given assignment with wrong child count, When entering, Then should not mutate', () => {
         // Arrange
         const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
@@ -636,6 +904,39 @@ describe('NonVoidMethodCallMutator', () => {
 
         // Act
         sut.enterAssignExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given expression with children that are not method calls, When entering statement, Then should not mutate', () => {
+        // Arrange
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        const plainChild = {
+          text: 'x',
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(plainChild, ParserRuleContext.prototype)
+
+        const wrapperExpression = {
+          text: '(x)',
+          start: TestUtil.createToken(1, 0),
+          stop: TestUtil.createToken(1, 3),
+          childCount: 1,
+          children: [plainChild],
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(wrapperExpression, ParserRuleContext.prototype)
+
+        const ctx = createVariableDeclarationStatement(
+          'Integer',
+          'y',
+          wrapperExpression
+        )
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
 
         // Assert
         expect(sut._mutations).toHaveLength(0)

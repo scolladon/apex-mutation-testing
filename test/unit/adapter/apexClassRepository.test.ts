@@ -80,6 +80,22 @@ describe('ApexClassRepository', () => {
     })
   })
 
+  describe('when getting ApexClass dependencies', () => {
+    it('Given a classId, When getApexClassDependencies, Then returns dependencies', async () => {
+      // Arrange
+      const mockDependencies = [
+        { MetadataComponentId: '123', RefMetadataComponentId: '456' },
+      ]
+      findMock.mockResolvedValue(mockDependencies)
+
+      // Act
+      const result = await sut.getApexClassDependencies('123')
+
+      // Assert
+      expect(result).toEqual(mockDependencies)
+    })
+  })
+
   describe('when updating an ApexClass', () => {
     describe('given the update is successful', () => {
       it('then should return the updated ApexClass', async () => {
@@ -163,6 +179,55 @@ describe('ApexClassRepository', () => {
         // Act & Assert
         await expect(sut.update(mockApexClass)).rejects.toThrow(
           'Deployment failed:\n[TestClass.cls:1:10] Missing semicolon'
+        )
+      })
+    })
+
+    describe('given the deployment fails without component messages', () => {
+      it('then should use ErrorMsg as fallback', async () => {
+        // Arrange
+        const mockApexClass = {
+          Id: '123',
+          Body: 'public class TestClass {}',
+        }
+
+        createMock
+          .mockResolvedValueOnce({ id: 'container123' })
+          .mockResolvedValueOnce({ id: 'member123' })
+          .mockResolvedValueOnce({ id: 'request123' })
+
+        retrieveMock.mockResolvedValue({
+          State: 'Failed',
+          ErrorMsg: 'General failure',
+        })
+
+        // Act & Assert
+        await expect(sut.update(mockApexClass)).rejects.toThrow(
+          'Deployment failed:\nGeneral failure'
+        )
+      })
+    })
+
+    describe('given the deployment fails without any error details', () => {
+      it('then should use Unknown error as fallback', async () => {
+        // Arrange
+        const mockApexClass = {
+          Id: '123',
+          Body: 'public class TestClass {}',
+        }
+
+        createMock
+          .mockResolvedValueOnce({ id: 'container123' })
+          .mockResolvedValueOnce({ id: 'member123' })
+          .mockResolvedValueOnce({ id: 'request123' })
+
+        retrieveMock.mockResolvedValue({
+          State: 'Failed',
+        })
+
+        // Act & Assert
+        await expect(sut.update(mockApexClass)).rejects.toThrow(
+          'Deployment failed:\nUnknown error'
         )
       })
     })

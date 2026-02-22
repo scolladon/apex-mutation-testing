@@ -7,6 +7,7 @@ import { SObjectDescribeRepository } from '../../../src/adapter/sObjectDescribeR
 import { MutantGenerator } from '../../../src/service/mutantGenerator.js'
 import { MutationTestingService } from '../../../src/service/mutationTestingService.js'
 import { TypeDiscoverer } from '../../../src/service/typeDiscoverer.js'
+import { ApexMutation } from '../../../src/type/ApexMutation.js'
 import { ApexMutationParameter } from '../../../src/type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult.js'
 import { MetadataComponentDependency } from '../../../src/type/MetadataComponentDependency.js'
@@ -238,6 +239,23 @@ describe('MutationTestingService', () => {
           ],
         },
         {
+          description: 'when test runner throws non-Error object',
+          testResult: null,
+          expectedStatus: 'RuntimeError',
+          error: 'plain string error',
+          updateError: null,
+          expectedSpinnerStops: 5,
+          expectedMutants: [
+            expect.objectContaining({
+              mutatorName: 'TestMutation',
+              status: 'RuntimeError',
+              statusReason: 'plain string error',
+              replacement: '0',
+              original: '42',
+            }),
+          ],
+        },
+        {
           description: 'when deployment fails with compile error',
           testResult: {
             summary: {
@@ -389,6 +407,94 @@ describe('MutationTestingService', () => {
         await expect(sut.process()).rejects.toThrow(
           "No mutations could be generated for 'TestClass'. 1 line(s) covered but no mutable patterns found."
         )
+      })
+    })
+
+    describe('When calculating mutation position with undefined indices', () => {
+      it('Then should throw an error for undefined startIndex', () => {
+        // Arrange
+        const mutation = {
+          mutationName: 'TestMutation',
+          replacement: '0',
+          target: {
+            startToken: { startIndex: undefined },
+            endToken: { stopIndex: 10 },
+            text: '42',
+          },
+        }
+
+        // Act & Assert
+        expect(() =>
+          sut['calculateMutationPosition'](
+            mutation as unknown as ApexMutation,
+            'source code'
+          )
+        ).toThrow('Failed to calculate position for mutation: TestMutation')
+      })
+
+      it('Then should throw an error for undefined stopIndex', () => {
+        // Arrange
+        const mutation = {
+          mutationName: 'TestMutation',
+          replacement: '0',
+          target: {
+            startToken: { startIndex: 0 },
+            endToken: { stopIndex: undefined },
+            text: '42',
+          },
+        }
+
+        // Act & Assert
+        expect(() =>
+          sut['calculateMutationPosition'](
+            mutation as unknown as ApexMutation,
+            'source code'
+          )
+        ).toThrow('Failed to calculate position for mutation: TestMutation')
+      })
+    })
+
+    describe('When extracting mutation original text with undefined indices', () => {
+      it('Then should throw an error for undefined startIndex', () => {
+        // Arrange
+        sut['apexClassContent'] = 'class TestClass {}'
+        const mutation = {
+          mutationName: 'TestMutation',
+          replacement: '0',
+          target: {
+            startToken: { startIndex: undefined },
+            endToken: { stopIndex: 10 },
+            text: '42',
+          },
+        }
+
+        // Act & Assert
+        expect(() =>
+          sut['extractMutationOriginalText'](
+            mutation as unknown as ApexMutation
+          )
+        ).toThrow('Failed to extract original text for mutation: TestMutation')
+      })
+
+      it('Then should throw an error for undefined stopIndex', () => {
+        // Arrange
+        sut['apexClassContent'] = 'class TestClass {}'
+        const mutation = {
+          mutationName: 'TestMutation',
+          replacement: '0',
+          target: {
+            startToken: { startIndex: 0 },
+            endToken: { stopIndex: undefined },
+            text: '42',
+          },
+        }
+
+        // Act & Assert
+        expect(() =>
+          sut['extractMutationOriginalText'](
+            mutation as unknown as ApexMutation
+          )
+        ).toThrow('Failed to extract original text for mutation: TestMutation')
       })
     })
 

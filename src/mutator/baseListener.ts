@@ -1,8 +1,9 @@
 import { ParserRuleContext, Token } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
-import { ApexParserListener, MethodDeclarationContext } from 'apex-parser'
+import { ApexParserListener } from 'apex-parser'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { TypeRegistry } from '../type/TypeRegistry.js'
+import { getEnclosingMethodName } from './astUtils.js'
 
 // @ts-ignore: Base type with just a common _mutations property
 export class BaseListener implements ApexParserListener {
@@ -16,16 +17,7 @@ export class BaseListener implements ApexParserListener {
   constructor(protected typeRegistry?: TypeRegistry) {}
 
   protected getEnclosingMethodName(ctx: ParserRuleContext): string | null {
-    let current: ParserRuleContext | undefined = ctx.parent as
-      | ParserRuleContext
-      | undefined
-    while (current) {
-      if (current instanceof MethodDeclarationContext) {
-        return current.children?.[1]?.text ?? null
-      }
-      current = current.parent as ParserRuleContext | undefined
-    }
-    return null
+    return getEnclosingMethodName(ctx)
   }
 
   protected createMutation(
