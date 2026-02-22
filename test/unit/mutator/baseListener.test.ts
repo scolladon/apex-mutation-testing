@@ -1,4 +1,5 @@
 import { ParserRuleContext } from 'antlr4ts'
+import { TerminalNode } from 'antlr4ts/tree/index.js'
 import { MethodDeclarationContext } from 'apex-parser'
 import { BaseListener } from '../../../src/mutator/baseListener.js'
 import { TypeRegistry } from '../../../src/type/TypeRegistry.js'
@@ -152,6 +153,57 @@ describe('BaseListener', () => {
       expect(listener._mutations).toHaveLength(1)
       expect(listener._mutations[0].replacement).toBe('replacement')
       expect(listener._mutations[0].target.text).toBe('original')
+    })
+  })
+
+  describe('createMutationFromParserRuleContext', () => {
+    it('Given context with missing start token, When creating mutation, Then no mutation is added', () => {
+      // Arrange
+      const listener = new TestableBaseListener()
+      const ctx = {
+        start: null,
+        stop: TestUtil.createToken(1, 5),
+        text: 'original',
+      } as unknown as ParserRuleContext
+
+      // Act
+      listener['createMutationFromParserRuleContext'](ctx, 'replacement')
+
+      // Assert
+      expect(listener._mutations).toHaveLength(0)
+    })
+
+    it('Given context with missing stop token, When creating mutation, Then no mutation is added', () => {
+      // Arrange
+      const listener = new TestableBaseListener()
+      const ctx = {
+        start: TestUtil.createToken(1, 0),
+        stop: null,
+        text: 'original',
+      } as unknown as ParserRuleContext
+
+      // Act
+      listener['createMutationFromParserRuleContext'](ctx, 'replacement')
+
+      // Assert
+      expect(listener._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('createMutationFromTerminalNode', () => {
+    it('Given terminal node with missing symbol, When creating mutation, Then no mutation is added', () => {
+      // Arrange
+      const listener = new TestableBaseListener()
+      const node = {
+        symbol: null,
+        text: 'original',
+      } as unknown as TerminalNode
+
+      // Act
+      listener['createMutationFromTerminalNode'](node, 'replacement')
+
+      // Assert
+      expect(listener._mutations).toHaveLength(0)
     })
   })
 })

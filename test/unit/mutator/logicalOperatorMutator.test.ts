@@ -86,4 +86,19 @@ describe('LogicalOperatorMutator', () => {
       })
     })
   })
+
+  describe('Given an expression where operator has no replacement mapping', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations', () => {
+        // Arrange
+        mockTerminalNode = new TerminalNode({ text: '^' } as Token)
+
+        // Act
+        sut.enterLogAndExpression(mockCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
 })

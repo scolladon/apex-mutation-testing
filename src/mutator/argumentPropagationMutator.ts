@@ -84,13 +84,11 @@ export class ArgumentPropagationMutator extends BaseListener {
     enclosingMethod: string
   ): void {
     for (const arg of args) {
-      const argType = this.typeRegistry
-        ? resolveExpressionApexType(
-            arg.text,
-            enclosingMethod,
-            this.typeRegistry
-          )
-        : null
+      const argType = resolveExpressionApexType(
+        arg.text,
+        enclosingMethod,
+        this.typeRegistry!
+      )
       if (argType === returnType) {
         this.createMutationFromParserRuleContext(ctx, arg.text)
       }

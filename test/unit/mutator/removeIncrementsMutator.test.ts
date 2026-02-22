@@ -279,4 +279,44 @@ describe('RemoveIncrementsMutator', () => {
       })
     })
   })
+
+  describe('Given a PostOpExpression with non-increment TerminalNode operator', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations', () => {
+        // Arrange
+        const operatorNode = new TerminalNode({ text: '+' } as Token)
+
+        const ctx = {
+          childCount: 2,
+          getChild: jest.fn().mockImplementation(index => {
+            return index === 0 ? { text: 'i' } : operatorNode
+          }),
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterPostOpExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a PreOpExpression with wrong childCount', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations', () => {
+        // Arrange
+        const ctx = {
+          childCount: 3,
+          getChild: () => ({}),
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterPreOpExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
 })

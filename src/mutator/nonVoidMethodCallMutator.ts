@@ -76,6 +76,7 @@ export class NonVoidMethodCallMutator extends BaseListener {
       ? (getDefaultValueForApexType(resolved.apexType) ?? 'null')
       : this.generateDefaultValue(resolved.typeName)
 
+    /* istanbul ignore next -- generateDefaultValue always returns non-null string */
     if (defaultValue !== null) {
       this.createMutationFromParserRuleContext(rhs, defaultValue)
     }
@@ -143,6 +144,7 @@ export class NonVoidMethodCallMutator extends BaseListener {
       return
     }
     const defaultValue = this.generateDefaultValue(typeName)
+    /* istanbul ignore next -- generateDefaultValue always returns non-null string */
     if (defaultValue !== null) {
       this.createMutationFromParserRuleContext(expression, defaultValue)
     }

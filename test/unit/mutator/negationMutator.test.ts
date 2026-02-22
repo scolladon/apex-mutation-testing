@@ -487,6 +487,71 @@ describe('NegationMutator', () => {
       expect(sut._mutations).toHaveLength(0)
     })
 
+    it('Given expression with 2 children where first is ParserRuleContext, When entering return statement, Then creates mutation', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+
+      const firstChild = new ParserRuleContext()
+      Object.defineProperty(firstChild, 'text', { value: 'a' })
+      const secondChild = { text: 'b' }
+
+      const expressionNode = {
+        text: 'ab',
+        start: TestUtil.createToken(1, 7),
+        stop: TestUtil.createToken(1, 9),
+        childCount: 2,
+        children: [firstChild, secondChild],
+        getChild: (i: number) => (i === 0 ? firstChild : secondChild),
+      } as unknown as ParserRuleContext
+      Object.setPrototypeOf(expressionNode, ParserRuleContext.prototype)
+
+      const returnCtx = {
+        children: [{ text: 'return' }, expressionNode],
+        childCount: 2,
+        getChild: (i: number) =>
+          i === 0 ? { text: 'return' } : expressionNode,
+      } as unknown as ParserRuleContext
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'Integer' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      Object.defineProperty(returnCtx, 'parent', {
+        value: methodCtx,
+        writable: true,
+        configurable: true,
+      })
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('-(ab)')
+    })
+
+    it('Given no type registry, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      const sut = new NegationMutator()
+      const returnCtx = createReturnCtxInMethod('x', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+
     it('Given non-ParserRuleContext expression node, When entering return statement, Then no mutation created', () => {
       // Arrange
       const typeTable = new Map<string, ApexMethod>()

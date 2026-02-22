@@ -161,4 +161,26 @@ describe('ConstructorCallMutator', () => {
       })
     })
   })
+
+  describe('Given an expression where first child is TerminalNode but not new keyword', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations', () => {
+        // Arrange
+        const notNewKeyword = new TerminalNode({ text: 'delete' } as Token)
+
+        const ctx = {
+          childCount: 2,
+          getChild: jest.fn().mockImplementation(index => {
+            return index === 0 ? notNewKeyword : { text: 'Account()' }
+          }),
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterNewExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
 })

@@ -139,4 +139,27 @@ describe('SwitchMutator', () => {
       })
     })
   })
+
+  describe('Given a WhenControl where first child is TerminalNode but not when keyword', () => {
+    describe('When entering the when control', () => {
+      it('Then should not create any mutations', () => {
+        // Arrange
+        const notWhenKeyword = new TerminalNode({ text: 'case' } as Token)
+
+        const ctx = {
+          childCount: 3,
+          getChild: jest.fn().mockImplementation(index => {
+            if (index === 0) return notWhenKeyword
+            return { text: 'something' }
+          }),
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterWhenControl(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
 })

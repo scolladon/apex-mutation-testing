@@ -140,5 +140,63 @@ describe('BoundaryConditionMutator', () => {
       // Assert
       expect(sut['_mutations']).toHaveLength(0)
     })
+
+    it('should ignore terminal node with non-operator text', () => {
+      // Arrange
+      const nonOperatorNode: TerminalNode = {
+        text: '(',
+        symbol: { text: '(' } as Token,
+      } as unknown as TerminalNode
+      Object.setPrototypeOf(nonOperatorNode, TerminalNode.prototype)
+
+      const children = [
+        { text: 'leftOperand' },
+        nonOperatorNode,
+        { text: 'rightOperand' },
+      ]
+
+      const mockCtx = {
+        childCount: 3,
+        getChild: jest
+          .fn()
+          .mockImplementation((index: number) => children[index]),
+        children,
+      } as unknown as ParserRuleContext
+
+      // Act
+      sut.enterCmpExpression(mockCtx)
+
+      // Assert
+      expect(sut['_mutations']).toHaveLength(0)
+    })
+
+    it('should skip terminal node with null symbol', () => {
+      // Arrange
+      const nullSymbolNode: TerminalNode = {
+        text: '<',
+        symbol: null,
+      } as unknown as TerminalNode
+      Object.setPrototypeOf(nullSymbolNode, TerminalNode.prototype)
+
+      const children = [
+        { text: 'leftOperand' },
+        nullSymbolNode,
+        { text: 'rightOperand' },
+      ]
+
+      const mockCtx = {
+        childCount: 3,
+        getChild: jest
+          .fn()
+          .mockImplementation((index: number) => children[index]),
+        children,
+      } as unknown as ParserRuleContext
+
+      // Act
+      sut.enterCmpExpression(mockCtx)
+
+      // Assert
+      expect(sut['_mutations']).toHaveLength(0)
+    })
   })
 })

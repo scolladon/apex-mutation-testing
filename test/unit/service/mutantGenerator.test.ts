@@ -88,6 +88,29 @@ describe('MutantGenerator', () => {
     })
   })
 
+  describe('getTokenStream', () => {
+    it('Given no compute called, When calling getTokenStream, Then returns undefined', () => {
+      // Arrange & Act
+      const result = sut.getTokenStream()
+
+      // Assert
+      expect(result).toBeUndefined()
+    })
+
+    it('Given compute called, When calling getTokenStream, Then returns token stream', () => {
+      // Arrange
+      const classContent =
+        'public class Test { public static void method() { integer i = 0; ++i; } }'
+      sut.compute(classContent, new Set([1]))
+
+      // Act
+      const result = sut.getTokenStream()
+
+      // Assert
+      expect(result).toBeDefined()
+    })
+  })
+
   describe('when mutating code', () => {
     it('should return mutated code with increment replacement applied', () => {
       // Arrange

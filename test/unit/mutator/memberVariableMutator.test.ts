@@ -215,4 +215,49 @@ describe('MemberVariableMutator', () => {
       })
     })
   })
+
+  describe('Given a variable declarators node with non-ParserRuleContext declarator', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations', () => {
+        // Arrange
+        const nonPrcDeclarator = { text: 'count = 5' }
+        const declarators = {
+          children: [nonPrcDeclarator],
+          childCount: 1,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarators, ParserRuleContext.prototype)
+        const ctx = createFieldDeclaration('Integer', declarators)
+
+        // Act
+        sut.enterFieldDeclaration(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a variable declarator with 3+ children but no assignment operator', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations', () => {
+        // Arrange
+        const declarator = {
+          children: [{ text: 'count' }, { text: ':' }, { text: 'Integer' }],
+          childCount: 3,
+          text: 'count:Integer',
+          start: TestUtil.createToken(1, 0),
+          stop: TestUtil.createToken(1, 10),
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarator, ParserRuleContext.prototype)
+        const declarators = createVariableDeclarators([declarator])
+        const ctx = createFieldDeclaration('Integer', declarators)
+
+        // Act
+        sut.enterFieldDeclaration(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
 })
