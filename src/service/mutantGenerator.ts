@@ -18,6 +18,7 @@ import { EqualityConditionMutator } from '../mutator/equalityConditionMutator.js
 import { ExperimentalSwitchMutator } from '../mutator/experimentalSwitchMutator.js'
 import { FalseReturnMutator } from '../mutator/falseReturnMutator.js'
 import { IncrementMutator } from '../mutator/incrementMutator.js'
+import { InlineConstantMutator } from '../mutator/inlineConstantMutator.js'
 import { InvertNegativesMutator } from '../mutator/invertNegativesMutator.js'
 import { LogicalOperatorMutator } from '../mutator/logicalOperatorMutator.js'
 import { MemberVariableMutator } from '../mutator/memberVariableMutator.js'
@@ -82,6 +83,7 @@ export class MutantGenerator {
     const arithmeticDeletionListener = new ArithmeticOperatorDeletionMutator(
       typeRegistry
     )
+    const inlineConstantListener = new InlineConstantMutator()
 
     const listener = new MutationListener(
       [
@@ -109,6 +111,7 @@ export class MutantGenerator {
         bitwiseListener,
         unaryOperatorInsertionListener,
         arithmeticDeletionListener,
+        inlineConstantListener,
       ],
       coveredLines
     )
