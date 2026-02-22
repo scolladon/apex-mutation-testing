@@ -20,10 +20,20 @@ class IntegerLiteralHandler implements LiteralHandler {
   }
 }
 
+class LongLiteralHandler implements LiteralHandler {
+  getReplacements(node: TerminalNode): string[] {
+    const text = node.text.replace(/[lL]$/, '')
+    const value = Number.parseInt(text, 10)
+    const candidates = [0, 1, -1, value + 1, value - 1]
+    return [...new Set(candidates)].filter(c => c !== value).map(c => `${c}L`)
+  }
+}
+
 type LiteralDetector = (ctx: LiteralContext) => TerminalNode | undefined
 
 const HANDLER_FACTORY: Map<LiteralDetector, LiteralHandler> = new Map([
   [(ctx: LiteralContext) => ctx.IntegerLiteral(), new IntegerLiteralHandler()],
+  [(ctx: LiteralContext) => ctx.LongLiteral(), new LongLiteralHandler()],
   [(ctx: LiteralContext) => ctx.BooleanLiteral(), new BooleanLiteralHandler()],
 ])
 

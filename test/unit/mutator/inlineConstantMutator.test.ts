@@ -18,7 +18,7 @@ function createLiteralCtx(
   })
   ctx.BooleanLiteral = () => (literalType === 'boolean' ? node : undefined)
   ctx.IntegerLiteral = () => (literalType === 'integer' ? node : undefined)
-  ctx.LongLiteral = () => undefined
+  ctx.LongLiteral = () => (literalType === 'long' ? node : undefined)
   ctx.NumberLiteral = () => undefined
   ctx.StringLiteral = () => undefined
   ctx.NULL = () => undefined
@@ -129,6 +129,43 @@ describe('InlineConstantMutator', () => {
         expect(replacements).toContain('0')
         expect(replacements).toContain('-1')
         expect(replacements).toContain('2')
+      })
+    })
+  })
+
+  describe('Given a long literal 42L', () => {
+    describe('When entering the literal', () => {
+      it('Then should create 5 mutations with L suffix', () => {
+        // Arrange
+        const longNode = createTerminalNode('42L')
+        const ctx = createLiteralCtx('long', longNode)
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(5)
+        const replacements = sut._mutations.map(m => m.replacement)
+        expect(replacements).toEqual(['0L', '1L', '-1L', '43L', '41L'])
+      })
+    })
+  })
+
+  describe('Given a long literal 0L', () => {
+    describe('When entering the literal', () => {
+      it('Then should not include 0L in replacements', () => {
+        // Arrange
+        const longNode = createTerminalNode('0L')
+        const ctx = createLiteralCtx('long', longNode)
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        const replacements = sut._mutations.map(m => m.replacement)
+        expect(replacements).not.toContain('0L')
+        expect(replacements).toContain('1L')
+        expect(replacements).toContain('-1L')
       })
     })
   })
