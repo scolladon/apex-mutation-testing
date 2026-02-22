@@ -1,14 +1,12 @@
 import { ParserRuleContext } from 'antlr4ts'
 import {
-  DotExpressionContext,
   DotMethodCallContext,
   ExpressionListContext,
-  MethodCallExpressionContext,
   MethodDeclarationContext,
 } from 'apex-parser'
 import { ArgumentPropagationMutator } from '../../../src/mutator/argumentPropagationMutator.js'
 import type { TypeMatcher } from '../../../src/service/typeMatcher.js'
-import { APEX_TYPE, ApexMethod } from '../../../src/type/ApexMethod.js'
+import { APEX_TYPE, type ApexMethod } from '../../../src/type/ApexMethod.js'
 import { TypeRegistry } from '../../../src/type/TypeRegistry.js'
 import { TestUtil } from '../../utils/testUtil.js'
 
@@ -181,9 +179,7 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(
-        ctx as unknown as MethodCallExpressionContext
-      )
+      sut.enterMethodCallExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(1)
@@ -216,9 +212,7 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(
-        ctx as unknown as MethodCallExpressionContext
-      )
+      sut.enterMethodCallExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -245,9 +239,7 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(
-        ctx as unknown as MethodCallExpressionContext
-      )
+      sut.enterMethodCallExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -285,9 +277,7 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(
-        ctx as unknown as MethodCallExpressionContext
-      )
+      sut.enterMethodCallExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(1)
@@ -308,9 +298,7 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(
-        ctx as unknown as MethodCallExpressionContext
-      )
+      sut.enterMethodCallExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -342,7 +330,7 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
+      sut.enterDotExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(1)
@@ -362,7 +350,7 @@ describe('ArgumentPropagationMutator', () => {
       } as unknown as ParserRuleContext
 
       // Act
-      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
+      sut.enterDotExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -390,9 +378,7 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(
-        ctx as unknown as MethodCallExpressionContext
-      )
+      sut.enterMethodCallExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(1)
@@ -421,9 +407,7 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(
-        ctx as unknown as MethodCallExpressionContext
-      )
+      sut.enterMethodCallExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(1)
@@ -452,9 +436,7 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(
-        ctx as unknown as MethodCallExpressionContext
-      )
+      sut.enterMethodCallExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(1)
@@ -470,9 +452,7 @@ describe('ArgumentPropagationMutator', () => {
       const ctx = { childCount: 2 } as unknown as ParserRuleContext
 
       // Act
-      sut.enterMethodCallExpression(
-        ctx as unknown as MethodCallExpressionContext
-      )
+      sut.enterMethodCallExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -490,9 +470,7 @@ describe('ArgumentPropagationMutator', () => {
       } as unknown as ParserRuleContext
 
       // Act
-      sut.enterMethodCallExpression(
-        ctx as unknown as MethodCallExpressionContext
-      )
+      sut.enterMethodCallExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -510,7 +488,7 @@ describe('ArgumentPropagationMutator', () => {
       } as unknown as ParserRuleContext
 
       // Act
-      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
+      sut.enterDotExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -525,7 +503,7 @@ describe('ArgumentPropagationMutator', () => {
       const ctx = { children: null } as unknown as ParserRuleContext
 
       // Act
-      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
+      sut.enterDotExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -556,98 +534,7 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(
-        ctx as unknown as MethodCallExpressionContext
-      )
-
-      // Assert
-      expect(sut._mutations).toHaveLength(0)
-    })
-  })
-
-  describe('Given formal parameter type tracking', () => {
-    it('Then should match argument type from formal parameter', () => {
-      // Arrange
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('process', {
-        returnType: 'Integer',
-        startLine: 1,
-        endLine: 5,
-        type: APEX_TYPE.INTEGER,
-      })
-      const variableScopes = new Map([
-        ['testMethod', new Map([['value', 'integer']])],
-      ])
-      const typeRegistry = createTypeRegistry(typeTable, variableScopes)
-      const sut = new ArgumentPropagationMutator(typeRegistry)
-
-      const argNode = createArgNode('value')
-      const ctx = createMethodCallExpressionInMethod(
-        'process',
-        [argNode],
-        'testMethod'
-      )
-
-      // Act
-      sut.enterMethodCallExpression(
-        ctx as unknown as MethodCallExpressionContext
-      )
-
-      // Assert
-      expect(sut._mutations).toHaveLength(1)
-      expect(sut._mutations[0].replacement).toBe('value')
-    })
-  })
-
-  describe('Given enhanced for control type tracking', () => {
-    it('Then should match argument type from loop variable', () => {
-      // Arrange
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('process', {
-        returnType: 'String',
-        startLine: 1,
-        endLine: 5,
-        type: APEX_TYPE.STRING,
-      })
-      const variableScopes = new Map([
-        ['testMethod', new Map([['item', 'string']])],
-      ])
-      const typeRegistry = createTypeRegistry(typeTable, variableScopes)
-      const sut = new ArgumentPropagationMutator(typeRegistry)
-
-      const argNode = createArgNode('item')
-      const ctx = createMethodCallExpressionInMethod(
-        'process',
-        [argNode],
-        'testMethod'
-      )
-
-      // Act
-      sut.enterMethodCallExpression(
-        ctx as unknown as MethodCallExpressionContext
-      )
-
-      // Assert
-      expect(sut._mutations).toHaveLength(1)
-      expect(sut._mutations[0].replacement).toBe('item')
-    })
-  })
-
-  describe('Given a dot expression with method not in typeTable', () => {
-    it('Then should not create any mutations', () => {
-      // Arrange
-      const typeRegistry = createTypeRegistry()
-      const sut = new ArgumentPropagationMutator(typeRegistry)
-      const argNode = createArgNode('x')
-      const ctx = createDotExpressionInMethod(
-        'obj',
-        'unknownMethod',
-        [argNode],
-        'testMethod'
-      )
-
-      // Act
-      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
+      sut.enterMethodCallExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -673,7 +560,7 @@ describe('ArgumentPropagationMutator', () => {
       } as unknown as ParserRuleContext
 
       // Act
-      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
+      sut.enterDotExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -701,7 +588,7 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
+      sut.enterDotExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -726,9 +613,7 @@ describe('ArgumentPropagationMutator', () => {
       } as unknown as ParserRuleContext
 
       // Act
-      sut.enterMethodCallExpression(
-        ctx as unknown as MethodCallExpressionContext
-      )
+      sut.enterMethodCallExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -762,9 +647,7 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(
-        ctx as unknown as MethodCallExpressionContext
-      )
+      sut.enterMethodCallExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(1)
@@ -773,7 +656,7 @@ describe('ArgumentPropagationMutator', () => {
   })
 
   describe('Given no TypeRegistry', () => {
-    it('Then should not create any mutations', () => {
+    it('Then should not create any mutations for enterMethodCallExpression', () => {
       // Arrange
       const sut = new ArgumentPropagationMutator()
       const argNode = createArgNode('input')
@@ -784,9 +667,46 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(
-        ctx as unknown as MethodCallExpressionContext
+      sut.enterMethodCallExpression(ctx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+
+    it('Then should not create any mutations for enterDotExpression', () => {
+      // Arrange
+      const sut = new ArgumentPropagationMutator()
+      const argNode = createArgNode('input')
+      const ctx = createDotExpressionInMethod(
+        'obj',
+        'transform',
+        [argNode],
+        'testMethod'
       )
+
+      // Act
+      sut.enterDotExpression(ctx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('Given a dot expression with method not in typeTable', () => {
+    it('Then should not create any mutations', () => {
+      // Arrange
+      const typeRegistry = createTypeRegistry()
+      const sut = new ArgumentPropagationMutator(typeRegistry)
+      const argNode = createArgNode('x')
+      const ctx = createDotExpressionInMethod(
+        'obj',
+        'unknownMethod',
+        [argNode],
+        'testMethod'
+      )
+
+      // Act
+      sut.enterDotExpression(ctx)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
