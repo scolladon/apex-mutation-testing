@@ -30,7 +30,7 @@ sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg>
 │  │  mutationListener.ts │  │  typeMatcher.ts            │ │
 │  │  baseListener.ts     │  │  TypeRegistry.ts           │ │
 │  │  astUtils.ts         │  │  ApexMethod.ts             │ │
-│  │  [24 mutators]       │  │                            │ │
+│  │  [25 mutators]       │  │                            │ │
 │  └─────────────────────┘  └────────────────────────────┘ │
 ├──────────────────────────────────────────────────────────┤
 │                   Infrastructure Layer                    │
@@ -82,7 +82,7 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 ├─ 6. GENERATE MUTATIONS
 │     MutantGenerator.compute(Body, coveredLines, typeRegistry)
 │       → ANTLR parse #2 → AST
-│       → ParseTreeWalker fires enter*/exit* on 24 mutators
+│       → ParseTreeWalker fires enter*/exit* on 25 mutators
 │         (filtered by coveredLines via Proxy)
 │       → ApexMutation[] (with token ranges)
 │
@@ -123,7 +123,7 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 
 ### Proxy-Based Listener Aggregation
 
-The central architectural pattern. `MutationListener` uses a JavaScript `Proxy` to dynamically dispatch ANTLR parse tree callbacks to all 24 registered mutators without explicit delegation.
+The central architectural pattern. `MutationListener` uses a JavaScript `Proxy` to dynamically dispatch ANTLR parse tree callbacks to all 25 registered mutators without explicit delegation.
 
 ```
                         ┌──────────────────────┐
@@ -326,7 +326,7 @@ Source Code ─── Parse #1 (TypeDiscoverer) ──► TypeRegistry
 
 ## Mutation Operators
 
-### 24 Mutation Operators by Category
+### 25 Mutation Operators by Category
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -365,6 +365,12 @@ Source Code ─── Parse #1 (TypeDiscoverer) ──► TypeRegistry
 │  NonVoidMethodCallMutator    x = foo() → x = <default_for_type> │
 │  ArgumentPropagationMutator  foo(a, b) → a  (if types match)    │
 │  NakedReceiverMutator        obj.method() → obj (if types match)│
+├──────────────────────────────────────────────────────────────────┤
+│                  CONSTANT MUTATION (PIT CRCR)                    │
+│                                                                  │
+│  InlineConstantMutator       42 → 0,1,-1,43,41                  │
+│                              'hello' → ''                        │
+│                              true ↔ false                        │
 ├──────────────────────────────────────────────────────────────────┤
 │                     OTHER                                        │
 │                                                                  │
