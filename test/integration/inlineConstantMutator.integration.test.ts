@@ -10,6 +10,8 @@ import {
 import { InlineConstantMutator } from '../../src/mutator/inlineConstantMutator.js'
 import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { MutantGenerator } from '../../src/service/mutantGenerator.js'
+import { APEX_TYPE } from '../../src/type/ApexMethod.js'
+import { TypeRegistry } from '../../src/type/TypeRegistry.js'
 
 describe('InlineConstantMutator Integration', () => {
   let mutantGenerator: MutantGenerator
@@ -184,6 +186,65 @@ describe('InlineConstantMutator Integration', () => {
       // Assert
       // 5 for integer (CRCR of 10) + 1 for string + 1 for boolean = 7
       expect(mutations.length).toBe(7)
+    })
+  })
+
+  describe('when mutating null literal in return statement with TypeRegistry', () => {
+    it('should replace null with type-appropriate default and produce valid mutated source', () => {
+      // Arrange
+      const classContent = `
+          public class TestClass {
+            public static Integer getVal() {
+              return null;
+            }
+          }
+        `
+      const coveredLines = new Set([4])
+      const lexer = new ApexLexer(
+        new CaseInsensitiveInputStream('other', classContent)
+      )
+      const tokens = new CommonTokenStream(lexer)
+      mutantGenerator['tokenStream'] = tokens
+      const typeRegistry = new TypeRegistry(
+        new Map([
+          [
+            'getVal',
+            {
+              returnType: 'Integer',
+              startLine: 3,
+              endLine: 5,
+              type: APEX_TYPE.INTEGER,
+            },
+          ],
+        ]),
+        new Map(),
+        new Map(),
+        []
+      )
+      const inlineConstantMutator = new InlineConstantMutator(typeRegistry)
+      const parser = new ApexParser(tokens)
+      const tree = parser.compilationUnit()
+      const listener = new MutationListener(
+        [inlineConstantMutator],
+        coveredLines
+      )
+      ParseTreeWalker.DEFAULT.walk(
+        listener as ApexParserListener,
+        tree as ParserRuleContext
+      )
+
+      // Act
+      const mutations = listener.getMutations()
+
+      // Assert
+      const nullMutations = mutations.filter(
+        m => m.mutationName === 'InlineConstantMutator'
+      )
+      expect(nullMutations).toHaveLength(1)
+      expect(nullMutations[0].replacement).toBe('0')
+      const result = mutantGenerator.mutate(nullMutations[0])
+      expect(result).toContain('return 0;')
+      expect(result).not.toContain('return null;')
     })
   })
 
