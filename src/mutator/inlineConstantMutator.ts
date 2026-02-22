@@ -12,9 +12,18 @@ class BooleanLiteralHandler implements LiteralHandler {
   }
 }
 
+class IntegerLiteralHandler implements LiteralHandler {
+  getReplacements(node: TerminalNode): string[] {
+    const value = Number.parseInt(node.text, 10)
+    const candidates = [0, 1, -1, value + 1, value - 1]
+    return [...new Set(candidates)].filter(c => c !== value).map(String)
+  }
+}
+
 type LiteralDetector = (ctx: LiteralContext) => TerminalNode | undefined
 
 const HANDLER_FACTORY: Map<LiteralDetector, LiteralHandler> = new Map([
+  [(ctx: LiteralContext) => ctx.IntegerLiteral(), new IntegerLiteralHandler()],
   [(ctx: LiteralContext) => ctx.BooleanLiteral(), new BooleanLiteralHandler()],
 ])
 
