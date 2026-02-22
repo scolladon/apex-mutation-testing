@@ -371,6 +371,7 @@ Source Code ─── Parse #1 (TypeDiscoverer) ──► TypeRegistry
 │  InlineConstantMutator       42 → 0,1,-1,43,41                  │
 │                              'hello' → ''                        │
 │                              true ↔ false                        │
+│                              null → type-appropriate default     │
 ├──────────────────────────────────────────────────────────────────┤
 │                     OTHER                                        │
 │                                                                  │
@@ -394,6 +395,7 @@ Source Code ─── Parse #1 (TypeDiscoverer) ──► TypeRegistry
 | NakedReceiverMutator | Yes | Must match receiver type to return type |
 | ArithmeticOperatorMutator | Yes | Must skip string concatenation (`+`) |
 | ArithmeticOperatorDeletionMutator | Yes | Must skip string concatenation (`+`) |
+| InlineConstantMutator | Yes | Null literal replacement depends on declared/return type |
 
 ---
 
