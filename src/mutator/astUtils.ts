@@ -9,7 +9,7 @@ import { APEX_TYPE } from '../type/ApexMethod.js'
 import type { ResolvedType, TypeRegistry } from '../type/TypeRegistry.js'
 
 export interface DotMethodCallInfo {
-  dotMethodCall: ParserRuleContext
+  dotMethodCall: DotMethodCallContext
   methodName: string
   enclosingMethod: string
   returnType: ResolvedType
@@ -60,7 +60,7 @@ export function resolveDotMethodCall(
   }
 
   return {
-    dotMethodCall: lastChild as ParserRuleContext,
+    dotMethodCall: lastChild,
     methodName,
     enclosingMethod,
     returnType,
