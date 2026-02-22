@@ -1,7 +1,9 @@
 import { ParserRuleContext } from 'antlr4ts'
 import {
+  DotExpressionContext,
   DotMethodCallContext,
   ExpressionListContext,
+  MethodCallExpressionContext,
   MethodDeclarationContext,
 } from 'apex-parser'
 import { ArgumentPropagationMutator } from '../../../src/mutator/argumentPropagationMutator.js'
@@ -179,7 +181,9 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(ctx)
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
 
       // Assert
       expect(sut._mutations).toHaveLength(1)
@@ -212,7 +216,9 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(ctx)
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -239,7 +245,9 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(ctx)
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -277,7 +285,9 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(ctx)
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
 
       // Assert
       expect(sut._mutations).toHaveLength(1)
@@ -298,7 +308,9 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(ctx)
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -330,7 +342,7 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(1)
@@ -350,7 +362,7 @@ describe('ArgumentPropagationMutator', () => {
       } as unknown as ParserRuleContext
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -378,7 +390,9 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(ctx)
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
 
       // Assert
       expect(sut._mutations).toHaveLength(1)
@@ -407,7 +421,9 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(ctx)
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
 
       // Assert
       expect(sut._mutations).toHaveLength(1)
@@ -436,7 +452,9 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(ctx)
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
 
       // Assert
       expect(sut._mutations).toHaveLength(1)
@@ -452,7 +470,9 @@ describe('ArgumentPropagationMutator', () => {
       const ctx = { childCount: 2 } as unknown as ParserRuleContext
 
       // Act
-      sut.enterMethodCallExpression(ctx)
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -470,7 +490,9 @@ describe('ArgumentPropagationMutator', () => {
       } as unknown as ParserRuleContext
 
       // Act
-      sut.enterMethodCallExpression(ctx)
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -488,7 +510,7 @@ describe('ArgumentPropagationMutator', () => {
       } as unknown as ParserRuleContext
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -503,7 +525,7 @@ describe('ArgumentPropagationMutator', () => {
       const ctx = { children: null } as unknown as ParserRuleContext
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -534,7 +556,9 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(ctx)
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -560,7 +584,7 @@ describe('ArgumentPropagationMutator', () => {
       } as unknown as ParserRuleContext
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -588,7 +612,7 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -613,7 +637,9 @@ describe('ArgumentPropagationMutator', () => {
       } as unknown as ParserRuleContext
 
       // Act
-      sut.enterMethodCallExpression(ctx)
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -647,7 +673,9 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(ctx)
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
 
       // Assert
       expect(sut._mutations).toHaveLength(1)
@@ -667,7 +695,9 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterMethodCallExpression(ctx)
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -685,7 +715,7 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
@@ -706,7 +736,7 @@ describe('ArgumentPropagationMutator', () => {
       )
 
       // Act
-      sut.enterDotExpression(ctx)
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
 
       // Assert
       expect(sut._mutations).toHaveLength(0)

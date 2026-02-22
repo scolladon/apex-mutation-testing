@@ -1,4 +1,5 @@
 import { ParserRuleContext } from 'antlr4ts'
+import { DotExpressionContext, MethodCallExpressionContext } from 'apex-parser'
 import type { ApexType } from '../type/ApexMethod.js'
 import { TypeRegistry } from '../type/TypeRegistry.js'
 import {
@@ -13,7 +14,7 @@ export class ArgumentPropagationMutator extends BaseListener {
     super(typeRegistry)
   }
 
-  enterMethodCallExpression(ctx: ParserRuleContext): void {
+  enterMethodCallExpression(ctx: MethodCallExpressionContext): void {
     if (ctx.childCount !== 1) {
       return
     }
@@ -53,7 +54,7 @@ export class ArgumentPropagationMutator extends BaseListener {
     )
   }
 
-  enterDotExpression(ctx: ParserRuleContext): void {
+  enterDotExpression(ctx: DotExpressionContext): void {
     if (!this.typeRegistry) {
       return
     }
