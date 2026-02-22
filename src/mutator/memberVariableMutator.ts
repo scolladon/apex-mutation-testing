@@ -3,7 +3,7 @@ import { BaseListener } from './baseListener.js'
 
 export class MemberVariableMutator extends BaseListener {
   enterFieldDeclaration(ctx: ParserRuleContext): void {
-    if (!ctx.children || !this._coveredLines?.has(ctx.start.line)) {
+    if (!ctx.children) {
       return
     }
 

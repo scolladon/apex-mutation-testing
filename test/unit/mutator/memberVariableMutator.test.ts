@@ -47,7 +47,6 @@ describe('MemberVariableMutator', () => {
 
   beforeEach(() => {
     sut = new MemberVariableMutator()
-    sut.setCoveredLines(new Set([1]))
   })
 
   describe('Given a field declaration with initializer (Integer count = 5)', () => {
@@ -129,27 +128,6 @@ describe('MemberVariableMutator', () => {
         const ctx = {
           children: null,
           start: TestUtil.createToken(1, 0),
-        } as unknown as ParserRuleContext
-
-        // Act
-        sut.enterFieldDeclaration(ctx)
-
-        // Assert
-        expect(sut._mutations).toHaveLength(0)
-      })
-    })
-  })
-
-  describe('Given a field declaration on uncovered line', () => {
-    describe('When entering the expression', () => {
-      it('Then should not create any mutations', () => {
-        // Arrange
-        const declarator = createVariableDeclarator('count', true, '5')
-        const declarators = createVariableDeclarators([declarator])
-        const ctx = {
-          children: [{ text: 'Integer' }, declarators, { text: ';' }],
-          childCount: 3,
-          start: TestUtil.createToken(99, 0),
         } as unknown as ParserRuleContext
 
         // Act
