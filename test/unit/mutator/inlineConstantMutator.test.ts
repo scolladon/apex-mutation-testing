@@ -159,6 +159,24 @@ describe('InlineConstantMutator', () => {
     })
   })
 
+  describe('Given a long literal 42l with lowercase suffix', () => {
+    describe('When entering the literal', () => {
+      it('Then should create 5 mutations with L suffix', () => {
+        // Arrange
+        const longNode = createTerminalNode('42l')
+        const ctx = createLiteralCtx('long', longNode)
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(5)
+        const replacements = sut._mutations.map(m => m.replacement)
+        expect(replacements).toEqual(['0L', '1L', '-1L', '43L', '41L'])
+      })
+    })
+  })
+
   describe('Given a long literal 0L', () => {
     describe('When entering the literal', () => {
       it('Then should not include 0L in replacements', () => {

@@ -312,7 +312,7 @@ Source Code ─── Parse #1 (TypeDiscoverer) ──► TypeRegistry
             └── Parse #2 (MutantGenerator) ──► AST + TokenStream
                      │
                      ├─ ParseTreeWalker.walk(MutationListener, tree)
-                     │    └─ Proxy dispatches to 24 mutators
+                     │    └─ Proxy dispatches to 25 mutators
                      │       └─ each pushes to shared _mutations[]
                      │
                      └─ TokenStreamRewriter (reused for all mutations)
@@ -369,6 +369,8 @@ Source Code ─── Parse #1 (TypeDiscoverer) ──► TypeRegistry
 │                  CONSTANT MUTATION (PIT CRCR)                    │
 │                                                                  │
 │  InlineConstantMutator       42 → 0,1,-1,43,41                  │
+│                              42L → 0L,1L,-1L,43L,41L            │
+│                              3.14 → 0.0,1.0,-1.0,4.14,2.14     │
 │                              'hello' → ''                        │
 │                              true ↔ false                        │
 │                              null → type-appropriate default     │
@@ -568,3 +570,50 @@ ApexMutationTestResult
 5. The Proxy-based `MutationListener` automatically dispatches to the new mutator — no changes needed in the aggregation layer
 
 For type-aware mutators, accept `TypeRegistry` in the constructor and use `typeRegistry.resolveType()` to make type-informed decisions.
+
+---
+
+## InlineConstantMutator — Handler Strategy
+
+`InlineConstantMutator` uses a **Handler Strategy pattern** to dispatch literal mutations. A `Map<LiteralDetector, LiteralHandler>` pairs ANTLR terminal node detectors with type-specific handlers:
+
+```
+enterLiteral(ctx)
+    │
+    ├─ ctx.IntegerLiteral()? ──► IntegerLiteralHandler   [0, 1, -1, v+1, v-1]
+    ├─ ctx.LongLiteral()?    ──► LongLiteralHandler      [0L, 1L, -1L, v+1L, v-1L]
+    ├─ ctx.NumberLiteral()?   ──► NumberLiteralHandler    [0.0, 1.0, -1.0, v+1.0, v-1.0]
+    ├─ ctx.StringLiteral()?   ──► StringLiteralHandler    '' (skip if already empty)
+    ├─ ctx.BooleanLiteral()?  ──► BooleanLiteralHandler   true ↔ false
+    └─ ctx.NULL()?            ──► NullLiteralHandler      type-appropriate default
+```
+
+**CRCR strategy** (Constant Replacement with Constant Replacement — PIT nomenclature): For numeric types, candidates `[0, 1, -1, value+1, value-1]` are deduplicated via `Set` and filtered to exclude the original value. This ensures boundary-sensitive mutations without generating identity replacements.
+
+### Null Literal Resolution
+
+`NullLiteralHandler` walks up the AST to determine what type the `null` literal inhabits:
+
+```
+null literal
+    │
+    ├─ in ReturnStatement? ──► resolve enclosing method return type via TypeRegistry
+    │
+    └─ in LocalVariableDeclaration / FieldDeclaration?
+       └─ ctx.typeRef().text ──► classifyApexType() ──► getDefaultValueForApexType()
+```
+
+`typeRef()` is used instead of `children[0]` to handle modifiers like `final` that shift child indices.
+
+### Expression Type Classification (`astUtils.resolveExpressionApexType`)
+
+Numeric literal classification follows Apex language rules:
+
+```
+text starts with digit?
+    ├─ ends with L/l?      ──► LONG
+    ├─ contains '.'?       ──► DOUBLE
+    └─ otherwise           ──► INTEGER
+```
+
+This enables `ArgumentPropagationMutator` to correctly match numeric arguments to method parameter types.

@@ -64,6 +64,138 @@ describe('InlineConstantMutator Integration', () => {
     })
   })
 
+  describe('when mutating long literals', () => {
+    it('should create CRCR mutations with L suffix and produce valid mutated source', () => {
+      // Arrange
+      const classContent = `
+          public class TestClass {
+            public static Long getBigNumber() {
+              return 42L;
+            }
+          }
+        `
+      const coveredLines = new Set([4])
+      const lexer = new ApexLexer(
+        new CaseInsensitiveInputStream('other', classContent)
+      )
+      const tokens = new CommonTokenStream(lexer)
+      mutantGenerator['tokenStream'] = tokens
+      const inlineConstantMutator = new InlineConstantMutator()
+      const parser = new ApexParser(tokens)
+      const tree = parser.compilationUnit()
+      const listener = new MutationListener(
+        [inlineConstantMutator],
+        coveredLines
+      )
+      ParseTreeWalker.DEFAULT.walk(
+        listener as ApexParserListener,
+        tree as ParserRuleContext
+      )
+
+      // Act
+      const mutations = listener.getMutations()
+
+      // Assert
+      const longMutations = mutations.filter(
+        m => m.mutationName === 'InlineConstantMutator'
+      )
+      expect(longMutations).toHaveLength(5)
+      const zeroMutation = longMutations.find(m => m.replacement === '0L')
+      expect(zeroMutation).toBeDefined()
+      const result = mutantGenerator.mutate(zeroMutation!)
+      expect(result).toContain('return 0L;')
+      expect(result).not.toContain('return 42L;')
+    })
+  })
+
+  describe('when mutating number literals', () => {
+    it('should create CRCR mutations with decimal and produce valid mutated source', () => {
+      // Arrange
+      const classContent = `
+          public class TestClass {
+            public static Double getPi() {
+              return 3.14;
+            }
+          }
+        `
+      const coveredLines = new Set([4])
+      const lexer = new ApexLexer(
+        new CaseInsensitiveInputStream('other', classContent)
+      )
+      const tokens = new CommonTokenStream(lexer)
+      mutantGenerator['tokenStream'] = tokens
+      const inlineConstantMutator = new InlineConstantMutator()
+      const parser = new ApexParser(tokens)
+      const tree = parser.compilationUnit()
+      const listener = new MutationListener(
+        [inlineConstantMutator],
+        coveredLines
+      )
+      ParseTreeWalker.DEFAULT.walk(
+        listener as ApexParserListener,
+        tree as ParserRuleContext
+      )
+
+      // Act
+      const mutations = listener.getMutations()
+
+      // Assert
+      const numMutations = mutations.filter(
+        m => m.mutationName === 'InlineConstantMutator'
+      )
+      expect(numMutations).toHaveLength(5)
+      const zeroMutation = numMutations.find(m => m.replacement === '0.0')
+      expect(zeroMutation).toBeDefined()
+      const result = mutantGenerator.mutate(zeroMutation!)
+      expect(result).toContain('return 0.0;')
+      expect(result).not.toContain('return 3.14;')
+    })
+  })
+
+  describe('when mutating null literal in local variable declaration', () => {
+    it('should replace null with type-appropriate default', () => {
+      // Arrange
+      const classContent = `
+          public class TestClass {
+            public static void doWork() {
+              Integer x = null;
+            }
+          }
+        `
+      const coveredLines = new Set([4])
+      const lexer = new ApexLexer(
+        new CaseInsensitiveInputStream('other', classContent)
+      )
+      const tokens = new CommonTokenStream(lexer)
+      mutantGenerator['tokenStream'] = tokens
+      const typeRegistry = new TypeRegistry(new Map(), new Map(), new Map(), [])
+      const inlineConstantMutator = new InlineConstantMutator(typeRegistry)
+      const parser = new ApexParser(tokens)
+      const tree = parser.compilationUnit()
+      const listener = new MutationListener(
+        [inlineConstantMutator],
+        coveredLines
+      )
+      ParseTreeWalker.DEFAULT.walk(
+        listener as ApexParserListener,
+        tree as ParserRuleContext
+      )
+
+      // Act
+      const mutations = listener.getMutations()
+
+      // Assert
+      const nullMutations = mutations.filter(
+        m => m.mutationName === 'InlineConstantMutator'
+      )
+      expect(nullMutations).toHaveLength(1)
+      expect(nullMutations[0].replacement).toBe('0')
+      const result = mutantGenerator.mutate(nullMutations[0])
+      expect(result).toContain('Integer x = 0;')
+      expect(result).not.toContain('Integer x = null;')
+    })
+  })
+
   describe('when mutating string literals', () => {
     it('should replace non-empty string with empty and produce valid mutated source', () => {
       // Arrange
