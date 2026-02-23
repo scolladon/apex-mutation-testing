@@ -92,7 +92,11 @@ export function resolveExpressionApexType(
   enclosingMethod: string,
   typeRegistry: TypeRegistry
 ): ApexType | null {
-  if (/^\d/.test(text)) return APEX_TYPE.INTEGER
+  if (/^\d/.test(text)) {
+    if (/L$/i.test(text)) return APEX_TYPE.LONG
+    if (text.includes('.')) return APEX_TYPE.DOUBLE
+    return APEX_TYPE.INTEGER
+  }
   if (text.startsWith("'")) return APEX_TYPE.STRING
   const lower = text.toLowerCase()
   if (lower === 'true' || lower === 'false') return APEX_TYPE.BOOLEAN
