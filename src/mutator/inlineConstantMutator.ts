@@ -99,8 +99,10 @@ class NullLiteralHandler implements LiteralHandler {
     return getDefaultValueForApexType(typeInfo.apexType, typeInfo.typeName)
   }
 
-  private resolveFromDeclaration(ctx: ParserRuleContext): string | null {
-    const typeName = ctx.children?.[0]?.text
+  private resolveFromDeclaration(
+    ctx: LocalVariableDeclarationContext | FieldDeclarationContext
+  ): string | null {
+    const typeName = ctx.typeRef()?.text
     if (!typeName) {
       return null
     }

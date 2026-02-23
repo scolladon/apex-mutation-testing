@@ -446,12 +446,53 @@ describe('InlineConstantMutator', () => {
         const localVarCtx = Object.create(
           LocalVariableDeclarationContext.prototype
         )
-        localVarCtx.children = [
-          { text: 'Integer' },
-          { text: 'x' },
-          { text: '=' },
-          { text: 'null' },
-        ]
+        localVarCtx.typeRef = () => ({ text: 'Integer' })
+        const varDeclaratorsCtx = Object.create(ParserRuleContext.prototype)
+        const varDeclaratorCtx = Object.create(ParserRuleContext.prototype)
+        const exprCtx = Object.create(ParserRuleContext.prototype)
+        Object.defineProperty(ctx, 'parent', {
+          value: exprCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(exprCtx, 'parent', {
+          value: varDeclaratorCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(varDeclaratorCtx, 'parent', {
+          value: varDeclaratorsCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(varDeclaratorsCtx, 'parent', {
+          value: localVarCtx,
+          writable: true,
+          configurable: true,
+        })
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('0')
+      })
+    })
+  })
+
+  describe('Given a null literal in final local variable declaration', () => {
+    describe('When entering the literal with TypeRegistry', () => {
+      it('Then should create mutation replacing null with type default', () => {
+        // Arrange
+        const typeRegistry = TestUtil.createTypeRegistry()
+        sut = new InlineConstantMutator(typeRegistry)
+        const nullNode = createTerminalNode('null')
+        const ctx = createLiteralCtx('null', nullNode)
+        const localVarCtx = Object.create(
+          LocalVariableDeclarationContext.prototype
+        )
+        localVarCtx.typeRef = () => ({ text: 'Integer' })
         const varDeclaratorsCtx = Object.create(ParserRuleContext.prototype)
         const varDeclaratorCtx = Object.create(ParserRuleContext.prototype)
         const exprCtx = Object.create(ParserRuleContext.prototype)
@@ -549,12 +590,7 @@ describe('InlineConstantMutator', () => {
         const nullNode = createTerminalNode('null')
         const ctx = createLiteralCtx('null', nullNode)
         const fieldDeclCtx = Object.create(FieldDeclarationContext.prototype)
-        fieldDeclCtx.children = [
-          { text: 'String' },
-          { text: 'name' },
-          { text: '=' },
-          { text: 'null' },
-        ]
+        fieldDeclCtx.typeRef = () => ({ text: 'String' })
         const varDeclaratorsCtx = Object.create(ParserRuleContext.prototype)
         const varDeclaratorCtx = Object.create(ParserRuleContext.prototype)
         const exprCtx = Object.create(ParserRuleContext.prototype)
@@ -685,7 +721,7 @@ describe('InlineConstantMutator', () => {
     })
   })
 
-  describe('Given a null literal in declaration without children', () => {
+  describe('Given a null literal in declaration without typeRef', () => {
     describe('When entering the literal with TypeRegistry', () => {
       it('Then should create no mutations', () => {
         // Arrange
@@ -696,6 +732,7 @@ describe('InlineConstantMutator', () => {
         const localVarCtx = Object.create(
           LocalVariableDeclarationContext.prototype
         )
+        localVarCtx.typeRef = () => undefined
         const exprCtx = Object.create(ParserRuleContext.prototype)
         Object.defineProperty(ctx, 'parent', {
           value: exprCtx,
