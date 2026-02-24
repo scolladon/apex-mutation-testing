@@ -561,6 +561,45 @@ ApexMutationTestResult
 
 ---
 
+## Testing Strategy
+
+Four test tiers with distinct scopes and runners:
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  E2E Tests (shell scripts, real org, post-publish)         │
+│  npm run test:e2e                                          │
+│  setup → execute command → git diff snapshot → teardown    │
+├────────────────────────────────────────────────────────────┤
+│  NUT Tests (Jest + experimental ESM, mocked Connection)    │
+│  jest --config jest.config.nut.js                          │
+│  SfCommand.run() with mocked org, validators, services     │
+├────────────────────────────────────────────────────────────┤
+│  Integration Tests (Jest, real ANTLR parsing)              │
+│  test/integration/*.integration.test.ts                    │
+│  Source → parse → mutate → verify mutations                │
+├────────────────────────────────────────────────────────────┤
+│  Unit Tests (Jest, 100% coverage threshold)                │
+│  test/unit/**/*.test.ts                                    │
+│  Isolated class/function tests with mocked dependencies    │
+└────────────────────────────────────────────────────────────┘
+```
+
+| Tier | Runner | Config | Org Required | Speed | Scope |
+|---|---|---|---|---|---|
+| Unit | Jest | `jest.config.js` | No | ~8s | Class-level isolation |
+| Integration | Jest | `jest.config.js` | No | Included in unit run | ANTLR parse + mutate |
+| NUT | Jest (ESM) | `jest.config.nut.js` | No (mocked) | ~1.5s | Command-level with mocked org |
+| E2E | npm scripts | N/A | Yes | Minutes | Full plugin command against real org |
+
+**NUT tests** use `--experimental-vm-modules` for native ESM support, enabling `jest.unstable_mockModule()` with dynamic imports to mock `@salesforce/core` and `@salesforce/sf-plugins-core` at the module level.
+
+**E2E tests** run the published plugin command via `sf apex mutation test run`, validate output via `git diff --quiet` against a committed snapshot, and always execute teardown (class redeployment) even on failure.
+
+**Test fixtures** (`test/classes/Mutation.cls` and `MutationTest.cls`) are shared across NUT and E2E tiers. `Mutation.cls` contains constructs triggering all 25 mutators. `MutationTest.cls` provides 100% line coverage.
+
+---
+
 ## Adding a New Mutator
 
 1. Create a class extending `BaseListener` in `src/mutator/`
