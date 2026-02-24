@@ -26,6 +26,10 @@ Path to the directory where mutation test reports will be generated
 
   <%= config.bin %> <%= command.id %> --apex-class MyClass --test-class MyClassTest
 
+- Preview mutations without running them:
+
+  <%= config.bin %> <%= command.id %> --apex-class MyClass --test-class MyClassTest --dry-run
+
 # info.reportGenerated
 
 Report has been generated at this location: %s
@@ -55,3 +59,15 @@ No test coverage found for '%s'. Ensure '%s' tests exercise the code you want to
 # error.noMutations
 
 No mutations could be generated for '%s'. %s line(s) covered but no mutable patterns found.
+
+# flags.dry-run.summary
+
+Preview mutations without deploying or running tests
+
+# info.dryRunSummary
+
+%s: %s
+
+# info.dryRunTotal
+
+Total: %s mutations across %s lines
