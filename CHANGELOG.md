@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.4.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.3.0...v1.4.0) (2026-02-24)
+
+
+### Features
+
+* add Argument Propagation Mutator ([#93](https://github.com/scolladon/apex-mutation-testing/issues/93)) ([5a4b596](https://github.com/scolladon/apex-mutation-testing/commit/5a4b596ec598a01594eb87f230870f4848b6453a))
+* add Arithmetic Operator Deletion Mutator ([#94](https://github.com/scolladon/apex-mutation-testing/issues/94)) ([18f082c](https://github.com/scolladon/apex-mutation-testing/commit/18f082ca7f75517b5da7eee881e0ef2260e15d8c))
+* add Bitwise Operator Mutator ([#85](https://github.com/scolladon/apex-mutation-testing/issues/85)) ([4537673](https://github.com/scolladon/apex-mutation-testing/commit/453767342da6686b9dc09bd729f0323a5c48e932))
+* add Inline Constant Mutator ([#74](https://github.com/scolladon/apex-mutation-testing/issues/74)) ([#96](https://github.com/scolladon/apex-mutation-testing/issues/96)) ([211a1e5](https://github.com/scolladon/apex-mutation-testing/commit/211a1e5b4b137858e323495a31c3c103f0ec3d01))
+* add Member Variable Mutator ([#88](https://github.com/scolladon/apex-mutation-testing/issues/88)) ([0dee688](https://github.com/scolladon/apex-mutation-testing/commit/0dee68823f7618acf3ff6869538f927bbae1c3d8))
+* add Naked Receiver Mutator ([#90](https://github.com/scolladon/apex-mutation-testing/issues/90)) ([8d14f3c](https://github.com/scolladon/apex-mutation-testing/commit/8d14f3c283e10b3c57a5e371b4b48068c90e0cd6))
+* add NonVoidMethodCallMutator with type aware defaults + refactor ([#91](https://github.com/scolladon/apex-mutation-testing/issues/91)) ([d3f6415](https://github.com/scolladon/apex-mutation-testing/commit/d3f6415029a1d91b458fbebc8b8aa0cb4c783870))
+* add Unary Operator Insertion Mutator ([#87](https://github.com/scolladon/apex-mutation-testing/issues/87)) ([e1fa182](https://github.com/scolladon/apex-mutation-testing/commit/e1fa182cd656dc76055818c7ab3a09b3da50b7b4))
+
 ## [1.3.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.2.0...v1.3.0) (2026-02-14)
 
 
