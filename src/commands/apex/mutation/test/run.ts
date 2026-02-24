@@ -111,12 +111,13 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
   }
 
   private displayDryRunResults(mutants: DryRunMutant[]): void {
-    this.table({
-      data: mutants.map(m => ({ ...m })),
-      columns: ['line', 'mutatorName', 'original', 'replacement'],
-      title: 'Dry Run: Mutation Preview',
-      overflow: 'wrap',
-    })
+    this.styledHeader('Dry Run: Mutation Preview')
+    for (const mutant of mutants) {
+      this.log(
+        `  Line ${String(mutant.line).padStart(4)}  ${mutant.mutatorName.padEnd(35)} ${mutant.original.padEnd(20)} → ${mutant.replacement}`
+      )
+    }
+    this.log()
 
     const dryRunReporter = new DryRunReporter()
     const countByMutator = dryRunReporter.countByMutator(mutants)

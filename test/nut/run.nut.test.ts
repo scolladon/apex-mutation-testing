@@ -40,6 +40,7 @@ jest.unstable_mockModule('@salesforce/sf-plugins-core', () => {
     info = jest.fn()
     parse = jest.fn()
     table = jest.fn()
+    styledHeader = jest.fn()
   }
 
   return {
@@ -155,7 +156,7 @@ describe('apex mutation test run NUT', () => {
     } as never)
     jest.spyOn(cmd, 'log').mockImplementation(jest.fn() as never)
     jest.spyOn(cmd, 'info').mockImplementation(jest.fn() as never)
-    Object.defineProperty(cmd, 'table', {
+    Object.defineProperty(cmd, 'styledHeader', {
       value: jest.fn(),
     })
     Object.defineProperty(cmd, 'progress', {
