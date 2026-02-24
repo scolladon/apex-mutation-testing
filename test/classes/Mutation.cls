@@ -8,7 +8,7 @@ public class Mutation {
         Integer i = 0;
         for(;i<10;++i) {
             if(i >= 7) {
-                return i;
+                break;
             }
         }
         return i;
@@ -16,13 +16,11 @@ public class Mutation {
 
     // EqualityConditionMutator: == and !=
     public static Boolean checkEquality(Integer a, Integer b) {
-        if (a == b) {
-            return true;
-        }
+        Boolean result = (a == b);
         if (a != b) {
-            return false;
+            result = false;
         }
-        return false;
+        return result;
     }
 
     // LogicalOperatorMutator: && and ||

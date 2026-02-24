@@ -2,6 +2,12 @@
 private class MutationTest {
 
     @IsTest
+    static void test_instanceField() {
+        Mutation m = new Mutation();
+        Assert.isNotNull(m);
+    }
+
+    @IsTest
     static void test_doThings() {
         Integer result = Mutation.doThings();
         Assert.areEqual(7, result);
@@ -11,8 +17,10 @@ private class MutationTest {
     static void test_checkEquality() {
         Boolean result1 = Mutation.checkEquality(1, 1);
         Boolean result2 = Mutation.checkEquality(1, 2);
+        Boolean result3 = Mutation.checkEquality(2, 1);
         Assert.isNotNull(result1);
         Assert.isNotNull(result2);
+        Assert.isNotNull(result3);
     }
 
     @IsTest
