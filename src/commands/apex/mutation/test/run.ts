@@ -66,10 +66,12 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
     }
 
     this.log(
-      messages.getMessage('info.CommandIsRunning', [
-        parameters.apexClassName,
-        parameters.apexTestClassName,
-      ])
+      messages.getMessage(
+        flags['dry-run']
+          ? 'info.DryRunCommandIsRunning'
+          : 'info.CommandIsRunning',
+        [parameters.apexClassName, parameters.apexTestClassName]
+      )
     )
 
     const apexClassValidator = new ApexClassValidator(connection)

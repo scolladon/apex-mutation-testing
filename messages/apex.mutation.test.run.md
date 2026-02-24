@@ -38,6 +38,10 @@ Report has been generated at this location: %s
 
 Running mutation testing for "%s" with "%s" test class
 
+# info.DryRunCommandIsRunning
+
+Running dry run mutation testing for "%s" with "%s" test class
+
 # info.CommandSuccess
 
 Mutation score: %s%
