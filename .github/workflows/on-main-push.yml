@@ -14,7 +14,6 @@ permissions:
 jobs:
   build:
     uses: ./.github/workflows/reusable-build.yml
-    secrets: inherit
 
   prepare-release:
     needs: [build]

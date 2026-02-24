@@ -34,20 +34,27 @@ jobs:
         run: sf apex mutation test run --help
 
       - name: Authenticate to E2E test org
-        run: echo "${{ secrets.SFDX_AUTH_URL }}" | sf org login sfdx-url --alias e2e-test-org --set-default --sfdx-url-stdin
+        env:
+          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
+        run: echo "$SFDX_AUTH_URL" | sf org login sfdx-url --alias e2e-test-org --set-default --sfdx-url-stdin
 
-      - name: Reset test classes
-        run: npm run deploy:testclasses
+      - name: Setup - Deploy test classes
+        run: npm run test:e2e:setup
 
-      - name: E2E Tests
+      - name: Execute - Run mutation testing
         run: |
           mkdir -p reports/e2e
-          sf apex mutation test run --target-org e2e-test-org --apex-class Mutation --test-class MutationTest --report-dir reports/e2e --json
-      
-      - name: Reset test classes
-        run: npm run deploy:testclasses
+          npm run test:e2e:run
+
+      - name: Validate - Check snapshot
+        run: npm run test:e2e:validate
+
+      - name: Teardown - Reset test classes
+        if: always()
+        run: npm run test:e2e:teardown
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: e2e-test-report
           path: reports/e2e
