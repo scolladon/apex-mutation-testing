@@ -2,9 +2,6 @@
 name: Build Checks
 on:
   workflow_call:
-    secrets:
-      SFDX_AUTH_URL:
-        required: true
 
 jobs:
   source:
@@ -32,22 +29,8 @@ jobs:
       - name: Unit test
         run: npm run test:unit -- --runInBand
 
-      - name: Install cli
-        run: npm install -g @salesforce/cli
-
-      - name: Authenticate to NUT test org
-        run: echo "${{ secrets.SFDX_AUTH_URL }}" | sf org login sfdx-url --alias apex-mutation-testing --set-default --sfdx-url-stdin
-
-      - name: Reset test classes
-        run: npm run deploy:testclasses
-
-      - name: Integration test
-        run: |
-          mkdir reports/nut
-          npm run test:nut
-
-      - name: Reset test classes
-        run: npm run deploy:testclasses
+      - name: NUT test
+        run: npm run test:nut
 
       - uses: actions/upload-artifact@v6
         with:
