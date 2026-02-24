@@ -6,6 +6,7 @@ Salesforce CLI plugin implementing **mutation testing** for Apex code. It evalua
 
 ```
 sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg>
+sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --dry-run
 ```
 
 ---
@@ -40,8 +41,12 @@ sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg>
 │  └───────────────────┘ └─────────────┘ └──────────────┘ │
 ├──────────────────────────────────────────────────────────┤
 │                    Reporting Layer                        │
-│               reporter/HTMLReporter.ts                    │
-│         (Stryker schema, mutation-test-elements)         │
+│  ┌───────────────────────┐  ┌──────────────────────────┐ │
+│  │  HTMLReporter.ts       │  │  DryRunReporter.ts       │ │
+│  │ (Stryker schema,      │  │ (per-mutator counts,     │ │
+│  │  mutation-test-        │  │  dry-run summary stats)  │ │
+│  │  elements)             │  │                          │ │
+│  └───────────────────────┘  └──────────────────────────┘ │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -85,6 +90,14 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │       → ParseTreeWalker fires enter*/exit* on 25 mutators
 │         (filtered by coveredLines via Proxy)
 │       → ApexMutation[] (with token ranges)
+│
+│     ── DRY-RUN EXIT POINT ──────────────────────────
+│     If --dry-run: return DryRunMutant[] (line,
+│       mutatorName, original, replacement) and stop.
+│       No deployment, no test execution, no rollback.
+│       Command displays table + per-mutator summary
+│       via DryRunReporter.countByMutator().
+│     ────────────────────────────────────────────────
 │
 ├─ 7. MUTATION TESTING LOOP (for each mutation)
 │     ┌─────────────────────────────────────────────┐
@@ -553,9 +566,15 @@ ApexMutationTestResult
          └──────────────┬──────────────┘
                         │
               ┌─────────▼──────────┐
-              │    HTMLReporter    │
-              │  Stryker schema   │
-              │  → HTML report    │
+              │    Reporters       │
+              │                    │
+              │  HTMLReporter      │
+              │  → Stryker schema  │
+              │  → HTML report     │
+              │                    │
+              │  DryRunReporter    │
+              │  → countByMutator  │
+              │  → summary stats   │
               └────────────────────┘
 ```
 
