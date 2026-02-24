@@ -617,3 +617,7 @@ text starts with digit?
 ```
 
 This enables `ArgumentPropagationMutator` to correctly match numeric arguments to method parameter types.
+
+## Backlog
+
+- Add `--dry-run` flag to preview mutations without executing tests
