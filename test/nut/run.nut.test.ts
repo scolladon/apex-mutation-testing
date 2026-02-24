@@ -39,12 +39,14 @@ jest.unstable_mockModule('@salesforce/sf-plugins-core', () => {
     log = jest.fn()
     info = jest.fn()
     parse = jest.fn()
+    table = jest.fn()
   }
 
   return {
     SfCommand: FakeSfCommand,
     Flags: {
       string: jest.fn().mockReturnValue({}),
+      boolean: jest.fn().mockReturnValue({}),
       directory: jest.fn().mockReturnValue({}),
       requiredOrg: jest.fn().mockReturnValue({}),
       orgApiVersion: jest.fn().mockReturnValue({}),
@@ -134,11 +136,47 @@ describe('apex mutation test run NUT', () => {
     return cmd.run()
   }
 
+  async function runDryRunCommand(args: string[]) {
+    const cmd = new ApexMutationTest(args, {} as never)
+    ;(
+      jest.spyOn(cmd as never, 'parse') as unknown as jest.Mock
+    ).mockResolvedValue({
+      flags: {
+        'apex-class':
+          args[args.indexOf('-c') + 1] ||
+          args[args.indexOf('--apex-class') + 1],
+        'test-class':
+          args[args.indexOf('-t') + 1] ||
+          args[args.indexOf('--test-class') + 1],
+        'report-dir': 'mutations',
+        'target-org': mockOrg,
+        'dry-run': true,
+      },
+    } as never)
+    jest.spyOn(cmd, 'log').mockImplementation(jest.fn() as never)
+    jest.spyOn(cmd, 'info').mockImplementation(jest.fn() as never)
+    Object.defineProperty(cmd, 'table', {
+      value: jest.fn(),
+    })
+    Object.defineProperty(cmd, 'progress', {
+      value: { start: jest.fn(), update: jest.fn(), finish: jest.fn() },
+    })
+    Object.defineProperty(cmd, 'spinner', {
+      value: { start: jest.fn(), stop: jest.fn() },
+    })
+    return cmd.run()
+  }
+
   describe('Given valid flags, When running successfully', () => {
     let sut: { score: number }
 
     beforeEach(async () => {
-      sut = await runCommand(['-c', 'MyClass', '-t', 'MyClassTest'])
+      sut = (await runCommand([
+        '-c',
+        'MyClass',
+        '-t',
+        'MyClassTest',
+      ])) as typeof sut
     })
 
     it('Then returns score', () => {
@@ -231,6 +269,100 @@ describe('apex mutation test run NUT', () => {
       await expect(
         runCommand(['-c', 'MyClass', '-t', 'MyClassTest'])
       ).rejects.toThrow('No test coverage found')
+    })
+  })
+
+  describe('Given dry-run flag', () => {
+    beforeEach(() => {
+      ;(MutationTestingService as jest.Mock<() => unknown>).mockImplementation(
+        () => ({
+          process: jest.fn().mockResolvedValue([
+            {
+              line: 10,
+              mutatorName: 'ArithmeticOperator',
+              original: '+',
+              replacement: '-',
+            },
+            {
+              line: 10,
+              mutatorName: 'BoundaryCondition',
+              original: '<',
+              replacement: '<=',
+            },
+            {
+              line: 20,
+              mutatorName: 'ArithmeticOperator',
+              original: '*',
+              replacement: '/',
+            },
+          ] as never),
+          calculateScore: jest.fn(),
+        })
+      )
+    })
+
+    describe('When running with --dry-run', () => {
+      let sut: {
+        mutants: {
+          line: number
+          mutatorName: string
+          original: string
+          replacement: string
+        }[]
+      }
+
+      beforeEach(async () => {
+        sut = (await runDryRunCommand([
+          '-c',
+          'MyClass',
+          '-t',
+          'MyClassTest',
+          '-d',
+        ])) as typeof sut
+      })
+
+      it('Then returns mutants array', () => {
+        expect(sut).toEqual({
+          mutants: [
+            {
+              line: 10,
+              mutatorName: 'ArithmeticOperator',
+              original: '+',
+              replacement: '-',
+            },
+            {
+              line: 10,
+              mutatorName: 'BoundaryCondition',
+              original: '<',
+              replacement: '<=',
+            },
+            {
+              line: 20,
+              mutatorName: 'ArithmeticOperator',
+              original: '*',
+              replacement: '/',
+            },
+          ],
+        })
+      })
+
+      it('Then does not generate HTML report', () => {
+        expect(ApexMutationHTMLReporter).not.toHaveBeenCalled()
+      })
+
+      it('Then passes dryRun parameter to service', () => {
+        expect(MutationTestingService).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.anything(),
+          mockConnection,
+          expect.objectContaining({
+            apexClassName: 'MyClass',
+            apexTestClassName: 'MyClassTest',
+            dryRun: true,
+          }),
+          expect.anything()
+        )
+      })
     })
   })
 })
