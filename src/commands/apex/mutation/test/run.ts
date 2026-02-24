@@ -1,5 +1,6 @@
 import { Messages } from '@salesforce/core'
 import { Flags, SfCommand } from '@salesforce/sf-plugins-core'
+import { DryRunReporter } from '../../../../reporter/DryRunReporter.js'
 import { ApexMutationHTMLReporter } from '../../../../reporter/HTMLReporter.js'
 import { ApexClassValidator } from '../../../../service/apexClassValidator.js'
 import { MutationTestingService } from '../../../../service/mutationTestingService.js'
@@ -85,37 +86,7 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
 
     if (flags['dry-run']) {
       const mutants = result as DryRunMutant[]
-
-      this.table({
-        data: mutants.map(m => ({ ...m })),
-        columns: ['line', 'mutatorName', 'original', 'replacement'],
-        title: 'Dry Run: Mutation Preview',
-        overflow: 'wrap',
-      })
-
-      const countByMutator = new Map<string, number>()
-      for (const mutant of mutants) {
-        countByMutator.set(
-          mutant.mutatorName,
-          (countByMutator.get(mutant.mutatorName) ?? 0) + 1
-        )
-      }
-      for (const [name, count] of [...countByMutator.entries()].sort(
-        (a, b) => b[1] - a[1]
-      )) {
-        this.log(
-          messages.getMessage('info.dryRunSummary', [name, String(count)])
-        )
-      }
-
-      const lineCount = new Set(mutants.map(m => m.line)).size
-      this.log(
-        messages.getMessage('info.dryRunTotal', [
-          String(mutants.length),
-          String(lineCount),
-        ])
-      )
-
+      this.displayDryRunResults(mutants)
       this.info(messages.getMessage('info.EncourageSponsorship'))
       return { mutants }
     }
@@ -135,5 +106,29 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
     return {
       score,
     }
+  }
+
+  private displayDryRunResults(mutants: DryRunMutant[]): void {
+    this.table({
+      data: mutants.map(m => ({ ...m })),
+      columns: ['line', 'mutatorName', 'original', 'replacement'],
+      title: 'Dry Run: Mutation Preview',
+      overflow: 'wrap',
+    })
+
+    const dryRunReporter = new DryRunReporter()
+    const countByMutator = dryRunReporter.countByMutator(mutants)
+
+    for (const [name, count] of countByMutator) {
+      this.log(messages.getMessage('info.dryRunSummary', [name, String(count)]))
+    }
+
+    const lineCount = new Set(mutants.map(m => m.line)).size
+    this.log(
+      messages.getMessage('info.dryRunTotal', [
+        String(mutants.length),
+        String(lineCount),
+      ])
+    )
   }
 }
