@@ -8,7 +8,7 @@ import type { ApexType } from '../type/ApexMethod.js'
 import { APEX_TYPE } from '../type/ApexMethod.js'
 import type { ResolvedType, TypeRegistry } from '../type/TypeRegistry.js'
 
-export interface DotMethodCallInfo {
+interface DotMethodCallInfo {
   dotMethodCall: DotMethodCallContext
   methodName: string
   enclosingMethod: string

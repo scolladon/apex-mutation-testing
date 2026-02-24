@@ -2,7 +2,6 @@ export default {
   entry: [
     'src/commands/apex/mutation/test/run.ts',
     'bin/dev.js',
-    'bin/run.js',
     '**/*.{nut,test}.ts',
     '.github/**/*.yml',
   ],
