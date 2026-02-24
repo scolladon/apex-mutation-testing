@@ -220,7 +220,7 @@
       ]
     },
     "test:nut": {
-      "command": "jest test/nut/ --no-coverage",
+      "command": "NODE_OPTIONS='--experimental-vm-modules' jest --config jest.config.nut.js --no-coverage",
       "files": [
         "src/**/*.ts",
         "test/nut/**/*.ts",

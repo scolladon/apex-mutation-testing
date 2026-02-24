@@ -1,9 +1,11 @@
+import { beforeEach, describe, expect, it, jest } from '@jest/globals'
+
 const mockMessages = {
   getMessage: jest.fn().mockReturnValue('mock message'),
   getMessages: jest.fn().mockReturnValue(['mock example']),
 }
 
-jest.mock('@salesforce/core', () => ({
+jest.unstable_mockModule('@salesforce/core', () => ({
   Messages: {
     importMessagesDirectoryFromMetaUrl: jest.fn(),
     loadMessages: jest.fn().mockReturnValue(mockMessages),
@@ -30,7 +32,7 @@ jest.mock('@salesforce/core', () => ({
   Connection: jest.fn(),
 }))
 
-jest.mock('@salesforce/sf-plugins-core', () => {
+jest.unstable_mockModule('@salesforce/sf-plugins-core', () => {
   class FakeSfCommand {
     progress = { start: jest.fn(), update: jest.fn(), finish: jest.fn() }
     spinner = { start: jest.fn(), stop: jest.fn() }
@@ -50,14 +52,30 @@ jest.mock('@salesforce/sf-plugins-core', () => {
   }
 })
 
-jest.mock('../../src/service/apexClassValidator.js')
-jest.mock('../../src/service/mutationTestingService.js')
-jest.mock('../../src/reporter/HTMLReporter.js')
+jest.unstable_mockModule('../../src/service/apexClassValidator.js', () => ({
+  ApexClassValidator: jest.fn(),
+}))
 
-import ApexMutationTest from '../../src/commands/apex/mutation/test/run.js'
-import { ApexMutationHTMLReporter } from '../../src/reporter/HTMLReporter.js'
-import { ApexClassValidator } from '../../src/service/apexClassValidator.js'
-import { MutationTestingService } from '../../src/service/mutationTestingService.js'
+jest.unstable_mockModule('../../src/service/mutationTestingService.js', () => ({
+  MutationTestingService: jest.fn(),
+}))
+
+jest.unstable_mockModule('../../src/reporter/HTMLReporter.js', () => ({
+  ApexMutationHTMLReporter: jest.fn(),
+}))
+
+const { default: ApexMutationTest } = await import(
+  '../../src/commands/apex/mutation/test/run.js'
+)
+const { ApexMutationHTMLReporter } = await import(
+  '../../src/reporter/HTMLReporter.js'
+)
+const { ApexClassValidator } = await import(
+  '../../src/service/apexClassValidator.js'
+)
+const { MutationTestingService } = await import(
+  '../../src/service/mutationTestingService.js'
+)
 
 describe('apex mutation test run NUT', () => {
   const mockConnection = {} as Record<string, unknown>
@@ -66,26 +84,34 @@ describe('apex mutation test run NUT', () => {
   }
 
   beforeEach(() => {
-    ;(ApexClassValidator as jest.Mock).mockImplementation(() => ({
-      validate: jest.fn().mockResolvedValue(undefined),
-    }))
-    ;(MutationTestingService as jest.Mock).mockImplementation(() => ({
-      process: jest.fn().mockResolvedValue({
-        sourceFile: 'TestClass',
-        sourceFileContent: 'class TestClass {}',
-        testFile: 'TestClassTest',
-        mutants: [{ status: 'Killed' }, { status: 'Survived' }],
-      }),
-      calculateScore: jest.fn().mockReturnValue(50),
-    }))
-    ;(ApexMutationHTMLReporter as jest.Mock).mockImplementation(() => ({
-      generateReport: jest.fn().mockResolvedValue(undefined),
-    }))
+    ;(ApexClassValidator as jest.Mock<() => unknown>).mockImplementation(
+      () => ({
+        validate: jest.fn().mockResolvedValue(undefined as never),
+      })
+    )
+    ;(MutationTestingService as jest.Mock<() => unknown>).mockImplementation(
+      () => ({
+        process: jest.fn().mockResolvedValue({
+          sourceFile: 'TestClass',
+          sourceFileContent: 'class TestClass {}',
+          testFile: 'TestClassTest',
+          mutants: [{ status: 'Killed' }, { status: 'Survived' }],
+        } as never),
+        calculateScore: jest.fn().mockReturnValue(50),
+      })
+    )
+    ;(ApexMutationHTMLReporter as jest.Mock<() => unknown>).mockImplementation(
+      () => ({
+        generateReport: jest.fn().mockResolvedValue(undefined as never),
+      })
+    )
   })
 
   async function runCommand(args: string[]) {
     const cmd = new ApexMutationTest(args, {} as never)
-    jest.spyOn(cmd as never, 'parse').mockResolvedValue({
+    ;(
+      jest.spyOn(cmd as never, 'parse') as unknown as jest.Mock
+    ).mockResolvedValue({
       flags: {
         'apex-class':
           args[args.indexOf('-c') + 1] ||
@@ -97,8 +123,8 @@ describe('apex mutation test run NUT', () => {
         'target-org': mockOrg,
       },
     } as never)
-    jest.spyOn(cmd, 'log').mockImplementation()
-    jest.spyOn(cmd, 'info').mockImplementation()
+    jest.spyOn(cmd, 'log').mockImplementation(jest.fn() as never)
+    jest.spyOn(cmd, 'info').mockImplementation(jest.fn() as never)
     Object.defineProperty(cmd, 'progress', {
       value: { start: jest.fn(), update: jest.fn(), finish: jest.fn() },
     })
@@ -121,8 +147,9 @@ describe('apex mutation test run NUT', () => {
 
     it('Then validates classes', () => {
       expect(ApexClassValidator).toHaveBeenCalledWith(mockConnection)
-      const validatorInstance = (ApexClassValidator as jest.Mock).mock
-        .results[0].value
+      // biome-ignore lint/suspicious/noExplicitAny: mock instance access
+      const validatorInstance = (ApexClassValidator as any).mock.results[0]
+        .value
       expect(validatorInstance.validate).toHaveBeenCalledWith(
         expect.objectContaining({
           apexClassName: 'MyClass',
@@ -147,8 +174,9 @@ describe('apex mutation test run NUT', () => {
 
     it('Then generates HTML report', () => {
       expect(ApexMutationHTMLReporter).toHaveBeenCalled()
-      const reporterInstance = (ApexMutationHTMLReporter as jest.Mock).mock
-        .results[0].value
+      // biome-ignore lint/suspicious/noExplicitAny: mock instance access
+      const reporterInstance = (ApexMutationHTMLReporter as any).mock.results[0]
+        .value
       expect(reporterInstance.generateReport).toHaveBeenCalled()
     })
   })
@@ -156,11 +184,13 @@ describe('apex mutation test run NUT', () => {
   describe('Given validation fails', () => {
     it('When apex class is invalid, Then throws error', async () => {
       // Arrange
-      ;(ApexClassValidator as jest.Mock).mockImplementation(() => ({
-        validate: jest
-          .fn()
-          .mockRejectedValue(new Error('InvalidClass not found')),
-      }))
+      ;(ApexClassValidator as jest.Mock<() => unknown>).mockImplementation(
+        () => ({
+          validate: jest
+            .fn()
+            .mockRejectedValue(new Error('InvalidClass not found') as never),
+        })
+      )
 
       // Act & Assert
       await expect(
@@ -170,11 +200,13 @@ describe('apex mutation test run NUT', () => {
 
     it('When test class is invalid, Then throws error', async () => {
       // Arrange
-      ;(ApexClassValidator as jest.Mock).mockImplementation(() => ({
-        validate: jest
-          .fn()
-          .mockRejectedValue(new Error('InvalidTest not found')),
-      }))
+      ;(ApexClassValidator as jest.Mock<() => unknown>).mockImplementation(
+        () => ({
+          validate: jest
+            .fn()
+            .mockRejectedValue(new Error('InvalidTest not found') as never),
+        })
+      )
 
       // Act & Assert
       await expect(
@@ -186,12 +218,14 @@ describe('apex mutation test run NUT', () => {
   describe('Given mutation service fails', () => {
     it('When process throws, Then propagates error', async () => {
       // Arrange
-      ;(MutationTestingService as jest.Mock).mockImplementation(() => ({
-        process: jest
-          .fn()
-          .mockRejectedValue(new Error('No test coverage found')),
-        calculateScore: jest.fn(),
-      }))
+      ;(MutationTestingService as jest.Mock<() => unknown>).mockImplementation(
+        () => ({
+          process: jest
+            .fn()
+            .mockRejectedValue(new Error('No test coverage found') as never),
+          calculateScore: jest.fn(),
+        })
+      )
 
       // Act & Assert
       await expect(
