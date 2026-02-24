@@ -30,7 +30,7 @@ jobs:
         run: npm run test:unit -- --runInBand
 
       - name: NUT test
-        run: npm run test:nut
+        run: npm run test:nut -- --runInBand
 
       - uses: actions/upload-artifact@v6
         with:
