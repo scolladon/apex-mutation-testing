@@ -108,20 +108,18 @@ describe('apex mutation test run NUT', () => {
     return cmd.run()
   }
 
-  describe('Given valid flags', () => {
-    it('When running successfully, Then returns score', async () => {
-      // Act
-      const sut = await runCommand(['-c', 'MyClass', '-t', 'MyClassTest'])
+  describe('Given valid flags, When running successfully', () => {
+    let sut: { score: number }
 
-      // Assert
+    beforeEach(async () => {
+      sut = await runCommand(['-c', 'MyClass', '-t', 'MyClassTest'])
+    })
+
+    it('Then returns score', () => {
       expect(sut).toEqual({ score: 50 })
     })
 
-    it('When running successfully, Then validates classes', async () => {
-      // Act
-      await runCommand(['-c', 'MyClass', '-t', 'MyClassTest'])
-
-      // Assert
+    it('Then validates classes', () => {
       expect(ApexClassValidator).toHaveBeenCalledWith(mockConnection)
       const validatorInstance = (ApexClassValidator as jest.Mock).mock
         .results[0].value
@@ -133,11 +131,7 @@ describe('apex mutation test run NUT', () => {
       )
     })
 
-    it('When running successfully, Then creates mutation service with correct params', async () => {
-      // Act
-      await runCommand(['-c', 'MyClass', '-t', 'MyClassTest'])
-
-      // Assert
+    it('Then creates mutation service with correct params', () => {
       expect(MutationTestingService).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
@@ -151,11 +145,7 @@ describe('apex mutation test run NUT', () => {
       )
     })
 
-    it('When running successfully, Then generates HTML report', async () => {
-      // Act
-      await runCommand(['-c', 'MyClass', '-t', 'MyClassTest'])
-
-      // Assert
+    it('Then generates HTML report', () => {
       expect(ApexMutationHTMLReporter).toHaveBeenCalled()
       const reporterInstance = (ApexMutationHTMLReporter as jest.Mock).mock
         .results[0].value
