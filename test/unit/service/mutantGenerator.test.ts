@@ -42,6 +42,24 @@ describe('MutantGenerator', () => {
       expect(boundaryMutations[0].replacement).toEqual('<=')
     })
 
+    it('should return mutations for inline constants on covered lines', () => {
+      // Arrange
+      const classContent =
+        'public class Test { public static void method() { Integer i = 42; } }'
+      const coveredLines = new Set([1])
+
+      // Act
+      const result = sut.compute(classContent, coveredLines)
+
+      // Assert
+      const inlineConstantMutations = result.filter(
+        m => m.mutationName === 'InlineConstantMutator'
+      )
+      expect(inlineConstantMutations.length).toBeGreaterThanOrEqual(1)
+      const replacements = inlineConstantMutations.map(m => m.replacement)
+      expect(replacements).toContain('0')
+    })
+
     it('should return empty array for uncovered lines', () => {
       // Arrange
       const classContent =

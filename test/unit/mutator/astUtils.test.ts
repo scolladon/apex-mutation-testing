@@ -297,7 +297,7 @@ describe('astUtils', () => {
   })
 
   describe('resolveExpressionApexType', () => {
-    it('Given a numeric literal, When called, Then returns INTEGER', () => {
+    it('Given an integer literal, When called, Then returns INTEGER', () => {
       // Arrange
       const typeRegistry = TestUtil.createTypeRegistry()
 
@@ -306,6 +306,50 @@ describe('astUtils', () => {
 
       // Assert
       expect(result).toBe(APEX_TYPE.INTEGER)
+    })
+
+    it('Given a long literal with uppercase suffix, When called, Then returns LONG', () => {
+      // Arrange
+      const typeRegistry = TestUtil.createTypeRegistry()
+
+      // Act
+      const result = resolveExpressionApexType('5L', 'testMethod', typeRegistry)
+
+      // Assert
+      expect(result).toBe(APEX_TYPE.LONG)
+    })
+
+    it('Given a long literal with lowercase suffix, When called, Then returns LONG', () => {
+      // Arrange
+      const typeRegistry = TestUtil.createTypeRegistry()
+
+      // Act
+      const result = resolveExpressionApexType('5l', 'testMethod', typeRegistry)
+
+      // Assert
+      expect(result).toBe(APEX_TYPE.LONG)
+    })
+
+    it('Given a decimal numeric literal, When called, Then returns DOUBLE', () => {
+      // Arrange
+      const typeRegistry = TestUtil.createTypeRegistry()
+
+      // Act
+      const sut = resolveExpressionApexType('3.14', 'testMethod', typeRegistry)
+
+      // Assert
+      expect(sut).toBe(APEX_TYPE.DOUBLE)
+    })
+
+    it('Given a numeric literal with trailing zero decimal, When called, Then returns DOUBLE', () => {
+      // Arrange
+      const typeRegistry = TestUtil.createTypeRegistry()
+
+      // Act
+      const sut = resolveExpressionApexType('5.0', 'testMethod', typeRegistry)
+
+      // Assert
+      expect(sut).toBe(APEX_TYPE.DOUBLE)
     })
 
     it('Given a string literal, When called, Then returns STRING', () => {

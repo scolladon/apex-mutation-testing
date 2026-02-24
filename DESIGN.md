@@ -30,7 +30,7 @@ sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg>
 │  │  mutationListener.ts │  │  typeMatcher.ts            │ │
 │  │  baseListener.ts     │  │  TypeRegistry.ts           │ │
 │  │  astUtils.ts         │  │  ApexMethod.ts             │ │
-│  │  [24 mutators]       │  │                            │ │
+│  │  [25 mutators]       │  │                            │ │
 │  └─────────────────────┘  └────────────────────────────┘ │
 ├──────────────────────────────────────────────────────────┤
 │                   Infrastructure Layer                    │
@@ -82,7 +82,7 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 ├─ 6. GENERATE MUTATIONS
 │     MutantGenerator.compute(Body, coveredLines, typeRegistry)
 │       → ANTLR parse #2 → AST
-│       → ParseTreeWalker fires enter*/exit* on 24 mutators
+│       → ParseTreeWalker fires enter*/exit* on 25 mutators
 │         (filtered by coveredLines via Proxy)
 │       → ApexMutation[] (with token ranges)
 │
@@ -123,7 +123,7 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 
 ### Proxy-Based Listener Aggregation
 
-The central architectural pattern. `MutationListener` uses a JavaScript `Proxy` to dynamically dispatch ANTLR parse tree callbacks to all 24 registered mutators without explicit delegation.
+The central architectural pattern. `MutationListener` uses a JavaScript `Proxy` to dynamically dispatch ANTLR parse tree callbacks to all 25 registered mutators without explicit delegation.
 
 ```
                         ┌──────────────────────┐
@@ -312,7 +312,7 @@ Source Code ─── Parse #1 (TypeDiscoverer) ──► TypeRegistry
             └── Parse #2 (MutantGenerator) ──► AST + TokenStream
                      │
                      ├─ ParseTreeWalker.walk(MutationListener, tree)
-                     │    └─ Proxy dispatches to 24 mutators
+                     │    └─ Proxy dispatches to 25 mutators
                      │       └─ each pushes to shared _mutations[]
                      │
                      └─ TokenStreamRewriter (reused for all mutations)
@@ -326,7 +326,7 @@ Source Code ─── Parse #1 (TypeDiscoverer) ──► TypeRegistry
 
 ## Mutation Operators
 
-### 24 Mutation Operators by Category
+### 25 Mutation Operators by Category
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -366,6 +366,15 @@ Source Code ─── Parse #1 (TypeDiscoverer) ──► TypeRegistry
 │  ArgumentPropagationMutator  foo(a, b) → a  (if types match)    │
 │  NakedReceiverMutator        obj.method() → obj (if types match)│
 ├──────────────────────────────────────────────────────────────────┤
+│                  CONSTANT MUTATION (PIT CRCR)                    │
+│                                                                  │
+│  InlineConstantMutator       42 → 0,1,-1,43,41                  │
+│                              42L → 0L,1L,-1L,43L,41L            │
+│                              3.14 → 0.0,1.0,-1.0,4.14,2.14     │
+│                              'hello' → ''                        │
+│                              true ↔ false                        │
+│                              null → type-appropriate default     │
+├──────────────────────────────────────────────────────────────────┤
 │                     OTHER                                        │
 │                                                                  │
 │  ConstructorCallMutator      new T(...) → null                   │
@@ -388,6 +397,7 @@ Source Code ─── Parse #1 (TypeDiscoverer) ──► TypeRegistry
 | NakedReceiverMutator | Yes | Must match receiver type to return type |
 | ArithmeticOperatorMutator | Yes | Must skip string concatenation (`+`) |
 | ArithmeticOperatorDeletionMutator | Yes | Must skip string concatenation (`+`) |
+| InlineConstantMutator | Yes | Null literal replacement depends on declared/return type |
 
 ---
 
@@ -560,3 +570,50 @@ ApexMutationTestResult
 5. The Proxy-based `MutationListener` automatically dispatches to the new mutator — no changes needed in the aggregation layer
 
 For type-aware mutators, accept `TypeRegistry` in the constructor and use `typeRegistry.resolveType()` to make type-informed decisions.
+
+---
+
+## InlineConstantMutator — Handler Strategy
+
+`InlineConstantMutator` uses a **Handler Strategy pattern** to dispatch literal mutations. A `Map<LiteralDetector, LiteralHandler>` pairs ANTLR terminal node detectors with type-specific handlers:
+
+```
+enterLiteral(ctx)
+    │
+    ├─ ctx.IntegerLiteral()? ──► IntegerLiteralHandler   [0, 1, -1, v+1, v-1]
+    ├─ ctx.LongLiteral()?    ──► LongLiteralHandler      [0L, 1L, -1L, v+1L, v-1L]
+    ├─ ctx.NumberLiteral()?   ──► NumberLiteralHandler    [0.0, 1.0, -1.0, v+1.0, v-1.0]
+    ├─ ctx.StringLiteral()?   ──► StringLiteralHandler    '' (skip if already empty)
+    ├─ ctx.BooleanLiteral()?  ──► BooleanLiteralHandler   true ↔ false
+    └─ ctx.NULL()?            ──► NullLiteralHandler      type-appropriate default
+```
+
+**CRCR strategy** (Constant Replacement with Constant Replacement — PIT nomenclature): For numeric types, candidates `[0, 1, -1, value+1, value-1]` are deduplicated via `Set` and filtered to exclude the original value. This ensures boundary-sensitive mutations without generating identity replacements.
+
+### Null Literal Resolution
+
+`NullLiteralHandler` walks up the AST to determine what type the `null` literal inhabits:
+
+```
+null literal
+    │
+    ├─ in ReturnStatement? ──► resolve enclosing method return type via TypeRegistry
+    │
+    └─ in LocalVariableDeclaration / FieldDeclaration?
+       └─ ctx.typeRef().text ──► classifyApexType() ──► getDefaultValueForApexType()
+```
+
+`typeRef()` is used instead of `children[0]` to handle modifiers like `final` that shift child indices.
+
+### Expression Type Classification (`astUtils.resolveExpressionApexType`)
+
+Numeric literal classification follows Apex language rules:
+
+```
+text starts with digit?
+    ├─ ends with L/l?      ──► LONG
+    ├─ contains '.'?       ──► DOUBLE
+    └─ otherwise           ──► INTEGER
+```
+
+This enables `ArgumentPropagationMutator` to correctly match numeric arguments to method parameter types.
