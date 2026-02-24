@@ -215,16 +215,14 @@
       ]
     },
     "test:nut": {
-      "command": "nyc mocha -r ts-node/register **/*.nut.ts",
+      "command": "jest test/nut/ --no-coverage",
       "files": [
         "src/**/*.ts",
-        "test/**/*.ts",
+        "test/nut/**/*.ts",
         "messages/**",
         "**/tsconfig.json"
       ],
-      "output": [
-        ".nyc_output/**"
-      ],
+      "output": [],
       "dependencies": [
         "lint",
         "build"
