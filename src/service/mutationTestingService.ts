@@ -8,6 +8,7 @@ import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
+import { DryRunMutant } from '../type/DryRunMutant.js'
 import { MutantGenerator } from './mutantGenerator.js'
 import { TypeDiscoverer } from './typeDiscoverer.js'
 import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
@@ -62,20 +63,22 @@ const errorStrategies: ErrorClassificationStrategy[] = [
 export class MutationTestingService {
   protected readonly apexClassName: string
   protected readonly apexTestClassName: string
+  protected readonly dryRun: boolean
   private apexClassContent: string = ''
 
   constructor(
     protected readonly progress: Progress,
     protected readonly spinner: Spinner,
     protected readonly connection: Connection,
-    { apexClassName, apexTestClassName }: ApexMutationParameter,
+    { apexClassName, apexTestClassName, dryRun }: ApexMutationParameter,
     protected readonly messages: Messages<string>
   ) {
     this.apexClassName = apexClassName
     this.apexTestClassName = apexTestClassName
+    this.dryRun = dryRun ?? false
   }
 
-  public async process() {
+  public async process(): Promise<ApexMutationTestResult | DryRunMutant[]> {
     const apexClassRepository = new ApexClassRepository(this.connection)
     const apexTestRunner = new ApexTestRunner(this.connection)
     this.spinner.start(
@@ -196,13 +199,23 @@ export class MutationTestingService {
       )
     }
 
+    this.spinner.stop(`${mutations.length} mutations generated`)
+
+    if (this.dryRun) {
+      return mutations.map(mutation => ({
+        line: mutation.target.startToken.line,
+        mutatorName: mutation.mutationName,
+        original: this.extractMutationOriginalText(mutation),
+        replacement: mutation.replacement,
+      }))
+    }
+
     const mutationResults: ApexMutationTestResult = {
       sourceFile: this.apexClassName,
       sourceFileContent: apexClass.Body,
       testFile: this.apexTestClassName,
       mutants: [],
     }
-    this.spinner.stop(`${mutations.length} mutations generated`)
 
     this.progress.start(
       mutations.length,
