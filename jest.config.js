@@ -72,7 +72,10 @@ export default {
 
   // A map from regular expressions to paths to transformers
   transform: {
-    '\\.ts$': ['ts-jest', { tsconfig: './tsconfig.json' }],
+    '\\.ts$': [
+      './test/utils/esmTransformer.cjs',
+      { tsconfig: './tsconfig.json', diagnostics: { ignoreCodes: [1343] } },
+    ],
   },
   extensionsToTreatAsEsm: ['.ts'],
   // A map from regular expressions to module names that allow to stub out resources with a single module
