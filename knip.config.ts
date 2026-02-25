@@ -11,4 +11,5 @@ export default {
     '@stryker-mutator/core',
   ],
   ignoreBinaries: ['commitlint', 'npm-check-updates', 'sf'],
+  ignoreUnresolved: ['test/e2e'],
 }
