@@ -11,6 +11,7 @@ export interface ApexMutationTestResult {
       | 'NoCoverage'
       | 'CompileError'
       | 'RuntimeError'
+      | 'Pending'
     statusReason?: string
     location: {
       start: { line: number; column: number }

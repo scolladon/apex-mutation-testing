@@ -59,6 +59,17 @@ describe('HTMLReporter', () => {
         replacement: 'null',
         original: 'new Object()',
       },
+      {
+        id: '5',
+        mutatorName: 'ArithmeticOperatorMutator',
+        status: 'Pending',
+        location: {
+          start: { line: 5, column: 0 },
+          end: { line: 5, column: 10 },
+        },
+        replacement: '-',
+        original: '+',
+      },
     ],
   }
 
