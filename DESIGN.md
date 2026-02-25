@@ -41,12 +41,11 @@ sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --dry-run
 │  └───────────────────┘ └─────────────┘ └──────────────┘ │
 ├──────────────────────────────────────────────────────────┤
 │                    Reporting Layer                        │
-│  ┌───────────────────────┐  ┌──────────────────────────┐ │
-│  │  HTMLReporter.ts       │  │  DryRunReporter.ts       │ │
-│  │ (Stryker schema,      │  │ (per-mutator counts,     │ │
-│  │  mutation-test-        │  │  dry-run summary stats)  │ │
-│  │  elements)             │  │                          │ │
-│  └───────────────────────┘  └──────────────────────────┘ │
+│  ┌───────────────────────────────────────────────────────┐│
+│  │  HTMLReporter.ts                                      ││
+│  │ (Stryker schema, mutation-test-elements,              ││
+│  │  used for both normal and dry-run paths)              ││
+│  └───────────────────────────────────────────────────────┘│
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -92,11 +91,11 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │       → ApexMutation[] (with token ranges)
 │
 │     ── DRY-RUN EXIT POINT ──────────────────────────
-│     If --dry-run: return DryRunMutant[] (line,
-│       mutatorName, original, replacement) and stop.
+│     If --dry-run: return ApexMutationTestResult
+│       with all mutants in Pending status and stop.
 │       No deployment, no test execution, no rollback.
-│       Command displays table + per-mutator summary
-│       via DryRunReporter.countByMutator().
+│       Command generates HTML report (same as normal
+│       path) and returns { score: null }.
 │     ────────────────────────────────────────────────
 │
 ├─ 7. MUTATION TESTING LOOP (for each mutation)
@@ -517,7 +516,7 @@ ApexMutationTestResult
     │   ├─ source: original Apex source
     │   └─ mutants[]:
     │       ├─ id, mutatorName, replacement
-    │       ├─ status: Killed|Survived|NoCoverage|CompileError|RuntimeError
+    │       ├─ status: Killed|Survived|NoCoverage|CompileError|RuntimeError|Pending
     │       └─ location: { start: {line,column}, end: {line,column} }
     │
     ├─ escapeHtmlTags() → prevent injection in <script>
@@ -571,10 +570,7 @@ ApexMutationTestResult
               │  HTMLReporter      │
               │  → Stryker schema  │
               │  → HTML report     │
-              │                    │
-              │  DryRunReporter    │
-              │  → countByMutator  │
-              │  → summary stats   │
+              │  (both paths)      │
               └────────────────────┘
 ```
 
@@ -613,7 +609,7 @@ Four test tiers with distinct scopes and runners:
 
 **NUT tests** use `--experimental-vm-modules` for native ESM support, enabling `jest.unstable_mockModule()` with dynamic imports to mock `@salesforce/core` and `@salesforce/sf-plugins-core` at the module level.
 
-**E2E tests** run the published plugin command via `sf apex mutation test run`, validate output via `git diff --quiet` against a committed snapshot, and always execute teardown (class redeployment) even on failure.
+**E2E tests** run the published plugin command via `sf apex mutation test run`, normalize volatile IDs in the generated HTML report, then validate via `git diff --quiet` against a committed HTML snapshot. Teardown (class redeployment) always executes even on failure.
 
 **Test fixtures** (`test/classes/Mutation.cls` and `MutationTest.cls`) are shared across NUT and E2E tiers. `Mutation.cls` contains constructs triggering all 25 mutators. `MutationTest.cls` provides 100% line coverage.
 
