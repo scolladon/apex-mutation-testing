@@ -1,12 +1,9 @@
 import { Messages } from '@salesforce/core'
 import { Flags, SfCommand } from '@salesforce/sf-plugins-core'
-import { DryRunReporter } from '../../../../reporter/DryRunReporter.js'
 import { ApexMutationHTMLReporter } from '../../../../reporter/HTMLReporter.js'
 import { ApexClassValidator } from '../../../../service/apexClassValidator.js'
 import { MutationTestingService } from '../../../../service/mutationTestingService.js'
 import { ApexMutationParameter } from '../../../../type/ApexMutationParameter.js'
-import { ApexMutationTestResult as MutationTestResult } from '../../../../type/ApexMutationTestResult.js'
-import { DryRunMutant } from '../../../../type/DryRunMutant.js'
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url)
 const messages = Messages.loadMessages(
@@ -14,13 +11,9 @@ const messages = Messages.loadMessages(
   'apex.mutation.test.run'
 )
 
-export type ApexMutationTestResult =
-  | {
-      score: number
-    }
-  | {
-      mutants: DryRunMutant[]
-    }
+export type ApexMutationTestResult = {
+  score: number | null
+}
 
 export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> {
   public static override readonly summary = messages.getMessage('summary')
@@ -84,54 +77,23 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       parameters,
       messages
     )
-    const result = await mutationTestingService.process()
+    const mutationResult = await mutationTestingService.process()
 
-    if (flags['dry-run']) {
-      const mutants = result as DryRunMutant[]
-      this.displayDryRunResults(mutants)
-      this.info(messages.getMessage('info.EncourageSponsorship'))
-      return { mutants }
-    }
-
-    const mutationResult = result as MutationTestResult
     const htmlReporter = new ApexMutationHTMLReporter()
     await htmlReporter.generateReport(mutationResult, parameters.reportDir)
     this.log(
       messages.getMessage('info.reportGenerated', [parameters.reportDir])
     )
 
-    const score = mutationTestingService.calculateScore(mutationResult)
+    const score = flags['dry-run']
+      ? null
+      : mutationTestingService.calculateScore(mutationResult)
 
-    this.log(messages.getMessage('info.CommandSuccess', [score]))
+    if (score !== null) {
+      this.log(messages.getMessage('info.CommandSuccess', [score]))
+    }
 
     this.info(messages.getMessage('info.EncourageSponsorship'))
-    return {
-      score,
-    }
-  }
-
-  private displayDryRunResults(mutants: DryRunMutant[]): void {
-    this.styledHeader('Dry Run: Mutation Preview')
-    for (const mutant of mutants) {
-      this.log(
-        `  Line ${String(mutant.line).padStart(4)}  ${mutant.mutatorName.padEnd(35)} ${mutant.original.padEnd(20)} → ${mutant.replacement}`
-      )
-    }
-    this.log()
-
-    const dryRunReporter = new DryRunReporter()
-    const countByMutator = dryRunReporter.countByMutator(mutants)
-
-    for (const [name, count] of countByMutator) {
-      this.log(messages.getMessage('info.dryRunSummary', [name, String(count)]))
-    }
-
-    const lineCount = new Set(mutants.map(m => m.line)).size
-    this.log(
-      messages.getMessage('info.dryRunTotal', [
-        String(mutants.length),
-        String(lineCount),
-      ])
-    )
+    return { score }
   }
 }

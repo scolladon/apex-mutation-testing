@@ -277,40 +277,53 @@ describe('apex mutation test run NUT', () => {
     beforeEach(() => {
       ;(MutationTestingService as jest.Mock<() => unknown>).mockImplementation(
         () => ({
-          process: jest.fn().mockResolvedValue([
-            {
-              line: 10,
-              mutatorName: 'ArithmeticOperator',
-              original: '+',
-              replacement: '-',
-            },
-            {
-              line: 10,
-              mutatorName: 'BoundaryCondition',
-              original: '<',
-              replacement: '<=',
-            },
-            {
-              line: 20,
-              mutatorName: 'ArithmeticOperator',
-              original: '*',
-              replacement: '/',
-            },
-          ] as never),
-          calculateScore: jest.fn(),
+          process: jest.fn().mockResolvedValue({
+            sourceFile: 'MyClass',
+            sourceFileContent: 'class MyClass {}',
+            testFile: 'MyClassTest',
+            mutants: [
+              {
+                id: 'MyClass-0',
+                mutatorName: 'ArithmeticOperator',
+                status: 'Pending',
+                location: {
+                  start: { line: 10, column: 1 },
+                  end: { line: 10, column: 2 },
+                },
+                original: '+',
+                replacement: '-',
+              },
+              {
+                id: 'MyClass-1',
+                mutatorName: 'BoundaryCondition',
+                status: 'Pending',
+                location: {
+                  start: { line: 10, column: 5 },
+                  end: { line: 10, column: 6 },
+                },
+                original: '<',
+                replacement: '<=',
+              },
+              {
+                id: 'MyClass-2',
+                mutatorName: 'ArithmeticOperator',
+                status: 'Pending',
+                location: {
+                  start: { line: 20, column: 1 },
+                  end: { line: 20, column: 2 },
+                },
+                original: '*',
+                replacement: '/',
+              },
+            ],
+          } as never),
+          calculateScore: jest.fn().mockReturnValue(null),
         })
       )
     })
 
     describe('When running with --dry-run', () => {
-      let sut: {
-        mutants: {
-          line: number
-          mutatorName: string
-          original: string
-          replacement: string
-        }[]
-      }
+      let sut: { score: null }
 
       beforeEach(async () => {
         sut = (await runDryRunCommand([
@@ -322,33 +335,15 @@ describe('apex mutation test run NUT', () => {
         ])) as typeof sut
       })
 
-      it('Then returns mutants array', () => {
-        expect(sut).toEqual({
-          mutants: [
-            {
-              line: 10,
-              mutatorName: 'ArithmeticOperator',
-              original: '+',
-              replacement: '-',
-            },
-            {
-              line: 10,
-              mutatorName: 'BoundaryCondition',
-              original: '<',
-              replacement: '<=',
-            },
-            {
-              line: 20,
-              mutatorName: 'ArithmeticOperator',
-              original: '*',
-              replacement: '/',
-            },
-          ],
-        })
+      it('Then returns score as null', () => {
+        expect(sut).toEqual({ score: null })
       })
 
-      it('Then does not generate HTML report', () => {
-        expect(ApexMutationHTMLReporter).not.toHaveBeenCalled()
+      it('Then generates HTML report', () => {
+        const mockInstance = (
+          ApexMutationHTMLReporter as jest.Mock<() => unknown>
+        ).mock.results[0].value as { generateReport: jest.Mock }
+        expect(mockInstance.generateReport).toHaveBeenCalled()
       })
 
       it('Then passes dryRun parameter to service', () => {
