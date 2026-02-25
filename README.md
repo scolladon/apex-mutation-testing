@@ -70,6 +70,16 @@ Before running mutation testing:
 
 Remember, mutation testing complements but doesn't replace good test coverage. It helps identify weaknesses in your existing tests, but only for the code they already cover.
 
+### Dry Run
+
+Before running the full mutation testing process, you can preview the mutations that would be generated using the `--dry-run` flag:
+
+```sh
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest --dry-run
+```
+
+This lists all mutations without deploying or running tests against your org. Use it to estimate the scope of mutation testing for your class and verify that relevant mutations are being generated for your code patterns.
+
 ### Supported Mutation Operators
 
 The plugin currently supports the following mutation operators. If your code doesn't contain any of these patterns on covered lines, no mutations will be generated:
