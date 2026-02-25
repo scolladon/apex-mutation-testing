@@ -144,11 +144,12 @@ Evaluate test coverage quality by injecting mutations and measuring test detecti
 
 ```
 USAGE
-  $ sf apex mutation test run -c <value> -t <value> -o <value> [--json] [--flags-dir <value>] [-r <value>] [--api-version
-    <value>]
+  $ sf apex mutation test run -c <value> -t <value> -o <value> [--json] [--flags-dir <value>] [-r <value>] [-d]
+    [--api-version <value>]
 
 FLAGS
   -c, --apex-class=<value>   (required) Apex class name to mutate
+  -d, --dry-run              Preview mutations without deploying or running tests
   -o, --target-org=<value>   (required) Username or alias of the target org. Not required if the `target-org`
                              configuration variable is already set.
   -r, --report-dir=<value>   [default: mutations] Path to the directory where mutation test reports will be generated
@@ -172,6 +173,10 @@ EXAMPLES
   Run mutation testing on a class with its test file:
 
     $ sf apex mutation test run --apex-class MyClass --test-class MyClassTest
+
+  Preview mutations without running them:
+
+    $ sf apex mutation test run --apex-class MyClass --test-class MyClassTest --dry-run
 ```
 
 _See code: [src/commands/apex/mutation/test/run.ts](https://github.com/scolladon/apex-mutation-testing/blob/main/src/commands/apex/mutation/test/run.ts)_
