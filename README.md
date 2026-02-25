@@ -78,7 +78,7 @@ Before running the full mutation testing process, you can preview the mutations 
 sf apex mutation test run --apex-class MyClass --test-class MyClassTest --dry-run
 ```
 
-This lists all mutations without deploying or running tests against your org. Use it to estimate the scope of mutation testing for your class and verify that relevant mutations are being generated for your code patterns.
+This runs your test class once to collect coverage data, then lists all mutations that would be generated without deploying any of them. Use it to estimate the scope of mutation testing for your class and verify that relevant mutations are being generated for your code patterns.
 
 ### Supported Mutation Operators
 
