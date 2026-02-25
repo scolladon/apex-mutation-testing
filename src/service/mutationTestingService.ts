@@ -8,7 +8,6 @@ import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
-import { DryRunMutant } from '../type/DryRunMutant.js'
 import { MutantGenerator } from './mutantGenerator.js'
 import { TypeDiscoverer } from './typeDiscoverer.js'
 import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
@@ -78,7 +77,7 @@ export class MutationTestingService {
     this.dryRun = dryRun ?? false
   }
 
-  public async process(): Promise<ApexMutationTestResult | DryRunMutant[]> {
+  public async process(): Promise<ApexMutationTestResult> {
     const apexClassRepository = new ApexClassRepository(this.connection)
     const apexTestRunner = new ApexTestRunner(this.connection)
     this.spinner.start(
@@ -202,12 +201,19 @@ export class MutationTestingService {
     this.spinner.stop(`${mutations.length} mutations generated`)
 
     if (this.dryRun) {
-      return mutations.map(mutation => ({
-        line: mutation.target.startToken.line,
-        mutatorName: mutation.mutationName,
-        original: this.extractMutationOriginalText(mutation),
-        replacement: mutation.replacement,
-      }))
+      return {
+        sourceFile: this.apexClassName,
+        sourceFileContent: apexClass.Body,
+        testFile: this.apexTestClassName,
+        mutants: mutations.map(mutation => ({
+          id: `${this.apexClassName}-${mutation.target.startToken.line}-${mutation.target.startToken.charPositionInLine}-${mutation.target.startToken.tokenIndex}-${Date.now()}`,
+          mutatorName: mutation.mutationName,
+          status: 'Pending' as const,
+          location: this.calculateMutationPosition(mutation, apexClass.Body),
+          replacement: mutation.replacement,
+          original: this.extractMutationOriginalText(mutation),
+        })),
+      }
     }
 
     const mutationResults: ApexMutationTestResult = {

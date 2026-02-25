@@ -356,7 +356,7 @@ describe('MutationTestingService', () => {
     })
 
     describe('When dry-run is enabled', () => {
-      it('then should return DryRunMutant array without deploying or running mutation tests', async () => {
+      it('then should return ApexMutationTestResult with Pending status without deploying or running mutation tests', async () => {
         // Arrange
         const mockUpdateFn = jest.fn()
         ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
@@ -398,14 +398,24 @@ describe('MutationTestingService', () => {
         const result = await dryRunService.process()
 
         // Assert
-        expect(result).toEqual([
-          {
-            line: 1,
-            mutatorName: 'TestMutation',
-            original: '42',
-            replacement: '0',
-          },
-        ])
+        expect(result).toEqual({
+          sourceFile: 'TestClass',
+          sourceFileContent: mockApexClass.Body,
+          testFile: 'TestClassTest',
+          mutants: [
+            {
+              id: expect.stringContaining('TestClass-'),
+              mutatorName: 'TestMutation',
+              status: 'Pending',
+              location: {
+                start: { line: 1, column: 61 },
+                end: { line: 1, column: 63 },
+              },
+              replacement: '0',
+              original: '42',
+            },
+          ],
+        })
         expect(mockUpdateFn).not.toHaveBeenCalled()
         expect(mockRunTestMethods).not.toHaveBeenCalled()
         expect(progress.start).not.toHaveBeenCalled()
