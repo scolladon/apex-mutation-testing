@@ -67,11 +67,3 @@ No mutations could be generated for '%s'. %s line(s) covered but no mutable patt
 # flags.dry-run.summary
 
 Preview mutations without deploying or running tests
-
-# info.dryRunSummary
-
-%s: %s
-
-# info.dryRunTotal
-
-Total: %s mutations across %s lines

@@ -156,9 +156,6 @@ describe('apex mutation test run NUT', () => {
     } as never)
     jest.spyOn(cmd, 'log').mockImplementation(jest.fn() as never)
     jest.spyOn(cmd, 'info').mockImplementation(jest.fn() as never)
-    Object.defineProperty(cmd, 'styledHeader', {
-      value: jest.fn(),
-    })
     Object.defineProperty(cmd, 'progress', {
       value: { start: jest.fn(), update: jest.fn(), finish: jest.fn() },
     })
