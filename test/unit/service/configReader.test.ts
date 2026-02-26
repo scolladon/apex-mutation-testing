@@ -294,4 +294,43 @@ describe('ConfigReader', () => {
     // Assert
     expect(result.lines).toEqual(['42'])
   })
+
+  it('Given config file with valid skipPatterns, When resolving config, Then returns skipPatterns from file', async () => {
+    // Arrange
+    const config = { skipPatterns: ['System\\.debug', 'Logger\\.'] }
+    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act
+    const result = await sut.resolve(parameter)
+
+    // Assert
+    expect(result.skipPatterns).toEqual(['System\\.debug', 'Logger\\.'])
+  })
+
+  it('Given CLI skipPatterns and config file skipPatterns, When resolving config, Then CLI overrides config file', async () => {
+    // Arrange
+    const config = { skipPatterns: ['FromFile'] }
+    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    const parameter: ApexMutationParameter = {
+      ...baseParameter,
+      skipPatterns: ['FromCLI'],
+    }
+
+    // Act
+    const result = await sut.resolve(parameter)
+
+    // Assert
+    expect(result.skipPatterns).toEqual(['FromCLI'])
+  })
+
+  it('Given config file with invalid regex in skipPatterns, When resolving config, Then throws validation error', async () => {
+    // Arrange
+    const config = { skipPatterns: ['([unclosed'] }
+    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(/Invalid skip pattern/)
+  })
 })

@@ -1,5 +1,7 @@
 import { readFile } from 'node:fs/promises'
 
+import * as RE2 from 're2'
+
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 
 const DEFAULT_CONFIG_FILE = '.mutation-testing.json'
@@ -36,6 +38,7 @@ export class ConfigReader {
       excludeTestMethods:
         parameter.excludeTestMethods ?? fileConfig?.testMethods?.exclude,
       threshold: parameter.threshold ?? fileConfig?.threshold,
+      skipPatterns: parameter.skipPatterns ?? fileConfig?.skipPatterns,
       lines: parameter.lines ?? fileConfig?.lines,
     }
 
@@ -79,6 +82,17 @@ export class ConfigReader {
       (parameter.threshold < 0 || parameter.threshold > 100)
     ) {
       throw new Error('Threshold must be between 0 and 100')
+    }
+    if (parameter.skipPatterns) {
+      for (const pattern of parameter.skipPatterns) {
+        try {
+          new RE2(pattern)
+        } catch (error: unknown) {
+          throw new Error(
+            `Invalid skip pattern '${pattern}': ${error instanceof Error ? error.message : String(error)}`
+          )
+        }
+      }
     }
     if (parameter.lines) {
       for (const range of parameter.lines) {
