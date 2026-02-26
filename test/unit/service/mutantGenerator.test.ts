@@ -106,6 +106,110 @@ describe('MutantGenerator', () => {
     })
   })
 
+  describe('when filtering mutators', () => {
+    it('Given includeMutators with ArithmeticOperator, When computing mutations on arithmetic code, Then only ArithmeticOperatorMutator mutations are returned', () => {
+      // Arrange
+      const classContent =
+        'public class Test { public static Integer method() { return 1 + 2; } }'
+      const coveredLines = new Set([1])
+
+      // Act
+      const result = sut.compute(classContent, coveredLines, undefined, {
+        include: ['ArithmeticOperator'],
+      })
+
+      // Assert
+      expect(result.length).toBeGreaterThan(0)
+      expect(
+        result.every(m => m.mutationName === 'ArithmeticOperatorMutator')
+      ).toBe(true)
+    })
+
+    it('Given excludeMutators with Increment, When computing mutations on increment code, Then IncrementMutator mutations are excluded', () => {
+      // Arrange
+      const classContent =
+        'public class Test { public static void method() { integer i = 0; ++i; } }'
+      const coveredLines = new Set([1])
+
+      // Act
+      const result = sut.compute(classContent, coveredLines, undefined, {
+        exclude: ['Increment'],
+      })
+
+      // Assert
+      expect(result.every(m => m.mutationName !== 'IncrementMutator')).toBe(
+        true
+      )
+    })
+
+    it('Given includeMutators with unknown name, When computing mutations, Then unknown name is skipped', () => {
+      // Arrange
+      const classContent =
+        'public class Test { public static Integer method() { return 1 + 2; } }'
+      const coveredLines = new Set([1])
+
+      // Act
+      const result = sut.compute(classContent, coveredLines, undefined, {
+        include: ['ArithmeticOperator', 'NonExistentMutator'],
+      })
+
+      // Assert
+      expect(result.length).toBeGreaterThan(0)
+      expect(
+        result.every(m => m.mutationName === 'ArithmeticOperatorMutator')
+      ).toBe(true)
+    })
+
+    it('Given includeMutators resulting in zero mutators, When computing mutations, Then throws error', () => {
+      // Arrange
+      const classContent =
+        'public class Test { public static Integer method() { return 1 + 2; } }'
+      const coveredLines = new Set([1])
+
+      // Act & Assert
+      expect(() =>
+        sut.compute(classContent, coveredLines, undefined, {
+          include: ['NonExistentMutator'],
+        })
+      ).toThrow('All mutators have been excluded by configuration')
+    })
+
+    it('Given case-insensitive mutator name, When computing mutations, Then matches correctly', () => {
+      // Arrange
+      const classContent =
+        'public class Test { public static Integer method() { return 1 + 2; } }'
+      const coveredLines = new Set([1])
+
+      // Act
+      const result = sut.compute(classContent, coveredLines, undefined, {
+        include: ['arithmeticoperator'],
+      })
+
+      // Assert
+      expect(result.length).toBeGreaterThan(0)
+      expect(
+        result.every(m => m.mutationName === 'ArithmeticOperatorMutator')
+      ).toBe(true)
+    })
+
+    it('Given empty mutator filter, When computing mutations, Then returns all mutations', () => {
+      // Arrange
+      const classContent =
+        'public class Test { public static void method() { integer i = 0; ++i; } }'
+      const coveredLines = new Set([1])
+
+      // Act
+      const withFilter = sut.compute(classContent, coveredLines, undefined, {})
+      const withoutFilter = new MutantGenerator().compute(
+        classContent,
+        coveredLines
+      )
+
+      // Assert
+      expect(withFilter.length).toBe(withoutFilter.length)
+    })
+  })
+
   describe('getTokenStream', () => {
     it('Given no compute called, When calling getTokenStream, Then returns undefined', () => {
       // Arrange & Act

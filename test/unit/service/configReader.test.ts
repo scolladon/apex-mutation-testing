@@ -83,6 +83,17 @@ describe('ConfigReader', () => {
     )
   })
 
+  it('Given non-Error thrown when reading config, When resolving config, Then wraps it in error message', async () => {
+    // Arrange
+    ;(readFile as jest.Mock).mockRejectedValue('unexpected string error')
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(
+      /Failed to parse config file.*unexpected string error/
+    )
+  })
+
   it('Given CLI flags and config file, When resolving config, Then CLI flags override config file values', async () => {
     // Arrange
     const config = {
