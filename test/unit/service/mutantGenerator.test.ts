@@ -142,11 +142,14 @@ describe('MutantGenerator', () => {
       )
     })
 
-    it('Given includeMutators with unknown name, When computing mutations, Then unknown name is skipped', () => {
+    it('Given includeMutators with unknown name, When computing mutations, Then unknown name is skipped and warning emitted', () => {
       // Arrange
       const classContent =
         'public class Test { public static Integer method() { return 1 + 2; } }'
       const coveredLines = new Set([1])
+      const warnSpy = jest
+        .spyOn(process, 'emitWarning')
+        .mockImplementation(() => undefined)
 
       // Act
       const result = sut.compute(classContent, coveredLines, undefined, {
@@ -158,6 +161,10 @@ describe('MutantGenerator', () => {
       expect(
         result.every(m => m.mutationName === 'ArithmeticOperatorMutator')
       ).toBe(true)
+      expect(warnSpy).toHaveBeenCalledWith(
+        "Unknown mutator name: 'nonexistentmutator' — skipping"
+      )
+      warnSpy.mockRestore()
     })
 
     it('Given includeMutators resulting in zero mutators, When computing mutations, Then throws error', () => {

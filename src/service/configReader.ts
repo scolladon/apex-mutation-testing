@@ -90,6 +90,14 @@ export class ConfigReader {
   }
 
   private validate(parameter: ApexMutationParameter): void {
+    if (parameter.includeMutators && parameter.excludeMutators) {
+      throw new Error('Cannot specify both includeMutators and excludeMutators')
+    }
+    if (parameter.includeTestMethods && parameter.excludeTestMethods) {
+      throw new Error(
+        'Cannot specify both includeTestMethods and excludeTestMethods'
+      )
+    }
     if (
       parameter.threshold !== undefined &&
       (parameter.threshold < 0 || parameter.threshold > 100)

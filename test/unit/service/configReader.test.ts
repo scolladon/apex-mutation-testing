@@ -97,19 +97,14 @@ describe('ConfigReader', () => {
   it('Given CLI flags and config file, When resolving config, Then CLI flags override config file values', async () => {
     // Arrange
     const config = {
-      mutators: { include: ['FromFile'], exclude: ['FromFileExclude'] },
-      testMethods: {
-        include: ['fileTestMethod'],
-        exclude: ['fileExcludeMethod'],
-      },
+      mutators: { include: ['FromFile'] },
+      testMethods: { exclude: ['fileExcludeMethod'] },
       threshold: 60,
     }
     ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
     const parameter: ApexMutationParameter = {
       ...baseParameter,
       includeMutators: ['FromCLI'],
-      excludeMutators: ['FromCLIExclude'],
-      includeTestMethods: ['cliTestMethod'],
       excludeTestMethods: ['cliExcludeMethod'],
       threshold: 90,
     }
@@ -119,8 +114,6 @@ describe('ConfigReader', () => {
 
     // Assert
     expect(result.includeMutators).toEqual(['FromCLI'])
-    expect(result.excludeMutators).toEqual(['FromCLIExclude'])
-    expect(result.includeTestMethods).toEqual(['cliTestMethod'])
     expect(result.excludeTestMethods).toEqual(['cliExcludeMethod'])
     expect(result.threshold).toBe(90)
   })
@@ -162,6 +155,34 @@ describe('ConfigReader', () => {
     // Act & Assert
     await expect(sut.resolve(parameter)).rejects.toThrow(
       'Threshold must be between 0 and 100'
+    )
+  })
+
+  it('Given config file with both mutators include and exclude, When resolving config, Then throws validation error', async () => {
+    // Arrange
+    const config = {
+      mutators: { include: ['ArithmeticOperator'], exclude: ['Increment'] },
+    }
+    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(
+      'Cannot specify both includeMutators and excludeMutators'
+    )
+  })
+
+  it('Given config file with both testMethods include and exclude, When resolving config, Then throws validation error', async () => {
+    // Arrange
+    const config = {
+      testMethods: { include: ['testA'], exclude: ['testB'] },
+    }
+    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(
+      'Cannot specify both includeTestMethods and excludeTestMethods'
     )
   })
 

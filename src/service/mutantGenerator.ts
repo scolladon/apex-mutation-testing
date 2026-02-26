@@ -226,15 +226,20 @@ export class MutantGenerator {
       return MUTATOR_REGISTRY
     }
 
+    const registryNames = new Set(
+      MUTATOR_REGISTRY.map(e => e.name.toLowerCase())
+    )
     let filtered: MutatorRegistryEntry[]
 
     if (mutatorFilter.include) {
       const includeNames = mutatorFilter.include.map(n => n.toLowerCase())
+      this.warnUnknownMutators(includeNames, registryNames)
       filtered = MUTATOR_REGISTRY.filter(entry =>
         includeNames.includes(entry.name.toLowerCase())
       )
     } else if (mutatorFilter.exclude) {
       const excludeNames = mutatorFilter.exclude.map(n => n.toLowerCase())
+      this.warnUnknownMutators(excludeNames, registryNames)
       filtered = MUTATOR_REGISTRY.filter(
         entry => !excludeNames.includes(entry.name.toLowerCase())
       )
@@ -247,5 +252,15 @@ export class MutantGenerator {
     }
 
     return filtered
+  }
+
+  private warnUnknownMutators(
+    requestedNames: string[],
+    knownNames: Set<string>
+  ): void {
+    const unknown = requestedNames.filter(name => !knownNames.has(name))
+    for (const name of unknown) {
+      process.emitWarning(`Unknown mutator name: '${name}' — skipping`)
+    }
   }
 }
