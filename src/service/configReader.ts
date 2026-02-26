@@ -14,6 +14,8 @@ interface MutationTestingConfig {
     exclude?: string[]
   }
   threshold?: number
+  skipPatterns?: string[]
+  lines?: string[]
 }
 
 export class ConfigReader {
