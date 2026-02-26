@@ -69,7 +69,7 @@
     "test:e2e:run": "sf apex mutation test run -o e2e-test-org -c Mutation -t MutationTest -r test/e2e && npm run test:e2e:normalize",
     "test:e2e:run:local": "node ./bin/run.js apex mutation test run -o apex-mutation-testing -c Mutation -t MutationTest -r test/e2e && npm run test:e2e:normalize",
     "test:e2e:normalize": "node tooling/normalize-e2e-snapshot.mjs",
-    "test:e2e:validate": "git diff --quiet test/e2e/",
+    "test:e2e:validate": "git diff test/e2e/ && git diff --quiet test/e2e/",
     "test:e2e:teardown": "sf project deploy start -d test/classes -o e2e-test-org",
     "test:e2e": "npm run test:e2e:setup && npm run test:e2e:run && npm run test:e2e:validate; npm run test:e2e:teardown",
     "devops:cleanup:dev-tag": "./tooling/devops-cleanup.sh",
