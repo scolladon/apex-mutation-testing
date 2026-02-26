@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 
-import * as RE2 from 're2'
+import RE2 from 're2'
 
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 
