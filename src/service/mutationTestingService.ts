@@ -65,7 +65,6 @@ export class MutationTestingService {
   protected readonly apexTestClassName: string
   protected readonly dryRun: boolean
   private apexClassContent: string = ''
-  private deployTime: number = 0
 
   constructor(
     protected readonly progress: Progress,
@@ -142,11 +141,12 @@ export class MutationTestingService {
       undefined,
       { stdout: true }
     )
+    let deployTime = 0
     try {
       const { durationMs } = await timeExecution(() =>
         apexClassRepository.update(apexClass)
       )
-      this.deployTime = durationMs
+      deployTime = durationMs
     } catch (error: unknown) {
       this.spinner.stop()
       const errorMessage =
@@ -251,7 +251,7 @@ export class MutationTestingService {
 
     this.spinner.stop(`${mutations.length} mutations generated`)
 
-    const totalEstimateMs = (this.deployTime + testTime) * mutations.length
+    const totalEstimateMs = (deployTime + testTime) * mutations.length
     this.spinner.start(
       this.messages.getMessage('info.timeEstimate', [
         formatDuration(totalEstimateMs),
@@ -261,7 +261,7 @@ export class MutationTestingService {
     )
     this.spinner.stop(
       this.messages.getMessage('info.timeEstimateBreakdown', [
-        formatDuration(this.deployTime),
+        formatDuration(deployTime),
         formatDuration(testTime),
         String(mutations.length),
       ])
