@@ -7,7 +7,6 @@ import {
   CommonTokenStream,
   ParseTreeWalker,
 } from 'apex-parser'
-import type * as RE2 from 're2'
 import { ArgumentPropagationMutator } from '../mutator/argumentPropagationMutator.js'
 import { ArithmeticOperatorDeletionMutator } from '../mutator/arithmeticOperatorDeletionMutator.js'
 import { ArithmeticOperatorMutator } from '../mutator/arithmeticOperatorMutator.js'
@@ -37,6 +36,7 @@ import { UnaryOperatorInsertionMutator } from '../mutator/unaryOperatorInsertion
 import { VoidMethodCallMutator } from '../mutator/voidMethodCallMutator.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { TypeRegistry } from '../type/TypeRegistry.js'
+import type { RE2Instance } from './configReader.js'
 
 const MUTATOR_NAME = {
   ARGUMENT_PROPAGATION: 'ArgumentPropagation',
@@ -188,7 +188,7 @@ export class MutantGenerator {
     coveredLines: Set<number>,
     typeRegistry?: TypeRegistry,
     mutatorFilter?: { include?: string[]; exclude?: string[] },
-    skipPatterns: RE2[] = [],
+    skipPatterns: RE2Instance[] = [],
     allowedLines?: Set<number>
   ) {
     const lexer = new ApexLexer(

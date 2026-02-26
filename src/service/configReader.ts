@@ -4,6 +4,8 @@ import RE2 from 're2'
 
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 
+export type RE2Instance = InstanceType<typeof RE2>
+
 const DEFAULT_CONFIG_FILE = '.mutation-testing.json'
 
 interface MutationTestingConfig {
@@ -88,7 +90,9 @@ export class ConfigReader {
     return result
   }
 
-  public static compileSkipPatterns(patterns: string[] | undefined): RE2[] {
+  public static compileSkipPatterns(
+    patterns: string[] | undefined
+  ): RE2Instance[] {
     if (!patterns) {
       return []
     }

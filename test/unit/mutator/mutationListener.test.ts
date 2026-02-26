@@ -1,5 +1,5 @@
 import { MethodCallContext } from 'apex-parser'
-import * as RE2 from 're2'
+import RE2 from 're2'
 import { BaseListener } from '../../../src/mutator/baseListener.js'
 import { MutationListener } from '../../../src/mutator/mutationListener.js'
 

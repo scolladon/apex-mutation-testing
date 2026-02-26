@@ -1,4 +1,4 @@
-import * as RE2 from 're2'
+import RE2 from 're2'
 import { MutantGenerator } from '../../../src/service/mutantGenerator.js'
 
 describe('MutantGenerator', () => {

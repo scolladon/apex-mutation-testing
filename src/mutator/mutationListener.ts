@@ -1,6 +1,6 @@
 import { ParserRuleContext } from 'antlr4ts'
 import { ApexParserListener } from 'apex-parser'
-import type * as RE2 from 're2'
+import type { RE2Instance } from '../service/configReader.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { BaseListener } from './baseListener.js'
 
@@ -16,7 +16,7 @@ export class MutationListener implements ApexParserListener {
   constructor(
     listeners: BaseListener[],
     protected readonly coveredLines: Set<number>,
-    protected readonly skipPatterns: RE2[] = [],
+    protected readonly skipPatterns: RE2Instance[] = [],
     protected readonly allowedLines: Set<number> | undefined = undefined,
     protected readonly sourceLines: string[] = []
   ) {
