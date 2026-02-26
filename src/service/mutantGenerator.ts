@@ -37,7 +37,7 @@ import { VoidMethodCallMutator } from '../mutator/voidMethodCallMutator.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { TypeRegistry } from '../type/TypeRegistry.js'
 
-export const MUTATOR_NAME = {
+const MUTATOR_NAME = {
   ARGUMENT_PROPAGATION: 'ArgumentPropagation',
   ARITHMETIC_OPERATOR: 'ArithmeticOperator',
   ARITHMETIC_OPERATOR_DELETION: 'ArithmeticOperatorDeletion',
@@ -65,7 +65,7 @@ export const MUTATOR_NAME = {
   VOID_METHOD_CALL: 'VoidMethodCall',
 } as const
 
-export type MutatorName = (typeof MUTATOR_NAME)[keyof typeof MUTATOR_NAME]
+type MutatorName = (typeof MUTATOR_NAME)[keyof typeof MUTATOR_NAME]
 
 interface MutatorRegistryEntry {
   name: MutatorName
