@@ -15,4 +15,5 @@ apex-mutation-testing-*.tgz
 stderr*.txt
 stdout*.txt
 tsconfig.tsbuildinfo
-
+.worktrees/
+docs/plans/
