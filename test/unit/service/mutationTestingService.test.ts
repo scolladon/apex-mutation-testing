@@ -1022,6 +1022,8 @@ describe('MutationTestingService', () => {
           mockApexClass.Body,
           new Set([2]),
           expect.anything(),
+          undefined,
+          [],
           undefined
         )
       })
@@ -1076,7 +1078,9 @@ describe('MutationTestingService', () => {
           mockApexClass.Body,
           new Set([1]),
           expect.anything(),
-          { include: ['ArithmeticOperator', 'BoundaryCondition'] }
+          { include: ['ArithmeticOperator', 'BoundaryCondition'] },
+          [],
+          undefined
         )
       })
     })
@@ -1130,7 +1134,9 @@ describe('MutationTestingService', () => {
           mockApexClass.Body,
           new Set([1]),
           expect.anything(),
-          { exclude: ['ArithmeticOperator'] }
+          { exclude: ['ArithmeticOperator'] },
+          [],
+          undefined
         )
       })
     })

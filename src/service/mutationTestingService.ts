@@ -1,6 +1,7 @@
 import { TestResult } from '@salesforce/apex-node'
 import { Connection, Messages } from '@salesforce/core'
 import { Progress, Spinner } from '@salesforce/sf-plugins-core'
+import type * as RE2 from 're2'
 import { ApexClassRepository } from '../adapter/apexClassRepository.js'
 import { ApexTestRunner } from '../adapter/apexTestRunner.js'
 import { SObjectDescribeRepository } from '../adapter/sObjectDescribeRepository.js'
@@ -8,6 +9,7 @@ import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
+import { ConfigReader } from './configReader.js'
 import { MutantGenerator } from './mutantGenerator.js'
 import { formatDuration, timeExecution } from './timeUtils.js'
 import { TypeDiscoverer } from './typeDiscoverer.js'
@@ -68,6 +70,8 @@ export class MutationTestingService {
   protected readonly excludeMutators: string[] | undefined
   protected readonly includeTestMethods: string[] | undefined
   protected readonly excludeTestMethods: string[] | undefined
+  private readonly skipPatterns: RE2[]
+  private readonly allowedLines: Set<number> | undefined
   private apexClassContent: string = ''
 
   constructor(
@@ -82,6 +86,8 @@ export class MutationTestingService {
       excludeMutators,
       includeTestMethods,
       excludeTestMethods,
+      skipPatterns,
+      lines,
     }: ApexMutationParameter,
     protected readonly messages: Messages<string>
   ) {
@@ -92,6 +98,8 @@ export class MutationTestingService {
     this.excludeMutators = excludeMutators
     this.includeTestMethods = includeTestMethods
     this.excludeTestMethods = excludeTestMethods
+    this.skipPatterns = ConfigReader.compileSkipPatterns(skipPatterns)
+    this.allowedLines = ConfigReader.parseLineRanges(lines)
   }
 
   public async process(): Promise<ApexMutationTestResult> {
@@ -264,7 +272,9 @@ export class MutationTestingService {
       apexClass.Body,
       coveredLines,
       typeRegistry,
-      mutatorFilter
+      mutatorFilter,
+      this.skipPatterns,
+      this.allowedLines
     )
 
     if (mutations.length === 0) {

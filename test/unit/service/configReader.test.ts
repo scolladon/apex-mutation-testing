@@ -362,4 +362,59 @@ describe('ConfigReader', () => {
       /Invalid skip pattern 'some-pattern': string thrown/
     )
   })
+
+  describe('parseLineRanges', () => {
+    it('Given single line number, When parsing, Then returns set with that number', () => {
+      // Arrange & Act
+      const sut = ConfigReader.parseLineRanges(['42'])
+
+      // Assert
+      expect(sut).toEqual(new Set([42]))
+    })
+
+    it('Given range, When parsing, Then returns expanded set', () => {
+      // Arrange & Act
+      const sut = ConfigReader.parseLineRanges(['1-3'])
+
+      // Assert
+      expect(sut).toEqual(new Set([1, 2, 3]))
+    })
+
+    it('Given multiple ranges and singles, When parsing, Then returns combined set', () => {
+      // Arrange & Act
+      const sut = ConfigReader.parseLineRanges(['1-3', '10', '20-22'])
+
+      // Assert
+      expect(sut).toEqual(new Set([1, 2, 3, 10, 20, 21, 22]))
+    })
+
+    it('Given undefined, When parsing, Then returns undefined', () => {
+      // Arrange & Act
+      const sut = ConfigReader.parseLineRanges(undefined)
+
+      // Assert
+      expect(sut).toBeUndefined()
+    })
+  })
+
+  describe('compileSkipPatterns', () => {
+    it('Given undefined, When compiling, Then returns empty array', () => {
+      // Arrange & Act
+      const sut = ConfigReader.compileSkipPatterns(undefined)
+
+      // Assert
+      expect(sut).toEqual([])
+    })
+
+    it('Given patterns, When compiling, Then returns RE2 instances', () => {
+      // Arrange & Act
+      const sut = ConfigReader.compileSkipPatterns([
+        'System\\.debug',
+        'Logger\\.',
+      ])
+
+      // Assert
+      expect(sut).toHaveLength(2)
+    })
+  })
 })

@@ -68,6 +68,33 @@ export class ConfigReader {
     }
   }
 
+  public static parseLineRanges(
+    lines: string[] | undefined
+  ): Set<number> | undefined {
+    if (!lines) {
+      return undefined
+    }
+    const result = new Set<number>()
+    for (const range of lines) {
+      if (range.includes('-')) {
+        const [start, end] = range.split('-').map(Number)
+        for (let i = start; i <= end; i++) {
+          result.add(i)
+        }
+      } else {
+        result.add(Number(range))
+      }
+    }
+    return result
+  }
+
+  public static compileSkipPatterns(patterns: string[] | undefined): RE2[] {
+    if (!patterns) {
+      return []
+    }
+    return patterns.map(p => new RE2(p))
+  }
+
   private validate(parameter: ApexMutationParameter): void {
     if (parameter.includeMutators && parameter.excludeMutators) {
       throw new Error('Cannot specify both includeMutators and excludeMutators')
