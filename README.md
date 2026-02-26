@@ -114,13 +114,13 @@ The config file supports the following attributes:
 }
 ```
 
-| Attribute               | Type       | Description                                                                |
-| ----------------------- | ---------- | -------------------------------------------------------------------------- |
-| `mutators.include`      | `string[]` | Only apply these mutation operators (see [Supported Mutation Operators](#supported-mutation-operators) for names) |
-| `mutators.exclude`      | `string[]` | Apply all operators except these                                           |
-| `testMethods.include`   | `string[]` | Only use these test methods to evaluate mutations                          |
-| `testMethods.exclude`   | `string[]` | Use all test methods except these                                          |
-| `threshold`             | `number`   | Minimum mutation score (0–100) required for the command to succeed          |
+| Attribute             | Type       | Description                                                                                                       |
+| --------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------- |
+| `mutators.include`    | `string[]` | Only apply these mutation operators (see [Supported Mutation Operators](#supported-mutation-operators) for names) |
+| `mutators.exclude`    | `string[]` | Apply all operators except these                                                                                  |
+| `testMethods.include` | `string[]` | Only use these test methods to evaluate mutations                                                                 |
+| `testMethods.exclude` | `string[]` | Use all test methods except these                                                                                 |
+| `threshold`           | `number`   | Minimum mutation score (0–100) required for the command to succeed                                                |
 
 **Mutual exclusivity:** You cannot specify both `include` and `exclude` within the same group. For example, setting both `mutators.include` and `mutators.exclude` will result in an error. The same applies to `testMethods.include` and `testMethods.exclude`. This constraint is enforced across both the config file and CLI flags — if `--include-mutators` is passed via CLI and `mutators.exclude` is set in the config file, the CLI value takes precedence and the config file value is ignored.
 
@@ -147,11 +147,16 @@ sf apex mutation test run --apex-class MyClass --test-class MyClassTest \
 
 #### Test Method Filtering
 
-Restrict which test methods are used to evaluate mutations using include or exclude lists:
+Restrict which test methods are used to evaluate mutations using include or exclude lists.
 
 ```sh
+# Only run those test methods
 sf apex mutation test run --apex-class MyClass --test-class MyClassTest \
   --include-test-methods testCalculateTotal --include-test-methods testEdgeCases
+
+# Don't run those test methods
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest \
+  --exclude-test-methods slowIntegrationTest --exclude-test-methods anotherSlowTest
 ```
 
 #### Threshold
@@ -166,33 +171,33 @@ sf apex mutation test run --apex-class MyClass --test-class MyClassTest --thresh
 
 The plugin currently supports the following mutation operators. If your code doesn't contain any of these patterns on covered lines, no mutations will be generated. The operator names in the first column are the values to use with `--include-mutators` and `--exclude-mutators` flags:
 
-| Operator                        | Description                                         | Example                                |
-| ------------------------------- | --------------------------------------------------- | -------------------------------------- |
-| **ArgumentPropagation**         | Replaces method call with matching argument          | `obj.method(arg)` → `arg`             |
-| **ArithmeticOperator**          | Swaps arithmetic operators                           | `a + b` → `a - b`                     |
-| **ArithmeticOperatorDeletion**  | Removes operator, keeps one operand                  | `a + b` → `a`                         |
-| **BitwiseOperator**             | Swaps bitwise operators                              | `a & b` → `a \| b`                    |
-| **BoundaryCondition**           | Modifies comparison boundaries                       | `<` → `<=`, `>` → `>=`                |
-| **ConstructorCall**             | Replaces object instantiation with null              | `new Account()` → `null`              |
-| **EmptyReturn**                 | Replaces return with type-appropriate empty value    | `return list` → `return new List<T>()`  |
-| **EqualityCondition**           | Swaps equality operators                             | `==` → `!=`, `!=` → `==`              |
-| **ExperimentalSwitch**          | Modifies switch/when structure                       | Removes else, swaps adjacent when values |
-| **FalseReturn**                 | Replaces boolean return with false                   | `return condition` → `return false`    |
-| **Increment**                   | Swaps increment/decrement                            | `i++` → `i--`, `--i` → `++i`          |
-| **InlineConstant**              | Mutates literal values                               | `5` → `0`, `true` → `false`           |
-| **InvertNegatives**             | Removes unary negation                               | `-x` → `x`                            |
-| **LogicalOperator**             | Swaps logical operators                              | `a && b` → `a \|\| b`                 |
-| **MemberVariable**              | Removes field initializer                            | `Integer x = 5` → `Integer x`         |
-| **NakedReceiver**               | Replaces method call with receiver                   | `receiver.method()` → `receiver`      |
-| **Negation**                    | Adds negation to numeric returns                     | `return 5` → `return -5`              |
-| **NonVoidMethodCall**           | Replaces method call with type default               | `x = obj.get()` → `x = null`          |
-| **NullReturn**                  | Replaces return with null                            | `return obj` → `return null`          |
-| **RemoveConditionals**          | Replaces if conditions with constant                 | `if (cond)` → `if (true)`             |
-| **RemoveIncrements**            | Removes increment/decrement entirely                 | `i++` → `i`, `++i` → `i`             |
-| **Switch**                      | Empties switch/when blocks                           | `when 1 { code }` → `when 1 {}`       |
-| **TrueReturn**                  | Replaces boolean return with true                    | `return condition` → `return true`     |
-| **UnaryOperatorInsertion**      | Inserts increment/decrement operators                | `variable` → `variable++`             |
-| **VoidMethodCall**              | Removes void method call entirely                    | `obj.doSomething()` → (removed)       |
+| Operator                       | Description                                       | Example                                  |
+| ------------------------------ | ------------------------------------------------- | ---------------------------------------- |
+| **ArgumentPropagation**        | Replaces method call with matching argument       | `obj.method(arg)` → `arg`                |
+| **ArithmeticOperator**         | Swaps arithmetic operators                        | `a + b` → `a - b`                        |
+| **ArithmeticOperatorDeletion** | Removes operator, keeps one operand               | `a + b` → `a`                            |
+| **BitwiseOperator**            | Swaps bitwise operators                           | `a & b` → `a \| b`                       |
+| **BoundaryCondition**          | Modifies comparison boundaries                    | `<` → `<=`, `>` → `>=`                   |
+| **ConstructorCall**            | Replaces object instantiation with null           | `new Account()` → `null`                 |
+| **EmptyReturn**                | Replaces return with type-appropriate empty value | `return list` → `return new List<T>()`   |
+| **EqualityCondition**          | Swaps equality operators                          | `==` → `!=`, `!=` → `==`                 |
+| **ExperimentalSwitch**         | Modifies switch/when structure                    | Removes else, swaps adjacent when values |
+| **FalseReturn**                | Replaces boolean return with false                | `return condition` → `return false`      |
+| **Increment**                  | Swaps increment/decrement                         | `i++` → `i--`, `--i` → `++i`             |
+| **InlineConstant**             | Mutates literal values                            | `5` → `0`, `true` → `false`              |
+| **InvertNegatives**            | Removes unary negation                            | `-x` → `x`                               |
+| **LogicalOperator**            | Swaps logical operators                           | `a && b` → `a \|\| b`                    |
+| **MemberVariable**             | Removes field initializer                         | `Integer x = 5` → `Integer x`            |
+| **NakedReceiver**              | Replaces method call with receiver                | `receiver.method()` → `receiver`         |
+| **Negation**                   | Adds negation to numeric returns                  | `return 5` → `return -5`                 |
+| **NonVoidMethodCall**          | Replaces method call with type default            | `x = obj.get()` → `x = null`             |
+| **NullReturn**                 | Replaces return with null                         | `return obj` → `return null`             |
+| **RemoveConditionals**         | Replaces if conditions with constant              | `if (cond)` → `if (true)`                |
+| **RemoveIncrements**           | Removes increment/decrement entirely              | `i++` → `i`, `++i` → `i`                 |
+| **Switch**                     | Empties switch/when blocks                        | `when 1 { code }` → `when 1 {}`          |
+| **TrueReturn**                 | Replaces boolean return with true                 | `return condition` → `return true`       |
+| **UnaryOperatorInsertion**     | Inserts increment/decrement operators             | `variable` → `variable++`                |
+| **VoidMethodCall**             | Removes void method call entirely                 | `obj.doSomething()` → (removed)          |
 
 ### Mutation Result Statuses
 
