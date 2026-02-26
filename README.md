@@ -90,6 +90,63 @@ Without this check, all mutants would result in `CompileError`, producing a misl
 
 This verification also serves as a baseline to measure deployment time, which is used to estimate the total mutation testing duration.
 
+### Configuration
+
+The plugin supports configuration through a JSON file and CLI flags. CLI flags always take precedence over config file values.
+
+#### Config File
+
+Create a `.mutation-testing.json` file at the root of your project:
+
+```json
+{
+  "mutators": {
+    "include": ["ArithmeticOperator", "BoundaryCondition"]
+  },
+  "testMethods": {
+    "exclude": ["slowIntegrationTest"]
+  },
+  "threshold": 80
+}
+```
+
+Use `--config-file` to specify a custom path:
+
+```sh
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest --config-file config/mutation.json
+```
+
+#### Mutator Filtering
+
+Restrict which mutation operators are applied using include or exclude lists (mutually exclusive). Names are case-insensitive and match the operator names from the table below (e.g. `ArithmeticOperator`, `BoundaryCondition`). Unknown names emit a warning and are skipped.
+
+```sh
+# Only apply arithmetic and boundary mutations
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest \
+  --include-mutators ArithmeticOperator --include-mutators BoundaryCondition
+
+# Apply all mutations except increment
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest \
+  --exclude-mutators Increment
+```
+
+#### Test Method Filtering
+
+Restrict which test methods are used to evaluate mutations using include or exclude lists (mutually exclusive):
+
+```sh
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest \
+  --include-test-methods testCalculateTotal --include-test-methods testEdgeCases
+```
+
+#### Threshold
+
+Set a minimum mutation score (0–100). The command fails with a non-zero exit code if the score falls below the threshold:
+
+```sh
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest --threshold 80
+```
+
 ### Supported Mutation Operators
 
 The plugin currently supports the following mutation operators. If your code doesn't contain any of these patterns on covered lines, no mutations will be generated:
@@ -165,16 +222,24 @@ Evaluate test coverage quality by injecting mutations and measuring test detecti
 ```
 USAGE
   $ sf apex mutation test run -c <value> -t <value> -o <value> [--json] [--flags-dir <value>] [-r <value>] [-d]
-    [--api-version <value>]
+    [--include-mutators <value>... | --exclude-mutators <value>...] [--include-test-methods <value>... |
+    --exclude-test-methods <value>...] [--threshold <value>] [--config-file <value>] [--api-version <value>]
 
 FLAGS
-  -c, --apex-class=<value>   (required) Apex class name to mutate
-  -d, --dry-run              Preview mutations without deploying or running tests
-  -o, --target-org=<value>   (required) Username or alias of the target org. Not required if the `target-org`
-                             configuration variable is already set.
-  -r, --report-dir=<value>   [default: mutations] Path to the directory where mutation test reports will be generated
-  -t, --test-class=<value>   (required) Apex test class name to validate mutations
-      --api-version=<value>  Override the api version used for api requests made by this command
+  -c, --apex-class=<value>               (required) Apex class name to mutate
+  -d, --dry-run                          Preview mutations without deploying or running tests
+  -o, --target-org=<value>               (required) Username or alias of the target org. Not required if the
+                                         `target-org` configuration variable is already set.
+  -r, --report-dir=<value>               [default: mutations] Path to the directory where mutation test reports will be
+                                         generated
+  -t, --test-class=<value>               (required) Apex test class name to validate mutations
+      --api-version=<value>              Override the api version used for api requests made by this command
+      --config-file=<value>              Path to mutation testing configuration file
+      --exclude-mutators=<value>...      Mutator names to exclude
+      --exclude-test-methods=<value>...  Test method names to exclude
+      --include-mutators=<value>...      Mutator names to include (e.g. ArithmeticOperator, BoundaryCondition)
+      --include-test-methods=<value>...  Test method names to include
+      --threshold=<value>                Minimum mutation score (0-100) required for the command to succeed
 
 GLOBAL FLAGS
   --flags-dir=<value>  Import flag values from a directory.
@@ -208,7 +273,6 @@ _See code: [src/commands/apex/mutation/test/run.ts](https://github.com/scolladon
 - **Smart Mutation Detection**: Implement logic to identify relevant mutations for specific code contexts
 - **Coverage Analysis**: Detect untested code paths that mutations won't affect
 - **Performance Optimization**: Add CPU time monitoring to fail fast on non ending mutation
-- **Better Configurability**: Pass threashold and use more information from test class
 - **Additional Features**: Explore other mutation testing enhancements and quality metrics
 
 ## Changelog
