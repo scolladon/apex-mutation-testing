@@ -86,22 +86,12 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       apexTestClassName: flags['test-class'],
       reportDir: flags['report-dir'],
       dryRun: flags['dry-run'],
-      ...(flags['include-mutators'] && {
-        includeMutators: flags['include-mutators'],
-      }),
-      ...(flags['exclude-mutators'] && {
-        excludeMutators: flags['exclude-mutators'],
-      }),
-      ...(flags['include-test-methods'] && {
-        includeTestMethods: flags['include-test-methods'],
-      }),
-      ...(flags['exclude-test-methods'] && {
-        excludeTestMethods: flags['exclude-test-methods'],
-      }),
-      ...(flags['threshold'] !== undefined && {
-        threshold: flags['threshold'],
-      }),
-      ...(flags['config-file'] && { configFile: flags['config-file'] }),
+      includeMutators: flags['include-mutators'],
+      excludeMutators: flags['exclude-mutators'],
+      includeTestMethods: flags['include-test-methods'],
+      excludeTestMethods: flags['exclude-test-methods'],
+      threshold: flags['threshold'],
+      configFile: flags['config-file'],
     }
 
     const configReader = new ConfigReader()

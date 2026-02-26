@@ -25,31 +25,15 @@ export class ConfigReader {
 
     const resolved: ApexMutationParameter = {
       ...parameter,
-      ...this.mergeOptional(
-        'includeMutators',
-        parameter.includeMutators,
-        fileConfig?.mutators?.include
-      ),
-      ...this.mergeOptional(
-        'excludeMutators',
-        parameter.excludeMutators,
-        fileConfig?.mutators?.exclude
-      ),
-      ...this.mergeOptional(
-        'includeTestMethods',
-        parameter.includeTestMethods,
-        fileConfig?.testMethods?.include
-      ),
-      ...this.mergeOptional(
-        'excludeTestMethods',
-        parameter.excludeTestMethods,
-        fileConfig?.testMethods?.exclude
-      ),
-      ...this.mergeOptional(
-        'threshold',
-        parameter.threshold,
-        fileConfig?.threshold
-      ),
+      includeMutators:
+        parameter.includeMutators ?? fileConfig?.mutators?.include,
+      excludeMutators:
+        parameter.excludeMutators ?? fileConfig?.mutators?.exclude,
+      includeTestMethods:
+        parameter.includeTestMethods ?? fileConfig?.testMethods?.include,
+      excludeTestMethods:
+        parameter.excludeTestMethods ?? fileConfig?.testMethods?.exclude,
+      threshold: parameter.threshold ?? fileConfig?.threshold,
     }
 
     this.validate(resolved)
@@ -78,17 +62,6 @@ export class ConfigReader {
     }
   }
 
-  private mergeOptional<K extends keyof ApexMutationParameter>(
-    key: K,
-    cliValue: ApexMutationParameter[K] | undefined,
-    fileValue: ApexMutationParameter[K] | undefined
-  ): Partial<Pick<ApexMutationParameter, K>> {
-    const value = cliValue ?? fileValue
-    return value !== undefined
-      ? ({ [key]: value } as Pick<ApexMutationParameter, K>)
-      : {}
-  }
-
   private validate(parameter: ApexMutationParameter): void {
     if (parameter.includeMutators && parameter.excludeMutators) {
       throw new Error('Cannot specify both includeMutators and excludeMutators')
@@ -97,6 +70,12 @@ export class ConfigReader {
       throw new Error(
         'Cannot specify both includeTestMethods and excludeTestMethods'
       )
+    }
+    if (
+      parameter.threshold !== undefined &&
+      (parameter.threshold < 0 || parameter.threshold > 100)
+    ) {
+      throw new Error('Threshold must be between 0 and 100')
     }
   }
 }

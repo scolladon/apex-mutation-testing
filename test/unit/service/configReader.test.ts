@@ -162,6 +162,30 @@ describe('ConfigReader', () => {
     )
   })
 
+  it('Given config file with threshold below 0, When resolving config, Then throws validation error', async () => {
+    // Arrange
+    const config = { threshold: -1 }
+    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(
+      'Threshold must be between 0 and 100'
+    )
+  })
+
+  it('Given config file with threshold above 100, When resolving config, Then throws validation error', async () => {
+    // Arrange
+    const config = { threshold: 101 }
+    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(
+      'Threshold must be between 0 and 100'
+    )
+  })
+
   it('Given explicit configFile path that exists, When resolving config, Then reads from that path', async () => {
     // Arrange
     const config = { threshold: 50 }
