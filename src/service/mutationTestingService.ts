@@ -153,7 +153,7 @@ export class MutationTestingService {
     this.spinner.stop('Done')
 
     this.spinner.start(
-      `Verifying "${this.apexClassName}" apex class compilability`,
+      `Verifying "${this.apexClassName}" apex class compilation`,
       undefined,
       { stdout: true }
     )
@@ -177,7 +177,7 @@ export class MutationTestingService {
     this.spinner.stop('Done')
 
     this.spinner.start(
-      `Verifying "${this.apexTestClassName}" apex test class compilability`,
+      `Verifying "${this.apexTestClassName}" apex test class compilation`,
       undefined,
       { stdout: true }
     )
