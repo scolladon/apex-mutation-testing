@@ -7,6 +7,8 @@ Salesforce CLI plugin implementing **mutation testing** for Apex code. It evalua
 ```
 sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg>
 sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --dry-run
+sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --include-mutators ArithmeticOperator --threshold 80
+sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --config-file .mutation-testing.json
 ```
 
 ---
@@ -17,7 +19,12 @@ sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --dry-run
 ┌──────────────────────────────────────────────────────────┐
 │                    Presentation Layer                     │
 │              commands/apex/mutation/test/run.ts           │
-│           (CLI flags, progress UI, score output)         │
+│           (CLI flags, progress UI, score output,         │
+│            config resolution, threshold gating)          │
+├──────────────────────────────────────────────────────────┤
+│                  Configuration Layer                      │
+│              service/configReader.ts                      │
+│     (JSON config file + CLI flag merging)                │
 ├──────────────────────────────────────────────────────────┤
 │                   Orchestration Layer                     │
 │            service/mutationTestingService.ts              │
@@ -56,27 +63,34 @@ sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --dry-run
 ```
 sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │
-├─ 1. VALIDATE
+├─ 1. RESOLVE CONFIGURATION
+│     ConfigReader.resolve(cliFlags)
+│       ├─ read .mutation-testing.json (if exists)
+│       ├─ merge: CLI flags override config file
+│       └─ validate: threshold 0-100
+│     Precedence: CLI flags > config file > defaults
+│
+├─ 2. VALIDATE
 │     ApexClassValidator
 │       ├─ read(MyClass)     → exists?
 │       └─ read(MyClassTest) → exists + @IsTest?
 │
-├─ 2. FETCH SOURCE
+├─ 3. FETCH SOURCE
 │     ApexClassRepository.read(MyClass) → { Id, Body }
 │
-├─ 3. DISCOVER DEPENDENCIES
+├─ 4. DISCOVER DEPENDENCIES
 │     ApexClassRepository.getApexClassDependencies(Id)
 │       → MetadataComponentDependency[]
 │       → partition into: ApexClass | StandardEntity | CustomObject
 │
-├─ 4. BUILD TYPE SYSTEM
+├─ 5. BUILD TYPE SYSTEM
 │     SObjectDescribeRepository.describe(sObjectTypes)
 │       → parallel Describe API calls (max 25 concurrent)
 │     TypeDiscoverer.analyze(Body)
 │       → ANTLR parse #1 → TypeRegistry
 │         (methodTypeTable, variableScopes, classFields)
 │
-├─ 5. COMPILABILITY VERIFICATION
+├─ 6. COMPILABILITY VERIFICATION
 │     Deploy main class back to org via
 │       ApexClassRepository.update(apexClass)
 │       → wrapped in timeExecution() → deployTime
@@ -91,22 +105,32 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │       deploy. Without this check, all mutants would get
 │       CompileError → misleading 100% score.
 │
-├─ 6. BASELINE TEST RUN
+├─ 7. BASELINE TEST RUN
 │     ApexTestRunner.getTestMethodsPerLines(MyClassTest)
 │       → wrapped in timeExecution() → testTime
 │       → runTestAsynchronous (with code coverage)
 │       → testMethodsPerLine: Map<line, Set<testMethodName>>
-│       → coveredLines: Set<line>
 │       ✓ All tests must pass (green baseline)
 │
-├─ 7. GENERATE MUTATIONS
-│     MutantGenerator.compute(Body, coveredLines, typeRegistry)
+├─ 7b. FILTER TEST METHODS (if configured)
+│     Apply includeTestMethods or excludeTestMethods
+│       → filter testMethodsPerLine in-place
+│       → lines with zero remaining methods are deleted
+│       → coveredLines derived after filtering
+│     Rationale: filtering early reduces both the number
+│       of mutations generated AND test executions per mutant.
+│
+├─ 8. GENERATE MUTATIONS
+│     MutantGenerator.compute(Body, coveredLines, typeRegistry,
+│       mutatorFilter)
 │       → ANTLR parse #2 → AST
-│       → ParseTreeWalker fires enter*/exit* on 25 mutators
+│       → filter mutator registry by include/exclude
+│         (case-insensitive name matching)
+│       → ParseTreeWalker fires enter*/exit* on filtered mutators
 │         (filtered by coveredLines via Proxy)
 │       → ApexMutation[] (with token ranges)
 │
-├─ 8. TIME ESTIMATION
+├─ 9. TIME ESTIMATION
 │     estimate = (deployTime + testTime) × mutantCount
 │     Display: "Estimated time: ~Xm Ys"
 │     Breakdown: "Deploy: ~Xs/mutant | Test: ~Xs/mutant"
@@ -120,7 +144,7 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │       path) and returns { score: null }.
 │     ────────────────────────────────────────────────
 │
-├─ 9. MUTATION TESTING LOOP (for each mutation)
+├─ 10. MUTATION TESTING LOOP (for each mutation)
 │     ┌─────────────────────────────────────────────┐
 │     │ a. MutantGenerator.mutate(mutation)          │
 │     │    → TokenStreamRewriter → mutated source    │
@@ -145,15 +169,20 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │     │    "Remaining: ~Xm Ys | <result>"            │
 │     └─────────────────────────────────────────────┘
 │
-├─ 10. ROLLBACK
+├─ 11. ROLLBACK
 │      ApexClassRepository.update(originalBody)
 │
-├─ 11. REPORT
+├─ 12. REPORT
 │      HTMLReporter → Stryker JSON schema → HTML with
 │      mutation-test-elements web component
 │
-└─ 12. SCORE
+├─ 13. SCORE
 │      score = killed / (total - compileErrors) × 100
+│
+└─ 14. THRESHOLD GATING (if configured)
+│      If score < threshold → throw SfError (exit code 1)
+│      Message: "Mutation score X% is below threshold Y%"
+│      Skipped in dry-run mode (no score computed)
 ```
 
 ---
@@ -647,10 +676,54 @@ Four test tiers with distinct scopes and runners:
 1. Create a class extending `BaseListener` in `src/mutator/`
 2. Implement the relevant `enter*` ANTLR hooks
 3. Call `createMutationFromParserRuleContext(ctx, replacement)` or `createMutationFromTerminalNode(node, replacement)` to register mutations
-4. Add the mutator to the array in `MutantGenerator.compute()` (inside `getMutators()` equivalent section)
+4. Add a `MUTATOR_NAME` entry and a `MUTATOR_REGISTRY` entry in `MutantGenerator` (name + factory function)
 5. The Proxy-based `MutationListener` automatically dispatches to the new mutator — no changes needed in the aggregation layer
+6. The new mutator is automatically available for include/exclude filtering by its registry name
 
 For type-aware mutators, accept `TypeRegistry` in the constructor and use `typeRegistry.resolveType()` to make type-informed decisions.
+
+---
+
+## Configuration
+
+### Config File
+
+Optional JSON file at `.mutation-testing.json` (or custom path via `--config-file`):
+
+```json
+{
+  "mutators": {
+    "include": ["ArithmeticOperator", "BoundaryCondition"]
+  },
+  "testMethods": {
+    "exclude": ["testSlowIntegration"]
+  },
+  "threshold": 80
+}
+```
+
+### CLI Flags
+
+| Flag | Type | Description |
+|---|---|---|
+| `--include-mutators` | string[] | Mutator names to include (exclusive with exclude) |
+| `--exclude-mutators` | string[] | Mutator names to exclude (exclusive with include) |
+| `--include-test-methods` | string[] | Test method names to include (exclusive with exclude) |
+| `--exclude-test-methods` | string[] | Test method names to exclude (exclusive with include) |
+| `--threshold` | integer | Minimum mutation score (0-100) for success |
+| `--config-file` | file | Path to config file (must exist) |
+
+### Merge Precedence
+
+```
+CLI flags > config file > defaults (all mutators, all tests, no threshold)
+```
+
+`ConfigReader.resolve()` merges config file values with CLI flag overrides using `??` (CLI wins when present). Include/exclude pairs are mutually exclusive — enforced by oclif `exclusive` flag attribute.
+
+### Mutator Registry
+
+`MutantGenerator` maintains a `MUTATOR_REGISTRY` array mapping `MutatorName` constants to factory functions. Filtering is case-insensitive against registry names (without `Mutator` suffix). Unknown names are silently skipped (forward-compatible). All mutators excluded → error.
 
 ---
 
