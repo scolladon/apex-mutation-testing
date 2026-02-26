@@ -860,6 +860,281 @@ describe('MutationTestingService', () => {
       })
     })
 
+    describe('Given includeTestMethods with testMethodA, When processing, Then only testMethodA is used in testMethodsPerLine', () => {
+      it('should only keep testMethodA in testMethodsPerLine', async () => {
+        // Arrange
+        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
+          read: jest.fn().mockImplementation((name: string) => {
+            if (name === 'TestClass') return Promise.resolve(mockApexClass)
+            return Promise.resolve(mockTestClass)
+          }),
+          update: jest.fn().mockResolvedValue({}),
+          getApexClassDependencies: jest.fn().mockResolvedValue([]),
+        }))
+        const mockComputeFn = jest.fn().mockReturnValue([mockMutation])
+        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
+          compute: mockComputeFn,
+          mutate: jest.fn().mockReturnValue('mutated code'),
+        }))
+        const mockRunTestMethods = jest.fn().mockResolvedValue({
+          summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
+        })
+        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
+          runTestMethods: mockRunTestMethods,
+          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+            outcome: 'Passed',
+            passing: 1,
+            failing: 0,
+            testsRan: 2,
+            testMethodsPerLine: new Map([
+              [1, new Set(['testMethodA', 'testMethodB'])],
+            ]),
+          }),
+        }))
+
+        const filteredSut = new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassName: 'TestClassTest',
+            includeTestMethods: ['testMethodA'],
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+        // Act
+        await filteredSut.process()
+
+        // Assert
+        expect(mockRunTestMethods).toHaveBeenCalledWith(
+          'TestClassTest',
+          new Set(['testMethodA'])
+        )
+      })
+    })
+
+    describe('Given excludeTestMethods with testMethodA, When processing with testMethodA and testMethodB covering line, Then testMethodA is excluded from testMethodsPerLine', () => {
+      it('should exclude testMethodA from testMethodsPerLine', async () => {
+        // Arrange
+        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
+          read: jest.fn().mockImplementation((name: string) => {
+            if (name === 'TestClass') return Promise.resolve(mockApexClass)
+            return Promise.resolve(mockTestClass)
+          }),
+          update: jest.fn().mockResolvedValue({}),
+          getApexClassDependencies: jest.fn().mockResolvedValue([]),
+        }))
+        const mockComputeFn = jest.fn().mockReturnValue([mockMutation])
+        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
+          compute: mockComputeFn,
+          mutate: jest.fn().mockReturnValue('mutated code'),
+        }))
+        const mockRunTestMethods = jest.fn().mockResolvedValue({
+          summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
+        })
+        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
+          runTestMethods: mockRunTestMethods,
+          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+            outcome: 'Passed',
+            passing: 1,
+            failing: 0,
+            testsRan: 2,
+            testMethodsPerLine: new Map([
+              [1, new Set(['testMethodA', 'testMethodB'])],
+            ]),
+          }),
+        }))
+
+        const filteredSut = new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassName: 'TestClassTest',
+            excludeTestMethods: ['testMethodA'],
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+        // Act
+        await filteredSut.process()
+
+        // Assert
+        expect(mockRunTestMethods).toHaveBeenCalledWith(
+          'TestClassTest',
+          new Set(['testMethodB'])
+        )
+      })
+    })
+
+    describe('Given excludeTestMethods that removes all tests for a line, When processing, Then that line is removed from coveredLines', () => {
+      it('should not generate mutations for lines with no remaining test methods', async () => {
+        // Arrange
+        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
+          read: jest.fn().mockImplementation((name: string) => {
+            if (name === 'TestClass') return Promise.resolve(mockApexClass)
+            return Promise.resolve(mockTestClass)
+          }),
+          update: jest.fn().mockResolvedValue({}),
+          getApexClassDependencies: jest.fn().mockResolvedValue([]),
+        }))
+        const mockComputeFn = jest.fn().mockReturnValue([mockMutation])
+        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
+          compute: mockComputeFn,
+          mutate: jest.fn().mockReturnValue('mutated code'),
+        }))
+        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
+          runTestMethods: jest.fn().mockResolvedValue({
+            summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
+          }),
+          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+            outcome: 'Passed',
+            passing: 1,
+            failing: 0,
+            testsRan: 1,
+            testMethodsPerLine: new Map([
+              [1, new Set(['testMethodA'])],
+              [2, new Set(['testMethodB'])],
+            ]),
+          }),
+        }))
+
+        const filteredSut = new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassName: 'TestClassTest',
+            excludeTestMethods: ['testMethodA'],
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+        // Act
+        await filteredSut.process()
+
+        // Assert
+        expect(mockComputeFn).toHaveBeenCalledWith(
+          mockApexClass.Body,
+          new Set([2]),
+          expect.anything(),
+          undefined
+        )
+      })
+    })
+
+    describe('Given includeMutators, When processing, Then MutantGenerator.compute receives mutator filter', () => {
+      it('should pass mutator filter with include to compute', async () => {
+        // Arrange
+        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
+          read: jest.fn().mockImplementation((name: string) => {
+            if (name === 'TestClass') return Promise.resolve(mockApexClass)
+            return Promise.resolve(mockTestClass)
+          }),
+          update: jest.fn().mockResolvedValue({}),
+          getApexClassDependencies: jest.fn().mockResolvedValue([]),
+        }))
+        const mockComputeFn = jest.fn().mockReturnValue([mockMutation])
+        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
+          compute: mockComputeFn,
+          mutate: jest.fn().mockReturnValue('mutated code'),
+        }))
+        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
+          runTestMethods: jest.fn().mockResolvedValue({
+            summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
+          }),
+          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+            outcome: 'Passed',
+            passing: 1,
+            failing: 0,
+            testsRan: 1,
+            testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+          }),
+        }))
+
+        const filteredSut = new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassName: 'TestClassTest',
+            includeMutators: ['ArithmeticOperator', 'BoundaryCondition'],
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+        // Act
+        await filteredSut.process()
+
+        // Assert
+        expect(mockComputeFn).toHaveBeenCalledWith(
+          mockApexClass.Body,
+          new Set([1]),
+          expect.anything(),
+          { include: ['ArithmeticOperator', 'BoundaryCondition'] }
+        )
+      })
+    })
+
+    describe('Given excludeMutators, When processing, Then MutantGenerator.compute receives mutator filter with exclude', () => {
+      it('should pass mutator filter with exclude to compute', async () => {
+        // Arrange
+        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
+          read: jest.fn().mockImplementation((name: string) => {
+            if (name === 'TestClass') return Promise.resolve(mockApexClass)
+            return Promise.resolve(mockTestClass)
+          }),
+          update: jest.fn().mockResolvedValue({}),
+          getApexClassDependencies: jest.fn().mockResolvedValue([]),
+        }))
+        const mockComputeFn = jest.fn().mockReturnValue([mockMutation])
+        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
+          compute: mockComputeFn,
+          mutate: jest.fn().mockReturnValue('mutated code'),
+        }))
+        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
+          runTestMethods: jest.fn().mockResolvedValue({
+            summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
+          }),
+          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+            outcome: 'Passed',
+            passing: 1,
+            failing: 0,
+            testsRan: 1,
+            testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+          }),
+        }))
+
+        const filteredSut = new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassName: 'TestClassTest',
+            excludeMutators: ['ArithmeticOperator'],
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+        // Act
+        await filteredSut.process()
+
+        // Assert
+        expect(mockComputeFn).toHaveBeenCalledWith(
+          mockApexClass.Body,
+          new Set([1]),
+          expect.anything(),
+          { exclude: ['ArithmeticOperator'] }
+        )
+      })
+    })
+
     describe('When calculating mutation score', () => {
       const scoreTestCases = [
         {
