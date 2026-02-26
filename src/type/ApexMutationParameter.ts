@@ -9,4 +9,6 @@ export interface ApexMutationParameter {
   excludeTestMethods?: string[]
   threshold?: number
   configFile?: string
+  skipPatterns?: string[]
+  lines?: string[]
 }
