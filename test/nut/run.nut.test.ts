@@ -3,6 +3,11 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals'
 const mockMessages = {
   getMessage: jest.fn().mockReturnValue('mock message'),
   getMessages: jest.fn().mockReturnValue(['mock example']),
+  createError: jest.fn().mockImplementation((...args: unknown[]) => {
+    const key = args[0]
+    const tokens = args[1] as string[] | undefined
+    return new Error(`${key}: ${tokens?.join(', ')}`)
+  }),
 }
 
 jest.unstable_mockModule('@salesforce/core', () => ({
@@ -49,6 +54,8 @@ jest.unstable_mockModule('@salesforce/sf-plugins-core', () => {
       string: jest.fn().mockReturnValue({}),
       boolean: jest.fn().mockReturnValue({}),
       directory: jest.fn().mockReturnValue({}),
+      integer: jest.fn().mockReturnValue({}),
+      file: jest.fn().mockReturnValue({}),
       requiredOrg: jest.fn().mockReturnValue({}),
       orgApiVersion: jest.fn().mockReturnValue({}),
     },
@@ -67,6 +74,13 @@ jest.unstable_mockModule('../../src/reporter/HTMLReporter.js', () => ({
   ApexMutationHTMLReporter: jest.fn(),
 }))
 
+const mockConfigReaderResolve = jest.fn()
+jest.unstable_mockModule('../../src/service/configReader.js', () => ({
+  ConfigReader: jest.fn().mockImplementation(() => ({
+    resolve: mockConfigReaderResolve,
+  })),
+}))
+
 const { default: ApexMutationTest } = await import(
   '../../src/commands/apex/mutation/test/run.js'
 )
@@ -79,6 +93,7 @@ const { ApexClassValidator } = await import(
 const { MutationTestingService } = await import(
   '../../src/service/mutationTestingService.js'
 )
+const { ConfigReader } = await import('../../src/service/configReader.js')
 
 describe('apex mutation test run NUT', () => {
   const mockConnection = {} as Record<string, unknown>
@@ -87,6 +102,9 @@ describe('apex mutation test run NUT', () => {
   }
 
   beforeEach(() => {
+    mockConfigReaderResolve.mockImplementation((...args: unknown[]) =>
+      Promise.resolve(args[0])
+    )
     ;(ApexClassValidator as jest.Mock<() => unknown>).mockImplementation(
       () => ({
         validate: jest.fn().mockResolvedValue(undefined as never),
@@ -110,7 +128,10 @@ describe('apex mutation test run NUT', () => {
     )
   })
 
-  async function runCommand(args: string[]) {
+  async function runCommand(
+    args: string[],
+    flagOverrides: Record<string, unknown> = {}
+  ) {
     const cmd = new ApexMutationTest(args, {} as never)
     ;(
       jest.spyOn(cmd as never, 'parse') as unknown as jest.Mock
@@ -124,6 +145,7 @@ describe('apex mutation test run NUT', () => {
           args[args.indexOf('--test-class') + 1],
         'report-dir': 'mutations',
         'target-org': mockOrg,
+        ...flagOverrides,
       },
     } as never)
     jest.spyOn(cmd, 'log').mockImplementation(jest.fn() as never)
@@ -138,31 +160,7 @@ describe('apex mutation test run NUT', () => {
   }
 
   async function runDryRunCommand(args: string[]) {
-    const cmd = new ApexMutationTest(args, {} as never)
-    ;(
-      jest.spyOn(cmd as never, 'parse') as unknown as jest.Mock
-    ).mockResolvedValue({
-      flags: {
-        'apex-class':
-          args[args.indexOf('-c') + 1] ||
-          args[args.indexOf('--apex-class') + 1],
-        'test-class':
-          args[args.indexOf('-t') + 1] ||
-          args[args.indexOf('--test-class') + 1],
-        'report-dir': 'mutations',
-        'target-org': mockOrg,
-        'dry-run': true,
-      },
-    } as never)
-    jest.spyOn(cmd, 'log').mockImplementation(jest.fn() as never)
-    jest.spyOn(cmd, 'info').mockImplementation(jest.fn() as never)
-    Object.defineProperty(cmd, 'progress', {
-      value: { start: jest.fn(), update: jest.fn(), finish: jest.fn() },
-    })
-    Object.defineProperty(cmd, 'spinner', {
-      value: { start: jest.fn(), stop: jest.fn() },
-    })
-    return cmd.run()
+    return runCommand(args, { 'dry-run': true })
   }
 
   describe('Given valid flags, When running successfully', () => {
@@ -214,6 +212,16 @@ describe('apex mutation test run NUT', () => {
       const reporterInstance = (ApexMutationHTMLReporter as any).mock.results[0]
         .value
       expect(reporterInstance.generateReport).toHaveBeenCalled()
+    })
+
+    it('Then resolves config via ConfigReader', () => {
+      expect(ConfigReader).toHaveBeenCalled()
+      expect(mockConfigReaderResolve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          apexClassName: 'MyClass',
+          apexTestClassName: 'MyClassTest',
+        })
+      )
     })
   })
 
@@ -356,6 +364,75 @@ describe('apex mutation test run NUT', () => {
           expect.anything()
         )
       })
+    })
+  })
+
+  describe('Given threshold flag above score', () => {
+    it('When running, Then throws threshold error', async () => {
+      // Arrange
+      ;(MutationTestingService as jest.Mock<() => unknown>).mockImplementation(
+        () => ({
+          process: jest.fn().mockResolvedValue({
+            sourceFile: 'MyClass',
+            sourceFileContent: 'class MyClass {}',
+            testFile: 'MyClassTest',
+            mutants: [{ status: 'Killed' }, { status: 'Survived' }],
+          } as never),
+          calculateScore: jest.fn().mockReturnValue(50),
+        })
+      )
+
+      // Act & Assert
+      await expect(
+        runCommand(['-c', 'MyClass', '-t', 'MyClassTest'], { threshold: 80 })
+      ).rejects.toThrow('error.thresholdNotMet')
+      expect(mockMessages.createError).toHaveBeenCalledWith(
+        'error.thresholdNotMet',
+        ['50', '80']
+      )
+    })
+  })
+
+  describe('Given include-mutators flag', () => {
+    it('When running, Then passes to MutationTestingService', async () => {
+      // Arrange
+      const includeMutators = ['ArithmeticOperator', 'BoundaryCondition']
+
+      // Act
+      await runCommand(['-c', 'MyClass', '-t', 'MyClassTest'], {
+        'include-mutators': includeMutators,
+      })
+
+      // Assert
+      expect(MutationTestingService).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        mockConnection,
+        expect.objectContaining({
+          includeMutators: ['ArithmeticOperator', 'BoundaryCondition'],
+        }),
+        expect.anything()
+      )
+    })
+  })
+
+  describe('Given config-file flag', () => {
+    it('When running, Then ConfigReader resolves with config', async () => {
+      // Arrange
+      const configFile = '.mutation-testing.json'
+
+      // Act
+      await runCommand(['-c', 'MyClass', '-t', 'MyClassTest'], {
+        'config-file': configFile,
+      })
+
+      // Assert
+      expect(ConfigReader).toHaveBeenCalled()
+      expect(mockConfigReaderResolve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          configFile: '.mutation-testing.json',
+        })
+      )
     })
   })
 })

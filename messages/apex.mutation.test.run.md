@@ -79,3 +79,31 @@ Estimated time: %s
 # info.timeEstimateBreakdown
 
 Deploy: %s/mutant | Test: %s/mutant | Mutants: %s
+
+# flags.include-mutators.summary
+
+Mutator names to include (e.g. ArithmeticOperator, BoundaryCondition)
+
+# flags.exclude-mutators.summary
+
+Mutator names to exclude
+
+# flags.include-test-methods.summary
+
+Test method names to include
+
+# flags.exclude-test-methods.summary
+
+Test method names to exclude
+
+# flags.threshold.summary
+
+Minimum mutation score (0-100) required for the command to succeed
+
+# flags.config-file.summary
+
+Path to mutation testing configuration file
+
+# error.thresholdNotMet
+
+Mutation score %s% is below the required threshold of %s%
