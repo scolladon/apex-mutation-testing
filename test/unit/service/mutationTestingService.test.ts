@@ -715,6 +715,61 @@ describe('MutationTestingService', () => {
         const lastUpdateCall = updateCalls[updateCalls.length - 1]
         expect(lastUpdateCall[1].info).toContain('Remaining:')
       })
+
+      it('then should show remaining time in deploy and running updates after first mutation', async () => {
+        // Arrange
+        const secondMutation = { ...mockMutation, replacement: '1' }
+        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
+          read: jest.fn().mockImplementation((name: string) => {
+            if (name === 'TestClass') return Promise.resolve(mockApexClass)
+            return Promise.resolve(mockTestClass)
+          }),
+          update: jest.fn().mockResolvedValue({}),
+          getApexClassDependencies: jest.fn().mockResolvedValue([]),
+        }))
+        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
+          compute: jest.fn().mockReturnValue([mockMutation, secondMutation]),
+          mutate: jest.fn().mockReturnValue('mutated code'),
+        }))
+        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
+          runTestMethods: jest.fn().mockResolvedValue({
+            summary: {
+              outcome: 'Failed',
+              passing: 0,
+              failing: 1,
+              testsRan: 1,
+            },
+          }),
+          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+            outcome: 'Passed',
+            passing: 1,
+            failing: 0,
+            testsRan: 1,
+            testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+          }),
+        }))
+
+        // Act
+        await sut.process()
+
+        // Assert
+        const updateCalls = (progress.update as jest.Mock).mock.calls
+        const infos = updateCalls.map(
+          (call: [number, { info: string }]) => call[1].info
+        )
+        const secondMutationDeploy = infos.find(
+          (info: string) =>
+            info.includes('Deploying "1"') && info.includes('Remaining:')
+        )
+        const secondMutationRunning = infos.find(
+          (info: string) =>
+            info.includes('Running') &&
+            info.includes('"1"') &&
+            info.includes('Remaining:')
+        )
+        expect(secondMutationDeploy).toBeDefined()
+        expect(secondMutationRunning).toBeDefined()
+      })
     })
 
     describe('When calculating mutation position with undefined indices', () => {

@@ -137,7 +137,7 @@ export class MutationTestingService {
     this.spinner.stop('Done')
 
     this.spinner.start(
-      `Verifying "${this.apexClassName}" ApexClass compilability`,
+      `Verifying "${this.apexClassName}" apex class compilability`,
       undefined,
       { stdout: true }
     )
@@ -161,7 +161,7 @@ export class MutationTestingService {
     this.spinner.stop('Done')
 
     this.spinner.start(
-      `Verifying "${this.apexTestClassName}" test class compilability`,
+      `Verifying "${this.apexTestClassName}" apex test class compilability`,
       undefined,
       { stdout: true }
     )
@@ -183,9 +183,13 @@ export class MutationTestingService {
     }
     this.spinner.stop('Done')
 
-    this.spinner.start(`Testing original code`, undefined, {
-      stdout: true,
-    })
+    this.spinner.start(
+      `Executing "${this.apexTestClassName}" tests to get coverage`,
+      undefined,
+      {
+        stdout: true,
+      }
+    )
 
     const { result: baselineResult, durationMs: testTime } =
       await timeExecution(() =>
@@ -300,6 +304,7 @@ export class MutationTestingService {
     )
 
     let mutationCount = 0
+    let remainingText = ''
     const loopStartTime = performance.now()
     for (const mutation of mutations) {
       const mutatedVersion = mutantGenerator.mutate(mutation)
@@ -312,7 +317,7 @@ export class MutationTestingService {
       }
 
       this.progress.update(mutationCount, {
-        info: `Deploying "${mutation.replacement}" mutation at line ${targetInfo.line}`,
+        info: `${remainingText}Deploying "${mutation.replacement}" mutation at line ${targetInfo.line}`,
       })
 
       let progressMessage
@@ -325,7 +330,7 @@ export class MutationTestingService {
         const testMethods = testMethodsPerLine.get(targetInfo.line)!
 
         this.progress.update(mutationCount, {
-          info: `Running ${testMethods.size} tests methods for "${mutation.replacement}" mutation at line ${targetInfo.line}`,
+          info: `${remainingText}Running ${testMethods.size} tests methods for "${mutation.replacement}" mutation at line ${targetInfo.line}`,
         })
         const testResult: TestResult = await apexTestRunner.runTestMethods(
           this.apexTestClassName,
@@ -371,9 +376,9 @@ export class MutationTestingService {
       const avgPerMutant = elapsed / mutationCount
       const remainingMutants = mutations.length - mutationCount
       const remainingMs = avgPerMutant * remainingMutants
-      const remainingText = `Remaining: ${formatDuration(remainingMs)}`
+      remainingText = `Remaining: ${formatDuration(remainingMs)} | `
       this.progress.update(mutationCount, {
-        info: `${remainingText} | ${progressMessage}`,
+        info: `${remainingText}${progressMessage}`,
       })
     }
     this.progress.finish({
