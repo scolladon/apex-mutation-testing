@@ -76,29 +76,51 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │       → ANTLR parse #1 → TypeRegistry
 │         (methodTypeTable, variableScopes, classFields)
 │
-├─ 5. BASELINE TEST RUN
+├─ 5. COMPILABILITY VERIFICATION
+│     Deploy main class back to org via
+│       ApexClassRepository.update(apexClass)
+│       → wrapped in timeExecution() → deployTime
+│       → validates class compiles (catches broken deps)
+│       → on failure: throw with Salesforce error details
+│     Fetch + deploy test class back to org
+│       → validates test class compiles
+│       → on failure: throw with Salesforce error details
+│     Rationale: Salesforce only checks compilation of
+│       the deployed element, not its dependents. A class
+│       can be broken if a dependency changed after last
+│       deploy. Without this check, all mutants would get
+│       CompileError → misleading 100% score.
+│
+├─ 6. BASELINE TEST RUN
 │     ApexTestRunner.getTestMethodsPerLines(MyClassTest)
+│       → wrapped in timeExecution() → testTime
 │       → runTestAsynchronous (with code coverage)
 │       → testMethodsPerLine: Map<line, Set<testMethodName>>
 │       → coveredLines: Set<line>
 │       ✓ All tests must pass (green baseline)
 │
-├─ 6. GENERATE MUTATIONS
+├─ 7. GENERATE MUTATIONS
 │     MutantGenerator.compute(Body, coveredLines, typeRegistry)
 │       → ANTLR parse #2 → AST
 │       → ParseTreeWalker fires enter*/exit* on 25 mutators
 │         (filtered by coveredLines via Proxy)
 │       → ApexMutation[] (with token ranges)
 │
+├─ 8. TIME ESTIMATION
+│     estimate = (deployTime + testTime) × mutantCount
+│     Display: "Estimated time: ~Xm Ys"
+│     Breakdown: "Deploy: ~Xs/mutant | Test: ~Xs/mutant"
+│
 │     ── DRY-RUN EXIT POINT ──────────────────────────
 │     If --dry-run: return ApexMutationTestResult
 │       with all mutants in Pending status and stop.
 │       No deployment, no test execution, no rollback.
+│       Compilability + estimate ARE displayed.
 │       Command generates HTML report (same as normal
 │       path) and returns { score: null }.
 │     ────────────────────────────────────────────────
 │
-├─ 7. MUTATION TESTING LOOP (for each mutation)
+├─ 9. MUTATION TESTING LOOP (for each mutation)
 │     ┌─────────────────────────────────────────────┐
 │     │ a. MutantGenerator.mutate(mutation)          │
 │     │    → TokenStreamRewriter → mutated source    │
@@ -116,17 +138,22 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │     │    Deploy failed → CompileError              │
 │     │    Limit error   → Killed                    │
 │     │    Other error   → RuntimeError              │
+│     │                                              │
+│     │ e. Update progress bar with remaining time   │
+│     │    rolling avg = elapsed / completed         │
+│     │    remaining = avg × (total - completed)     │
+│     │    "Remaining: ~Xm Ys | <result>"            │
 │     └─────────────────────────────────────────────┘
 │
-├─ 8. ROLLBACK
-│     ApexClassRepository.update(originalBody)
+├─ 10. ROLLBACK
+│      ApexClassRepository.update(originalBody)
 │
-├─ 9. REPORT
-│     HTMLReporter → Stryker JSON schema → HTML with
-│     mutation-test-elements web component
+├─ 11. REPORT
+│      HTMLReporter → Stryker JSON schema → HTML with
+│      mutation-test-elements web component
 │
-└─ 10. SCORE
-│     score = killed / (total - compileErrors) × 100
+└─ 12. SCORE
+│      score = killed / (total - compileErrors) × 100
 ```
 
 ---
