@@ -36,6 +36,7 @@ export class ConfigReader {
       excludeTestMethods:
         parameter.excludeTestMethods ?? fileConfig?.testMethods?.exclude,
       threshold: parameter.threshold ?? fileConfig?.threshold,
+      lines: parameter.lines ?? fileConfig?.lines,
     }
 
     this.validate(resolved)
@@ -78,6 +79,23 @@ export class ConfigReader {
       (parameter.threshold < 0 || parameter.threshold > 100)
     ) {
       throw new Error('Threshold must be between 0 and 100')
+    }
+    if (parameter.lines) {
+      for (const range of parameter.lines) {
+        if (!/^\d+(-\d+)?$/.test(range)) {
+          throw new Error(
+            `Invalid line range '${range}': must be a number or range (e.g., '10' or '1-10')`
+          )
+        }
+        if (range.includes('-')) {
+          const [start, end] = range.split('-').map(Number)
+          if (start > end) {
+            throw new Error(
+              `Invalid line range '${range}': start must be less than or equal to end`
+            )
+          }
+        }
+      }
     }
   }
 }

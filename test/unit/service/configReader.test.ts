@@ -230,4 +230,68 @@ describe('ConfigReader', () => {
     expect(readFile).toHaveBeenCalledWith('custom/config.json', 'utf-8')
     expect(result.threshold).toBe(50)
   })
+
+  it('Given config file with valid lines ranges, When resolving config, Then returns lines from file', async () => {
+    // Arrange
+    const config = { lines: ['1-10', '25-30', '42'] }
+    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act
+    const result = await sut.resolve(parameter)
+
+    // Assert
+    expect(result.lines).toEqual(['1-10', '25-30', '42'])
+  })
+
+  it('Given CLI lines and config file lines, When resolving config, Then CLI lines override config file', async () => {
+    // Arrange
+    const config = { lines: ['1-10'] }
+    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    const parameter: ApexMutationParameter = {
+      ...baseParameter,
+      lines: ['50-60'],
+    }
+
+    // Act
+    const result = await sut.resolve(parameter)
+
+    // Assert
+    expect(result.lines).toEqual(['50-60'])
+  })
+
+  it('Given config file with invalid line range format, When resolving config, Then throws validation error', async () => {
+    // Arrange
+    const config = { lines: ['abc'] }
+    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(/Invalid line range/)
+  })
+
+  it('Given config file with reversed line range, When resolving config, Then throws validation error', async () => {
+    // Arrange
+    const config = { lines: ['10-5'] }
+    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(
+      /start must be less than or equal to end/
+    )
+  })
+
+  it('Given config file with single line number, When resolving config, Then accepts it', async () => {
+    // Arrange
+    const config = { lines: ['42'] }
+    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act
+    const result = await sut.resolve(parameter)
+
+    // Assert
+    expect(result.lines).toEqual(['42'])
+  })
 })
