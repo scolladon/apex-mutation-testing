@@ -7,6 +7,7 @@ import {
   CommonTokenStream,
   ParseTreeWalker,
 } from 'apex-parser'
+import type * as RE2 from 're2'
 import { ArgumentPropagationMutator } from '../mutator/argumentPropagationMutator.js'
 import { ArithmeticOperatorDeletionMutator } from '../mutator/arithmeticOperatorDeletionMutator.js'
 import { ArithmeticOperatorMutator } from '../mutator/arithmeticOperatorMutator.js'
@@ -186,7 +187,9 @@ export class MutantGenerator {
     classContent: string,
     coveredLines: Set<number>,
     typeRegistry?: TypeRegistry,
-    mutatorFilter?: { include?: string[]; exclude?: string[] }
+    mutatorFilter?: { include?: string[]; exclude?: string[] },
+    skipPatterns: RE2[] = [],
+    allowedLines?: Set<number>
   ) {
     const lexer = new ApexLexer(
       new CaseInsensitiveInputStream('other', classContent)
@@ -198,8 +201,15 @@ export class MutantGenerator {
     const filteredRegistry = this.filterRegistry(mutatorFilter)
 
     const mutators = filteredRegistry.map(entry => entry.create(typeRegistry))
+    const sourceLines = classContent.split('\n')
 
-    const listener = new MutationListener(mutators, coveredLines)
+    const listener = new MutationListener(
+      mutators,
+      coveredLines,
+      skipPatterns,
+      allowedLines,
+      sourceLines
+    )
 
     ParseTreeWalker.DEFAULT.walk(listener as ApexParserListener, tree)
 

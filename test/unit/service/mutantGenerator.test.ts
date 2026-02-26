@@ -1,3 +1,4 @@
+import * as RE2 from 're2'
 import { MutantGenerator } from '../../../src/service/mutantGenerator.js'
 
 describe('MutantGenerator', () => {
@@ -237,6 +238,64 @@ describe('MutantGenerator', () => {
 
       // Assert
       expect(result).toBeDefined()
+    })
+  })
+
+  describe('when filtering by lines', () => {
+    it('Given lines filter, When computing mutations, Then only mutations on allowed lines are returned', () => {
+      // Arrange
+      const classContent = [
+        'public class Test {',
+        '  public static void method() {',
+        '    Integer i = 0;',
+        '    ++i;',
+        '  }',
+        '}',
+      ].join('\n')
+      const coveredLines = new Set([3, 4])
+      const allowedLines = new Set([3])
+
+      // Act
+      const result = sut.compute(
+        classContent,
+        coveredLines,
+        undefined,
+        undefined,
+        [],
+        allowedLines
+      )
+
+      // Assert
+      expect(result.length).toBeGreaterThan(0)
+      expect(result.every(m => m.target.startToken.line === 3)).toBe(true)
+    })
+  })
+
+  describe('when filtering by skip patterns', () => {
+    it('Given skip pattern matching a line, When computing mutations, Then mutations on that line are excluded', () => {
+      // Arrange
+      const classContent = [
+        'public class Test {',
+        '  public static void method() {',
+        '    System.debug(x);',
+        '    ++i;',
+        '  }',
+        '}',
+      ].join('\n')
+      const coveredLines = new Set([3, 4])
+      const skipPatterns = [new RE2('System\\.debug')]
+
+      // Act
+      const result = sut.compute(
+        classContent,
+        coveredLines,
+        undefined,
+        undefined,
+        skipPatterns
+      )
+
+      // Assert
+      expect(result.every(m => m.target.startToken.line !== 3)).toBe(true)
     })
   })
 
