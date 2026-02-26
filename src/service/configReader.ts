@@ -71,11 +71,5 @@ export class ConfigReader {
         'Cannot specify both includeTestMethods and excludeTestMethods'
       )
     }
-    if (
-      parameter.threshold !== undefined &&
-      (parameter.threshold < 0 || parameter.threshold > 100)
-    ) {
-      throw new Error('Threshold must be between 0 and 100')
-    }
   }
 }
