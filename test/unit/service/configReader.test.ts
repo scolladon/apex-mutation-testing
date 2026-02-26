@@ -5,6 +5,18 @@ import { ApexMutationParameter } from '../../../src/type/ApexMutationParameter.j
 
 jest.mock('node:fs/promises')
 
+let re2Behavior: 'noop' | 'throw-error' | 'throw-string' = 'noop'
+jest.mock('re2', () => {
+  return function MockRE2() {
+    if (re2Behavior === 'throw-error') {
+      throw new Error('invalid regex')
+    }
+    if (re2Behavior === 'throw-string') {
+      throw 'string thrown'
+    }
+  }
+})
+
 describe('ConfigReader', () => {
   let sut: ConfigReader
   const baseParameter: ApexMutationParameter = {
@@ -15,6 +27,7 @@ describe('ConfigReader', () => {
 
   beforeEach(() => {
     sut = new ConfigReader()
+    re2Behavior = 'noop'
     ;(readFile as jest.Mock).mockRejectedValue({ code: 'ENOENT' })
   })
 
@@ -326,11 +339,27 @@ describe('ConfigReader', () => {
 
   it('Given config file with invalid regex in skipPatterns, When resolving config, Then throws validation error', async () => {
     // Arrange
+    re2Behavior = 'throw-error'
     const config = { skipPatterns: ['([unclosed'] }
     ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
     const parameter = { ...baseParameter }
 
     // Act & Assert
-    await expect(sut.resolve(parameter)).rejects.toThrow(/Invalid skip pattern/)
+    await expect(sut.resolve(parameter)).rejects.toThrow(
+      /Invalid skip pattern '\(\[unclosed': invalid regex/
+    )
+  })
+
+  it('Given config file with skipPattern that throws non-Error, When resolving config, Then wraps it in error message', async () => {
+    // Arrange
+    re2Behavior = 'throw-string'
+    const config = { skipPatterns: ['some-pattern'] }
+    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(
+      /Invalid skip pattern 'some-pattern': string thrown/
+    )
   })
 })
