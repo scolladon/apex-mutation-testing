@@ -186,6 +186,34 @@ describe('ConfigReader', () => {
     )
   })
 
+  it('Given config file with both mutators include and exclude, When resolving config, Then throws validation error', async () => {
+    // Arrange
+    const config = {
+      mutators: { include: ['ArithmeticOperator'], exclude: ['Increment'] },
+    }
+    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(
+      'Cannot specify both includeMutators and excludeMutators'
+    )
+  })
+
+  it('Given config file with both testMethods include and exclude, When resolving config, Then throws validation error', async () => {
+    // Arrange
+    const config = {
+      testMethods: { include: ['testA'], exclude: ['testB'] },
+    }
+    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(
+      'Cannot specify both includeTestMethods and excludeTestMethods'
+    )
+  })
+
   it('Given explicit configFile path that exists, When resolving config, Then reads from that path', async () => {
     // Arrange
     const config = { threshold: 50 }
