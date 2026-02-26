@@ -80,6 +80,16 @@ sf apex mutation test run --apex-class MyClass --test-class MyClassTest --dry-ru
 
 This runs your test class once to collect coverage data, then lists all mutations that would be generated without deploying any of them. Use it to estimate the scope of mutation testing for your class and verify that relevant mutations are being generated for your code patterns.
 
+In both normal and dry-run modes, the plugin displays a time estimate before starting the mutation loop, showing the estimated total duration along with a per-mutant breakdown of deployment and test execution time.
+
+### Compilability Verification
+
+Before running mutation tests, the plugin deploys both the target class and its test class back to the org to verify they compile correctly. This step is necessary because Salesforce only validates compilation of the element being deployed, not its dependents. A class can exist on the org in a broken state if one of its dependencies was modified after it was last deployed.
+
+Without this check, all mutants would result in `CompileError`, producing a misleading 100% mutation score. If either class fails to compile, the process stops early with a clear error message showing the compilation details.
+
+This verification also serves as a baseline to measure deployment time, which is used to estimate the total mutation testing duration.
+
 ### Supported Mutation Operators
 
 The plugin currently supports the following mutation operators. If your code doesn't contain any of these patterns on covered lines, no mutations will be generated:
