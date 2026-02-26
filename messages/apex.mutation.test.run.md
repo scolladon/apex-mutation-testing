@@ -67,3 +67,15 @@ No mutations could be generated for '%s'. %s line(s) covered but no mutable patt
 # flags.dry-run.summary
 
 Preview mutations without deploying or running tests
+
+# error.compilabilityCheckFailed
+
+The Apex class '%s' does not compile on the target org. This can happen when a dependency was modified after the class was last deployed. Fix compilation errors before running mutation testing.\nError: %s
+
+# info.timeEstimate
+
+Estimated time: %s
+
+# info.timeEstimateBreakdown
+
+Deploy: %s/mutant | Test: %s/mutant | Mutants: %s
