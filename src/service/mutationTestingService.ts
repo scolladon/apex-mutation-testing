@@ -183,7 +183,7 @@ export class MutationTestingService {
     }
     this.spinner.stop('Done')
 
-    this.spinner.start(`Testing original code"`, undefined, {
+    this.spinner.start(`Testing original code`, undefined, {
       stdout: true,
     })
 

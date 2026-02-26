@@ -465,6 +465,14 @@ describe('MutationTestingService', () => {
         expect(progress.start).not.toHaveBeenCalled()
         expect(progress.finish).not.toHaveBeenCalled()
         expect(progress.update).not.toHaveBeenCalled()
+        expect(spinner.start).toHaveBeenCalledWith(
+          expect.stringContaining('Estimated time:'),
+          undefined,
+          expect.anything()
+        )
+        expect(spinner.stop).toHaveBeenCalledWith(
+          expect.stringContaining('Deploy:')
+        )
       })
     })
 
