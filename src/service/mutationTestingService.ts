@@ -300,7 +300,7 @@ export class MutationTestingService {
     )
 
     let mutationCount = 0
-    const loopStartTime = Date.now()
+    const loopStartTime = performance.now()
     for (const mutation of mutations) {
       const mutatedVersion = mutantGenerator.mutate(mutation)
 
@@ -367,7 +367,7 @@ export class MutationTestingService {
         progressMessage = classification.progressMessage
       }
       ++mutationCount
-      const elapsed = Date.now() - loopStartTime
+      const elapsed = performance.now() - loopStartTime
       const avgPerMutant = elapsed / mutationCount
       const remainingMutants = mutations.length - mutationCount
       const remainingMs = avgPerMutant * remainingMutants
