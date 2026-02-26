@@ -8,6 +8,7 @@ Salesforce CLI plugin implementing **mutation testing** for Apex code. It evalua
 sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg>
 sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --dry-run
 sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --include-mutators ArithmeticOperator --threshold 80
+sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --skip-patterns "System\\.debug" --lines 10-50 100-120
 sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --config-file .mutation-testing.json
 ```
 
@@ -67,7 +68,9 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │     ConfigReader.resolve(cliFlags)
 │       ├─ read .mutation-testing.json (if exists)
 │       ├─ merge: CLI flags override config file
-│       └─ validate: threshold 0-100
+│       ├─ validate: threshold 0-100
+│       ├─ validate: skipPatterns compile as RE2
+│       └─ validate: lines format (N or N-M, start ≤ end)
 │     Precedence: CLI flags > config file > defaults
 │
 ├─ 2. VALIDATE
@@ -122,12 +125,13 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │
 ├─ 8. GENERATE MUTATIONS
 │     MutantGenerator.compute(Body, coveredLines, typeRegistry,
-│       mutatorFilter)
+│       mutatorFilter, skipPatterns, allowedLines)
 │       → ANTLR parse #2 → AST
 │       → filter mutator registry by include/exclude
 │         (case-insensitive name matching)
 │       → ParseTreeWalker fires enter*/exit* on filtered mutators
-│         (filtered by coveredLines via Proxy)
+│         (filtered by isLineEligible() via Proxy —
+│          intersects coverage, line ranges, skip patterns)
 │       → ApexMutation[] (with token ranges)
 │
 ├─ 9. TIME ESTIMATION
@@ -198,9 +202,10 @@ The central architectural pattern. `MutationListener` uses a JavaScript `Proxy` 
   ParseTreeWalker       │   MutationListener   │
   ─── enter*(ctx) ────► │      (Proxy)         │
                         │                      │
-                        │  1. Check coveredLines│
-                        │     .has(ctx.start    │
-                        │          .line)       │
+                        │  1. isLineEligible()  │
+                        │     ├ coveredLines?   │
+                        │     ├ allowedLines?   │
+                        │     └ skipPatterns?   │
                         │                      │
                         │  2. Dispatch to all   │
                         │     sub-listeners     │
@@ -222,9 +227,9 @@ The central architectural pattern. `MutationListener` uses a JavaScript `Proxy` 
 - All `BaseListener` instances share the **same `_mutations` array** by reference assignment
 - When any mutator calls `createMutation()`, it pushes to the shared array
 - The Proxy intercepts every property access: if the property name matches an ANTLR `enter*`/`exit*` method, it creates a dispatcher function that calls the method on every sub-listener that implements it
-- **Coverage filtering** happens once at the Proxy level: `coveredLines.has(ctx.start.line)` gates dispatch
+- **Line eligibility filtering** happens once at the Proxy level via `isLineEligible(ctx.start.line)`, which encapsulates all line-level filters (see [Pertinent Mutant Detection](#pertinent-mutant-detection))
 
-Coverage filtering is applied uniformly to all mutators — no exceptions.
+Line eligibility filtering is applied uniformly to all mutators — no exceptions.
 
 ### Strategy Pattern — Error Classification
 
@@ -698,7 +703,9 @@ Optional JSON file at `.mutation-testing.json` (or custom path via `--config-fil
   "testMethods": {
     "exclude": ["testSlowIntegration"]
   },
-  "threshold": 80
+  "threshold": 80,
+  "skipPatterns": ["System\\.debug", "LoggingUtils\\."],
+  "lines": ["10-50", "100-120"]
 }
 ```
 
@@ -711,6 +718,8 @@ Optional JSON file at `.mutation-testing.json` (or custom path via `--config-fil
 | `--include-test-methods` | string[] | Test method names to include (exclusive with exclude) |
 | `--exclude-test-methods` | string[] | Test method names to exclude (exclusive with include) |
 | `--threshold` | integer | Minimum mutation score (0-100) for success |
+| `--skip-patterns` | string[] | RE2 regex patterns — lines matching any pattern are excluded from mutation |
+| `--lines` | string[] | Line ranges (e.g., `10-50`, `100`) — only mutate lines within these ranges |
 | `--config-file` | file | Path to config file (must exist) |
 
 ### Merge Precedence
@@ -719,11 +728,93 @@ Optional JSON file at `.mutation-testing.json` (or custom path via `--config-fil
 CLI flags > config file > defaults (all mutators, all tests, no threshold)
 ```
 
-`ConfigReader.resolve()` merges config file values with CLI flag overrides using `??` (CLI wins when present). Include/exclude pairs are mutually exclusive — enforced by oclif `exclusive` flag attribute.
+`ConfigReader.resolve()` merges config file values with CLI flag overrides using `??` (CLI wins when present). Include/exclude pairs are mutually exclusive — enforced by oclif `exclusive` flag attribute. `skipPatterns` and `lines` follow the same merge precedence: CLI flags override config file values.
 
 ### Mutator Registry
 
 `MutantGenerator` maintains a `MUTATOR_REGISTRY` array mapping `MutatorName` constants to factory functions. Filtering is case-insensitive against registry names (without `Mutator` suffix). Unknown names are silently skipped (forward-compatible). All mutators excluded → error.
+
+---
+
+## Pertinent Mutant Detection
+
+Two additional filters allow users to focus mutation testing on the most relevant code regions, reducing noise from boilerplate, logging, or irrelevant lines.
+
+### Skip Patterns (`--skip-patterns` / `skipPatterns`)
+
+Exclude source lines matching RE2 regex patterns from mutation. Lines whose source text matches any pattern are skipped entirely — no mutations are generated for them.
+
+```
+--skip-patterns "System\.debug" "LoggingUtils\."
+```
+
+Typical use cases: skip logging statements, debug output, or generated boilerplate.
+
+### Line Ranges (`--lines` / `lines`)
+
+Restrict mutations to specific line ranges. Only lines within the specified ranges are eligible for mutation.
+
+```
+--lines 10-50 100-120
+```
+
+Useful for focusing on a specific method or recently changed code.
+
+### `isLineEligible()` — Unified Line Filter
+
+`MutationListener.isLineEligible(line)` encapsulates all line-level eligibility checks at the Proxy level, replacing the previous `coveredLines.has()` check. All filters are **intersected** — a line must pass every active filter to be eligible:
+
+```
+isLineEligible(line)
+    │
+    ├─ line is falsy?                              → false
+    │
+    ├─ coveredLines.has(line)?                     → false if not covered
+    │     (always active — baseline coverage)
+    │
+    ├─ allowedLines defined AND                    → false if outside range
+    │  !allowedLines.has(line)?
+    │     (active only when --lines provided)
+    │
+    ├─ skipPatterns.length > 0 AND                 → false if any pattern matches
+    │  sourceLines[line-1] matches any pattern?
+    │     (active only when --skip-patterns provided)
+    │
+    └─ otherwise                                   → true (eligible)
+```
+
+When `--lines` is not provided, `allowedLines` is `undefined` (no range filter). When `--skip-patterns` is not provided, `skipPatterns` is an empty array (no pattern filter). This means the default behavior (no flags) is identical to the previous `coveredLines.has()` check.
+
+### RE2 for Regex Safety
+
+Skip patterns use [RE2](https://github.com/google/re2) (via the `re2` npm package) instead of JavaScript's built-in `RegExp`. RE2 guarantees **linear-time** matching, preventing ReDoS (Regular Expression Denial of Service) attacks from malicious or poorly written patterns. Pattern compilation is validated at configuration time — invalid RE2 patterns fail fast with a descriptive error.
+
+### Data Flow
+
+```
+CLI flags / config file
+    │
+    ▼
+ConfigReader.resolve()
+    ├─ validate skipPatterns (RE2 compilation check)
+    └─ validate lines (format + start ≤ end)
+    │
+    ▼
+MutationTestingService constructor
+    ├─ ConfigReader.compileSkipPatterns(skipPatterns)
+    │     → string[] → RE2Instance[]
+    └─ ConfigReader.parseLineRanges(lines)
+    │     → string[] (e.g. ["10-50","100-120"]) → Set<number> (expanded)
+    │
+    ▼
+MutantGenerator.compute(..., skipPatterns, allowedLines)
+    │
+    ▼
+MutationListener(mutators, coveredLines, skipPatterns, allowedLines, sourceLines)
+    │
+    ▼
+Proxy → isLineEligible(line) gates every enter*/exit* dispatch
+```
 
 ---
 
