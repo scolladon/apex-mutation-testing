@@ -6,6 +6,10 @@ import { ApexTestRunner } from '../../../src/adapter/apexTestRunner.js'
 import { SObjectDescribeRepository } from '../../../src/adapter/sObjectDescribeRepository.js'
 import { MutantGenerator } from '../../../src/service/mutantGenerator.js'
 import { MutationTestingService } from '../../../src/service/mutationTestingService.js'
+import {
+  formatDuration,
+  timeExecution,
+} from '../../../src/service/timeUtils.js'
 import { TypeDiscoverer } from '../../../src/service/typeDiscoverer.js'
 import { ApexMutation } from '../../../src/type/ApexMutation.js'
 import { ApexMutationParameter } from '../../../src/type/ApexMutationParameter.js'
@@ -17,6 +21,7 @@ jest.mock('../../../src/adapter/apexTestRunner.js')
 jest.mock('../../../src/adapter/sObjectDescribeRepository.js')
 jest.mock('../../../src/service/mutantGenerator.js')
 jest.mock('../../../src/service/typeDiscoverer.js')
+jest.mock('../../../src/service/timeUtils.js')
 
 describe('MutationTestingService', () => {
   let sut: MutationTestingService
@@ -29,6 +34,12 @@ describe('MutationTestingService', () => {
     Id: '123',
     Name: 'TestClass',
     Body: 'class TestClass { public static Integer getValue() { return 42; } }',
+  }
+
+  const mockTestClass = {
+    Id: '456',
+    Name: 'TestClassTest',
+    Body: '@IsTest class TestClassTest { @IsTest static void test() {} }',
   }
 
   const mockMutation = {
@@ -72,6 +83,9 @@ describe('MutationTestingService', () => {
         const templates: Record<string, string> = {
           'error.noCoverage': `No test coverage found for '${args?.[0]}'. Ensure '${args?.[1]}' tests exercise the code you want to mutation test.`,
           'error.noMutations': `No mutations could be generated for '${args?.[0]}'. ${args?.[1]} line(s) covered but no mutable patterns found.`,
+          'error.compilabilityCheckFailed': `The Apex class '${args?.[0]}' does not compile on the target org. Fix compilation errors before running mutation testing.\nError: ${args?.[1]}`,
+          'info.timeEstimate': `Estimated time: ${args?.[0]}`,
+          'info.timeEstimateBreakdown': `Deploy: ${args?.[0]}/mutant | Test: ${args?.[1]}/mutant | Mutants: ${args?.[2]}`,
         }
         return templates[key] || key
       }),
@@ -86,6 +100,14 @@ describe('MutationTestingService', () => {
       withMatcher: jest.fn().mockReturnThis(),
       analyze: jest.fn().mockResolvedValue(mockTypeRegistry),
     }))
+
+    ;(timeExecution as jest.Mock).mockImplementation(
+      async (fn: () => Promise<unknown>) => {
+        const result = await fn()
+        return { result, durationMs: 5000 }
+      }
+    )
+    ;(formatDuration as jest.Mock).mockReturnValue('~5s')
 
     sut = new MutationTestingService(
       progress,
@@ -104,7 +126,11 @@ describe('MutationTestingService', () => {
       it('then should throw an error', async () => {
         // Arrange
         ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockResolvedValue(mockApexClass),
+          read: jest.fn().mockImplementation((name: string) => {
+            if (name === 'TestClass') return Promise.resolve(mockApexClass)
+            return Promise.resolve(mockTestClass)
+          }),
+          update: jest.fn().mockResolvedValue({}),
           getApexClassDependencies: jest
             .fn()
             .mockResolvedValue([] as MetadataComponentDependency[]),
@@ -130,7 +156,11 @@ describe('MutationTestingService', () => {
       it('then should throw an error', async () => {
         // Arrange
         ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockResolvedValue(mockApexClass),
+          read: jest.fn().mockImplementation((name: string) => {
+            if (name === 'TestClass') return Promise.resolve(mockApexClass)
+            return Promise.resolve(mockTestClass)
+          }),
+          update: jest.fn().mockResolvedValue({}),
           getApexClassDependencies: jest
             .fn()
             .mockResolvedValue([] as MetadataComponentDependency[]),
@@ -167,7 +197,8 @@ describe('MutationTestingService', () => {
           expectedStatus: 'Killed',
           error: null,
           updateError: null,
-          expectedSpinnerStops: 5,
+          expectedSpinnerStarts: 8,
+          expectedSpinnerStops: 8,
           expectedMutants: [
             expect.objectContaining({
               mutatorName: 'TestMutation',
@@ -190,7 +221,8 @@ describe('MutationTestingService', () => {
           expectedStatus: 'Survived',
           error: null,
           updateError: null,
-          expectedSpinnerStops: 5,
+          expectedSpinnerStarts: 8,
+          expectedSpinnerStops: 8,
           expectedMutants: [
             expect.objectContaining({
               mutatorName: 'TestMutation',
@@ -208,7 +240,8 @@ describe('MutationTestingService', () => {
             'Unable to refresh session due to: Error authenticating with the refresh token due to: expired access/refresh token'
           ),
           updateError: null,
-          expectedSpinnerStops: 5,
+          expectedSpinnerStarts: 8,
+          expectedSpinnerStops: 8,
           expectedMutants: [
             expect.objectContaining({
               mutatorName: 'TestMutation',
@@ -228,7 +261,8 @@ describe('MutationTestingService', () => {
             'System.LimitException: LIMIT_USAGE_FOR_NS : Too many SOQL queries'
           ),
           updateError: null,
-          expectedSpinnerStops: 5,
+          expectedSpinnerStarts: 8,
+          expectedSpinnerStops: 8,
           expectedMutants: [
             expect.objectContaining({
               mutatorName: 'TestMutation',
@@ -244,7 +278,8 @@ describe('MutationTestingService', () => {
           expectedStatus: 'RuntimeError',
           error: 'plain string error',
           updateError: null,
-          expectedSpinnerStops: 5,
+          expectedSpinnerStarts: 8,
+          expectedSpinnerStops: 8,
           expectedMutants: [
             expect.objectContaining({
               mutatorName: 'TestMutation',
@@ -270,7 +305,8 @@ describe('MutationTestingService', () => {
           updateError: new Error(
             'Deployment failed:\n[TestClass.cls:1:50] Invalid syntax'
           ),
-          expectedSpinnerStops: 5,
+          expectedSpinnerStarts: 8,
+          expectedSpinnerStops: 8,
           expectedMutants: [
             expect.objectContaining({
               mutatorName: 'TestMutation',
@@ -289,16 +325,22 @@ describe('MutationTestingService', () => {
         expectedMutants,
         error,
         updateError,
+        expectedSpinnerStarts,
         expectedSpinnerStops,
       }) => {
         // Arrange
+        let updateCallCount = 0
         ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockResolvedValue(mockApexClass),
-          update: jest
-            .fn()
-            [updateError ? 'mockRejectedValue' : 'mockResolvedValue'](
-              updateError || {}
-            ),
+          read: jest.fn().mockImplementation((name: string) => {
+            if (name === 'TestClass') return Promise.resolve(mockApexClass)
+            return Promise.resolve(mockTestClass)
+          }),
+          update: jest.fn().mockImplementation(() => {
+            updateCallCount++
+            if (updateCallCount <= 2) return Promise.resolve({})
+            if (updateError) return Promise.reject(updateError)
+            return Promise.resolve({})
+          }),
           getApexClassDependencies: jest.fn().mockResolvedValue([
             {
               Id: 'dep1',
@@ -323,7 +365,6 @@ describe('MutationTestingService', () => {
         }))
         ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
           runTestMethods: jest.fn().mockImplementation(() => {
-            // Subsequent calls - mutation tests
             if (error) {
               return Promise.reject(error)
             }
@@ -348,7 +389,7 @@ describe('MutationTestingService', () => {
           testFile: 'TestClassTest',
           mutants: expectedMutants,
         })
-        expect(spinner.start).toHaveBeenCalledTimes(5)
+        expect(spinner.start).toHaveBeenCalledTimes(expectedSpinnerStarts)
         expect(spinner.stop).toHaveBeenCalledTimes(expectedSpinnerStops)
         expect(progress.start).toHaveBeenCalled()
         expect(progress.finish).toHaveBeenCalled()
@@ -356,11 +397,14 @@ describe('MutationTestingService', () => {
     })
 
     describe('When dry-run is enabled', () => {
-      it('then should return ApexMutationTestResult with Pending status without deploying or running mutation tests', async () => {
+      it('then should return ApexMutationTestResult with Pending status without running mutation tests', async () => {
         // Arrange
-        const mockUpdateFn = jest.fn()
+        const mockUpdateFn = jest.fn().mockResolvedValue({})
         ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockResolvedValue(mockApexClass),
+          read: jest.fn().mockImplementation((name: string) => {
+            if (name === 'TestClass') return Promise.resolve(mockApexClass)
+            return Promise.resolve(mockTestClass)
+          }),
           update: mockUpdateFn,
           getApexClassDependencies: jest
             .fn()
@@ -416,7 +460,7 @@ describe('MutationTestingService', () => {
             },
           ],
         })
-        expect(mockUpdateFn).not.toHaveBeenCalled()
+        expect(mockUpdateFn).toHaveBeenCalledTimes(2)
         expect(mockRunTestMethods).not.toHaveBeenCalled()
         expect(progress.start).not.toHaveBeenCalled()
         expect(progress.finish).not.toHaveBeenCalled()
@@ -428,7 +472,11 @@ describe('MutationTestingService', () => {
       it('then should throw an error with helpful message', async () => {
         // Arrange
         ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockResolvedValue(mockApexClass),
+          read: jest.fn().mockImplementation((name: string) => {
+            if (name === 'TestClass') return Promise.resolve(mockApexClass)
+            return Promise.resolve(mockTestClass)
+          }),
+          update: jest.fn().mockResolvedValue({}),
           getApexClassDependencies: jest
             .fn()
             .mockResolvedValue([] as MetadataComponentDependency[]),
@@ -454,7 +502,10 @@ describe('MutationTestingService', () => {
       it('then should throw an error with helpful message', async () => {
         // Arrange
         ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockResolvedValue(mockApexClass),
+          read: jest.fn().mockImplementation((name: string) => {
+            if (name === 'TestClass') return Promise.resolve(mockApexClass)
+            return Promise.resolve(mockTestClass)
+          }),
           update: jest.fn().mockResolvedValue({}),
           getApexClassDependencies: jest.fn().mockResolvedValue([]),
         }))
@@ -476,6 +527,185 @@ describe('MutationTestingService', () => {
         await expect(sut.process()).rejects.toThrow(
           "No mutations could be generated for 'TestClass'. 1 line(s) covered but no mutable patterns found."
         )
+      })
+    })
+
+    describe('When main class compilability check fails', () => {
+      it('then should throw an error with compilability message', async () => {
+        // Arrange
+        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
+          read: jest.fn().mockImplementation((name: string) => {
+            if (name === 'TestClass') return Promise.resolve(mockApexClass)
+            return Promise.resolve(mockTestClass)
+          }),
+          update: jest
+            .fn()
+            .mockRejectedValue(new Error('Deployment failed: compile error')),
+          getApexClassDependencies: jest
+            .fn()
+            .mockResolvedValue([] as MetadataComponentDependency[]),
+        }))
+
+        // Act & Assert
+        await expect(sut.process()).rejects.toThrow(
+          "The Apex class 'TestClass' does not compile on the target org."
+        )
+      })
+    })
+
+    describe('When test class compilability check fails', () => {
+      it('then should throw an error with compilability message', async () => {
+        // Arrange
+        let updateCallCount = 0
+        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
+          read: jest.fn().mockImplementation((name: string) => {
+            if (name === 'TestClass') return Promise.resolve(mockApexClass)
+            return Promise.resolve(mockTestClass)
+          }),
+          update: jest.fn().mockImplementation(() => {
+            updateCallCount++
+            if (updateCallCount === 1) return Promise.resolve({})
+            return Promise.reject(
+              new Error('Deployment failed: test class compile error')
+            )
+          }),
+          getApexClassDependencies: jest
+            .fn()
+            .mockResolvedValue([] as MetadataComponentDependency[]),
+        }))
+
+        // Act & Assert
+        await expect(sut.process()).rejects.toThrow(
+          "The Apex class 'TestClassTest' does not compile on the target org."
+        )
+      })
+    })
+
+    describe('When test class compilability check fails with non-Error', () => {
+      it('then should throw an error with string error message', async () => {
+        // Arrange
+        let updateCallCount = 0
+        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
+          read: jest.fn().mockImplementation((name: string) => {
+            if (name === 'TestClass') return Promise.resolve(mockApexClass)
+            return Promise.resolve(mockTestClass)
+          }),
+          update: jest.fn().mockImplementation(() => {
+            updateCallCount++
+            if (updateCallCount === 1) return Promise.resolve({})
+            return Promise.reject('plain string deploy error')
+          }),
+          getApexClassDependencies: jest
+            .fn()
+            .mockResolvedValue([] as MetadataComponentDependency[]),
+        }))
+
+        // Act & Assert
+        await expect(sut.process()).rejects.toThrow(
+          "The Apex class 'TestClassTest' does not compile on the target org."
+        )
+      })
+    })
+
+    describe('When main class compilability check fails with non-Error', () => {
+      it('then should throw an error with string error message', async () => {
+        // Arrange
+        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
+          read: jest.fn().mockImplementation((name: string) => {
+            if (name === 'TestClass') return Promise.resolve(mockApexClass)
+            return Promise.resolve(mockTestClass)
+          }),
+          update: jest.fn().mockRejectedValue('plain string deploy error'),
+          getApexClassDependencies: jest
+            .fn()
+            .mockResolvedValue([] as MetadataComponentDependency[]),
+        }))
+
+        // Act & Assert
+        await expect(sut.process()).rejects.toThrow(
+          "The Apex class 'TestClass' does not compile on the target org."
+        )
+      })
+    })
+
+    describe('When time estimate is displayed', () => {
+      it('then should show estimate via spinner', async () => {
+        // Arrange
+        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
+          read: jest.fn().mockImplementation((name: string) => {
+            if (name === 'TestClass') return Promise.resolve(mockApexClass)
+            return Promise.resolve(mockTestClass)
+          }),
+          update: jest.fn().mockResolvedValue({}),
+          getApexClassDependencies: jest.fn().mockResolvedValue([]),
+        }))
+        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
+          compute: jest.fn().mockReturnValue([mockMutation]),
+          mutate: jest.fn().mockReturnValue('mutated code'),
+        }))
+        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
+          runTestMethods: jest.fn().mockResolvedValue({
+            summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
+          }),
+          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+            outcome: 'Passed',
+            passing: 1,
+            failing: 0,
+            testsRan: 1,
+            testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+          }),
+        }))
+
+        // Act
+        await sut.process()
+
+        // Assert
+        expect(spinner.start).toHaveBeenCalledWith(
+          expect.stringContaining('Estimated time:'),
+          undefined,
+          { stdout: true }
+        )
+        expect(spinner.stop).toHaveBeenCalledWith(
+          expect.stringContaining('Deploy:')
+        )
+      })
+    })
+
+    describe('When progress bar updates during mutation loop', () => {
+      it('then should include remaining time in progress info', async () => {
+        // Arrange
+        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
+          read: jest.fn().mockImplementation((name: string) => {
+            if (name === 'TestClass') return Promise.resolve(mockApexClass)
+            return Promise.resolve(mockTestClass)
+          }),
+          update: jest.fn().mockResolvedValue({}),
+          getApexClassDependencies: jest.fn().mockResolvedValue([]),
+        }))
+        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
+          compute: jest.fn().mockReturnValue([mockMutation]),
+          mutate: jest.fn().mockReturnValue('mutated code'),
+        }))
+        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
+          runTestMethods: jest.fn().mockResolvedValue({
+            summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
+          }),
+          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+            outcome: 'Passed',
+            passing: 1,
+            failing: 0,
+            testsRan: 1,
+            testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+          }),
+        }))
+
+        // Act
+        await sut.process()
+
+        // Assert
+        const updateCalls = (progress.update as jest.Mock).mock.calls
+        const lastUpdateCall = updateCalls[updateCalls.length - 1]
+        expect(lastUpdateCall[1].info).toContain('Remaining:')
       })
     })
 

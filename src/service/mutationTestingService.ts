@@ -9,6 +9,7 @@ import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
 import { MutantGenerator } from './mutantGenerator.js'
+import { formatDuration, timeExecution } from './timeUtils.js'
 import { TypeDiscoverer } from './typeDiscoverer.js'
 import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
 
@@ -64,6 +65,7 @@ export class MutationTestingService {
   protected readonly apexTestClassName: string
   protected readonly dryRun: boolean
   private apexClassContent: string = ''
+  private deployTime: number = 0
 
   constructor(
     protected readonly progress: Progress,
@@ -135,12 +137,61 @@ export class MutationTestingService {
     const typeRegistry = await typeDiscoverer.analyze(apexClass.Body)
     this.spinner.stop('Done')
 
+    this.spinner.start(
+      `Verifying "${this.apexClassName}" ApexClass compilability`,
+      undefined,
+      { stdout: true }
+    )
+    try {
+      const { durationMs } = await timeExecution(() =>
+        apexClassRepository.update(apexClass)
+      )
+      this.deployTime = durationMs
+    } catch (error: unknown) {
+      this.spinner.stop()
+      const errorMessage =
+        error instanceof Error ? error.message : String(error)
+      throw new Error(
+        this.messages.getMessage('error.compilabilityCheckFailed', [
+          this.apexClassName,
+          errorMessage,
+        ])
+      )
+    }
+    this.spinner.stop('Done')
+
+    this.spinner.start(
+      `Verifying "${this.apexTestClassName}" test class compilability`,
+      undefined,
+      { stdout: true }
+    )
+    try {
+      const apexTestClass = (await apexClassRepository.read(
+        this.apexTestClassName
+      )) as unknown as ApexClass
+      await apexClassRepository.update(apexTestClass)
+    } catch (error: unknown) {
+      this.spinner.stop()
+      const errorMessage =
+        error instanceof Error ? error.message : String(error)
+      throw new Error(
+        this.messages.getMessage('error.compilabilityCheckFailed', [
+          this.apexTestClassName,
+          errorMessage,
+        ])
+      )
+    }
+    this.spinner.stop('Done')
+
     this.spinner.start(`Testing original code"`, undefined, {
       stdout: true,
     })
 
-    const { outcome, testsRan, failing, testMethodsPerLine } =
-      await apexTestRunner.getTestMethodsPerLines(this.apexTestClassName)
+    const { result: baselineResult, durationMs: testTime } =
+      await timeExecution(() =>
+        apexTestRunner.getTestMethodsPerLines(this.apexTestClassName)
+      )
+    const { outcome, testsRan, failing, testMethodsPerLine } = baselineResult
 
     if (outcome !== 'Passed') {
       this.spinner.stop()
@@ -200,6 +251,22 @@ export class MutationTestingService {
 
     this.spinner.stop(`${mutations.length} mutations generated`)
 
+    const totalEstimateMs = (this.deployTime + testTime) * mutations.length
+    this.spinner.start(
+      this.messages.getMessage('info.timeEstimate', [
+        formatDuration(totalEstimateMs),
+      ]),
+      undefined,
+      { stdout: true }
+    )
+    this.spinner.stop(
+      this.messages.getMessage('info.timeEstimateBreakdown', [
+        formatDuration(this.deployTime),
+        formatDuration(testTime),
+        String(mutations.length),
+      ])
+    )
+
     if (this.dryRun) {
       return {
         sourceFile: this.apexClassName,
@@ -233,6 +300,7 @@ export class MutationTestingService {
     )
 
     let mutationCount = 0
+    const loopStartTime = Date.now()
     for (const mutation of mutations) {
       const mutatedVersion = mutantGenerator.mutate(mutation)
 
@@ -299,8 +367,13 @@ export class MutationTestingService {
         progressMessage = classification.progressMessage
       }
       ++mutationCount
+      const elapsed = Date.now() - loopStartTime
+      const avgPerMutant = elapsed / mutationCount
+      const remainingMutants = mutations.length - mutationCount
+      const remainingMs = avgPerMutant * remainingMutants
+      const remainingText = `Remaining: ${formatDuration(remainingMs)}`
       this.progress.update(mutationCount, {
-        info: progressMessage,
+        info: `${remainingText} | ${progressMessage}`,
       })
     }
     this.progress.finish({
