@@ -2,7 +2,6 @@ export default {
   entry: [
     'src/commands/apex/mutation/test/run.ts',
     'bin/dev.js',
-    'bin/run.js',
     '**/*.{nut,test}.ts',
     '.github/**/*.yml',
   ],
@@ -12,4 +11,5 @@ export default {
     '@stryker-mutator/core',
   ],
   ignoreBinaries: ['commitlint', 'npm-check-updates', 'sf'],
+  ignoreUnresolved: ['test/e2e'],
 }

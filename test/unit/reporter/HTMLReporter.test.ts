@@ -59,6 +59,17 @@ describe('HTMLReporter', () => {
         replacement: 'null',
         original: 'new Object()',
       },
+      {
+        id: '5',
+        mutatorName: 'ArithmeticOperatorMutator',
+        status: 'Pending',
+        location: {
+          start: { line: 5, column: 0 },
+          end: { line: 5, column: 10 },
+        },
+        replacement: '-',
+        original: '+',
+      },
     ],
   }
 
@@ -76,6 +87,22 @@ describe('HTMLReporter', () => {
         expect.any(String),
         expect.stringContaining('<html>')
       )
+    })
+
+    it('should mark Pending mutants as untested', async () => {
+      // Act
+      await sut.generateReport(testResults)
+
+      // Assert
+      const htmlContent = (writeFile as jest.Mock).mock.calls[0][1] as string
+      const reportMatch = htmlContent.match(/app\.report = (.+);/)
+      const report = JSON.parse(reportMatch![1].replace(/<"\+"/g, '<'))
+      const pendingMutant = report.files['TestClass.cls'].mutants.find(
+        (m: { id: string }) => m.id === '5'
+      )
+      expect(pendingMutant.coveredBy).toBeUndefined()
+      expect(pendingMutant.testsCompleted).toBe(0)
+      expect(pendingMutant.status).toBe('Pending')
     })
   })
 })

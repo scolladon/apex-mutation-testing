@@ -70,6 +70,16 @@ Before running mutation testing:
 
 Remember, mutation testing complements but doesn't replace good test coverage. It helps identify weaknesses in your existing tests, but only for the code they already cover.
 
+### Dry Run
+
+Before running the full mutation testing process, you can preview the mutations that would be generated using the `--dry-run` flag:
+
+```sh
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest --dry-run
+```
+
+This runs your test class once to collect coverage data, then lists all mutations that would be generated without deploying any of them. Use it to estimate the scope of mutation testing for your class and verify that relevant mutations are being generated for your code patterns.
+
 ### Supported Mutation Operators
 
 The plugin currently supports the following mutation operators. If your code doesn't contain any of these patterns on covered lines, no mutations will be generated:
@@ -144,11 +154,12 @@ Evaluate test coverage quality by injecting mutations and measuring test detecti
 
 ```
 USAGE
-  $ sf apex mutation test run -c <value> -t <value> -o <value> [--json] [--flags-dir <value>] [-r <value>] [--api-version
-    <value>]
+  $ sf apex mutation test run -c <value> -t <value> -o <value> [--json] [--flags-dir <value>] [-r <value>] [-d]
+    [--api-version <value>]
 
 FLAGS
   -c, --apex-class=<value>   (required) Apex class name to mutate
+  -d, --dry-run              Preview mutations without deploying or running tests
   -o, --target-org=<value>   (required) Username or alias of the target org. Not required if the `target-org`
                              configuration variable is already set.
   -r, --report-dir=<value>   [default: mutations] Path to the directory where mutation test reports will be generated
@@ -172,6 +183,10 @@ EXAMPLES
   Run mutation testing on a class with its test file:
 
     $ sf apex mutation test run --apex-class MyClass --test-class MyClassTest
+
+  Preview mutations without running them:
+
+    $ sf apex mutation test run --apex-class MyClass --test-class MyClassTest --dry-run
 ```
 
 _See code: [src/commands/apex/mutation/test/run.ts](https://github.com/scolladon/apex-mutation-testing/blob/main/src/commands/apex/mutation/test/run.ts)_

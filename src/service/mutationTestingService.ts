@@ -62,20 +62,22 @@ const errorStrategies: ErrorClassificationStrategy[] = [
 export class MutationTestingService {
   protected readonly apexClassName: string
   protected readonly apexTestClassName: string
+  protected readonly dryRun: boolean
   private apexClassContent: string = ''
 
   constructor(
     protected readonly progress: Progress,
     protected readonly spinner: Spinner,
     protected readonly connection: Connection,
-    { apexClassName, apexTestClassName }: ApexMutationParameter,
+    { apexClassName, apexTestClassName, dryRun }: ApexMutationParameter,
     protected readonly messages: Messages<string>
   ) {
     this.apexClassName = apexClassName
     this.apexTestClassName = apexTestClassName
+    this.dryRun = dryRun ?? false
   }
 
-  public async process() {
+  public async process(): Promise<ApexMutationTestResult> {
     const apexClassRepository = new ApexClassRepository(this.connection)
     const apexTestRunner = new ApexTestRunner(this.connection)
     this.spinner.start(
@@ -196,13 +198,30 @@ export class MutationTestingService {
       )
     }
 
+    this.spinner.stop(`${mutations.length} mutations generated`)
+
+    if (this.dryRun) {
+      return {
+        sourceFile: this.apexClassName,
+        sourceFileContent: apexClass.Body,
+        testFile: this.apexTestClassName,
+        mutants: mutations.map(mutation => ({
+          id: `${this.apexClassName}-${mutation.target.startToken.line}-${mutation.target.startToken.charPositionInLine}-${mutation.target.startToken.tokenIndex}-${Date.now()}`,
+          mutatorName: mutation.mutationName,
+          status: 'Pending' as const,
+          location: this.calculateMutationPosition(mutation, apexClass.Body),
+          replacement: mutation.replacement,
+          original: this.extractMutationOriginalText(mutation),
+        })),
+      }
+    }
+
     const mutationResults: ApexMutationTestResult = {
       sourceFile: this.apexClassName,
       sourceFileContent: apexClass.Body,
       testFile: this.apexTestClassName,
       mutants: [],
     }
-    this.spinner.stop(`${mutations.length} mutations generated`)
 
     this.progress.start(
       mutations.length,

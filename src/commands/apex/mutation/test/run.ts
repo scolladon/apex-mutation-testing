@@ -12,7 +12,7 @@ const messages = Messages.loadMessages(
 )
 
 export type ApexMutationTestResult = {
-  score: number
+  score: number | null
 }
 
 export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> {
@@ -38,12 +38,16 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       exists: true,
       default: 'mutations',
     }),
+    'dry-run': Flags.boolean({
+      char: 'd',
+      summary: messages.getMessage('flags.dry-run.summary'),
+      default: false,
+    }),
     'target-org': Flags.requiredOrg(),
     'api-version': Flags.orgApiVersion(),
   }
 
   public async run(): Promise<ApexMutationTestResult> {
-    // parse the provided flags
     const { flags } = await this.parse(ApexMutationTest)
     const connection = flags['target-org'].getConnection(flags['api-version'])
 
@@ -51,13 +55,16 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       apexClassName: flags['apex-class'],
       apexTestClassName: flags['test-class'],
       reportDir: flags['report-dir'],
+      dryRun: flags['dry-run'],
     }
 
     this.log(
-      messages.getMessage('info.CommandIsRunning', [
-        parameters.apexClassName,
-        parameters.apexTestClassName,
-      ])
+      messages.getMessage(
+        flags['dry-run']
+          ? 'info.DryRunCommandIsRunning'
+          : 'info.CommandIsRunning',
+        [parameters.apexClassName, parameters.apexTestClassName]
+      )
     )
 
     const apexClassValidator = new ApexClassValidator(connection)
@@ -78,13 +85,15 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       messages.getMessage('info.reportGenerated', [parameters.reportDir])
     )
 
-    const score = mutationTestingService.calculateScore(mutationResult)
+    const score = flags['dry-run']
+      ? null
+      : mutationTestingService.calculateScore(mutationResult)
 
-    this.log(messages.getMessage('info.CommandSuccess', [score]))
+    if (score !== null) {
+      this.log(messages.getMessage('info.CommandSuccess', [score]))
+    }
 
     this.info(messages.getMessage('info.EncourageSponsorship'))
-    return {
-      score,
-    }
+    return { score }
   }
 }

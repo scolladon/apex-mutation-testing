@@ -42,9 +42,7 @@ jobs:
         run: npm run test:e2e:setup
 
       - name: Execute - Run mutation testing
-        run: |
-          mkdir -p reports/e2e
-          npm run test:e2e:run
+        run: npm run test:e2e:run
 
       - name: Validate - Check snapshot
         run: npm run test:e2e:validate
@@ -57,4 +55,4 @@ jobs:
         if: always()
         with:
           name: e2e-test-report
-          path: reports/e2e
+          path: test/e2e

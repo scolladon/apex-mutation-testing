@@ -355,6 +355,75 @@ describe('MutationTestingService', () => {
       })
     })
 
+    describe('When dry-run is enabled', () => {
+      it('then should return ApexMutationTestResult with Pending status without deploying or running mutation tests', async () => {
+        // Arrange
+        const mockUpdateFn = jest.fn()
+        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
+          read: jest.fn().mockResolvedValue(mockApexClass),
+          update: mockUpdateFn,
+          getApexClassDependencies: jest
+            .fn()
+            .mockResolvedValue([] as MetadataComponentDependency[]),
+        }))
+        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
+          compute: jest.fn().mockReturnValue([mockMutation]),
+          mutate: jest.fn(),
+        }))
+        const mockRunTestMethods = jest.fn()
+        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
+          runTestMethods: mockRunTestMethods,
+          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+            outcome: 'Passed',
+            passing: 1,
+            failing: 0,
+            testsRan: 1,
+            testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+          }),
+        }))
+
+        const dryRunService = new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassName: 'TestClassTest',
+            dryRun: true,
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+        // Act
+        const result = await dryRunService.process()
+
+        // Assert
+        expect(result).toEqual({
+          sourceFile: 'TestClass',
+          sourceFileContent: mockApexClass.Body,
+          testFile: 'TestClassTest',
+          mutants: [
+            {
+              id: expect.stringContaining('TestClass-'),
+              mutatorName: 'TestMutation',
+              status: 'Pending',
+              location: {
+                start: { line: 1, column: 61 },
+                end: { line: 1, column: 63 },
+              },
+              replacement: '0',
+              original: '42',
+            },
+          ],
+        })
+        expect(mockUpdateFn).not.toHaveBeenCalled()
+        expect(mockRunTestMethods).not.toHaveBeenCalled()
+        expect(progress.start).not.toHaveBeenCalled()
+        expect(progress.finish).not.toHaveBeenCalled()
+        expect(progress.update).not.toHaveBeenCalled()
+      })
+    })
+
     describe('When no coverage exists on the class', () => {
       it('then should throw an error with helpful message', async () => {
         // Arrange

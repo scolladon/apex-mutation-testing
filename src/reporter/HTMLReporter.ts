@@ -24,7 +24,11 @@ export class ApexMutationHTMLReporter {
       files: {},
     }
 
-    const errorStatuses = new Set(['CompileError', 'RuntimeError'])
+    const untestedStatuses = new Set([
+      'CompileError',
+      'RuntimeError',
+      'Pending',
+    ])
 
     const fileResult = {
       language: 'java',
@@ -36,9 +40,9 @@ export class ApexMutationHTMLReporter {
         status: mutant.status,
         statusReason: mutant.statusReason,
         static: false,
-        coveredBy: errorStatuses.has(mutant.status) ? undefined : ['0'],
+        coveredBy: untestedStatuses.has(mutant.status) ? undefined : ['0'],
         killedBy: mutant.status === 'Killed' ? ['0'] : undefined,
-        testsCompleted: errorStatuses.has(mutant.status) ? 0 : 1,
+        testsCompleted: untestedStatuses.has(mutant.status) ? 0 : 1,
         location: {
           start: {
             line: mutant.location.start.line,
