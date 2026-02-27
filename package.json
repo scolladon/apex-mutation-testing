@@ -73,6 +73,7 @@
     "test:e2e:teardown": "sf project deploy start -d test/classes -o e2e-test-org",
     "test:e2e": "npm run test:e2e:setup && npm run test:e2e:run && npm run test:e2e:validate; npm run test:e2e:teardown",
     "devops:cleanup:dev-tag": "./tooling/devops-cleanup.sh",
+    "devops:cleanup:dev-tag:all": "./tooling/devops-cleanup-all.sh",
     "devops:move-tag": "./tooling/devops-movetag.sh",
     "lint": "wireit",
     "lint:dependencies": "wireit",
