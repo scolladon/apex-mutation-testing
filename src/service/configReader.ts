@@ -73,7 +73,7 @@ export class ConfigReader {
   public static parseLineRanges(
     lines: string[] | undefined
   ): Set<number> | undefined {
-    if (!lines) {
+    if (!lines || lines.length === 0) {
       return undefined
     }
     const result = new Set<number>()
@@ -96,7 +96,14 @@ export class ConfigReader {
     if (!patterns) {
       return []
     }
-    return patterns.map(p => new RE2(p))
+    return patterns.map(pattern => {
+      try {
+        return new RE2(pattern)
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`Invalid skip pattern '${pattern}': ${message}`)
+      }
+    })
   }
 
   private validate(parameter: ApexMutationParameter): void {
@@ -113,17 +120,6 @@ export class ConfigReader {
       (parameter.threshold < 0 || parameter.threshold > 100)
     ) {
       throw new Error('Threshold must be between 0 and 100')
-    }
-    if (parameter.skipPatterns) {
-      for (const pattern of parameter.skipPatterns) {
-        try {
-          new RE2(pattern)
-        } catch (error: unknown) {
-          throw new Error(
-            `Invalid skip pattern '${pattern}': ${error instanceof Error ? error.message : String(error)}`
-          )
-        }
-      }
     }
     if (parameter.lines) {
       for (const range of parameter.lines) {

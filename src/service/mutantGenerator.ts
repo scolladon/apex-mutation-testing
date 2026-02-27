@@ -238,6 +238,9 @@ export class MutantGenerator {
 
     const names = mutatorFilter.include ?? mutatorFilter.exclude ?? []
     const nameSet = new Set(names.map(n => n.toLowerCase()))
+    if (nameSet.size === 0) {
+      return MUTATOR_REGISTRY
+    }
     this.warnUnknownMutators(nameSet)
 
     const isInclude = Boolean(mutatorFilter.include)

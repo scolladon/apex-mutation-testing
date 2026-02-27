@@ -549,15 +549,22 @@ export class MutationTestingService {
         info: `${remainingText}Deploying "${mutation.replacement}" mutation at line ${mutation.target.startToken.line}`,
       })
 
+      const testMethods = testMethodsPerLine.get(
+        mutation.target.startToken.line
+      )
+      if (testMethods) {
+        this.progress.update(mutationCount, {
+          info: `${remainingText}Running ${testMethods.size} tests methods for "${mutation.replacement}" mutation at line ${mutation.target.startToken.line}`,
+        })
+      }
+
       const { mutantResult, progressMessage } = await this.evaluateMutation(
         mutation,
         mutantGenerator,
         apexClass,
         testMethodsPerLine,
         apexTestRunner,
-        apexClassRepository,
-        remainingText,
-        mutationCount
+        apexClassRepository
       )
       mutationResults.mutants.push(mutantResult)
 
@@ -582,9 +589,7 @@ export class MutationTestingService {
     apexClass: ApexClass,
     testMethodsPerLine: Map<number, Set<string>>,
     apexTestRunner: ApexTestRunner,
-    apexClassRepository: ApexClassRepository,
-    remainingText: string,
-    mutationCount: number
+    apexClassRepository: ApexClassRepository
   ): Promise<{
     mutantResult: ApexMutationTestResult['mutants'][number]
     progressMessage: string
@@ -604,10 +609,6 @@ export class MutationTestingService {
       })
 
       const testMethods = testMethodsPerLine.get(targetInfo.line)!
-
-      this.progress.update(mutationCount, {
-        info: `${remainingText}Running ${testMethods.size} tests methods for "${mutation.replacement}" mutation at line ${targetInfo.line}`,
-      })
       const testResult: TestResult = await apexTestRunner.runTestMethods(
         this.apexTestClassName,
         testMethods

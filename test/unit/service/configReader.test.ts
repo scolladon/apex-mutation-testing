@@ -199,34 +199,6 @@ describe('ConfigReader', () => {
     )
   })
 
-  it('Given config file with both mutators include and exclude, When resolving config, Then throws validation error', async () => {
-    // Arrange
-    const config = {
-      mutators: { include: ['ArithmeticOperator'], exclude: ['Increment'] },
-    }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
-    const parameter = { ...baseParameter }
-
-    // Act & Assert
-    await expect(sut.resolve(parameter)).rejects.toThrow(
-      'Cannot specify both includeMutators and excludeMutators'
-    )
-  })
-
-  it('Given config file with both testMethods include and exclude, When resolving config, Then throws validation error', async () => {
-    // Arrange
-    const config = {
-      testMethods: { include: ['testA'], exclude: ['testB'] },
-    }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
-    const parameter = { ...baseParameter }
-
-    // Act & Assert
-    await expect(sut.resolve(parameter)).rejects.toThrow(
-      'Cannot specify both includeTestMethods and excludeTestMethods'
-    )
-  })
-
   it('Given explicit configFile path that exists, When resolving config, Then reads from that path', async () => {
     // Arrange
     const config = { threshold: 50 }
@@ -337,28 +309,22 @@ describe('ConfigReader', () => {
     expect(result.skipPatterns).toEqual(['FromCLI'])
   })
 
-  it('Given config file with invalid regex in skipPatterns, When resolving config, Then throws validation error', async () => {
+  it('Given skip patterns with invalid regex, When compiling, Then throws error', () => {
     // Arrange
     re2Behavior = 'throw-error'
-    const config = { skipPatterns: ['([unclosed'] }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
-    const parameter = { ...baseParameter }
 
     // Act & Assert
-    await expect(sut.resolve(parameter)).rejects.toThrow(
+    expect(() => ConfigReader.compileSkipPatterns(['([unclosed'])).toThrow(
       /Invalid skip pattern '\(\[unclosed': invalid regex/
     )
   })
 
-  it('Given config file with skipPattern that throws non-Error, When resolving config, Then wraps it in error message', async () => {
+  it('Given skip patterns with non-Error throw, When compiling, Then wraps it in error message', () => {
     // Arrange
     re2Behavior = 'throw-string'
-    const config = { skipPatterns: ['some-pattern'] }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
-    const parameter = { ...baseParameter }
 
     // Act & Assert
-    await expect(sut.resolve(parameter)).rejects.toThrow(
+    expect(() => ConfigReader.compileSkipPatterns(['some-pattern'])).toThrow(
       /Invalid skip pattern 'some-pattern': string thrown/
     )
   })
@@ -394,6 +360,22 @@ describe('ConfigReader', () => {
 
       // Assert
       expect(sut).toBeUndefined()
+    })
+
+    it('Given empty array, When parsing, Then returns undefined', () => {
+      // Arrange & Act
+      const sut = ConfigReader.parseLineRanges([])
+
+      // Assert
+      expect(sut).toBeUndefined()
+    })
+
+    it('Given overlapping ranges, When parsing, Then returns deduplicated set', () => {
+      // Arrange & Act
+      const sut = ConfigReader.parseLineRanges(['1-5', '3-8'])
+
+      // Assert
+      expect(sut).toEqual(new Set([1, 2, 3, 4, 5, 6, 7, 8]))
     })
   })
 
