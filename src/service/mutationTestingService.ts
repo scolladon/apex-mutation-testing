@@ -8,6 +8,7 @@ import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
+import { TypeRegistry } from '../type/TypeRegistry.js'
 import { ConfigReader, type RE2Instance } from './configReader.js'
 import { MutantGenerator } from './mutantGenerator.js'
 import { formatDuration, timeExecution } from './timeUtils.js'
@@ -102,62 +103,12 @@ export class MutationTestingService {
   }
 
   public async process(): Promise<ApexMutationTestResult> {
-    const apexClassRepository = new ApexClassRepository(this.connection)
-    const apexTestRunner = new ApexTestRunner(this.connection)
-    this.spinner.start(
-      `Fetching "${this.apexClassName}" ApexClass content`,
-      undefined,
-      {
-        stdout: true,
-      }
+    const { apexClassRepository, apexTestRunner } = this.createAdapters()
+    const apexClass = await this.fetchApexClass(apexClassRepository)
+    const typeRegistry = await this.discoverTypes(
+      apexClass,
+      apexClassRepository
     )
-
-    const apexClass: ApexClass = (await apexClassRepository.read(
-      this.apexClassName
-    )) as unknown as ApexClass
-
-    this.apexClassContent = apexClass.Body
-
-    this.spinner.stop('Done')
-
-    this.spinner.start(
-      `Analyzing class dependencies for "${this.apexClassName}"`,
-      undefined,
-      {
-        stdout: true,
-      }
-    )
-    const dependencies = await apexClassRepository.getApexClassDependencies(
-      apexClass.Id as string
-    )
-
-    const apexClassTypes = dependencies
-      .filter(dep => dep.RefMetadataComponentType === 'ApexClass')
-      .map(dep => dep.RefMetadataComponentName)
-
-    const standardEntityTypes = dependencies
-      .filter(dep => dep.RefMetadataComponentType === 'StandardEntity')
-      .map(dep => dep.RefMetadataComponentName)
-
-    const customObjectTypes = dependencies
-      .filter(dep => dep.RefMetadataComponentType === 'CustomObject')
-      .map(dep => dep.RefMetadataComponentName)
-
-    const sObjectDescribeRepository = new SObjectDescribeRepository(
-      this.connection
-    )
-    const apexClassMatcher = new ApexClassTypeMatcher(new Set(apexClassTypes))
-    const sObjectMatcher = new SObjectTypeMatcher(
-      new Set([...standardEntityTypes, ...customObjectTypes]),
-      sObjectDescribeRepository
-    )
-
-    const typeDiscoverer = new TypeDiscoverer()
-      .withMatcher(apexClassMatcher)
-      .withMatcher(sObjectMatcher)
-
-    const typeRegistry = await typeDiscoverer.analyze(apexClass.Body)
-    this.spinner.stop('Done')
 
     this.spinner.start(
       `Verifying "${this.apexClassName}" apex class compilation`,
@@ -541,6 +492,72 @@ export class MutationTestingService {
         testMethodsPerLine.set(line, filtered)
       }
     }
+  }
+
+  private createAdapters() {
+    return {
+      apexClassRepository: new ApexClassRepository(this.connection),
+      apexTestRunner: new ApexTestRunner(this.connection),
+    }
+  }
+
+  private async fetchApexClass(
+    apexClassRepository: ApexClassRepository
+  ): Promise<ApexClass> {
+    this.spinner.start(
+      `Fetching "${this.apexClassName}" ApexClass content`,
+      undefined,
+      { stdout: true }
+    )
+    const apexClass = (await apexClassRepository.read(
+      this.apexClassName
+    )) as unknown as ApexClass
+    this.apexClassContent = apexClass.Body
+    this.spinner.stop('Done')
+    return apexClass
+  }
+
+  private async discoverTypes(
+    apexClass: ApexClass,
+    apexClassRepository: ApexClassRepository
+  ): Promise<TypeRegistry> {
+    this.spinner.start(
+      `Analyzing class dependencies for "${this.apexClassName}"`,
+      undefined,
+      { stdout: true }
+    )
+    const dependencies = await apexClassRepository.getApexClassDependencies(
+      apexClass.Id as string
+    )
+
+    const apexClassTypes = dependencies
+      .filter(dep => dep.RefMetadataComponentType === 'ApexClass')
+      .map(dep => dep.RefMetadataComponentName)
+
+    const standardEntityTypes = dependencies
+      .filter(dep => dep.RefMetadataComponentType === 'StandardEntity')
+      .map(dep => dep.RefMetadataComponentName)
+
+    const customObjectTypes = dependencies
+      .filter(dep => dep.RefMetadataComponentType === 'CustomObject')
+      .map(dep => dep.RefMetadataComponentName)
+
+    const sObjectDescribeRepository = new SObjectDescribeRepository(
+      this.connection
+    )
+    const apexClassMatcher = new ApexClassTypeMatcher(new Set(apexClassTypes))
+    const sObjectMatcher = new SObjectTypeMatcher(
+      new Set([...standardEntityTypes, ...customObjectTypes]),
+      sObjectDescribeRepository
+    )
+
+    const typeDiscoverer = new TypeDiscoverer()
+      .withMatcher(apexClassMatcher)
+      .withMatcher(sObjectMatcher)
+
+    const typeRegistry = await typeDiscoverer.analyze(apexClass.Body)
+    this.spinner.stop('Done')
+    return typeRegistry
   }
 
   private extractMutationOriginalText(mutation: ApexMutation): string {
