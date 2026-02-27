@@ -29,8 +29,9 @@ sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --config-
 ├──────────────────────────────────────────────────────────┤
 │                   Orchestration Layer                     │
 │            service/mutationTestingService.ts              │
-│     (workflow coordination, error classification,        │
-│      score calculation, result assembly)                  │
+│     (workflow coordination via named sub-methods,        │
+│      error classification, score calculation,            │
+│      result assembly)                                    │
 ├──────────────────────────────────────────────────────────┤
 │                      Domain Layer                         │
 │  ┌─────────────────────┐  ┌────────────────────────────┐ │
@@ -69,7 +70,6 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │       ├─ read .mutation-testing.json (if exists)
 │       ├─ merge: CLI flags override config file
 │       ├─ validate: threshold 0-100
-│       ├─ validate: skipPatterns compile as RE2
 │       └─ validate: lines format (N or N-M, start ≤ end)
 │     Precedence: CLI flags > config file > defaults
 │
@@ -116,7 +116,8 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │       ✓ All tests must pass (green baseline)
 │
 ├─ 7b. FILTER TEST METHODS (if configured)
-│     Apply includeTestMethods or excludeTestMethods
+│     buildTestMethodFilter() → predicate (or undefined)
+│     filterTestMethods(testMethodsPerLine, predicate)
 │       → filter testMethodsPerLine in-place
 │       → lines with zero remaining methods are deleted
 │       → coveredLines derived after filtering
@@ -188,6 +189,29 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │      Message: "Mutation score X% is below threshold Y%"
 │      Skipped in dry-run mode (no score computed)
 ```
+
+### `process()` Method Decomposition
+
+The `process()` method is a thin orchestrator (~40 lines) that delegates each lifecycle step to a named private method:
+
+```
+process()
+├── createAdapters()            → step 2 (adapters)
+├── fetchApexClass()            → step 3
+├── discoverTypes()             → steps 4-5
+├── verifyCompilation()         → step 6 (main class)
+├── verifyTestClassCompilation()→ step 6 (test class)
+├── runBaselineTests()          → step 7
+├── extractCoveredLines()       → step 7b (filtering + coverage)
+├── generateMutations()         → step 8
+├── displayTimeEstimate()       → step 9
+├── buildDryRunResult()         → dry-run exit point
+├── executeMutationLoop()       → step 10
+│   └── evaluateMutation()      → single mutation: deploy + test + classify
+└── rollback()                  → step 11
+```
+
+Each method encapsulates one logical concern. `evaluateMutation()` handles the try/catch error classification for a single mutation. `formatRemainingTime()` extracts the time estimation math from the progress update.
 
 ---
 
@@ -670,7 +694,7 @@ Four test tiers with distinct scopes and runners:
 
 **NUT tests** use `--experimental-vm-modules` for native ESM support, enabling `jest.unstable_mockModule()` with dynamic imports to mock `@salesforce/core` and `@salesforce/sf-plugins-core` at the module level.
 
-**E2E tests** run the published plugin command via `sf apex mutation test run`, normalize volatile IDs in the generated HTML report, then validate via `git diff --quiet` against a committed HTML snapshot. Teardown (class redeployment) always executes even on failure.
+**E2E tests** run the published plugin command via `sf apex mutation test run`, normalize the generated HTML report (parse embedded JSON, sort mutants deterministically by line/column/mutatorName/replacement, replace volatile timestamps), then validate via `git diff` against a committed HTML snapshot. The validate step displays the diff before failing for CI debugging. Teardown (class redeployment) always executes even on failure.
 
 **Test fixtures** (`test/classes/Mutation.cls` and `MutationTest.cls`) are shared across NUT and E2E tiers. `Mutation.cls` contains constructs triggering all 25 mutators. `MutationTest.cls` provides 100% line coverage.
 
@@ -732,7 +756,7 @@ CLI flags > config file > defaults (all mutators, all tests, no threshold)
 
 ### Mutator Registry
 
-`MutantGenerator` maintains a `MUTATOR_REGISTRY` array mapping `MutatorName` constants to factory functions. Filtering is case-insensitive against registry names (without `Mutator` suffix). Unknown names are silently skipped (forward-compatible). All mutators excluded → error.
+`MutantGenerator` maintains a `MUTATOR_REGISTRY` array mapping `MutatorName` constants to factory functions. `filterRegistry()` unifies include/exclude into a single code path: build a `Set<string>` of normalized names, then `MUTATOR_REGISTRY.filter(entry => isInclude ? match : !match)`. Case-insensitive matching. Unknown names trigger a warning. All mutators excluded → error.
 
 ---
 
@@ -796,13 +820,12 @@ CLI flags / config file
     │
     ▼
 ConfigReader.resolve()
-    ├─ validate skipPatterns (RE2 compilation check)
     └─ validate lines (format + start ≤ end)
     │
     ▼
 MutationTestingService constructor
     ├─ ConfigReader.compileSkipPatterns(skipPatterns)
-    │     → string[] → RE2Instance[]
+    │     → string[] → RE2Instance[] (validates RE2 compilation)
     └─ ConfigReader.parseLineRanges(lines)
     │     → string[] (e.g. ["10-50","100-120"]) → Set<number> (expanded)
     │
