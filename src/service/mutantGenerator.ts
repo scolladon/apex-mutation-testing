@@ -236,26 +236,15 @@ export class MutantGenerator {
       return MUTATOR_REGISTRY
     }
 
-    const registryNames = new Set(
-      MUTATOR_REGISTRY.map(e => e.name.toLowerCase())
-    )
-    let filtered: MutatorRegistryEntry[]
+    const names = mutatorFilter.include ?? mutatorFilter.exclude ?? []
+    const nameSet = new Set(names.map(n => n.toLowerCase()))
+    this.warnUnknownMutators(nameSet)
 
-    if (mutatorFilter.include) {
-      const includeNames = mutatorFilter.include.map(n => n.toLowerCase())
-      this.warnUnknownMutators(includeNames, registryNames)
-      filtered = MUTATOR_REGISTRY.filter(entry =>
-        includeNames.includes(entry.name.toLowerCase())
-      )
-    } else if (mutatorFilter.exclude) {
-      const excludeNames = mutatorFilter.exclude.map(n => n.toLowerCase())
-      this.warnUnknownMutators(excludeNames, registryNames)
-      filtered = MUTATOR_REGISTRY.filter(
-        entry => !excludeNames.includes(entry.name.toLowerCase())
-      )
-    } else {
-      filtered = MUTATOR_REGISTRY
-    }
+    const isInclude = Boolean(mutatorFilter.include)
+    const filtered = MUTATOR_REGISTRY.filter(entry => {
+      const match = nameSet.has(entry.name.toLowerCase())
+      return isInclude ? match : !match
+    })
 
     if (filtered.length === 0) {
       throw new Error('All mutators have been excluded by configuration')
@@ -264,13 +253,12 @@ export class MutantGenerator {
     return filtered
   }
 
-  private warnUnknownMutators(
-    requestedNames: string[],
-    knownNames: Set<string>
-  ): void {
-    const unknown = requestedNames.filter(name => !knownNames.has(name))
-    for (const name of unknown) {
-      process.emitWarning(`Unknown mutator name: '${name}' — skipping`)
+  private warnUnknownMutators(requestedNames: Set<string>): void {
+    const knownNames = new Set(MUTATOR_REGISTRY.map(e => e.name.toLowerCase()))
+    for (const name of requestedNames) {
+      if (!knownNames.has(name)) {
+        process.emitWarning(`Unknown mutator name: '${name}' — skipping`)
+      }
     }
   }
 }
