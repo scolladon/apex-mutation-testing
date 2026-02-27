@@ -125,151 +125,22 @@ export class MutationTestingService {
       typeRegistry
     )
 
-    const totalEstimateMs = (deployTime + testTime) * mutations.length
-    this.spinner.start(
-      this.messages.getMessage('info.timeEstimate', [
-        formatDuration(totalEstimateMs),
-      ]),
-      undefined,
-      { stdout: true }
-    )
-    this.spinner.stop(
-      this.messages.getMessage('info.timeEstimateBreakdown', [
-        formatDuration(deployTime),
-        formatDuration(testTime),
-        String(mutations.length),
-      ])
-    )
+    this.displayTimeEstimate(deployTime, testTime, mutations.length)
 
     if (this.dryRun) {
-      return {
-        sourceFile: this.apexClassName,
-        sourceFileContent: apexClass.Body,
-        testFile: this.apexTestClassName,
-        mutants: mutations.map(mutation => ({
-          id: `${this.apexClassName}-${mutation.target.startToken.line}-${mutation.target.startToken.charPositionInLine}-${mutation.target.startToken.tokenIndex}-${Date.now()}`,
-          mutatorName: mutation.mutationName,
-          status: 'Pending' as const,
-          location: this.calculateMutationPosition(mutation, apexClass.Body),
-          replacement: mutation.replacement,
-          original: this.extractMutationOriginalText(mutation),
-        })),
-      }
+      return this.buildDryRunResult(apexClass, mutations)
     }
 
-    const mutationResults: ApexMutationTestResult = {
-      sourceFile: this.apexClassName,
-      sourceFileContent: apexClass.Body,
-      testFile: this.apexTestClassName,
-      mutants: [],
-    }
-
-    this.progress.start(
-      mutations.length,
-      { info: 'Starting mutation testing' },
-      {
-        title: 'MUTATION TESTING PROGRESS',
-        format: '%s | {bar} | {value}/{total} {info}',
-      }
+    const result = await this.executeMutationLoop(
+      apexClass,
+      mutations,
+      mutantGenerator,
+      testMethodsPerLine,
+      apexTestRunner,
+      apexClassRepository
     )
-
-    let mutationCount = 0
-    let remainingText = ''
-    const loopStartTime = performance.now()
-    for (const mutation of mutations) {
-      const mutatedVersion = mutantGenerator.mutate(mutation)
-
-      const targetInfo: TokenTargetInfo = {
-        line: mutation.target.startToken.line,
-        column: mutation.target.startToken.charPositionInLine,
-        tokenIndex: mutation.target.startToken.tokenIndex,
-        text: mutation.target.text,
-      }
-
-      this.progress.update(mutationCount, {
-        info: `${remainingText}Deploying "${mutation.replacement}" mutation at line ${targetInfo.line}`,
-      })
-
-      let progressMessage
-      try {
-        await apexClassRepository.update({
-          Id: apexClass.Id as string,
-          Body: mutatedVersion,
-        })
-
-        const testMethods = testMethodsPerLine.get(targetInfo.line)!
-
-        this.progress.update(mutationCount, {
-          info: `${remainingText}Running ${testMethods.size} tests methods for "${mutation.replacement}" mutation at line ${targetInfo.line}`,
-        })
-        const testResult: TestResult = await apexTestRunner.runTestMethods(
-          this.apexTestClassName,
-          testMethods
-        )
-
-        const mutantResult = this.buildMutantResult(
-          mutation,
-          testResult,
-          targetInfo
-        )
-        mutationResults.mutants.push(mutantResult)
-
-        progressMessage = `Mutation result: ${testResult.summary.outcome === 'Passed' ? 'zombie' : 'mutant killed'}`
-      } catch (error: unknown) {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error)
-
-        const location = this.calculateMutationPosition(
-          mutation,
-          this.apexClassContent
-        )
-        const originalText = this.extractMutationOriginalText(mutation)
-
-        const strategy = errorStrategies.find(s => s.matches(errorMessage))!
-        const classification = strategy.classify(errorMessage, targetInfo)
-
-        mutationResults.mutants.push({
-          id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
-          mutatorName: mutation.mutationName,
-          status: classification.status,
-          ...(classification.statusReason && {
-            statusReason: classification.statusReason,
-          }),
-          location,
-          replacement: mutation.replacement,
-          original: originalText,
-        })
-        progressMessage = classification.progressMessage
-      }
-      ++mutationCount
-      const elapsed = performance.now() - loopStartTime
-      const avgPerMutant = elapsed / mutationCount
-      const remainingMutants = mutations.length - mutationCount
-      const remainingMs = avgPerMutant * remainingMutants
-      remainingText = `Remaining: ${formatDuration(remainingMs)} | `
-      this.progress.update(mutationCount, {
-        info: `${remainingText}${progressMessage}`,
-      })
-    }
-    this.progress.finish({
-      info: `All mutations evaluated`,
-    })
-
-    try {
-      this.spinner.start(
-        `Rolling back "${this.apexClassName}" ApexClass to its original state`,
-        undefined,
-        {
-          stdout: true,
-        }
-      )
-      await apexClassRepository.update(apexClass)
-      this.spinner.stop('Done')
-    } catch {
-      this.spinner.stop('Class not rolled back, please do it manually')
-    }
-
-    return mutationResults
+    await this.rollback(apexClass, apexClassRepository)
+    return result
   }
 
   public calculateScore(mutationResult: ApexMutationTestResult) {
@@ -598,6 +469,209 @@ export class MutationTestingService {
     if (this.includeMutators) return { include: this.includeMutators }
     if (this.excludeMutators) return { exclude: this.excludeMutators }
     return undefined
+  }
+
+  private displayTimeEstimate(
+    deployTime: number,
+    testTime: number,
+    mutationCount: number
+  ): void {
+    const totalEstimateMs = (deployTime + testTime) * mutationCount
+    this.spinner.start(
+      this.messages.getMessage('info.timeEstimate', [
+        formatDuration(totalEstimateMs),
+      ]),
+      undefined,
+      { stdout: true }
+    )
+    this.spinner.stop(
+      this.messages.getMessage('info.timeEstimateBreakdown', [
+        formatDuration(deployTime),
+        formatDuration(testTime),
+        String(mutationCount),
+      ])
+    )
+  }
+
+  private buildDryRunResult(
+    apexClass: ApexClass,
+    mutations: ApexMutation[]
+  ): ApexMutationTestResult {
+    return {
+      sourceFile: this.apexClassName,
+      sourceFileContent: apexClass.Body,
+      testFile: this.apexTestClassName,
+      mutants: mutations.map(mutation => ({
+        id: `${this.apexClassName}-${mutation.target.startToken.line}-${mutation.target.startToken.charPositionInLine}-${mutation.target.startToken.tokenIndex}-${Date.now()}`,
+        mutatorName: mutation.mutationName,
+        status: 'Pending' as const,
+        location: this.calculateMutationPosition(mutation, apexClass.Body),
+        replacement: mutation.replacement,
+        original: this.extractMutationOriginalText(mutation),
+      })),
+    }
+  }
+
+  private async executeMutationLoop(
+    apexClass: ApexClass,
+    mutations: ApexMutation[],
+    mutantGenerator: MutantGenerator,
+    testMethodsPerLine: Map<number, Set<string>>,
+    apexTestRunner: ApexTestRunner,
+    apexClassRepository: ApexClassRepository
+  ): Promise<ApexMutationTestResult> {
+    const mutationResults: ApexMutationTestResult = {
+      sourceFile: this.apexClassName,
+      sourceFileContent: apexClass.Body,
+      testFile: this.apexTestClassName,
+      mutants: [],
+    }
+
+    this.progress.start(
+      mutations.length,
+      { info: 'Starting mutation testing' },
+      {
+        title: 'MUTATION TESTING PROGRESS',
+        format: '%s | {bar} | {value}/{total} {info}',
+      }
+    )
+
+    let mutationCount = 0
+    const loopStartTime = performance.now()
+    for (const mutation of mutations) {
+      const remainingText = this.formatRemainingTime(
+        loopStartTime,
+        mutationCount,
+        mutations.length
+      )
+
+      this.progress.update(mutationCount, {
+        info: `${remainingText}Deploying "${mutation.replacement}" mutation at line ${mutation.target.startToken.line}`,
+      })
+
+      const { mutantResult, progressMessage } = await this.evaluateMutation(
+        mutation,
+        mutantGenerator,
+        apexClass,
+        testMethodsPerLine,
+        apexTestRunner,
+        apexClassRepository,
+        remainingText,
+        mutationCount
+      )
+      mutationResults.mutants.push(mutantResult)
+
+      ++mutationCount
+      const updatedRemainingText = this.formatRemainingTime(
+        loopStartTime,
+        mutationCount,
+        mutations.length
+      )
+      this.progress.update(mutationCount, {
+        info: `${updatedRemainingText}${progressMessage}`,
+      })
+    }
+
+    this.progress.finish({ info: 'All mutations evaluated' })
+    return mutationResults
+  }
+
+  private async evaluateMutation(
+    mutation: ApexMutation,
+    mutantGenerator: MutantGenerator,
+    apexClass: ApexClass,
+    testMethodsPerLine: Map<number, Set<string>>,
+    apexTestRunner: ApexTestRunner,
+    apexClassRepository: ApexClassRepository,
+    remainingText: string,
+    mutationCount: number
+  ): Promise<{
+    mutantResult: ApexMutationTestResult['mutants'][number]
+    progressMessage: string
+  }> {
+    const mutatedVersion = mutantGenerator.mutate(mutation)
+    const targetInfo: TokenTargetInfo = {
+      line: mutation.target.startToken.line,
+      column: mutation.target.startToken.charPositionInLine,
+      tokenIndex: mutation.target.startToken.tokenIndex,
+      text: mutation.target.text,
+    }
+
+    try {
+      await apexClassRepository.update({
+        Id: apexClass.Id as string,
+        Body: mutatedVersion,
+      })
+
+      const testMethods = testMethodsPerLine.get(targetInfo.line)!
+
+      this.progress.update(mutationCount, {
+        info: `${remainingText}Running ${testMethods.size} tests methods for "${mutation.replacement}" mutation at line ${targetInfo.line}`,
+      })
+      const testResult: TestResult = await apexTestRunner.runTestMethods(
+        this.apexTestClassName,
+        testMethods
+      )
+
+      return {
+        mutantResult: this.buildMutantResult(mutation, testResult, targetInfo),
+        progressMessage: `Mutation result: ${testResult.summary.outcome === 'Passed' ? 'zombie' : 'mutant killed'}`,
+      }
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error)
+      const location = this.calculateMutationPosition(
+        mutation,
+        this.apexClassContent
+      )
+      const originalText = this.extractMutationOriginalText(mutation)
+      const strategy = errorStrategies.find(s => s.matches(errorMessage))!
+      const classification = strategy.classify(errorMessage, targetInfo)
+
+      return {
+        mutantResult: {
+          id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
+          mutatorName: mutation.mutationName,
+          status: classification.status,
+          ...(classification.statusReason && {
+            statusReason: classification.statusReason,
+          }),
+          location,
+          replacement: mutation.replacement,
+          original: originalText,
+        },
+        progressMessage: classification.progressMessage,
+      }
+    }
+  }
+
+  private formatRemainingTime(
+    loopStartTime: number,
+    completedCount: number,
+    totalCount: number
+  ): string {
+    if (completedCount === 0) return ''
+    const elapsed = performance.now() - loopStartTime
+    const avgPerMutant = elapsed / completedCount
+    const remainingMs = avgPerMutant * (totalCount - completedCount)
+    return `Remaining: ${formatDuration(remainingMs)} | `
+  }
+
+  private async rollback(
+    apexClass: ApexClass,
+    apexClassRepository: ApexClassRepository
+  ): Promise<void> {
+    try {
+      this.spinner.start(
+        `Rolling back "${this.apexClassName}" ApexClass to its original state`,
+        undefined,
+        { stdout: true }
+      )
+      await apexClassRepository.update(apexClass)
+      this.spinner.stop('Done')
+    } catch {
+      this.spinner.stop('Class not rolled back, please do it manually')
+    }
   }
 
   private extractMutationOriginalText(mutation: ApexMutation): string {
