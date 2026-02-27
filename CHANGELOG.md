@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.5.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.4.0...v1.5.0) (2026-02-27)
+
+
+### Features
+
+* add pertinent mutant detection (skip-patterns & line ranges) ([#102](https://github.com/scolladon/apex-mutation-testing/issues/102)) ([717d311](https://github.com/scolladon/apex-mutation-testing/commit/717d31141bbb9396cf175a7710827d1f8d780dc1))
+* add plugin configurability via config file and CLI flags ([#101](https://github.com/scolladon/apex-mutation-testing/issues/101)) ([5aff2cf](https://github.com/scolladon/apex-mutation-testing/commit/5aff2cf06aad6625f955a77c6fbc90e022505ddd))
+* dry-run mode ([#98](https://github.com/scolladon/apex-mutation-testing/issues/98)) ([4cc86ce](https://github.com/scolladon/apex-mutation-testing/commit/4cc86ce453e85c279465d4f03007bd1df3082f13))
+* time estimation and remaining ([#100](https://github.com/scolladon/apex-mutation-testing/issues/100)) ([4da340a](https://github.com/scolladon/apex-mutation-testing/commit/4da340a1e16fb76a7db8a3eeb85edbcd9eece303))
+
 ## [1.4.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.3.0...v1.4.0) (2026-02-24)
 
 
