@@ -110,52 +110,11 @@ export class MutationTestingService {
       apexClassRepository
     )
 
-    this.spinner.start(
-      `Verifying "${this.apexClassName}" apex class compilation`,
-      undefined,
-      { stdout: true }
+    const deployTime = await this.verifyCompilation(
+      apexClass,
+      apexClassRepository
     )
-    let deployTime = 0
-    try {
-      const { durationMs } = await timeExecution(() =>
-        apexClassRepository.update(apexClass)
-      )
-      deployTime = durationMs
-    } catch (error: unknown) {
-      this.spinner.stop()
-      const errorMessage =
-        error instanceof Error ? error.message : String(error)
-      throw new Error(
-        this.messages.getMessage('error.compilabilityCheckFailed', [
-          this.apexClassName,
-          errorMessage,
-        ])
-      )
-    }
-    this.spinner.stop('Done')
-
-    this.spinner.start(
-      `Verifying "${this.apexTestClassName}" apex test class compilation`,
-      undefined,
-      { stdout: true }
-    )
-    try {
-      const apexTestClass = (await apexClassRepository.read(
-        this.apexTestClassName
-      )) as unknown as ApexClass
-      await apexClassRepository.update(apexTestClass)
-    } catch (error: unknown) {
-      this.spinner.stop()
-      const errorMessage =
-        error instanceof Error ? error.message : String(error)
-      throw new Error(
-        this.messages.getMessage('error.compilabilityCheckFailed', [
-          this.apexTestClassName,
-          errorMessage,
-        ])
-      )
-    }
-    this.spinner.stop('Done')
+    await this.verifyTestClassCompilation(apexClassRepository)
 
     this.spinner.start(
       `Executing "${this.apexTestClassName}" tests to get coverage`,
@@ -558,6 +517,61 @@ export class MutationTestingService {
     const typeRegistry = await typeDiscoverer.analyze(apexClass.Body)
     this.spinner.stop('Done')
     return typeRegistry
+  }
+
+  private async verifyCompilation(
+    apexClass: ApexClass,
+    apexClassRepository: ApexClassRepository
+  ): Promise<number> {
+    this.spinner.start(
+      `Verifying "${this.apexClassName}" apex class compilation`,
+      undefined,
+      { stdout: true }
+    )
+    try {
+      const { durationMs } = await timeExecution(() =>
+        apexClassRepository.update(apexClass)
+      )
+      this.spinner.stop('Done')
+      return durationMs
+    } catch (error: unknown) {
+      this.spinner.stop()
+      const errorMessage =
+        error instanceof Error ? error.message : String(error)
+      throw new Error(
+        this.messages.getMessage('error.compilabilityCheckFailed', [
+          this.apexClassName,
+          errorMessage,
+        ])
+      )
+    }
+  }
+
+  private async verifyTestClassCompilation(
+    apexClassRepository: ApexClassRepository
+  ): Promise<void> {
+    this.spinner.start(
+      `Verifying "${this.apexTestClassName}" apex test class compilation`,
+      undefined,
+      { stdout: true }
+    )
+    try {
+      const apexTestClass = (await apexClassRepository.read(
+        this.apexTestClassName
+      )) as unknown as ApexClass
+      await apexClassRepository.update(apexTestClass)
+      this.spinner.stop('Done')
+    } catch (error: unknown) {
+      this.spinner.stop()
+      const errorMessage =
+        error instanceof Error ? error.message : String(error)
+      throw new Error(
+        this.messages.getMessage('error.compilabilityCheckFailed', [
+          this.apexTestClassName,
+          errorMessage,
+        ])
+      )
+    }
   }
 
   private extractMutationOriginalText(mutation: ApexMutation): string {
