@@ -64,18 +64,34 @@ export class MutationTestingService {
   protected readonly apexClassName: string
   protected readonly apexTestClassName: string
   protected readonly dryRun: boolean
+  protected readonly includeMutators: string[] | undefined
+  protected readonly excludeMutators: string[] | undefined
+  protected readonly includeTestMethods: string[] | undefined
+  protected readonly excludeTestMethods: string[] | undefined
   private apexClassContent: string = ''
 
   constructor(
     protected readonly progress: Progress,
     protected readonly spinner: Spinner,
     protected readonly connection: Connection,
-    { apexClassName, apexTestClassName, dryRun }: ApexMutationParameter,
+    {
+      apexClassName,
+      apexTestClassName,
+      dryRun,
+      includeMutators,
+      excludeMutators,
+      includeTestMethods,
+      excludeTestMethods,
+    }: ApexMutationParameter,
     protected readonly messages: Messages<string>
   ) {
     this.apexClassName = apexClassName
     this.apexTestClassName = apexTestClassName
     this.dryRun = dryRun ?? false
+    this.includeMutators = includeMutators
+    this.excludeMutators = excludeMutators
+    this.includeTestMethods = includeTestMethods
+    this.excludeTestMethods = excludeTestMethods
   }
 
   public async process(): Promise<ApexMutationTestResult> {
@@ -137,7 +153,7 @@ export class MutationTestingService {
     this.spinner.stop('Done')
 
     this.spinner.start(
-      `Verifying "${this.apexClassName}" apex class compilability`,
+      `Verifying "${this.apexClassName}" apex class compilation`,
       undefined,
       { stdout: true }
     )
@@ -161,7 +177,7 @@ export class MutationTestingService {
     this.spinner.stop('Done')
 
     this.spinner.start(
-      `Verifying "${this.apexTestClassName}" apex test class compilability`,
+      `Verifying "${this.apexTestClassName}" apex test class compilation`,
       undefined,
       { stdout: true }
     )
@@ -218,6 +234,8 @@ export class MutationTestingService {
 
     this.spinner.stop('Original tests passed')
 
+    this.filterTestMethods(testMethodsPerLine)
+
     const coveredLines = new Set(testMethodsPerLine.keys())
 
     if (coveredLines.size === 0) {
@@ -237,10 +255,16 @@ export class MutationTestingService {
       }
     )
     const mutantGenerator = new MutantGenerator()
+    const mutatorFilter = this.includeMutators
+      ? { include: this.includeMutators }
+      : this.excludeMutators
+        ? { exclude: this.excludeMutators }
+        : undefined
     const mutations = mutantGenerator.compute(
       apexClass.Body,
       coveredLines,
-      typeRegistry
+      typeRegistry,
+      mutatorFilter
     )
 
     if (mutations.length === 0) {
@@ -478,6 +502,35 @@ export class MutationTestingService {
     return {
       line: lines.length,
       column: lines[lines.length - 1].length + 1,
+    }
+  }
+
+  private filterTestMethods(
+    testMethodsPerLine: Map<number, Set<string>>
+  ): void {
+    const filterSet = this.includeTestMethods
+      ? new Set(this.includeTestMethods)
+      : this.excludeTestMethods
+        ? new Set(this.excludeTestMethods)
+        : undefined
+
+    if (!filterSet) {
+      return
+    }
+
+    const isInclude = Boolean(this.includeTestMethods)
+
+    for (const [line, methods] of testMethodsPerLine) {
+      const filtered = new Set(
+        [...methods].filter(m =>
+          isInclude ? filterSet.has(m) : !filterSet.has(m)
+        )
+      )
+      if (filtered.size === 0) {
+        testMethodsPerLine.delete(line)
+      } else {
+        testMethodsPerLine.set(line, filtered)
+      }
     }
   }
 

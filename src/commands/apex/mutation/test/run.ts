@@ -2,6 +2,7 @@ import { Messages } from '@salesforce/core'
 import { Flags, SfCommand } from '@salesforce/sf-plugins-core'
 import { ApexMutationHTMLReporter } from '../../../../reporter/HTMLReporter.js'
 import { ApexClassValidator } from '../../../../service/apexClassValidator.js'
+import { ConfigReader } from '../../../../service/configReader.js'
 import { MutationTestingService } from '../../../../service/mutationTestingService.js'
 import { ApexMutationParameter } from '../../../../type/ApexMutationParameter.js'
 
@@ -43,6 +44,35 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       summary: messages.getMessage('flags.dry-run.summary'),
       default: false,
     }),
+    'include-mutators': Flags.string({
+      summary: messages.getMessage('flags.include-mutators.summary'),
+      exclusive: ['exclude-mutators'],
+      multiple: true,
+    }),
+    'exclude-mutators': Flags.string({
+      summary: messages.getMessage('flags.exclude-mutators.summary'),
+      exclusive: ['include-mutators'],
+      multiple: true,
+    }),
+    'include-test-methods': Flags.string({
+      summary: messages.getMessage('flags.include-test-methods.summary'),
+      exclusive: ['exclude-test-methods'],
+      multiple: true,
+    }),
+    'exclude-test-methods': Flags.string({
+      summary: messages.getMessage('flags.exclude-test-methods.summary'),
+      exclusive: ['include-test-methods'],
+      multiple: true,
+    }),
+    threshold: Flags.integer({
+      summary: messages.getMessage('flags.threshold.summary'),
+      min: 0,
+      max: 100,
+    }),
+    'config-file': Flags.file({
+      summary: messages.getMessage('flags.config-file.summary'),
+      exists: true,
+    }),
     'target-org': Flags.requiredOrg(),
     'api-version': Flags.orgApiVersion(),
   }
@@ -56,33 +86,47 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       apexTestClassName: flags['test-class'],
       reportDir: flags['report-dir'],
       dryRun: flags['dry-run'],
+      includeMutators: flags['include-mutators'],
+      excludeMutators: flags['exclude-mutators'],
+      includeTestMethods: flags['include-test-methods'],
+      excludeTestMethods: flags['exclude-test-methods'],
+      threshold: flags['threshold'],
+      configFile: flags['config-file'],
     }
+
+    const configReader = new ConfigReader()
+    const resolvedParameters = await configReader.resolve(parameters)
 
     this.log(
       messages.getMessage(
         flags['dry-run']
           ? 'info.DryRunCommandIsRunning'
           : 'info.CommandIsRunning',
-        [parameters.apexClassName, parameters.apexTestClassName]
+        [resolvedParameters.apexClassName, resolvedParameters.apexTestClassName]
       )
     )
 
     const apexClassValidator = new ApexClassValidator(connection)
-    await apexClassValidator.validate(parameters)
+    await apexClassValidator.validate(resolvedParameters)
 
     const mutationTestingService = new MutationTestingService(
       this.progress,
       this.spinner,
       connection,
-      parameters,
+      resolvedParameters,
       messages
     )
     const mutationResult = await mutationTestingService.process()
 
     const htmlReporter = new ApexMutationHTMLReporter()
-    await htmlReporter.generateReport(mutationResult, parameters.reportDir)
+    await htmlReporter.generateReport(
+      mutationResult,
+      resolvedParameters.reportDir
+    )
     this.log(
-      messages.getMessage('info.reportGenerated', [parameters.reportDir])
+      messages.getMessage('info.reportGenerated', [
+        resolvedParameters.reportDir,
+      ])
     )
 
     const score = flags['dry-run']
@@ -91,6 +135,15 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
 
     if (score !== null) {
       this.log(messages.getMessage('info.CommandSuccess', [score]))
+    }
+
+    if (score !== null && resolvedParameters.threshold !== undefined) {
+      if (score < resolvedParameters.threshold) {
+        throw messages.createError('error.thresholdNotMet', [
+          String(score),
+          String(resolvedParameters.threshold),
+        ])
+      }
     }
 
     this.info(messages.getMessage('info.EncourageSponsorship'))

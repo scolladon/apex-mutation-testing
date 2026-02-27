@@ -90,20 +90,114 @@ Without this check, all mutants would result in `CompileError`, producing a misl
 
 This verification also serves as a baseline to measure deployment time, which is used to estimate the total mutation testing duration.
 
+### Configuration
+
+The plugin supports configuration through a JSON file and CLI flags. CLI flags always take precedence over config file values.
+
+#### Config File
+
+By default, the plugin looks for a `.mutation-testing.json` file at the root of your project. Use `--config-file` to specify a custom path.
+
+The config file supports the following attributes:
+
+```json
+{
+  "mutators": {
+    "include": ["ArithmeticOperator", "BoundaryCondition"],
+    "exclude": ["Increment", "InlineConstant"]
+  },
+  "testMethods": {
+    "include": ["testCalculateTotal", "testEdgeCases"],
+    "exclude": ["slowIntegrationTest"]
+  },
+  "threshold": 80
+}
+```
+
+| Attribute             | Type       | Description                                                                                                       |
+| --------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------- |
+| `mutators.include`    | `string[]` | Only apply these mutation operators (see [Supported Mutation Operators](#supported-mutation-operators) for names) |
+| `mutators.exclude`    | `string[]` | Apply all operators except these                                                                                  |
+| `testMethods.include` | `string[]` | Only use these test methods to evaluate mutations                                                                 |
+| `testMethods.exclude` | `string[]` | Use all test methods except these                                                                                 |
+| `threshold`           | `number`   | Minimum mutation score (0–100) required for the command to succeed                                                |
+
+**Mutual exclusivity:** You cannot specify both `include` and `exclude` within the same group. For example, setting both `mutators.include` and `mutators.exclude` will result in an error. The same applies to `testMethods.include` and `testMethods.exclude`. This constraint is enforced across both the config file and CLI flags — if `--include-mutators` is passed via CLI and `mutators.exclude` is set in the config file, the CLI value takes precedence and the config file value is ignored.
+
+**Precedence:** CLI flags always override config file values. If both provide a value for the same attribute, the CLI flag wins.
+
+```sh
+# Use a custom config file
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest --config-file config/mutation.json
+```
+
+#### Mutator Filtering
+
+Restrict which mutation operators are applied using include or exclude lists. Names are case-insensitive and match the operator names from the [Supported Mutation Operators](#supported-mutation-operators) table. Unknown names emit a warning and are skipped.
+
+```sh
+# Only apply arithmetic and boundary mutations
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest \
+  --include-mutators ArithmeticOperator --include-mutators BoundaryCondition
+
+# Apply all mutations except increment
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest \
+  --exclude-mutators Increment
+```
+
+#### Test Method Filtering
+
+Restrict which test methods are used to evaluate mutations using include or exclude lists.
+
+```sh
+# Only run those test methods
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest \
+  --include-test-methods testCalculateTotal --include-test-methods testEdgeCases
+
+# Don't run those test methods
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest \
+  --exclude-test-methods slowIntegrationTest --exclude-test-methods anotherSlowTest
+```
+
+#### Threshold
+
+Set a minimum mutation score (0–100). The command fails with a non-zero exit code if the score falls below the threshold:
+
+```sh
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest --threshold 80
+```
+
 ### Supported Mutation Operators
 
-The plugin currently supports the following mutation operators. If your code doesn't contain any of these patterns on covered lines, no mutations will be generated:
+The plugin currently supports the following mutation operators. If your code doesn't contain any of these patterns on covered lines, no mutations will be generated. The operator names in the first column are the values to use with `--include-mutators` and `--exclude-mutators` flags:
 
-| Operator         | Description                            | Example                              |
-| ---------------- | -------------------------------------- | ------------------------------------ |
-| **Arithmetic**   | Swaps arithmetic operators             | `a + b` → `a - b`, `a * b` → `a / b` |
-| **Boundary**     | Modifies comparison boundaries         | `<` → `<=`, `>` → `>=`               |
-| **Equality**     | Swaps equality operators               | `==` → `!=`, `!=` → `==`             |
-| **Increment**    | Swaps increment/decrement              | `i++` → `i--`, `--i` → `++i`         |
-| **True Return**  | Replaces true returns                  | `return true` → `return false`       |
-| **False Return** | Replaces false returns                 | `return false` → `return true`       |
-| **Null Return**  | Replaces object returns with null      | `return obj` → `return null`         |
-| **Empty Return** | Removes return values for void methods | `return value` → `return`            |
+| Operator                       | Description                                       | Example                                  |
+| ------------------------------ | ------------------------------------------------- | ---------------------------------------- |
+| **ArgumentPropagation**        | Replaces method call with matching argument       | `obj.method(arg)` → `arg`                |
+| **ArithmeticOperator**         | Swaps arithmetic operators                        | `a + b` → `a - b`                        |
+| **ArithmeticOperatorDeletion** | Removes operator, keeps one operand               | `a + b` → `a`                            |
+| **BitwiseOperator**            | Swaps bitwise operators                           | `a & b` → `a \| b`                       |
+| **BoundaryCondition**          | Modifies comparison boundaries                    | `<` → `<=`, `>` → `>=`                   |
+| **ConstructorCall**            | Replaces object instantiation with null           | `new Account()` → `null`                 |
+| **EmptyReturn**                | Replaces return with type-appropriate empty value | `return list` → `return new List<T>()`   |
+| **EqualityCondition**          | Swaps equality operators                          | `==` → `!=`, `!=` → `==`                 |
+| **ExperimentalSwitch**         | Modifies switch/when structure                    | Removes else, swaps adjacent when values |
+| **FalseReturn**                | Replaces boolean return with false                | `return condition` → `return false`      |
+| **Increment**                  | Swaps increment/decrement                         | `i++` → `i--`, `--i` → `++i`             |
+| **InlineConstant**             | Mutates literal values                            | `5` → `0`, `true` → `false`              |
+| **InvertNegatives**            | Removes unary negation                            | `-x` → `x`                               |
+| **LogicalOperator**            | Swaps logical operators                           | `a && b` → `a \|\| b`                    |
+| **MemberVariable**             | Removes field initializer                         | `Integer x = 5` → `Integer x`            |
+| **NakedReceiver**              | Replaces method call with receiver                | `receiver.method()` → `receiver`         |
+| **Negation**                   | Adds negation to numeric returns                  | `return 5` → `return -5`                 |
+| **NonVoidMethodCall**          | Replaces method call with type default            | `x = obj.get()` → `x = null`             |
+| **NullReturn**                 | Replaces return with null                         | `return obj` → `return null`             |
+| **RemoveConditionals**         | Replaces if conditions with constant              | `if (cond)` → `if (true)`                |
+| **RemoveIncrements**           | Removes increment/decrement entirely              | `i++` → `i`, `++i` → `i`                 |
+| **Switch**                     | Empties switch/when blocks                        | `when 1 { code }` → `when 1 {}`          |
+| **TrueReturn**                 | Replaces boolean return with true                 | `return condition` → `return true`       |
+| **UnaryOperatorInsertion**     | Inserts increment/decrement operators             | `variable` → `variable++`                |
+| **VoidMethodCall**             | Removes void method call entirely                 | `obj.doSomething()` → (removed)          |
 
 ### Mutation Result Statuses
 
@@ -117,22 +211,23 @@ A **Killed** mutant means your tests detected the mutation and failed as a resul
 
 #### Survived
 
-A **Survived** mutant means the mutation was introduced, your tests ran against it, and they all still passed. This is the most actionable status. It reveals a gap in your test assertions. The code was changed, but no test noticed. 
+A **Survived** mutant means the mutation was introduced, your tests ran against it, and they all still passed. This is the most actionable status. It reveals a gap in your test assertions. The code was changed, but no test noticed.
 
 **What to look for:** Survived mutants highlight areas where you need stronger assertions. Common causes include:
+
 - Missing assertions on return values or side effects
 - Tests that only check happy-path structure without verifying computed values
 - Assertions that are too broad (e.g. checking not-null instead of checking the exact value)
 
 #### CompileError
 
-A **CompileError** mutant means the mutated code failed to compile during deployment, so no tests were run against it. This typically happens when a mutation tool produces syntactically invalid Apex code. You may ignore these and report them as an issue to us. 
+A **CompileError** mutant means the mutated code failed to compile during deployment, so no tests were run against it. This typically happens when a mutation tool produces syntactically invalid Apex code. You may ignore these and report them as an issue to us.
 
 **What to look for:** Compile errors are excluded from the score entirely. They do not indicate a problem with your tests. The mutation simply wasn't valid for that code.
 
 #### RuntimeError
 
-A **RuntimeError** means an unexpected error occurred during the mutation evaluation. These errors are the result of networking issues, authorization issues, or other issues not directly related to your code. 
+A **RuntimeError** means an unexpected error occurred during the mutation evaluation. These errors are the result of networking issues, authorization issues, or other issues not directly related to your code.
 
 **What to look for:** A high number of runtime errors may indicate connectivity or org stability issues. If you see many runtime errors, consider re-running the mutation test when the environment is more stable to get more accurate results.
 
@@ -165,16 +260,24 @@ Evaluate test coverage quality by injecting mutations and measuring test detecti
 ```
 USAGE
   $ sf apex mutation test run -c <value> -t <value> -o <value> [--json] [--flags-dir <value>] [-r <value>] [-d]
-    [--api-version <value>]
+    [--include-mutators <value>... | --exclude-mutators <value>...] [--include-test-methods <value>... |
+    --exclude-test-methods <value>...] [--threshold <value>] [--config-file <value>] [--api-version <value>]
 
 FLAGS
-  -c, --apex-class=<value>   (required) Apex class name to mutate
-  -d, --dry-run              Preview mutations without deploying or running tests
-  -o, --target-org=<value>   (required) Username or alias of the target org. Not required if the `target-org`
-                             configuration variable is already set.
-  -r, --report-dir=<value>   [default: mutations] Path to the directory where mutation test reports will be generated
-  -t, --test-class=<value>   (required) Apex test class name to validate mutations
-      --api-version=<value>  Override the api version used for api requests made by this command
+  -c, --apex-class=<value>               (required) Apex class name to mutate
+  -d, --dry-run                          Preview mutations without deploying or running tests
+  -o, --target-org=<value>               (required) Username or alias of the target org. Not required if the
+                                         `target-org` configuration variable is already set.
+  -r, --report-dir=<value>               [default: mutations] Path to the directory where mutation test reports will be
+                                         generated
+  -t, --test-class=<value>               (required) Apex test class name to validate mutations
+      --api-version=<value>              Override the api version used for api requests made by this command
+      --config-file=<value>              Path to mutation testing configuration file
+      --exclude-mutators=<value>...      Mutator names to exclude
+      --exclude-test-methods=<value>...  Test method names to exclude
+      --include-mutators=<value>...      Mutator names to include (e.g. ArithmeticOperator, BoundaryCondition)
+      --include-test-methods=<value>...  Test method names to include
+      --threshold=<value>                Minimum mutation score (0-100) required for the command to succeed
 
 GLOBAL FLAGS
   --flags-dir=<value>  Import flag values from a directory.
@@ -201,15 +304,6 @@ EXAMPLES
 
 _See code: [src/commands/apex/mutation/test/run.ts](https://github.com/scolladon/apex-mutation-testing/blob/main/src/commands/apex/mutation/test/run.ts)_
 <!-- commandsstop -->
-
-## Backlog
-
-- **Expand Mutation Types**: Add more mutation operators to test different code patterns
-- **Smart Mutation Detection**: Implement logic to identify relevant mutations for specific code contexts
-- **Coverage Analysis**: Detect untested code paths that mutations won't affect
-- **Performance Optimization**: Add CPU time monitoring to fail fast on non ending mutation
-- **Better Configurability**: Pass threashold and use more information from test class
-- **Additional Features**: Explore other mutation testing enhancements and quality metrics
 
 ## Changelog
 

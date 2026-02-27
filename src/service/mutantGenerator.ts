@@ -10,6 +10,7 @@ import {
 import { ArgumentPropagationMutator } from '../mutator/argumentPropagationMutator.js'
 import { ArithmeticOperatorDeletionMutator } from '../mutator/arithmeticOperatorDeletionMutator.js'
 import { ArithmeticOperatorMutator } from '../mutator/arithmeticOperatorMutator.js'
+import { BaseListener } from '../mutator/baseListener.js'
 import { BitwiseOperatorMutator } from '../mutator/bitwiseOperatorMutator.js'
 import { BoundaryConditionMutator } from '../mutator/boundaryConditionMutator.js'
 import { ConstructorCallMutator } from '../mutator/constructorCallMutator.js'
@@ -36,6 +37,144 @@ import { VoidMethodCallMutator } from '../mutator/voidMethodCallMutator.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { TypeRegistry } from '../type/TypeRegistry.js'
 
+const MUTATOR_NAME = {
+  ARGUMENT_PROPAGATION: 'ArgumentPropagation',
+  ARITHMETIC_OPERATOR: 'ArithmeticOperator',
+  ARITHMETIC_OPERATOR_DELETION: 'ArithmeticOperatorDeletion',
+  BITWISE_OPERATOR: 'BitwiseOperator',
+  BOUNDARY_CONDITION: 'BoundaryCondition',
+  CONSTRUCTOR_CALL: 'ConstructorCall',
+  EMPTY_RETURN: 'EmptyReturn',
+  EQUALITY_CONDITION: 'EqualityCondition',
+  EXPERIMENTAL_SWITCH: 'ExperimentalSwitch',
+  FALSE_RETURN: 'FalseReturn',
+  INCREMENT: 'Increment',
+  INLINE_CONSTANT: 'InlineConstant',
+  INVERT_NEGATIVES: 'InvertNegatives',
+  LOGICAL_OPERATOR: 'LogicalOperator',
+  MEMBER_VARIABLE: 'MemberVariable',
+  NAKED_RECEIVER: 'NakedReceiver',
+  NEGATION: 'Negation',
+  NON_VOID_METHOD_CALL: 'NonVoidMethodCall',
+  NULL_RETURN: 'NullReturn',
+  REMOVE_CONDITIONALS: 'RemoveConditionals',
+  REMOVE_INCREMENTS: 'RemoveIncrements',
+  SWITCH: 'Switch',
+  TRUE_RETURN: 'TrueReturn',
+  UNARY_OPERATOR_INSERTION: 'UnaryOperatorInsertion',
+  VOID_METHOD_CALL: 'VoidMethodCall',
+} as const
+
+type MutatorName = (typeof MUTATOR_NAME)[keyof typeof MUTATOR_NAME]
+
+interface MutatorRegistryEntry {
+  name: MutatorName
+  create: (typeRegistry?: TypeRegistry) => BaseListener
+}
+
+const MUTATOR_REGISTRY: MutatorRegistryEntry[] = [
+  {
+    name: MUTATOR_NAME.ARGUMENT_PROPAGATION,
+    create: tr => new ArgumentPropagationMutator(tr),
+  },
+  {
+    name: MUTATOR_NAME.ARITHMETIC_OPERATOR,
+    create: tr => new ArithmeticOperatorMutator(tr),
+  },
+  {
+    name: MUTATOR_NAME.ARITHMETIC_OPERATOR_DELETION,
+    create: tr => new ArithmeticOperatorDeletionMutator(tr),
+  },
+  {
+    name: MUTATOR_NAME.BITWISE_OPERATOR,
+    create: () => new BitwiseOperatorMutator(),
+  },
+  {
+    name: MUTATOR_NAME.BOUNDARY_CONDITION,
+    create: () => new BoundaryConditionMutator(),
+  },
+  {
+    name: MUTATOR_NAME.CONSTRUCTOR_CALL,
+    create: () => new ConstructorCallMutator(),
+  },
+  {
+    name: MUTATOR_NAME.EMPTY_RETURN,
+    create: tr => new EmptyReturnMutator(tr),
+  },
+  {
+    name: MUTATOR_NAME.EQUALITY_CONDITION,
+    create: () => new EqualityConditionMutator(),
+  },
+  {
+    name: MUTATOR_NAME.EXPERIMENTAL_SWITCH,
+    create: () => new ExperimentalSwitchMutator(),
+  },
+  {
+    name: MUTATOR_NAME.FALSE_RETURN,
+    create: tr => new FalseReturnMutator(tr),
+  },
+  {
+    name: MUTATOR_NAME.INCREMENT,
+    create: () => new IncrementMutator(),
+  },
+  {
+    name: MUTATOR_NAME.INLINE_CONSTANT,
+    create: tr => new InlineConstantMutator(tr),
+  },
+  {
+    name: MUTATOR_NAME.INVERT_NEGATIVES,
+    create: () => new InvertNegativesMutator(),
+  },
+  {
+    name: MUTATOR_NAME.LOGICAL_OPERATOR,
+    create: () => new LogicalOperatorMutator(),
+  },
+  {
+    name: MUTATOR_NAME.MEMBER_VARIABLE,
+    create: () => new MemberVariableMutator(),
+  },
+  {
+    name: MUTATOR_NAME.NAKED_RECEIVER,
+    create: tr => new NakedReceiverMutator(tr),
+  },
+  {
+    name: MUTATOR_NAME.NEGATION,
+    create: tr => new NegationMutator(tr),
+  },
+  {
+    name: MUTATOR_NAME.NON_VOID_METHOD_CALL,
+    create: tr => new NonVoidMethodCallMutator(tr),
+  },
+  {
+    name: MUTATOR_NAME.NULL_RETURN,
+    create: tr => new NullReturnMutator(tr),
+  },
+  {
+    name: MUTATOR_NAME.REMOVE_CONDITIONALS,
+    create: () => new RemoveConditionalsMutator(),
+  },
+  {
+    name: MUTATOR_NAME.REMOVE_INCREMENTS,
+    create: () => new RemoveIncrementsMutator(),
+  },
+  {
+    name: MUTATOR_NAME.SWITCH,
+    create: () => new SwitchMutator(),
+  },
+  {
+    name: MUTATOR_NAME.TRUE_RETURN,
+    create: tr => new TrueReturnMutator(tr),
+  },
+  {
+    name: MUTATOR_NAME.UNARY_OPERATOR_INSERTION,
+    create: () => new UnaryOperatorInsertionMutator(),
+  },
+  {
+    name: MUTATOR_NAME.VOID_METHOD_CALL,
+    create: () => new VoidMethodCallMutator(),
+  },
+]
+
 export class MutantGenerator {
   private tokenStream?: CommonTokenStream
 
@@ -46,7 +185,8 @@ export class MutantGenerator {
   public compute(
     classContent: string,
     coveredLines: Set<number>,
-    typeRegistry?: TypeRegistry
+    typeRegistry?: TypeRegistry,
+    mutatorFilter?: { include?: string[]; exclude?: string[] }
   ) {
     const lexer = new ApexLexer(
       new CaseInsensitiveInputStream('other', classContent)
@@ -55,66 +195,11 @@ export class MutantGenerator {
     const parser = new ApexParser(this.tokenStream)
     const tree = parser.compilationUnit()
 
-    const emptyReturnListener = new EmptyReturnMutator(typeRegistry)
-    const trueReturnListener = new TrueReturnMutator(typeRegistry)
-    const falseReturnListener = new FalseReturnMutator(typeRegistry)
-    const nullReturnListener = new NullReturnMutator(typeRegistry)
-    const arithmeticListener = new ArithmeticOperatorMutator(typeRegistry)
-    const negationListener = new NegationMutator(typeRegistry)
-    const nonVoidMethodCallListener = new NonVoidMethodCallMutator(typeRegistry)
-    const argumentPropagationListener = new ArgumentPropagationMutator(
-      typeRegistry
-    )
-    const incrementListener = new IncrementMutator()
-    const boundaryListener = new BoundaryConditionMutator()
-    const equalityListener = new EqualityConditionMutator()
-    const invertNegativesListener = new InvertNegativesMutator()
-    const logicalOperatorListener = new LogicalOperatorMutator()
-    const removeIncrementsListener = new RemoveIncrementsMutator()
-    const voidMethodCallListener = new VoidMethodCallMutator()
-    const constructorCallListener = new ConstructorCallMutator()
-    const removeConditionalsListener = new RemoveConditionalsMutator()
-    const switchListener = new SwitchMutator()
-    const experimentalSwitchListener = new ExperimentalSwitchMutator()
-    const nakedReceiverListener = new NakedReceiverMutator(typeRegistry)
-    const memberVariableListener = new MemberVariableMutator()
-    const bitwiseListener = new BitwiseOperatorMutator()
-    const unaryOperatorInsertionListener = new UnaryOperatorInsertionMutator()
-    const arithmeticDeletionListener = new ArithmeticOperatorDeletionMutator(
-      typeRegistry
-    )
-    const inlineConstantListener = new InlineConstantMutator(typeRegistry)
+    const filteredRegistry = this.filterRegistry(mutatorFilter)
 
-    const listener = new MutationListener(
-      [
-        boundaryListener,
-        incrementListener,
-        equalityListener,
-        emptyReturnListener,
-        trueReturnListener,
-        falseReturnListener,
-        nullReturnListener,
-        arithmeticListener,
-        invertNegativesListener,
-        logicalOperatorListener,
-        negationListener,
-        removeIncrementsListener,
-        voidMethodCallListener,
-        nonVoidMethodCallListener,
-        argumentPropagationListener,
-        constructorCallListener,
-        removeConditionalsListener,
-        switchListener,
-        experimentalSwitchListener,
-        nakedReceiverListener,
-        memberVariableListener,
-        bitwiseListener,
-        unaryOperatorInsertionListener,
-        arithmeticDeletionListener,
-        inlineConstantListener,
-      ],
-      coveredLines
-    )
+    const mutators = filteredRegistry.map(entry => entry.create(typeRegistry))
+
+    const listener = new MutationListener(mutators, coveredLines)
 
     ParseTreeWalker.DEFAULT.walk(listener as ApexParserListener, tree)
 
@@ -122,7 +207,6 @@ export class MutantGenerator {
   }
 
   public mutate(mutation: ApexMutation) {
-    // Create a new token stream rewriter
     const rewriter = new TokenStreamRewriter(this.tokenStream!)
 
     rewriter.replace(
@@ -131,7 +215,52 @@ export class MutantGenerator {
       mutation.replacement
     )
 
-    // Get the mutated code
     return rewriter.getText()
+  }
+
+  private filterRegistry(mutatorFilter?: {
+    include?: string[]
+    exclude?: string[]
+  }): MutatorRegistryEntry[] {
+    if (!mutatorFilter) {
+      return MUTATOR_REGISTRY
+    }
+
+    const registryNames = new Set(
+      MUTATOR_REGISTRY.map(e => e.name.toLowerCase())
+    )
+    let filtered: MutatorRegistryEntry[]
+
+    if (mutatorFilter.include) {
+      const includeNames = mutatorFilter.include.map(n => n.toLowerCase())
+      this.warnUnknownMutators(includeNames, registryNames)
+      filtered = MUTATOR_REGISTRY.filter(entry =>
+        includeNames.includes(entry.name.toLowerCase())
+      )
+    } else if (mutatorFilter.exclude) {
+      const excludeNames = mutatorFilter.exclude.map(n => n.toLowerCase())
+      this.warnUnknownMutators(excludeNames, registryNames)
+      filtered = MUTATOR_REGISTRY.filter(
+        entry => !excludeNames.includes(entry.name.toLowerCase())
+      )
+    } else {
+      filtered = MUTATOR_REGISTRY
+    }
+
+    if (filtered.length === 0) {
+      throw new Error('All mutators have been excluded by configuration')
+    }
+
+    return filtered
+  }
+
+  private warnUnknownMutators(
+    requestedNames: string[],
+    knownNames: Set<string>
+  ): void {
+    const unknown = requestedNames.filter(name => !knownNames.has(name))
+    for (const name of unknown) {
+      process.emitWarning(`Unknown mutator name: '${name}' — skipping`)
+    }
   }
 }
