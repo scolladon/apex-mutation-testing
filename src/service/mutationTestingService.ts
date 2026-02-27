@@ -116,87 +116,14 @@ export class MutationTestingService {
     )
     await this.verifyTestClassCompilation(apexClassRepository)
 
-    this.spinner.start(
-      `Executing "${this.apexTestClassName}" tests to get coverage`,
-      undefined,
-      {
-        stdout: true,
-      }
-    )
-
-    const { result: baselineResult, durationMs: testTime } =
-      await timeExecution(() =>
-        apexTestRunner.getTestMethodsPerLines(this.apexTestClassName)
-      )
-    const { outcome, testsRan, failing, testMethodsPerLine } = baselineResult
-
-    if (outcome !== 'Passed') {
-      this.spinner.stop()
-      throw new Error(
-        `Original tests failed! Cannot proceed with mutation testing.\n` +
-          `Test outcome: ${outcome}\n` +
-          `Failing tests: ${failing}\n`
-      )
-    }
-
-    if (testsRan === 0) {
-      this.spinner.stop()
-      throw new Error(
-        `No tests were executed! Check that:\n` +
-          `- Test class '${this.apexTestClassName}' exists\n` +
-          `- Test methods have @IsTest annotation\n` +
-          `- Test class is properly deployed`
-      )
-    }
-
-    this.spinner.stop('Original tests passed')
-
-    this.filterTestMethods(testMethodsPerLine)
-
-    const coveredLines = new Set(testMethodsPerLine.keys())
-
-    if (coveredLines.size === 0) {
-      throw new Error(
-        this.messages.getMessage('error.noCoverage', [
-          this.apexClassName,
-          this.apexTestClassName,
-        ])
-      )
-    }
-
-    this.spinner.start(
-      `Generating mutants for "${this.apexClassName}" ApexClass`,
-      undefined,
-      {
-        stdout: true,
-      }
-    )
-    const mutantGenerator = new MutantGenerator()
-    const mutatorFilter = this.includeMutators
-      ? { include: this.includeMutators }
-      : this.excludeMutators
-        ? { exclude: this.excludeMutators }
-        : undefined
-    const mutations = mutantGenerator.compute(
-      apexClass.Body,
+    const { testMethodsPerLine, testTime } =
+      await this.runBaselineTests(apexTestRunner)
+    const coveredLines = this.extractCoveredLines(testMethodsPerLine)
+    const { mutations, mutantGenerator } = this.generateMutations(
+      apexClass,
       coveredLines,
-      typeRegistry,
-      mutatorFilter,
-      this.skipPatterns,
-      this.allowedLines
+      typeRegistry
     )
-
-    if (mutations.length === 0) {
-      this.spinner.stop('0 mutations generated')
-      throw new Error(
-        this.messages.getMessage('error.noMutations', [
-          this.apexClassName,
-          coveredLines.size,
-        ])
-      )
-    }
-
-    this.spinner.stop(`${mutations.length} mutations generated`)
 
     const totalEstimateMs = (deployTime + testTime) * mutations.length
     this.spinner.start(
@@ -572,6 +499,105 @@ export class MutationTestingService {
         ])
       )
     }
+  }
+
+  private async runBaselineTests(apexTestRunner: ApexTestRunner): Promise<{
+    testMethodsPerLine: Map<number, Set<string>>
+    testTime: number
+  }> {
+    this.spinner.start(
+      `Executing "${this.apexTestClassName}" tests to get coverage`,
+      undefined,
+      { stdout: true }
+    )
+
+    const { result: baselineResult, durationMs: testTime } =
+      await timeExecution(() =>
+        apexTestRunner.getTestMethodsPerLines(this.apexTestClassName)
+      )
+    const { outcome, testsRan, failing, testMethodsPerLine } = baselineResult
+
+    if (outcome !== 'Passed') {
+      this.spinner.stop()
+      throw new Error(
+        `Original tests failed! Cannot proceed with mutation testing.\n` +
+          `Test outcome: ${outcome}\n` +
+          `Failing tests: ${failing}\n`
+      )
+    }
+
+    if (testsRan === 0) {
+      this.spinner.stop()
+      throw new Error(
+        `No tests were executed! Check that:\n` +
+          `- Test class '${this.apexTestClassName}' exists\n` +
+          `- Test methods have @IsTest annotation\n` +
+          `- Test class is properly deployed`
+      )
+    }
+
+    this.spinner.stop('Original tests passed')
+    this.filterTestMethods(testMethodsPerLine)
+    return { testMethodsPerLine, testTime }
+  }
+
+  private extractCoveredLines(
+    testMethodsPerLine: Map<number, Set<string>>
+  ): Set<number> {
+    const coveredLines = new Set(testMethodsPerLine.keys())
+    if (coveredLines.size === 0) {
+      throw new Error(
+        this.messages.getMessage('error.noCoverage', [
+          this.apexClassName,
+          this.apexTestClassName,
+        ])
+      )
+    }
+    return coveredLines
+  }
+
+  private generateMutations(
+    apexClass: ApexClass,
+    coveredLines: Set<number>,
+    typeRegistry: TypeRegistry
+  ): { mutations: ApexMutation[]; mutantGenerator: MutantGenerator } {
+    this.spinner.start(
+      `Generating mutants for "${this.apexClassName}" ApexClass`,
+      undefined,
+      { stdout: true }
+    )
+    const mutantGenerator = new MutantGenerator()
+    const mutatorFilter = this.buildMutatorFilter()
+    const mutations = mutantGenerator.compute(
+      apexClass.Body,
+      coveredLines,
+      typeRegistry,
+      mutatorFilter,
+      this.skipPatterns,
+      this.allowedLines
+    )
+
+    if (mutations.length === 0) {
+      this.spinner.stop('0 mutations generated')
+      throw new Error(
+        this.messages.getMessage('error.noMutations', [
+          this.apexClassName,
+          coveredLines.size,
+        ])
+      )
+    }
+
+    this.spinner.stop(`${mutations.length} mutations generated`)
+    return { mutations, mutantGenerator }
+  }
+
+  private buildMutatorFilter():
+    | { include: string[] }
+    | { exclude: string[] }
+    | undefined {
+    if (this.includeMutators) return { include: this.includeMutators }
+    if (this.excludeMutators) return { exclude: this.excludeMutators }
+    return undefined
   }
 
   private extractMutationOriginalText(mutation: ApexMutation): string {
