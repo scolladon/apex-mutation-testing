@@ -19,6 +19,7 @@
     "colladon",
     "commandsstop",
     "commitlint",
+    "compilability",
     "crcr",
     "cspell",
     "dreamforce",
@@ -41,6 +42,7 @@
     "sfdx",
     "sobject",
     "soql",
+    "stringz",
     "testclasses",
     "testkit",
     "thollander",
@@ -48,6 +50,7 @@
     "tsconfig.json",
     "tsconfig",
     "wagoid",
-    "wireit"
+    "wireit",
+    "worktrees"
   ]
 }

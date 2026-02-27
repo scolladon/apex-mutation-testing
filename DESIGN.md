@@ -4,7 +4,7 @@
 
 Salesforce CLI plugin implementing **mutation testing** for Apex code. It evaluates test suite quality by introducing intentional code mutations into a deployed Apex class, running the associated tests against each mutation, and reporting which mutants were **killed** (detected) versus **survived** (undetected).
 
-```
+```shell
 sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg>
 sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --dry-run
 sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --include-mutators ArithmeticOperator --threshold 80
@@ -16,7 +16,7 @@ sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --config-
 
 ## Architecture Layers
 
-```
+```text
 ┌──────────────────────────────────────────────────────────┐
 │                    Presentation Layer                     │
 │              commands/apex/mutation/test/run.ts           │
@@ -62,7 +62,7 @@ sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --config-
 
 ## Mutation Testing Lifecycle
 
-```
+```text
 sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │
 ├─ 1. RESOLVE CONFIGURATION
@@ -194,7 +194,7 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 
 The `process()` method is a thin orchestrator (~40 lines) that delegates each lifecycle step to a named private method:
 
-```
+```text
 process()
 ├── createAdapters()            → step 2 (adapters)
 ├── fetchApexClass()            → step 3
@@ -221,7 +221,7 @@ Each method encapsulates one logical concern. `evaluateMutation()` handles the t
 
 The central architectural pattern. `MutationListener` uses a JavaScript `Proxy` to dynamically dispatch ANTLR parse tree callbacks to all 25 registered mutators without explicit delegation.
 
-```
+```text
                         ┌──────────────────────┐
   ParseTreeWalker       │   MutationListener   │
   ─── enter*(ctx) ────► │      (Proxy)         │
@@ -273,7 +273,7 @@ The first strategy whose `matches()` returns `true` wins (`Array.find`). This ma
 
 `BaseListener` provides the mutation-creation infrastructure; subclasses override ANTLR `enter*` hooks to define **when** and **what** to mutate:
 
-```
+```text
 BaseListener (abstract behavior)
   ├─ createMutation(startToken, endToken, text, replacement)
   ├─ createMutationFromParserRuleContext(ctx, replacement)
@@ -292,7 +292,7 @@ Concrete mutators override:
 All Salesforce org interactions are isolated behind repository interfaces:
 
 | Repository | API | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `ApexClassRepository` | Tooling API | CRUD on ApexClass, MetadataContainer deployment |
 | `ApexTestRunner` | @salesforce/apex-node | Test execution with/without coverage |
 | `SObjectDescribeRepository` | Metadata API describe | SObject field type resolution |
@@ -318,7 +318,7 @@ Type-aware mutators need to understand Apex types to generate valid mutations (e
 
 ### Phase 1: Type Discovery (ANTLR Parse #1)
 
-```
+```text
                     Source Code
                         │
                         ▼
@@ -370,7 +370,7 @@ Type-aware mutators need to understand Apex types to generate valid mutations (e
 `TypeRegistry.resolveType()` handles four expression forms:
 
 | Expression Form | Example | Resolution Strategy |
-|---|---|---|
+| --- | --- | --- |
 | No expression | `resolveType('calculate')` | Method return type lookup |
 | With `(` | `resolveType('m', 'getTotal()')` | Strip `()`, lookup method return type |
 | With `.` | `resolveType('m', 'acc.Name')` | Resolve root variable, then field via matcher |
@@ -382,7 +382,7 @@ Variable resolution priority: **method-local scope > class fields** (shadowing).
 
 `classifyApexType()` maps type names to `ApexType` enum values:
 
-```
+```text
 Input typeName
     │
     ├─ lowercase match in PRIMITIVE_TYPE_MAP? ──► BOOLEAN, INTEGER, STRING, ...
@@ -403,7 +403,7 @@ Input typeName
 
 Two independent ANTLR parses are performed:
 
-```
+```text
 Source Code ─── Parse #1 (TypeDiscoverer) ──► TypeRegistry
             │
             └── Parse #2 (MutantGenerator) ──► AST + TokenStream
@@ -425,7 +425,7 @@ Source Code ─── Parse #1 (TypeDiscoverer) ──► TypeRegistry
 
 ### 25 Mutation Operators by Category
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────┐
 │                    OPERATOR REPLACEMENT                          │
 │                                                                  │
@@ -483,7 +483,7 @@ Source Code ─── Parse #1 (TypeDiscoverer) ──► TypeRegistry
 ### Type-Awareness Requirements
 
 | Mutator | Needs TypeRegistry | Reason |
-|---|---|---|
+| --- | --- | --- |
 | EmptyReturnMutator | Yes | Default value depends on return type |
 | NullReturnMutator | Yes | Must skip void methods |
 | TrueReturnMutator | Yes | Must target boolean methods only |
@@ -502,7 +502,7 @@ Source Code ─── Parse #1 (TypeDiscoverer) ──► TypeRegistry
 
 Each mutation is deployed using the Tooling API **MetadataContainer** pattern:
 
-```
+```text
 ┌─────────────────────┐
 │  MetadataContainer   │  Name: MutationTest_{timestamp}
 │  (create)            │
@@ -541,7 +541,7 @@ Each mutation is deployed using the Tooling API **MetadataContainer** pattern:
 
 ## Scoring Algorithm
 
-```
+```text
                     All Mutants
                         │
             ┌───────────┼───────────┐
@@ -567,7 +567,7 @@ A higher score means the test suite is better at detecting mutations. `RuntimeEr
 
 A key performance optimization: only the test methods that **cover the mutated line** are executed per mutation.
 
-```
+```text
 Baseline Test Run (with coverage)
     │
     ▼
@@ -593,7 +593,7 @@ This dramatically reduces the number of test executions per mutation cycle.
 
 The reporter transforms internal results to the [Stryker Mutation Testing Report Schema v2](https://github.com/stryker-mutator/mutation-testing-elements):
 
-```
+```text
 ApexMutationTestResult
     │
     ├─ transformApexResults()
@@ -616,7 +616,7 @@ ApexMutationTestResult
 
 ## Data Flow Summary
 
-```
+```text
                   Salesforce Org
                  ┌──────────────┐
                  │  ApexClass   │◄──── read / update (deploy mutant / rollback)
@@ -665,7 +665,7 @@ ApexMutationTestResult
 
 Four test tiers with distinct scopes and runners:
 
-```
+```text
 ┌────────────────────────────────────────────────────────────┐
 │  E2E Tests (shell scripts, real org, post-publish)         │
 │  npm run test:e2e                                          │
@@ -686,7 +686,7 @@ Four test tiers with distinct scopes and runners:
 ```
 
 | Tier | Runner | Config | Org Required | Speed | Scope |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | Unit | Jest | `jest.config.js` | No | ~8s | Class-level isolation |
 | Integration | Jest | `jest.config.js` | No | Included in unit run | ANTLR parse + mutate |
 | NUT | Jest (ESM) | `jest.config.nut.js` | No (mocked) | ~1.5s | Command-level with mocked org |
@@ -694,7 +694,11 @@ Four test tiers with distinct scopes and runners:
 
 **NUT tests** use `--experimental-vm-modules` for native ESM support, enabling `jest.unstable_mockModule()` with dynamic imports to mock `@salesforce/core` and `@salesforce/sf-plugins-core` at the module level.
 
-**E2E tests** run the published plugin command via `sf apex mutation test run`, normalize the generated HTML report (parse embedded JSON, sort mutants deterministically by line/column/mutatorName/replacement, replace volatile timestamps), then validate via `git diff` against a committed HTML snapshot. The validate step displays the diff before failing for CI debugging. Teardown (class redeployment) always executes even on failure.
+**E2E tests** run the published plugin command via `sf apex mutation test run`,
+normalize the generated HTML report (parse embedded JSON, sort mutants deterministically
+by line/column/mutatorName/replacement, replace volatile timestamps), then validate via
+`git diff` against a committed HTML snapshot. The validate step displays the diff before
+failing for CI debugging. Teardown (class redeployment) always executes even on failure.
 
 **Test fixtures** (`test/classes/Mutation.cls` and `MutationTest.cls`) are shared across NUT and E2E tiers. `Mutation.cls` contains constructs triggering all 25 mutators. `MutationTest.cls` provides 100% line coverage.
 
@@ -736,7 +740,7 @@ Optional JSON file at `.mutation-testing.json` (or custom path via `--config-fil
 ### CLI Flags
 
 | Flag | Type | Description |
-|---|---|---|
+| --- | --- | --- |
 | `--include-mutators` | string[] | Mutator names to include (exclusive with exclude) |
 | `--exclude-mutators` | string[] | Mutator names to exclude (exclusive with include) |
 | `--include-test-methods` | string[] | Test method names to include (exclusive with exclude) |
@@ -748,7 +752,7 @@ Optional JSON file at `.mutation-testing.json` (or custom path via `--config-fil
 
 ### Merge Precedence
 
-```
+```text
 CLI flags > config file > defaults (all mutators, all tests, no threshold)
 ```
 
@@ -768,7 +772,7 @@ Two additional filters allow users to focus mutation testing on the most relevan
 
 Exclude source lines matching RE2 regex patterns from mutation. Lines whose source text matches any pattern are skipped entirely — no mutations are generated for them.
 
-```
+```shell
 --skip-patterns "System\.debug" "LoggingUtils\."
 ```
 
@@ -778,7 +782,7 @@ Typical use cases: skip logging statements, debug output, or generated boilerpla
 
 Restrict mutations to specific line ranges. Only lines within the specified ranges are eligible for mutation.
 
-```
+```shell
 --lines 10-50 100-120
 ```
 
@@ -788,7 +792,7 @@ Useful for focusing on a specific method or recently changed code.
 
 `MutationListener.isLineEligible(line)` encapsulates all line-level eligibility checks at the Proxy level, replacing the previous `coveredLines.has()` check. All filters are **intersected** — a line must pass every active filter to be eligible:
 
-```
+```text
 isLineEligible(line)
     │
     ├─ line is falsy?                              → false
@@ -815,7 +819,7 @@ Skip patterns use [RE2](https://github.com/google/re2) (via the `re2` npm packag
 
 ### Data Flow
 
-```
+```text
 CLI flags / config file
     │
     ▼
@@ -845,7 +849,7 @@ Proxy → isLineEligible(line) gates every enter*/exit* dispatch
 
 `InlineConstantMutator` uses a **Handler Strategy pattern** to dispatch literal mutations. A `Map<LiteralDetector, LiteralHandler>` pairs ANTLR terminal node detectors with type-specific handlers:
 
-```
+```text
 enterLiteral(ctx)
     │
     ├─ ctx.IntegerLiteral()? ──► IntegerLiteralHandler   [0, 1, -1, v+1, v-1]
@@ -862,7 +866,7 @@ enterLiteral(ctx)
 
 `NullLiteralHandler` walks up the AST to determine what type the `null` literal inhabits:
 
-```
+```text
 null literal
     │
     ├─ in ReturnStatement? ──► resolve enclosing method return type via TypeRegistry
@@ -877,7 +881,7 @@ null literal
 
 Numeric literal classification follows Apex language rules:
 
-```
+```text
 text starts with digit?
     ├─ ends with L/l?      ──► LONG
     ├─ contains '.'?       ──► DOUBLE
