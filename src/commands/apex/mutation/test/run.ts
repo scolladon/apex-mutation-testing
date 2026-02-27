@@ -69,6 +69,16 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       min: 0,
       max: 100,
     }),
+    'skip-patterns': Flags.string({
+      char: 's',
+      summary: messages.getMessage('flags.skip-patterns.summary'),
+      multiple: true,
+    }),
+    lines: Flags.string({
+      char: 'l',
+      summary: messages.getMessage('flags.lines.summary'),
+      multiple: true,
+    }),
     'config-file': Flags.file({
       summary: messages.getMessage('flags.config-file.summary'),
       exists: true,
@@ -91,6 +101,8 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       includeTestMethods: flags['include-test-methods'],
       excludeTestMethods: flags['exclude-test-methods'],
       threshold: flags['threshold'],
+      skipPatterns: flags['skip-patterns'],
+      lines: flags['lines'],
       configFile: flags['config-file'],
     }
 

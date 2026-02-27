@@ -110,7 +110,9 @@ The config file supports the following attributes:
     "include": ["testCalculateTotal", "testEdgeCases"],
     "exclude": ["slowIntegrationTest"]
   },
-  "threshold": 80
+  "threshold": 80,
+  "skipPatterns": ["System\\.debug", "Logger\\."],
+  "lines": ["1-10", "25-30", "42"]
 }
 ```
 
@@ -121,6 +123,8 @@ The config file supports the following attributes:
 | `testMethods.include` | `string[]` | Only use these test methods to evaluate mutations                                                                 |
 | `testMethods.exclude` | `string[]` | Use all test methods except these                                                                                 |
 | `threshold`           | `number`   | Minimum mutation score (0–100) required for the command to succeed                                                |
+| `skipPatterns`        | `string[]` | RE2 regex patterns to skip lines from mutation (e.g., `System\\.debug`)                                           |
+| `lines`              | `string[]` | Line ranges to restrict mutation to (e.g., `1-10`, `42`)                                                          |
 
 **Mutual exclusivity:** You cannot specify both `include` and `exclude` within the same group. For example, setting both `mutators.include` and `mutators.exclude` will result in an error. The same applies to `testMethods.include` and `testMethods.exclude`. This constraint is enforced across both the config file and CLI flags — if `--include-mutators` is passed via CLI and `mutators.exclude` is set in the config file, the CLI value takes precedence and the config file value is ignored.
 
@@ -165,6 +169,69 @@ Set a minimum mutation score (0–100). The command fails with a non-zero exit c
 
 ```sh
 sf apex mutation test run --apex-class MyClass --test-class MyClassTest --threshold 80
+```
+
+#### Skip Patterns
+
+Skip lines matching specific patterns from mutation using RE2 regular expressions. Any line whose source text matches at least one pattern is excluded from mutation generation. This is useful for skipping logging, debug, or assertion statements that don't need mutation testing.
+
+```sh
+# Skip mutations on logging and debug statements
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest \
+  --skip-patterns 'System\.debug' \
+  --skip-patterns 'System\.assert' \
+  --skip-patterns 'Logger\.'
+```
+
+Config file equivalent:
+
+```json
+{
+  "skipPatterns": ["System\\.debug", "System\\.assert", "Logger\\."]
+}
+```
+
+#### Line Ranges
+
+Restrict mutation testing to specific line ranges using `--lines`. Only lines within the specified ranges (and covered by tests) are eligible for mutation. Each value is either a single line number or a start-end range.
+
+```sh
+# Mutate only specific line ranges
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest \
+  --lines 1-10 \
+  --lines 25-30 \
+  --lines 42
+```
+
+Config file equivalent:
+
+```json
+{
+  "lines": ["1-10", "25-30", "42"]
+}
+```
+
+##### Diff-Based Mutation Testing with Git
+
+You can derive line ranges from `git diff` to focus mutation testing on recently changed code. This is particularly useful in CI pipelines to only test mutations on lines affected by a pull request.
+
+```sh
+# Get changed line ranges from git diff
+git diff --unified=0 <commit-sha> -- path/to/MyClass.cls \
+  | grep '^@@' \
+  | sed 's/.*+\([0-9]*\),\?\([0-9]*\).*/\1-\2/'
+
+# Example output:
+# 12-15
+# 42-42
+# 78-85
+
+# Use the output directly with the CLI
+sf apex mutation test run \
+  -c MyClass -t MyClassTest -o myOrg \
+  $(git diff --unified=0 HEAD~1 -- path/to/MyClass.cls \
+    | grep '^@@' \
+    | sed 's/.*+\([0-9]*\),\?\([0-9]*\).*/--lines \1-\2/')
 ```
 
 ### Supported Mutation Operators
@@ -261,15 +328,19 @@ Evaluate test coverage quality by injecting mutations and measuring test detecti
 USAGE
   $ sf apex mutation test run -c <value> -t <value> -o <value> [--json] [--flags-dir <value>] [-r <value>] [-d]
     [--include-mutators <value>... | --exclude-mutators <value>...] [--include-test-methods <value>... |
-    --exclude-test-methods <value>...] [--threshold <value>] [--config-file <value>] [--api-version <value>]
+    --exclude-test-methods <value>...] [--threshold <value>] [-s <value>...] [-l <value>...] [--config-file <value>]
+    [--api-version <value>]
 
 FLAGS
   -c, --apex-class=<value>               (required) Apex class name to mutate
   -d, --dry-run                          Preview mutations without deploying or running tests
+  -l, --lines=<value>...                 Line ranges to mutate (e.g., 1-10, 42). Only these lines are eligible for
+                                         mutation.
   -o, --target-org=<value>               (required) Username or alias of the target org. Not required if the
                                          `target-org` configuration variable is already set.
   -r, --report-dir=<value>               [default: mutations] Path to the directory where mutation test reports will be
                                          generated
+  -s, --skip-patterns=<value>...         RE2 regex patterns to skip lines from mutation (e.g., System\.debug)
   -t, --test-class=<value>               (required) Apex test class name to validate mutations
       --api-version=<value>              Override the api version used for api requests made by this command
       --config-file=<value>              Path to mutation testing configuration file

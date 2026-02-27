@@ -1,5 +1,6 @@
 import { ParserRuleContext } from 'antlr4ts'
 import { ApexParserListener } from 'apex-parser'
+import type { RE2Instance } from '../service/configReader.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { BaseListener } from './baseListener.js'
 
@@ -14,7 +15,10 @@ export class MutationListener implements ApexParserListener {
 
   constructor(
     listeners: BaseListener[],
-    protected readonly coveredLines: Set<number>
+    protected readonly coveredLines: Set<number>,
+    protected readonly skipPatterns: RE2Instance[] = [],
+    protected readonly allowedLines: Set<number> | undefined = undefined,
+    protected readonly sourceLines: string[] = []
   ) {
     this.listeners = listeners
 
@@ -39,7 +43,7 @@ export class MutationListener implements ApexParserListener {
         return (...args: unknown[]) => {
           if (Array.isArray(args) && args.length > 0) {
             const ctx = args[0] as ParserRuleContext
-            if (this.coveredLines.has(ctx?.start?.line)) {
+            if (this.isLineEligible(ctx?.start?.line)) {
               this.listeners.forEach(listener => {
                 if (prop in listener && typeof listener[prop] === 'function') {
                   ;(listener[prop] as Function).apply(listener, args)
@@ -50,5 +54,24 @@ export class MutationListener implements ApexParserListener {
         }
       },
     })
+  }
+
+  private isLineEligible(line: number): boolean {
+    if (!line) {
+      return false
+    }
+    if (!this.coveredLines.has(line)) {
+      return false
+    }
+    if (this.allowedLines !== undefined && !this.allowedLines.has(line)) {
+      return false
+    }
+    if (this.skipPatterns.length > 0 && this.sourceLines.length >= line) {
+      const sourceLine = this.sourceLines[line - 1]
+      if (this.skipPatterns.some(pattern => pattern.test(sourceLine))) {
+        return false
+      }
+    }
+    return true
   }
 }

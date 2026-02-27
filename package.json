@@ -7,10 +7,11 @@
     "@salesforce/apex-node": "^8.4.10",
     "@salesforce/core": "^8.26.3",
     "@salesforce/sf-plugins-core": "^12.2.6",
-    "@stryker-mutator/core": "^9.5.1",
+    "@stryker-mutator/core": "^9.6.0",
     "antlr4ts": "^0.5.0-alpha.4",
     "apex-parser": "^2.17.0",
-    "async": "^3.2.6"
+    "async": "^3.2.6",
+    "re2": "^1.23.3"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.4",
@@ -68,7 +69,7 @@
     "test:e2e:run": "sf apex mutation test run -o e2e-test-org -c Mutation -t MutationTest -r test/e2e && npm run test:e2e:normalize",
     "test:e2e:run:local": "node ./bin/run.js apex mutation test run -o apex-mutation-testing -c Mutation -t MutationTest -r test/e2e && npm run test:e2e:normalize",
     "test:e2e:normalize": "node tooling/normalize-e2e-snapshot.mjs",
-    "test:e2e:validate": "git diff --quiet test/e2e/",
+    "test:e2e:validate": "git diff test/e2e/ && git diff --quiet test/e2e/",
     "test:e2e:teardown": "sf project deploy start -d test/classes -o e2e-test-org",
     "test:e2e": "npm run test:e2e:setup && npm run test:e2e:run && npm run test:e2e:validate; npm run test:e2e:teardown",
     "devops:cleanup:dev-tag": "./tooling/devops-cleanup.sh",

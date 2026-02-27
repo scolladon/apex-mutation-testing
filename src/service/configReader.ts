@@ -1,6 +1,10 @@
 import { readFile } from 'node:fs/promises'
 
+import RE2 from 're2'
+
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
+
+export type RE2Instance = InstanceType<typeof RE2>
 
 const DEFAULT_CONFIG_FILE = '.mutation-testing.json'
 
@@ -14,6 +18,8 @@ interface MutationTestingConfig {
     exclude?: string[]
   }
   threshold?: number
+  skipPatterns?: string[]
+  lines?: string[]
 }
 
 export class ConfigReader {
@@ -34,6 +40,8 @@ export class ConfigReader {
       excludeTestMethods:
         parameter.excludeTestMethods ?? fileConfig?.testMethods?.exclude,
       threshold: parameter.threshold ?? fileConfig?.threshold,
+      skipPatterns: parameter.skipPatterns ?? fileConfig?.skipPatterns,
+      lines: parameter.lines ?? fileConfig?.lines,
     }
 
     this.validate(resolved)
@@ -62,6 +70,42 @@ export class ConfigReader {
     }
   }
 
+  public static parseLineRanges(
+    lines: string[] | undefined
+  ): Set<number> | undefined {
+    if (!lines || lines.length === 0) {
+      return undefined
+    }
+    const result = new Set<number>()
+    for (const range of lines) {
+      if (range.includes('-')) {
+        const [start, end] = range.split('-').map(Number)
+        for (let i = start; i <= end; i++) {
+          result.add(i)
+        }
+      } else {
+        result.add(Number(range))
+      }
+    }
+    return result
+  }
+
+  public static compileSkipPatterns(
+    patterns: string[] | undefined
+  ): RE2Instance[] {
+    if (!patterns) {
+      return []
+    }
+    return patterns.map(pattern => {
+      try {
+        return new RE2(pattern)
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`Invalid skip pattern '${pattern}': ${message}`)
+      }
+    })
+  }
+
   private validate(parameter: ApexMutationParameter): void {
     if (parameter.includeMutators && parameter.excludeMutators) {
       throw new Error('Cannot specify both includeMutators and excludeMutators')
@@ -76,6 +120,23 @@ export class ConfigReader {
       (parameter.threshold < 0 || parameter.threshold > 100)
     ) {
       throw new Error('Threshold must be between 0 and 100')
+    }
+    if (parameter.lines) {
+      for (const range of parameter.lines) {
+        if (!/^\d+(-\d+)?$/.test(range)) {
+          throw new Error(
+            `Invalid line range '${range}': must be a number or range (e.g., '10' or '1-10')`
+          )
+        }
+        if (range.includes('-')) {
+          const [start, end] = range.split('-').map(Number)
+          if (start > end) {
+            throw new Error(
+              `Invalid line range '${range}': start must be less than or equal to end`
+            )
+          }
+        }
+      }
     }
   }
 }
