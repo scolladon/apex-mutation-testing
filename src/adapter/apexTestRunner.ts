@@ -37,7 +37,7 @@ export class ApexTestRunner {
     className: string,
     testMethods: Set<string> = new Set<string>()
   ) {
-    return await this.runTestAsynchronous({
+    return this.runTestAsynchronous({
       className,
       testMethods: Array.from(testMethods),
     })
