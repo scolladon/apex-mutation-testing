@@ -8,7 +8,7 @@ export class ApexClassRepository {
     return (
       await this.connection.tooling
         .sobject('ApexClass')
-        .find({ Name: name })
+        .find({ Name: name, NamespacePrefix: '' })
         .execute()
     )[0]
   }
