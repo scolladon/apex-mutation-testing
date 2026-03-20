@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/scolladon/apex-mutation-testing/compare/v1.5.0...v1.5.1) (2026-03-20)
+
+
+### Bug Fixes
+
+* filter ApexClasses by Namespace ([#104](https://github.com/scolladon/apex-mutation-testing/issues/104)) ([c02d257](https://github.com/scolladon/apex-mutation-testing/commit/c02d25724cc65ec42cec11cf6db6482ace6bc7ef))
+
 ## [1.5.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.4.0...v1.5.0) (2026-02-27)
 
 
