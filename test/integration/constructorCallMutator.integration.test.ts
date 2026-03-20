@@ -187,4 +187,52 @@ describe('ConstructorCallMutator Integration', () => {
       expect(mutations[0].replacement).toBe('null')
     })
   })
+
+  describe('Given Apex code with constructor inside throw statement', () => {
+    it('Then should NOT generate mutation to avoid throw null', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public void test() {
+            try {
+              doSomething();
+            } catch (Exception e) {
+              throw new AuraHandledException(e.getMessage());
+            }
+          }
+        }
+      `
+
+      // Act
+      const mutations = parseAndMutate(code, new Set([7]))
+
+      // Assert
+      expect(mutations.length).toBe(0)
+    })
+  })
+
+  describe('Given Apex code with constructor in both throw and assignment', () => {
+    it('Then should only generate mutation for the assignment', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public void test() {
+            Account acc = new Account();
+            try {
+              doSomething();
+            } catch (Exception e) {
+              throw new AuraHandledException(e.getMessage());
+            }
+          }
+        }
+      `
+
+      // Act
+      const mutations = parseAndMutate(code, new Set([4, 8]))
+
+      // Assert
+      expect(mutations.length).toBe(1)
+      expect(mutations[0].target.text).toContain('Account')
+    })
+  })
 })
