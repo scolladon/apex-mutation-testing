@@ -1,6 +1,26 @@
 import { ParserRuleContext } from 'antlr4ts'
+import { MethodDeclarationContext } from 'apex-parser'
 import { UnaryOperatorInsertionMutator } from '../../../src/mutator/unaryOperatorInsertionMutator.js'
 import { TestUtil } from '../../utils/testUtil.js'
+
+function setParent(child: ParserRuleContext, parent: ParserRuleContext): void {
+  Object.defineProperty(child, 'parent', {
+    value: parent,
+    writable: true,
+    configurable: true,
+  })
+}
+
+function createMethodParent(methodName: string): ParserRuleContext {
+  const methodCtx = Object.create(MethodDeclarationContext.prototype)
+  methodCtx.children = [
+    { text: 'void' },
+    { text: methodName },
+    { text: '(' },
+    { text: ')' },
+  ]
+  return methodCtx
+}
 
 const createPrimaryExpression = (
   text: string,
@@ -184,6 +204,89 @@ describe('UnaryOperatorInsertionMutator', () => {
       expect(sut._mutations).toHaveLength(4)
       sut._mutations.forEach(mutation => {
         expect(mutation.mutationName).toBe('UnaryOperatorInsertionMutator')
+      })
+    })
+  })
+
+  describe('Given a primary expression with a non-numeric type and TypeRegistry', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations for String variable', () => {
+        // Arrange
+        const typeRegistry = TestUtil.createTypeRegistry(
+          new Map(),
+          new Map([['testMethod', new Map([['s', 'string']])]])
+        )
+        const mutator = new UnaryOperatorInsertionMutator(typeRegistry)
+        const ctx = createPrimaryExpression('s')
+        const methodCtx = createMethodParent('testMethod')
+        setParent(ctx, methodCtx)
+
+        // Act
+        mutator.enterPrimaryExpression(ctx)
+
+        // Assert
+        expect(mutator._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a primary expression with a numeric type and TypeRegistry', () => {
+    describe('When entering the expression', () => {
+      it.each([
+        'integer',
+        'long',
+        'double',
+        'decimal',
+      ])('Then should create 4 mutations for %s variable', typeName => {
+        // Arrange
+        const typeRegistry = TestUtil.createTypeRegistry(
+          new Map(),
+          new Map([['testMethod', new Map([['x', typeName]])]])
+        )
+        const mutator = new UnaryOperatorInsertionMutator(typeRegistry)
+        const ctx = createPrimaryExpression('x')
+        const methodCtx = createMethodParent('testMethod')
+        setParent(ctx, methodCtx)
+
+        // Act
+        mutator.enterPrimaryExpression(ctx)
+
+        // Assert
+        expect(mutator._mutations).toHaveLength(4)
+      })
+    })
+  })
+
+  describe('Given a primary expression with unresolvable type and TypeRegistry', () => {
+    describe('When entering the expression', () => {
+      it('Then should still create 4 mutations (permissive fallback)', () => {
+        // Arrange
+        const typeRegistry = TestUtil.createTypeRegistry()
+        const mutator = new UnaryOperatorInsertionMutator(typeRegistry)
+        const ctx = createPrimaryExpression('unknown')
+        const methodCtx = createMethodParent('testMethod')
+        setParent(ctx, methodCtx)
+
+        // Act
+        mutator.enterPrimaryExpression(ctx)
+
+        // Assert
+        expect(mutator._mutations).toHaveLength(4)
+      })
+    })
+  })
+
+  describe('Given a primary expression without TypeRegistry', () => {
+    describe('When entering the expression', () => {
+      it('Then should still create 4 mutations (permissive fallback)', () => {
+        // Arrange
+        const ctx = createPrimaryExpression('anyVar')
+
+        // Act
+        sut.enterPrimaryExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(4)
       })
     })
   })

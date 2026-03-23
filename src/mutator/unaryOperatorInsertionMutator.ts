@@ -1,7 +1,12 @@
 import { ParserRuleContext } from 'antlr4ts'
+import { TypeRegistry } from '../type/TypeRegistry.js'
 import { BaseListener } from './baseListener.js'
 
 export class UnaryOperatorInsertionMutator extends BaseListener {
+  constructor(typeRegistry?: TypeRegistry) {
+    super(typeRegistry)
+  }
+
   enterPrimaryExpression(ctx: ParserRuleContext): void {
     if (ctx.childCount !== 1) {
       return
@@ -19,6 +24,13 @@ export class UnaryOperatorInsertionMutator extends BaseListener {
     }
 
     if (text === 'this' || text === 'super') {
+      return
+    }
+
+    const methodName = this.typeRegistry
+      ? this.getEnclosingMethodName(ctx)
+      : null
+    if (this.isNonNumericOperand(text, methodName)) {
       return
     }
 

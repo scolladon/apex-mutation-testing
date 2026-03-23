@@ -168,7 +168,7 @@ const MUTATOR_REGISTRY: MutatorRegistryEntry[] = [
   },
   {
     name: MUTATOR_NAME.UNARY_OPERATOR_INSERTION,
-    create: () => new UnaryOperatorInsertionMutator(),
+    create: tr => new UnaryOperatorInsertionMutator(tr),
   },
   {
     name: MUTATOR_NAME.VOID_METHOD_CALL,

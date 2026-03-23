@@ -225,6 +225,89 @@ describe('TypeDiscoverer', () => {
       })
     })
 
+    it('Given catch clause variable, When analyze, Then registry resolves catch parameter type scoped to method', async () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public void process() {
+            try {
+              doSomething();
+            } catch (Exception e) {
+              System.debug(e);
+            }
+          }
+        }
+      `
+      const sut = new TypeDiscoverer()
+
+      // Act
+      const registry = await sut.analyze(code)
+
+      // Assert
+      const result = registry.resolveType('process', 'e')
+      expect(result).toEqual({
+        apexType: APEX_TYPE.VOID,
+        typeName: 'exception',
+      })
+    })
+
+    it('Given catch clause with specific exception type, When analyze, Then registry resolves the specific type', async () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public void process() {
+            try {
+              doSomething();
+            } catch (DmlException ex) {
+              System.debug(ex);
+            }
+          }
+        }
+      `
+      const sut = new TypeDiscoverer()
+
+      // Act
+      const registry = await sut.analyze(code)
+
+      // Assert
+      const result = registry.resolveType('process', 'ex')
+      expect(result).toEqual({
+        apexType: APEX_TYPE.VOID,
+        typeName: 'dmlexception',
+      })
+    })
+
+    it('Given multiple catch clauses, When analyze, Then registry resolves all catch parameter types', async () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public void process() {
+            try {
+              doSomething();
+            } catch (DmlException dmlEx) {
+              System.debug(dmlEx);
+            } catch (Exception e) {
+              System.debug(e);
+            }
+          }
+        }
+      `
+      const sut = new TypeDiscoverer()
+
+      // Act
+      const registry = await sut.analyze(code)
+
+      // Assert
+      expect(registry.resolveType('process', 'dmlEx')).toEqual({
+        apexType: APEX_TYPE.VOID,
+        typeName: 'dmlexception',
+      })
+      expect(registry.resolveType('process', 'e')).toEqual({
+        apexType: APEX_TYPE.VOID,
+        typeName: 'exception',
+      })
+    })
+
     it('Given variables in different methods, When analyze, Then scopes are isolated', async () => {
       // Arrange
       const code = `
@@ -330,6 +413,33 @@ describe('TypeDiscoverer', () => {
       // Assert
       expect(matcher.collect).toHaveBeenCalledWith('String')
       expect(matcher.collect).toHaveBeenCalledWith('Decimal')
+    })
+
+    it('Given catch clause, When analyze, Then collect is called with the exception type', async () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public void process() {
+            try {
+              doSomething();
+            } catch (DmlException e) {
+              System.debug(e);
+            }
+          }
+        }
+      `
+      const matcher: TypeMatcher = {
+        matches: jest.fn().mockReturnValue(false),
+        collect: jest.fn(),
+        collectedTypes: new Set(),
+      }
+      const sut = new TypeDiscoverer().withMatcher(matcher)
+
+      // Act
+      await sut.analyze(code)
+
+      // Assert
+      expect(matcher.collect).toHaveBeenCalledWith('DmlException')
     })
 
     it('Given matcher with populate, When analyze, Then populate is called after walk', async () => {

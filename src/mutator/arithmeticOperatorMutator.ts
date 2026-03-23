@@ -1,7 +1,5 @@
 import { ParserRuleContext } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
-import type { ApexType } from '../type/ApexMethod.js'
-import { APEX_TYPE } from '../type/ApexMethod.js'
 import { TypeRegistry } from '../type/TypeRegistry.js'
 import { BaseListener } from './baseListener.js'
 
@@ -12,13 +10,6 @@ export class ArithmeticOperatorMutator extends BaseListener {
     '*': ['+', '-', '/'],
     '/': ['+', '-', '*'],
   }
-
-  private static readonly NUMERIC_TYPES: ReadonlySet<ApexType> = new Set([
-    APEX_TYPE.INTEGER,
-    APEX_TYPE.LONG,
-    APEX_TYPE.DOUBLE,
-    APEX_TYPE.DECIMAL,
-  ])
 
   constructor(typeRegistry?: TypeRegistry) {
     super(typeRegistry)
@@ -75,24 +66,5 @@ export class ArithmeticOperatorMutator extends BaseListener {
       this.isNonNumericOperand(leftText, methodName) ||
       this.isNonNumericOperand(rightText, methodName)
     )
-  }
-
-  private isNonNumericOperand(
-    text: string,
-    methodName: string | null
-  ): boolean {
-    if (text.includes("'")) {
-      return true
-    }
-
-    if (this.typeRegistry && methodName) {
-      const resolved = this.typeRegistry.resolveType(methodName, text)
-      if (resolved) {
-        return !ArithmeticOperatorMutator.NUMERIC_TYPES.has(resolved.apexType)
-      }
-      return false
-    }
-
-    return false
   }
 }

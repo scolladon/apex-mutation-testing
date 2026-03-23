@@ -133,6 +133,15 @@ class TypeDiscoverListener implements ApexParserListener {
     }
   }
 
+  enterCatchClause(ctx: ParserRuleContext): void {
+    if (ctx.children && ctx.children.length >= 6) {
+      const typeName = ctx.children[ctx.children.length - 4].text
+      const varName = ctx.children[ctx.children.length - 3].text
+      this.currentMethodVariables.set(varName, typeName.toLowerCase())
+      this.collectToMatchers(typeName)
+    }
+  }
+
   private trackVariableDeclaration(
     ctx: ParserRuleContext,
     target: Map<string, string>
