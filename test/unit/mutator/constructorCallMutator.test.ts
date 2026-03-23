@@ -183,4 +183,49 @@ describe('ConstructorCallMutator', () => {
       })
     })
   })
+
+  describe('Given a NewExpression inside a throw statement', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations', () => {
+        // Arrange
+        const { ThrowStatementContext } = jest.requireActual('apex-parser')
+        const throwCtx = Object.create(ThrowStatementContext.prototype)
+
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 10,
+          tokenIndex: 5,
+          startIndex: 10,
+          stopIndex: 25,
+        } as Token
+
+        const newKeyword = new TerminalNode({ text: 'new' } as Token)
+
+        const creatorCtx = {
+          text: "AuraHandledException('Error')",
+        } as unknown as ParserRuleContext
+
+        const expressionCtx = {
+          parent: throwCtx,
+        } as unknown as ParserRuleContext
+
+        const ctx = {
+          childCount: 2,
+          getChild: jest.fn().mockImplementation(index => {
+            return index === 0 ? newKeyword : creatorCtx
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 6 } as Token,
+          text: "new AuraHandledException('Error')",
+          parent: expressionCtx,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterNewExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
 })
