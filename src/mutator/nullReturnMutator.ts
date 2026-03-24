@@ -1,43 +1,13 @@
-import { ParserRuleContext } from 'antlr4ts'
-import { APEX_TYPE } from '../type/ApexMethod.js'
+import { APEX_TYPE, ApexType } from '../type/ApexMethod.js'
 import { TypeRegistry } from '../type/TypeRegistry.js'
-import { BaseListener } from './baseListener.js'
+import { BaseReturnMutator } from './baseReturnMutator.js'
 
-export class NullReturnMutator extends BaseListener {
+export class NullReturnMutator extends BaseReturnMutator {
   constructor(typeRegistry?: TypeRegistry) {
-    super(typeRegistry)
+    super('null', typeRegistry)
   }
 
-  enterReturnStatement(ctx: ParserRuleContext): void {
-    if (!this.shouldMutate(ctx)) {
-      return
-    }
-
-    if (!ctx.children || ctx.children.length < 2) {
-      return
-    }
-
-    const expressionNode = ctx.children[1]
-    if (!(expressionNode instanceof ParserRuleContext)) {
-      return
-    }
-
-    if (expressionNode.text.trim().toLowerCase() === 'null') {
-      return
-    }
-
-    this.createMutationFromParserRuleContext(expressionNode, 'null')
-  }
-
-  private shouldMutate(ctx: ParserRuleContext): boolean {
-    if (!this.typeRegistry) {
-      return false
-    }
-    const methodName = this.getEnclosingMethodName(ctx)
-    if (!methodName) {
-      return false
-    }
-    const typeInfo = this.typeRegistry.resolveType(methodName)
-    return !!typeInfo && typeInfo.apexType !== APEX_TYPE.VOID
+  protected isEligibleReturnType(apexType: ApexType): boolean {
+    return apexType !== APEX_TYPE.VOID
   }
 }

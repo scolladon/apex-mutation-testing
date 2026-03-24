@@ -54,4 +54,17 @@ export class BaseListener implements ApexParserListener {
       this.createMutation(node.symbol, node.symbol, node.text, replacement)
     }
   }
+
+  protected isNonNumericContext(ctx: ParserRuleContext): boolean {
+    const leftText = ctx.getChild(0).text
+    const rightText = ctx.getChild(2).text
+    if (leftText.includes("'") || rightText.includes("'")) return true
+    if (!this.typeRegistry) return false
+    const methodName = this.getEnclosingMethodName(ctx)
+    if (!methodName) return false
+    return (
+      !this.typeRegistry.isNumericOperand(methodName, leftText) ||
+      !this.typeRegistry.isNumericOperand(methodName, rightText)
+    )
+  }
 }
