@@ -124,7 +124,7 @@ The config file supports the following attributes:
 | `testMethods.exclude` | `string[]` | Use all test methods except these                                                                                 |
 | `threshold`           | `number`   | Minimum mutation score (0–100) required for the command to succeed                                                |
 | `skipPatterns`        | `string[]` | RE2 regex patterns to skip lines from mutation (e.g., `System\\.debug`)                                           |
-| `lines`               | `string[]` | Line ranges to restrict mutation to (e.g., `1-10`, `42`)                                                         |
+| `lines`               | `string[]` | Line ranges to restrict mutation to (e.g., `1-10`, `42`)                                                          |
 
 **Mutual exclusivity:** You cannot specify both `include` and `exclude` within the same group.
 For example, setting both `mutators.include` and `mutators.exclude` will result in an error.
