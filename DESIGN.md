@@ -337,6 +337,7 @@ Type-aware mutators need to understand Apex types to generate valid mutations (e
               │ enterLocalVarDecl │──► variableScopes
               │ enterFormalParam  │──► variableScopes
               │ enterEnhancedFor  │──► variableScopes
+              │ enterCatchClause  │──► variableScopes
               │ exitMethodDecl    │──► seal scope
               │ enterFieldDecl    │──► classFields
               │                   │
@@ -377,6 +378,17 @@ Type-aware mutators need to understand Apex types to generate valid mutations (e
 | Plain name | `resolveType('m', 'rate')` | Method scope → class fields → classify |
 
 Variable resolution priority: **method-local scope > class fields** (shadowing).
+
+### Type Domain Predicates
+
+Type-domain questions live in `TypeRegistry`, not in mutators or `BaseListener`:
+
+| Method | Used by | Purpose |
+| --- | --- | --- |
+| `isNumericOperand(method, expr)` | `ArithmeticOperatorMutator`, `ArithmeticOperatorDeletionMutator`, `UnaryOperatorInsertionMutator` | Returns `false` for string literals and non-numeric resolved types; `true` (permissive) when type is unresolvable |
+| `isNumericReturn(method)` | `NegationMutator` | Returns `true` only when the method's return type is a numeric primitive |
+
+`NUMERIC_TYPES` (Integer, Long, Double, Decimal) is defined once in `TypeRegistry.ts`. Adding support for new numeric-domain predicates requires changing only this file.
 
 ### Type Classification
 
@@ -476,7 +488,7 @@ Source Code ─── Parse #1 (TypeDiscoverer) ──► TypeRegistry
 │                                                                  │
 │  ConstructorCallMutator      new T(...) → null                   │
 │  MemberVariableMutator       Integer x = 5 → Integer x          │
-│  UnaryOperatorInsertionMutator  x → -x  (in expressions)        │
+│  UnaryOperatorInsertionMutator  x → ±x  (numeric vars/params only)│
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -494,6 +506,7 @@ Source Code ─── Parse #1 (TypeDiscoverer) ──► TypeRegistry
 | NakedReceiverMutator | Yes | Must match receiver type to return type |
 | ArithmeticOperatorMutator | Yes | Must skip string concatenation (`+`) |
 | ArithmeticOperatorDeletionMutator | Yes | Must skip string concatenation (`+`) |
+| UnaryOperatorInsertionMutator | Yes | Must target numeric variables/parameters only |
 | InlineConstantMutator | Yes | Null literal replacement depends on declared/return type |
 
 ---
