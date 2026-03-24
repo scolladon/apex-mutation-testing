@@ -322,6 +322,7 @@ Score = (Killed + RuntimeError) / (Killed + RuntimeError + Survived + NoCoverage
 
 A higher score means your tests are better at catching real bugs. Aim to reduce survived mutants by adding targeted assertions for the specific logic each surviving mutation affected.
 
+<!-- markdownlint-disable MD040 -->
 <!-- commands -->
 * [`sf apex mutation test run`](#sf-apex-mutation-test-run)
 
@@ -329,7 +330,7 @@ A higher score means your tests are better at catching real bugs. Aim to reduce 
 
 Evaluate test coverage quality by injecting mutations and measuring test detection rates
 
-```sh
+```
 USAGE
   $ sf apex mutation test run -c <value> -t <value> -o <value> [--json] [--flags-dir <value>] [-r <value>] [-d]
     [--include-mutators <value>... | --exclude-mutators <value>...] [--include-test-methods <value>... |
@@ -380,6 +381,7 @@ EXAMPLES
 
 _See code: [src/commands/apex/mutation/test/run.ts](https://github.com/scolladon/apex-mutation-testing/blob/main/src/commands/apex/mutation/test/run.ts)_
 <!-- commandsstop -->
+<!-- markdownlint-enable MD040 -->
 
 ## Changelog
 
