@@ -76,6 +76,13 @@ export function classifyApexType(
   return APEX_TYPE.VOID
 }
 
+const NUMERIC_TYPES: ReadonlySet<ApexType> = new Set([
+  APEX_TYPE.INTEGER,
+  APEX_TYPE.LONG,
+  APEX_TYPE.DOUBLE,
+  APEX_TYPE.DECIMAL,
+])
+
 export class TypeRegistry {
   constructor(
     private methodTypeTable: Map<string, ApexMethod>,
@@ -83,6 +90,18 @@ export class TypeRegistry {
     private classFields: Map<string, string>,
     private matchers: TypeMatcher[]
   ) {}
+
+  isNumericOperand(methodName: string, expression: string): boolean {
+    if (expression.includes("'")) return false
+    const resolved = this.resolveType(methodName, expression)
+    if (!resolved) return true
+    return NUMERIC_TYPES.has(resolved.apexType)
+  }
+
+  isNumericReturn(methodName: string): boolean {
+    const resolved = this.resolveType(methodName)
+    return !!resolved && NUMERIC_TYPES.has(resolved.apexType)
+  }
 
   resolveType(methodName: string, expression?: string): ResolvedType | null {
     if (expression === undefined) {

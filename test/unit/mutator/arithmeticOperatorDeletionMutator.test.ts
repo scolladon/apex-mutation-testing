@@ -616,4 +616,34 @@ describe('ArithmeticOperatorDeletionMutator', () => {
       expect(sut._mutations).toHaveLength(2)
     })
   })
+
+  describe('Given no enclosing method', () => {
+    it('Then should allow mutation for + when no method context exists', () => {
+      // Arrange
+      const typeRegistry = createTypeRegistry(new Map())
+      const sut = new ArithmeticOperatorDeletionMutator(typeRegistry)
+      // ctx has start/stop tokens but no parent => getEnclosingMethodName returns null => falls through to allow mutation
+      const operatorNode = new TerminalNode({ text: '+' } as Token)
+      const leftNode = { text: 'a' }
+      const rightNode = { text: 'b' }
+      const ctx = {
+        childCount: 3,
+        text: 'a+b',
+        start: TestUtil.createToken(1, 0),
+        stop: TestUtil.createToken(1, 2),
+        children: [leftNode, operatorNode, rightNode],
+        getChild: (index: number) => {
+          if (index === 0) return leftNode
+          if (index === 1) return operatorNode
+          return rightNode
+        },
+      } as unknown as ParserRuleContext
+
+      // Act
+      sut.enterArth2Expression(ctx as unknown as Arth2ExpressionContext)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(2)
+    })
+  })
 })

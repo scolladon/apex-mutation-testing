@@ -449,6 +449,122 @@ describe('TypeRegistry', () => {
     })
   })
 
+  describe('isNumericOperand', () => {
+    it.each([
+      'Integer',
+      'Long',
+      'Double',
+      'Decimal',
+    ])('Given variable of numeric type %s, When isNumericOperand, Then returns true', (typeName: string) => {
+      // Arrange
+      const registry = new TypeRegistry(
+        new Map(),
+        new Map([['myMethod', new Map([['n', typeName]])]]),
+        new Map(),
+        []
+      )
+
+      // Act & Assert
+      expect(registry.isNumericOperand('myMethod', 'n')).toBe(true)
+    })
+
+    it.each([
+      'String',
+      'Boolean',
+      'Date',
+      'DateTime',
+      'Blob',
+      'Id',
+    ])('Given variable of non-numeric type %s, When isNumericOperand, Then returns false', (typeName: string) => {
+      // Arrange
+      const registry = new TypeRegistry(
+        new Map(),
+        new Map([['myMethod', new Map([['x', typeName]])]]),
+        new Map(),
+        []
+      )
+
+      // Act & Assert
+      expect(registry.isNumericOperand('myMethod', 'x')).toBe(false)
+    })
+
+    it('Given string literal expression, When isNumericOperand, Then returns false', () => {
+      // Arrange
+      const registry = new TypeRegistry(new Map(), new Map(), new Map(), [])
+
+      // Act & Assert
+      expect(registry.isNumericOperand('myMethod', "'hello'")).toBe(false)
+    })
+
+    it('Given unresolvable expression, When isNumericOperand, Then returns true (permissive fallback)', () => {
+      // Arrange
+      const registry = new TypeRegistry(
+        new Map(),
+        new Map([['myMethod', new Map()]]),
+        new Map(),
+        []
+      )
+
+      // Act & Assert
+      expect(registry.isNumericOperand('myMethod', 'unknownVar')).toBe(true)
+    })
+  })
+
+  describe('isNumericReturn', () => {
+    it.each([
+      ['Integer', APEX_TYPE.INTEGER],
+      ['Long', APEX_TYPE.LONG],
+      ['Double', APEX_TYPE.DOUBLE],
+      ['Decimal', APEX_TYPE.DECIMAL],
+    ])('Given method returning %s, When isNumericReturn, Then returns true', (returnType: string, apexType: ApexType) => {
+      // Arrange
+      const registry = new TypeRegistry(
+        new Map([
+          [
+            'myMethod',
+            { returnType, startLine: 1, endLine: 5, type: apexType },
+          ],
+        ]),
+        new Map(),
+        new Map(),
+        []
+      )
+
+      // Act & Assert
+      expect(registry.isNumericReturn('myMethod')).toBe(true)
+    })
+
+    it.each([
+      ['String', APEX_TYPE.STRING],
+      ['Boolean', APEX_TYPE.BOOLEAN],
+      ['void', APEX_TYPE.VOID],
+    ])('Given method returning non-numeric type %s, When isNumericReturn, Then returns false', (returnType: string, apexType: ApexType) => {
+      // Arrange
+      const registry = new TypeRegistry(
+        new Map([
+          [
+            'myMethod',
+            { returnType, startLine: 1, endLine: 5, type: apexType },
+          ],
+        ]),
+        new Map(),
+        new Map(),
+        []
+      )
+
+      // Act & Assert
+      expect(registry.isNumericReturn('myMethod')).toBe(false)
+    })
+
+    it('Given unknown method, When isNumericReturn, Then returns false', () => {
+      // Arrange
+      const registry = new TypeRegistry(new Map(), new Map(), new Map(), [])
+
+      // Act & Assert
+      expect(registry.isNumericReturn('unknownMethod')).toBe(false)
+    })
+  })
+
   describe('type classification', () => {
     it.each([
       ['void', APEX_TYPE.VOID],

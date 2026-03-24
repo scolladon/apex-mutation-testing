@@ -38,13 +38,8 @@ export class ArithmeticOperatorMutator extends BaseListener {
         const replacements = this.REPLACEMENT_MAP[operatorText]
 
         if (replacements) {
-          if (operatorText === '+') {
-            const methodName = this.typeRegistry
-              ? this.getEnclosingMethodName(ctx)
-              : null
-            if (this.isNonNumericContext(ctx, methodName)) {
-              return
-            }
+          if (operatorText === '+' && this.isNonNumericContext(ctx)) {
+            return
           }
 
           for (const replacement of replacements) {
@@ -55,16 +50,16 @@ export class ArithmeticOperatorMutator extends BaseListener {
     }
   }
 
-  private isNonNumericContext(
-    ctx: ParserRuleContext,
-    methodName: string | null
-  ): boolean {
+  private isNonNumericContext(ctx: ParserRuleContext): boolean {
     const leftText = ctx.getChild(0).text
     const rightText = ctx.getChild(2).text
-
+    if (leftText.includes("'") || rightText.includes("'")) return true
+    if (!this.typeRegistry) return false
+    const methodName = this.getEnclosingMethodName(ctx)
+    if (!methodName) return false
     return (
-      this.isNonNumericOperand(leftText, methodName) ||
-      this.isNonNumericOperand(rightText, methodName)
+      !this.typeRegistry.isNumericOperand(methodName, leftText) ||
+      !this.typeRegistry.isNumericOperand(methodName, rightText)
     )
   }
 }

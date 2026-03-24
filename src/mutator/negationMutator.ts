@@ -39,15 +39,9 @@ export class NegationMutator extends BaseListener {
   }
 
   private isNumericReturn(ctx: ParserRuleContext): boolean {
-    if (!this.typeRegistry) {
-      return false
-    }
+    if (!this.typeRegistry) return false
     const methodName = this.getEnclosingMethodName(ctx)
-    if (!methodName) {
-      return false
-    }
-    const typeInfo = this.typeRegistry.resolveType(methodName)
-    return !!typeInfo && BaseListener.NUMERIC_TYPES.has(typeInfo.apexType)
+    return !!methodName && this.typeRegistry.isNumericReturn(methodName)
   }
 
   private isNegatedExpression(expr: ParserRuleContext): boolean {
