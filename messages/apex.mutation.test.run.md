@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD025 -->
 # summary
 
 Evaluate test coverage quality by injecting mutations and measuring test detection rates
