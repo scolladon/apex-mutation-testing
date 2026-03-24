@@ -27,11 +27,11 @@ export class UnaryOperatorInsertionMutator extends BaseListener {
       return
     }
 
-    const methodName = this.typeRegistry
-      ? this.getEnclosingMethodName(ctx)
-      : null
-    if (this.isNonNumericOperand(text, methodName)) {
-      return
+    if (this.typeRegistry) {
+      const methodName = this.getEnclosingMethodName(ctx)
+      if (methodName && !this.typeRegistry.isNumericOperand(methodName, text)) {
+        return
+      }
     }
 
     if (ctx.start && ctx.stop) {
