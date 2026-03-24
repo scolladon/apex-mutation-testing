@@ -124,9 +124,14 @@ The config file supports the following attributes:
 | `testMethods.exclude` | `string[]` | Use all test methods except these                                                                                 |
 | `threshold`           | `number`   | Minimum mutation score (0–100) required for the command to succeed                                                |
 | `skipPatterns`        | `string[]` | RE2 regex patterns to skip lines from mutation (e.g., `System\\.debug`)                                           |
-| `lines`              | `string[]` | Line ranges to restrict mutation to (e.g., `1-10`, `42`)                                                          |
+| `lines`               | `string[]` | Line ranges to restrict mutation to (e.g., `1-10`, `42`)                                                         |
 
-**Mutual exclusivity:** You cannot specify both `include` and `exclude` within the same group. For example, setting both `mutators.include` and `mutators.exclude` will result in an error. The same applies to `testMethods.include` and `testMethods.exclude`. This constraint is enforced across both the config file and CLI flags — if `--include-mutators` is passed via CLI and `mutators.exclude` is set in the config file, the CLI value takes precedence and the config file value is ignored.
+**Mutual exclusivity:** You cannot specify both `include` and `exclude` within the same group.
+For example, setting both `mutators.include` and `mutators.exclude` will result in an error.
+The same applies to `testMethods.include` and `testMethods.exclude`.
+This constraint is enforced across both the config file and CLI flags —
+if `--include-mutators` is passed via CLI and `mutators.exclude` is set in the config file,
+the CLI value takes precedence and the config file value is ignored.
 
 **Precedence:** CLI flags always override config file values. If both provide a value for the same attribute, the CLI flag wins.
 
@@ -308,7 +313,7 @@ A **NoCoverage** mutant means the mutated line is not covered by any of your tes
 
 The mutation score measures how effective your tests are at detecting code changes:
 
-```
+```text
 Score = (Killed + RuntimeError) / (Killed + RuntimeError + Survived + NoCoverage) * 100
 ```
 
@@ -324,7 +329,7 @@ A higher score means your tests are better at catching real bugs. Aim to reduce 
 
 Evaluate test coverage quality by injecting mutations and measuring test detection rates
 
-```
+```sh
 USAGE
   $ sf apex mutation test run -c <value> -t <value> -o <value> [--json] [--flags-dir <value>] [-r <value>] [-d]
     [--include-mutators <value>... | --exclude-mutators <value>...] [--include-test-methods <value>... |
