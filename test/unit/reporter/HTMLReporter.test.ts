@@ -2,7 +2,7 @@ import { writeFile } from 'node:fs/promises'
 import { ApexMutationHTMLReporter } from '../../../src/reporter/HTMLReporter.js'
 import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult.js'
 
-jest.mock('node:fs/promises')
+vi.mock('node:fs/promises')
 
 describe('HTMLReporter', () => {
   let sut: ApexMutationHTMLReporter
@@ -94,7 +94,7 @@ describe('HTMLReporter', () => {
       await sut.generateReport(testResults)
 
       // Assert
-      const htmlContent = (writeFile as jest.Mock).mock.calls[0][1] as string
+      const htmlContent = vi.mocked(writeFile).mock.calls[0][1] as string
       const reportMatch = htmlContent.match(/app\.report = (.+);/)
       const report = JSON.parse(reportMatch![1].replace(/<"\+"/g, '<'))
       const pendingMutant = report.files['TestClass.cls'].mutants.find(

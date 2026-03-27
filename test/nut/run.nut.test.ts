@@ -1,29 +1,30 @@
-import { beforeEach, describe, expect, it, jest } from '@jest/globals'
+import type { Mock } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mockMessages = {
-  getMessage: jest.fn().mockReturnValue('mock message'),
-  getMessages: jest.fn().mockReturnValue(['mock example']),
-  createError: jest.fn().mockImplementation((...args: unknown[]) => {
+const mockMessages = vi.hoisted(() => ({
+  getMessage: vi.fn().mockReturnValue('mock message'),
+  getMessages: vi.fn().mockReturnValue(['mock example']),
+  createError: vi.fn().mockImplementation((...args: unknown[]) => {
     const key = args[0]
     const tokens = args[1] as string[] | undefined
     return new Error(`${key}: ${tokens?.join(', ')}`)
   }),
-}
+}))
 
-jest.unstable_mockModule('@salesforce/core', () => ({
+vi.mock('@salesforce/core', () => ({
   Messages: {
-    importMessagesDirectoryFromMetaUrl: jest.fn(),
-    loadMessages: jest.fn().mockReturnValue(mockMessages),
+    importMessagesDirectoryFromMetaUrl: vi.fn(),
+    loadMessages: vi.fn().mockReturnValue(mockMessages),
   },
   Logger: {
-    childFromRoot: jest.fn().mockReturnValue({
-      shouldLog: jest.fn().mockReturnValue(false),
-      trace: jest.fn(),
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
-      fatal: jest.fn(),
+    childFromRoot: vi.fn().mockReturnValue({
+      shouldLog: vi.fn().mockReturnValue(false),
+      trace: vi.fn(),
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      fatal: vi.fn(),
     }),
   },
   LoggerLevel: {
@@ -34,97 +35,92 @@ jest.unstable_mockModule('@salesforce/core', () => ({
     ERROR: 50,
     FATAL: 60,
   },
-  Connection: jest.fn(),
+  Connection: vi.fn(),
 }))
 
-jest.unstable_mockModule('@salesforce/sf-plugins-core', () => {
+vi.mock('@salesforce/sf-plugins-core', () => {
   class FakeSfCommand {
-    progress = { start: jest.fn(), update: jest.fn(), finish: jest.fn() }
-    spinner = { start: jest.fn(), stop: jest.fn() }
-    log = jest.fn()
-    info = jest.fn()
-    parse = jest.fn()
-    table = jest.fn()
-    styledHeader = jest.fn()
+    progress = { start: vi.fn(), update: vi.fn(), finish: vi.fn() }
+    spinner = { start: vi.fn(), stop: vi.fn() }
+    log = vi.fn()
+    info = vi.fn()
+    parse = vi.fn()
+    table = vi.fn()
+    styledHeader = vi.fn()
   }
 
   return {
     SfCommand: FakeSfCommand,
     Flags: {
-      string: jest.fn().mockReturnValue({}),
-      boolean: jest.fn().mockReturnValue({}),
-      directory: jest.fn().mockReturnValue({}),
-      integer: jest.fn().mockReturnValue({}),
-      file: jest.fn().mockReturnValue({}),
-      requiredOrg: jest.fn().mockReturnValue({}),
-      orgApiVersion: jest.fn().mockReturnValue({}),
+      string: vi.fn().mockReturnValue({}),
+      boolean: vi.fn().mockReturnValue({}),
+      directory: vi.fn().mockReturnValue({}),
+      integer: vi.fn().mockReturnValue({}),
+      file: vi.fn().mockReturnValue({}),
+      requiredOrg: vi.fn().mockReturnValue({}),
+      orgApiVersion: vi.fn().mockReturnValue({}),
     },
   }
 })
 
-jest.unstable_mockModule('../../src/service/apexClassValidator.js', () => ({
-  ApexClassValidator: jest.fn(),
+vi.mock('../../src/service/apexClassValidator.js', () => ({
+  ApexClassValidator: vi.fn(),
 }))
 
-jest.unstable_mockModule('../../src/service/mutationTestingService.js', () => ({
-  MutationTestingService: jest.fn(),
+vi.mock('../../src/service/mutationTestingService.js', () => ({
+  MutationTestingService: vi.fn(),
 }))
 
-jest.unstable_mockModule('../../src/reporter/HTMLReporter.js', () => ({
-  ApexMutationHTMLReporter: jest.fn(),
+vi.mock('../../src/reporter/HTMLReporter.js', () => ({
+  ApexMutationHTMLReporter: vi.fn(),
 }))
 
-const mockConfigReaderResolve = jest.fn()
-jest.unstable_mockModule('../../src/service/configReader.js', () => ({
-  ConfigReader: jest.fn().mockImplementation(() => ({
+const mockConfigReaderResolve = vi.hoisted(() => vi.fn())
+vi.mock('../../src/service/configReader.js', () => ({
+  ConfigReader: vi.fn().mockImplementation(() => ({
     resolve: mockConfigReaderResolve,
   })),
 }))
 
-const { default: ApexMutationTest } = await import(
-  '../../src/commands/apex/mutation/test/run.js'
-)
-const { ApexMutationHTMLReporter } = await import(
-  '../../src/reporter/HTMLReporter.js'
-)
-const { ApexClassValidator } = await import(
-  '../../src/service/apexClassValidator.js'
-)
-const { MutationTestingService } = await import(
-  '../../src/service/mutationTestingService.js'
-)
-const { ConfigReader } = await import('../../src/service/configReader.js')
+import { default as ApexMutationTest } from '../../src/commands/apex/mutation/test/run.js'
+import { ApexMutationHTMLReporter } from '../../src/reporter/HTMLReporter.js'
+import { ApexClassValidator } from '../../src/service/apexClassValidator.js'
+import { ConfigReader } from '../../src/service/configReader.js'
+import { MutationTestingService } from '../../src/service/mutationTestingService.js'
 
 describe('apex mutation test run NUT', () => {
   const mockConnection = {} as Record<string, unknown>
   const mockOrg = {
-    getConnection: jest.fn().mockReturnValue(mockConnection),
+    getConnection: vi.fn().mockReturnValue(mockConnection),
   }
 
   beforeEach(() => {
     mockConfigReaderResolve.mockImplementation((...args: unknown[]) =>
       Promise.resolve(args[0])
     )
-    ;(ApexClassValidator as jest.Mock<() => unknown>).mockImplementation(
-      () => ({
-        validate: jest.fn().mockResolvedValue(undefined as never),
-      })
+    vi.mocked(ApexClassValidator).mockImplementation(
+      () =>
+        ({
+          validate: vi.fn().mockResolvedValue(undefined as never),
+        }) as never
     )
-    ;(MutationTestingService as jest.Mock<() => unknown>).mockImplementation(
-      () => ({
-        process: jest.fn().mockResolvedValue({
-          sourceFile: 'TestClass',
-          sourceFileContent: 'class TestClass {}',
-          testFile: 'TestClassTest',
-          mutants: [{ status: 'Killed' }, { status: 'Survived' }],
-        } as never),
-        calculateScore: jest.fn().mockReturnValue(50),
-      })
+    vi.mocked(MutationTestingService).mockImplementation(
+      () =>
+        ({
+          process: vi.fn().mockResolvedValue({
+            sourceFile: 'TestClass',
+            sourceFileContent: 'class TestClass {}',
+            testFile: 'TestClassTest',
+            mutants: [{ status: 'Killed' }, { status: 'Survived' }],
+          } as never),
+          calculateScore: vi.fn().mockReturnValue(50),
+        }) as never
     )
-    ;(ApexMutationHTMLReporter as jest.Mock<() => unknown>).mockImplementation(
-      () => ({
-        generateReport: jest.fn().mockResolvedValue(undefined as never),
-      })
+    vi.mocked(ApexMutationHTMLReporter).mockImplementation(
+      () =>
+        ({
+          generateReport: vi.fn().mockResolvedValue(undefined as never),
+        }) as never
     )
   })
 
@@ -133,9 +129,7 @@ describe('apex mutation test run NUT', () => {
     flagOverrides: Record<string, unknown> = {}
   ) {
     const cmd = new ApexMutationTest(args, {} as never)
-    ;(
-      jest.spyOn(cmd as never, 'parse') as unknown as jest.Mock
-    ).mockResolvedValue({
+    ;(vi.spyOn(cmd as never, 'parse') as unknown as Mock).mockResolvedValue({
       flags: {
         'apex-class':
           args[args.indexOf('-c') + 1] ||
@@ -148,13 +142,13 @@ describe('apex mutation test run NUT', () => {
         ...flagOverrides,
       },
     } as never)
-    jest.spyOn(cmd, 'log').mockImplementation(jest.fn() as never)
-    jest.spyOn(cmd, 'info').mockImplementation(jest.fn() as never)
+    vi.spyOn(cmd, 'log').mockImplementation(vi.fn() as never)
+    vi.spyOn(cmd, 'info').mockImplementation(vi.fn() as never)
     Object.defineProperty(cmd, 'progress', {
-      value: { start: jest.fn(), update: jest.fn(), finish: jest.fn() },
+      value: { start: vi.fn(), update: vi.fn(), finish: vi.fn() },
     })
     Object.defineProperty(cmd, 'spinner', {
-      value: { start: jest.fn(), stop: jest.fn() },
+      value: { start: vi.fn(), stop: vi.fn() },
     })
     return cmd.run()
   }
@@ -228,12 +222,13 @@ describe('apex mutation test run NUT', () => {
   describe('Given validation fails', () => {
     it('When apex class is invalid, Then throws error', async () => {
       // Arrange
-      ;(ApexClassValidator as jest.Mock<() => unknown>).mockImplementation(
-        () => ({
-          validate: jest
-            .fn()
-            .mockRejectedValue(new Error('InvalidClass not found') as never),
-        })
+      vi.mocked(ApexClassValidator).mockImplementation(
+        () =>
+          ({
+            validate: vi
+              .fn()
+              .mockRejectedValue(new Error('InvalidClass not found') as never),
+          }) as never
       )
 
       // Act & Assert
@@ -244,12 +239,13 @@ describe('apex mutation test run NUT', () => {
 
     it('When test class is invalid, Then throws error', async () => {
       // Arrange
-      ;(ApexClassValidator as jest.Mock<() => unknown>).mockImplementation(
-        () => ({
-          validate: jest
-            .fn()
-            .mockRejectedValue(new Error('InvalidTest not found') as never),
-        })
+      vi.mocked(ApexClassValidator).mockImplementation(
+        () =>
+          ({
+            validate: vi
+              .fn()
+              .mockRejectedValue(new Error('InvalidTest not found') as never),
+          }) as never
       )
 
       // Act & Assert
@@ -262,13 +258,14 @@ describe('apex mutation test run NUT', () => {
   describe('Given mutation service fails', () => {
     it('When process throws, Then propagates error', async () => {
       // Arrange
-      ;(MutationTestingService as jest.Mock<() => unknown>).mockImplementation(
-        () => ({
-          process: jest
-            .fn()
-            .mockRejectedValue(new Error('No test coverage found') as never),
-          calculateScore: jest.fn(),
-        })
+      vi.mocked(MutationTestingService).mockImplementation(
+        () =>
+          ({
+            process: vi
+              .fn()
+              .mockRejectedValue(new Error('No test coverage found') as never),
+            calculateScore: vi.fn(),
+          }) as never
       )
 
       // Act & Assert
@@ -280,50 +277,51 @@ describe('apex mutation test run NUT', () => {
 
   describe('Given dry-run flag', () => {
     beforeEach(() => {
-      ;(MutationTestingService as jest.Mock<() => unknown>).mockImplementation(
-        () => ({
-          process: jest.fn().mockResolvedValue({
-            sourceFile: 'MyClass',
-            sourceFileContent: 'class MyClass {}',
-            testFile: 'MyClassTest',
-            mutants: [
-              {
-                id: 'MyClass-0',
-                mutatorName: 'ArithmeticOperator',
-                status: 'Pending',
-                location: {
-                  start: { line: 10, column: 1 },
-                  end: { line: 10, column: 2 },
+      vi.mocked(MutationTestingService).mockImplementation(
+        () =>
+          ({
+            process: vi.fn().mockResolvedValue({
+              sourceFile: 'MyClass',
+              sourceFileContent: 'class MyClass {}',
+              testFile: 'MyClassTest',
+              mutants: [
+                {
+                  id: 'MyClass-0',
+                  mutatorName: 'ArithmeticOperator',
+                  status: 'Pending',
+                  location: {
+                    start: { line: 10, column: 1 },
+                    end: { line: 10, column: 2 },
+                  },
+                  original: '+',
+                  replacement: '-',
                 },
-                original: '+',
-                replacement: '-',
-              },
-              {
-                id: 'MyClass-1',
-                mutatorName: 'BoundaryCondition',
-                status: 'Pending',
-                location: {
-                  start: { line: 10, column: 5 },
-                  end: { line: 10, column: 6 },
+                {
+                  id: 'MyClass-1',
+                  mutatorName: 'BoundaryCondition',
+                  status: 'Pending',
+                  location: {
+                    start: { line: 10, column: 5 },
+                    end: { line: 10, column: 6 },
+                  },
+                  original: '<',
+                  replacement: '<=',
                 },
-                original: '<',
-                replacement: '<=',
-              },
-              {
-                id: 'MyClass-2',
-                mutatorName: 'ArithmeticOperator',
-                status: 'Pending',
-                location: {
-                  start: { line: 20, column: 1 },
-                  end: { line: 20, column: 2 },
+                {
+                  id: 'MyClass-2',
+                  mutatorName: 'ArithmeticOperator',
+                  status: 'Pending',
+                  location: {
+                    start: { line: 20, column: 1 },
+                    end: { line: 20, column: 2 },
+                  },
+                  original: '*',
+                  replacement: '/',
                 },
-                original: '*',
-                replacement: '/',
-              },
-            ],
-          } as never),
-          calculateScore: jest.fn().mockReturnValue(null),
-        })
+              ],
+            } as never),
+            calculateScore: vi.fn().mockReturnValue(null),
+          }) as never
       )
     })
 
@@ -345,9 +343,8 @@ describe('apex mutation test run NUT', () => {
       })
 
       it('Then generates HTML report', () => {
-        const mockInstance = (
-          ApexMutationHTMLReporter as jest.Mock<() => unknown>
-        ).mock.results[0].value as { generateReport: jest.Mock }
+        const mockInstance = vi.mocked(ApexMutationHTMLReporter).mock.results[0]
+          .value as { generateReport: Mock }
         expect(mockInstance.generateReport).toHaveBeenCalled()
       })
 
@@ -370,16 +367,17 @@ describe('apex mutation test run NUT', () => {
   describe('Given threshold flag above score', () => {
     it('When running, Then throws threshold error', async () => {
       // Arrange
-      ;(MutationTestingService as jest.Mock<() => unknown>).mockImplementation(
-        () => ({
-          process: jest.fn().mockResolvedValue({
-            sourceFile: 'MyClass',
-            sourceFileContent: 'class MyClass {}',
-            testFile: 'MyClassTest',
-            mutants: [{ status: 'Killed' }, { status: 'Survived' }],
-          } as never),
-          calculateScore: jest.fn().mockReturnValue(50),
-        })
+      vi.mocked(MutationTestingService).mockImplementation(
+        () =>
+          ({
+            process: vi.fn().mockResolvedValue({
+              sourceFile: 'MyClass',
+              sourceFileContent: 'class MyClass {}',
+              testFile: 'MyClassTest',
+              mutants: [{ status: 'Killed' }, { status: 'Survived' }],
+            } as never),
+            calculateScore: vi.fn().mockReturnValue(50),
+          }) as never
       )
 
       // Act & Assert

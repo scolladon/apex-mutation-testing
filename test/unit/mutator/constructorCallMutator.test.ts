@@ -1,5 +1,6 @@
 import { ParserRuleContext, Token } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
+import { ThrowStatementContext } from 'apex-parser'
 import { ConstructorCallMutator } from '../../../src/mutator/constructorCallMutator.js'
 
 describe('ConstructorCallMutator', () => {
@@ -29,7 +30,7 @@ describe('ConstructorCallMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? newKeyword : creatorCtx
           }),
           start: mockToken,
@@ -68,7 +69,7 @@ describe('ConstructorCallMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? newKeyword : creatorCtx
           }),
           start: mockToken,
@@ -106,7 +107,7 @@ describe('ConstructorCallMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? newKeyword : creatorCtx
           }),
           start: mockToken,
@@ -148,7 +149,7 @@ describe('ConstructorCallMutator', () => {
         // Arrange
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(() => {
+          getChild: vi.fn().mockImplementation(() => {
             return { text: 'something' } // Not a TerminalNode
           }),
         } as unknown as ParserRuleContext
@@ -170,7 +171,7 @@ describe('ConstructorCallMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? notNewKeyword : { text: 'Account()' }
           }),
         } as unknown as ParserRuleContext
@@ -188,7 +189,7 @@ describe('ConstructorCallMutator', () => {
     describe('When entering the expression', () => {
       it('Then should not create any mutations', () => {
         // Arrange
-        const { ThrowStatementContext } = jest.requireActual('apex-parser')
+        // ThrowStatementContext imported from apex-parser at top of file
         const throwCtx = Object.create(ThrowStatementContext.prototype)
 
         const mockToken = {
@@ -211,7 +212,7 @@ describe('ConstructorCallMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? newKeyword : creatorCtx
           }),
           start: mockToken,

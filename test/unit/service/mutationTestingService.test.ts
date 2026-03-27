@@ -16,12 +16,12 @@ import { ApexMutationParameter } from '../../../src/type/ApexMutationParameter.j
 import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult.js'
 import { MetadataComponentDependency } from '../../../src/type/MetadataComponentDependency.js'
 
-jest.mock('../../../src/adapter/apexClassRepository.js')
-jest.mock('../../../src/adapter/apexTestRunner.js')
-jest.mock('../../../src/adapter/sObjectDescribeRepository.js')
-jest.mock('../../../src/service/mutantGenerator.js')
-jest.mock('../../../src/service/typeDiscoverer.js')
-jest.mock('../../../src/service/timeUtils.js')
+vi.mock('../../../src/adapter/apexClassRepository.js')
+vi.mock('../../../src/adapter/apexTestRunner.js')
+vi.mock('../../../src/adapter/sObjectDescribeRepository.js')
+vi.mock('../../../src/service/mutantGenerator.js')
+vi.mock('../../../src/service/typeDiscoverer.js')
+vi.mock('../../../src/service/timeUtils.js')
 
 describe('MutationTestingService', () => {
   let sut: MutationTestingService
@@ -66,20 +66,20 @@ describe('MutationTestingService', () => {
 
   beforeEach(() => {
     progress = {
-      start: jest.fn(),
-      update: jest.fn(),
-      finish: jest.fn(),
+      start: vi.fn(),
+      update: vi.fn(),
+      finish: vi.fn(),
     } as unknown as Progress
 
     spinner = {
-      start: jest.fn(),
-      stop: jest.fn(),
+      start: vi.fn(),
+      stop: vi.fn(),
     } as unknown as Spinner
 
     connection = {} as Connection
 
     messagesMock = {
-      getMessage: jest.fn((key: string, args?: string[]) => {
+      getMessage: vi.fn((key: string, args?: string[]) => {
         const templates: Record<string, string> = {
           'error.noCoverage': `No test coverage found for '${args?.[0]}'. Ensure '${args?.[1]}' tests exercise the code you want to mutation test.`,
           'error.noMutations': `No mutations could be generated for '${args?.[0]}'. ${args?.[1]} line(s) covered but no mutable patterns found.`,
@@ -91,23 +91,23 @@ describe('MutationTestingService', () => {
       }),
     } as unknown as Messages<string>
 
-    ;(SObjectDescribeRepository as jest.Mock).mockImplementation(() => ({
-      describe: jest.fn().mockResolvedValue(undefined),
+    vi.mocked(SObjectDescribeRepository).mockImplementation(() => ({
+      describe: vi.fn().mockResolvedValue(undefined),
     }))
 
     const mockTypeRegistry = {}
-    ;(TypeDiscoverer as jest.Mock).mockImplementation(() => ({
-      withMatcher: jest.fn().mockReturnThis(),
-      analyze: jest.fn().mockResolvedValue(mockTypeRegistry),
+    vi.mocked(TypeDiscoverer).mockImplementation(() => ({
+      withMatcher: vi.fn().mockReturnThis(),
+      analyze: vi.fn().mockResolvedValue(mockTypeRegistry),
     }))
 
-    ;(timeExecution as jest.Mock).mockImplementation(
+    vi.mocked(timeExecution).mockImplementation(
       async (fn: () => Promise<unknown>) => {
         const result = await fn()
         return { result, durationMs: 5000 }
       }
     )
-    ;(formatDuration as jest.Mock).mockReturnValue('~5s')
+    vi.mocked(formatDuration).mockReturnValue('~5s')
 
     sut = new MutationTestingService(
       progress,
@@ -125,18 +125,18 @@ describe('MutationTestingService', () => {
     describe('When test class fails', () => {
       it('then should throw an error', async () => {
         // Arrange
-        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockImplementation((name: string) => {
+        vi.mocked(ApexClassRepository).mockImplementation(() => ({
+          read: vi.fn().mockImplementation((name: string) => {
             if (name === 'TestClass') return Promise.resolve(mockApexClass)
             return Promise.resolve(mockTestClass)
           }),
-          update: jest.fn().mockResolvedValue({}),
-          getApexClassDependencies: jest
+          update: vi.fn().mockResolvedValue({}),
+          getApexClassDependencies: vi
             .fn()
             .mockResolvedValue([] as MetadataComponentDependency[]),
         }))
-        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
-          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+        vi.mocked(ApexTestRunner).mockImplementation(() => ({
+          getTestMethodsPerLines: vi.fn().mockResolvedValue({
             outcome: 'Failed',
             passing: 0,
             failing: 1,
@@ -155,18 +155,18 @@ describe('MutationTestingService', () => {
     describe('When test class does not have any test methods', () => {
       it('then should throw an error', async () => {
         // Arrange
-        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockImplementation((name: string) => {
+        vi.mocked(ApexClassRepository).mockImplementation(() => ({
+          read: vi.fn().mockImplementation((name: string) => {
             if (name === 'TestClass') return Promise.resolve(mockApexClass)
             return Promise.resolve(mockTestClass)
           }),
-          update: jest.fn().mockResolvedValue({}),
-          getApexClassDependencies: jest
+          update: vi.fn().mockResolvedValue({}),
+          getApexClassDependencies: vi
             .fn()
             .mockResolvedValue([] as MetadataComponentDependency[]),
         }))
-        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
-          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+        vi.mocked(ApexTestRunner).mockImplementation(() => ({
+          getTestMethodsPerLines: vi.fn().mockResolvedValue({
             outcome: 'Passed',
             passing: 0,
             failing: 0,
@@ -330,18 +330,18 @@ describe('MutationTestingService', () => {
       }) => {
         // Arrange
         let updateCallCount = 0
-        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockImplementation((name: string) => {
+        vi.mocked(ApexClassRepository).mockImplementation(() => ({
+          read: vi.fn().mockImplementation((name: string) => {
             if (name === 'TestClass') return Promise.resolve(mockApexClass)
             return Promise.resolve(mockTestClass)
           }),
-          update: jest.fn().mockImplementation(() => {
+          update: vi.fn().mockImplementation(() => {
             updateCallCount++
             if (updateCallCount <= 2) return Promise.resolve({})
             if (updateError) return Promise.reject(updateError)
             return Promise.resolve({})
           }),
-          getApexClassDependencies: jest.fn().mockResolvedValue([
+          getApexClassDependencies: vi.fn().mockResolvedValue([
             {
               Id: 'dep1',
               RefMetadataComponentType: 'ApexClass',
@@ -359,18 +359,18 @@ describe('MutationTestingService', () => {
             },
           ] as MetadataComponentDependency[]),
         }))
-        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
-          compute: jest.fn().mockReturnValue([mockMutation]),
-          mutate: jest.fn().mockReturnValue('mutated code'),
+        vi.mocked(MutantGenerator).mockImplementation(() => ({
+          compute: vi.fn().mockReturnValue([mockMutation]),
+          mutate: vi.fn().mockReturnValue('mutated code'),
         }))
-        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
-          runTestMethods: jest.fn().mockImplementation(() => {
+        vi.mocked(ApexTestRunner).mockImplementation(() => ({
+          runTestMethods: vi.fn().mockImplementation(() => {
             if (error) {
               return Promise.reject(error)
             }
             return Promise.resolve(testResult)
           }),
-          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+          getTestMethodsPerLines: vi.fn().mockResolvedValue({
             outcome: 'Passed',
             passing: 1,
             failing: 0,
@@ -399,25 +399,25 @@ describe('MutationTestingService', () => {
     describe('When dry-run is enabled', () => {
       it('then should return ApexMutationTestResult with Pending status without running mutation tests', async () => {
         // Arrange
-        const mockUpdateFn = jest.fn().mockResolvedValue({})
-        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockImplementation((name: string) => {
+        const mockUpdateFn = vi.fn().mockResolvedValue({})
+        vi.mocked(ApexClassRepository).mockImplementation(() => ({
+          read: vi.fn().mockImplementation((name: string) => {
             if (name === 'TestClass') return Promise.resolve(mockApexClass)
             return Promise.resolve(mockTestClass)
           }),
           update: mockUpdateFn,
-          getApexClassDependencies: jest
+          getApexClassDependencies: vi
             .fn()
             .mockResolvedValue([] as MetadataComponentDependency[]),
         }))
-        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
-          compute: jest.fn().mockReturnValue([mockMutation]),
-          mutate: jest.fn(),
+        vi.mocked(MutantGenerator).mockImplementation(() => ({
+          compute: vi.fn().mockReturnValue([mockMutation]),
+          mutate: vi.fn(),
         }))
-        const mockRunTestMethods = jest.fn()
-        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
+        const mockRunTestMethods = vi.fn()
+        vi.mocked(ApexTestRunner).mockImplementation(() => ({
           runTestMethods: mockRunTestMethods,
-          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+          getTestMethodsPerLines: vi.fn().mockResolvedValue({
             outcome: 'Passed',
             passing: 1,
             failing: 0,
@@ -479,18 +479,18 @@ describe('MutationTestingService', () => {
     describe('When no coverage exists on the class', () => {
       it('then should throw an error with helpful message', async () => {
         // Arrange
-        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockImplementation((name: string) => {
+        vi.mocked(ApexClassRepository).mockImplementation(() => ({
+          read: vi.fn().mockImplementation((name: string) => {
             if (name === 'TestClass') return Promise.resolve(mockApexClass)
             return Promise.resolve(mockTestClass)
           }),
-          update: jest.fn().mockResolvedValue({}),
-          getApexClassDependencies: jest
+          update: vi.fn().mockResolvedValue({}),
+          getApexClassDependencies: vi
             .fn()
             .mockResolvedValue([] as MetadataComponentDependency[]),
         }))
-        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
-          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+        vi.mocked(ApexTestRunner).mockImplementation(() => ({
+          getTestMethodsPerLines: vi.fn().mockResolvedValue({
             outcome: 'Passed',
             passing: 1,
             failing: 0,
@@ -509,20 +509,20 @@ describe('MutationTestingService', () => {
     describe('When coverage exists but no mutations are generated', () => {
       it('then should throw an error with helpful message', async () => {
         // Arrange
-        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockImplementation((name: string) => {
+        vi.mocked(ApexClassRepository).mockImplementation(() => ({
+          read: vi.fn().mockImplementation((name: string) => {
             if (name === 'TestClass') return Promise.resolve(mockApexClass)
             return Promise.resolve(mockTestClass)
           }),
-          update: jest.fn().mockResolvedValue({}),
-          getApexClassDependencies: jest.fn().mockResolvedValue([]),
+          update: vi.fn().mockResolvedValue({}),
+          getApexClassDependencies: vi.fn().mockResolvedValue([]),
         }))
-        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
-          compute: jest.fn().mockReturnValue([]), // No mutations
-          mutate: jest.fn(),
+        vi.mocked(MutantGenerator).mockImplementation(() => ({
+          compute: vi.fn().mockReturnValue([]), // No mutations
+          mutate: vi.fn(),
         }))
-        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
-          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+        vi.mocked(ApexTestRunner).mockImplementation(() => ({
+          getTestMethodsPerLines: vi.fn().mockResolvedValue({
             outcome: 'Passed',
             passing: 1,
             failing: 0,
@@ -541,15 +541,15 @@ describe('MutationTestingService', () => {
     describe('When main class compilability check fails', () => {
       it('then should throw an error with compilability message', async () => {
         // Arrange
-        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockImplementation((name: string) => {
+        vi.mocked(ApexClassRepository).mockImplementation(() => ({
+          read: vi.fn().mockImplementation((name: string) => {
             if (name === 'TestClass') return Promise.resolve(mockApexClass)
             return Promise.resolve(mockTestClass)
           }),
-          update: jest
+          update: vi
             .fn()
             .mockRejectedValue(new Error('Deployment failed: compile error')),
-          getApexClassDependencies: jest
+          getApexClassDependencies: vi
             .fn()
             .mockResolvedValue([] as MetadataComponentDependency[]),
         }))
@@ -565,19 +565,19 @@ describe('MutationTestingService', () => {
       it('then should throw an error with compilability message', async () => {
         // Arrange
         let updateCallCount = 0
-        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockImplementation((name: string) => {
+        vi.mocked(ApexClassRepository).mockImplementation(() => ({
+          read: vi.fn().mockImplementation((name: string) => {
             if (name === 'TestClass') return Promise.resolve(mockApexClass)
             return Promise.resolve(mockTestClass)
           }),
-          update: jest.fn().mockImplementation(() => {
+          update: vi.fn().mockImplementation(() => {
             updateCallCount++
             if (updateCallCount === 1) return Promise.resolve({})
             return Promise.reject(
               new Error('Deployment failed: test class compile error')
             )
           }),
-          getApexClassDependencies: jest
+          getApexClassDependencies: vi
             .fn()
             .mockResolvedValue([] as MetadataComponentDependency[]),
         }))
@@ -593,17 +593,17 @@ describe('MutationTestingService', () => {
       it('then should throw an error with string error message', async () => {
         // Arrange
         let updateCallCount = 0
-        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockImplementation((name: string) => {
+        vi.mocked(ApexClassRepository).mockImplementation(() => ({
+          read: vi.fn().mockImplementation((name: string) => {
             if (name === 'TestClass') return Promise.resolve(mockApexClass)
             return Promise.resolve(mockTestClass)
           }),
-          update: jest.fn().mockImplementation(() => {
+          update: vi.fn().mockImplementation(() => {
             updateCallCount++
             if (updateCallCount === 1) return Promise.resolve({})
             return Promise.reject('plain string deploy error')
           }),
-          getApexClassDependencies: jest
+          getApexClassDependencies: vi
             .fn()
             .mockResolvedValue([] as MetadataComponentDependency[]),
         }))
@@ -618,13 +618,13 @@ describe('MutationTestingService', () => {
     describe('When main class compilability check fails with non-Error', () => {
       it('then should throw an error with string error message', async () => {
         // Arrange
-        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockImplementation((name: string) => {
+        vi.mocked(ApexClassRepository).mockImplementation(() => ({
+          read: vi.fn().mockImplementation((name: string) => {
             if (name === 'TestClass') return Promise.resolve(mockApexClass)
             return Promise.resolve(mockTestClass)
           }),
-          update: jest.fn().mockRejectedValue('plain string deploy error'),
-          getApexClassDependencies: jest
+          update: vi.fn().mockRejectedValue('plain string deploy error'),
+          getApexClassDependencies: vi
             .fn()
             .mockResolvedValue([] as MetadataComponentDependency[]),
         }))
@@ -639,23 +639,23 @@ describe('MutationTestingService', () => {
     describe('When time estimate is displayed', () => {
       it('then should show estimate via spinner', async () => {
         // Arrange
-        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockImplementation((name: string) => {
+        vi.mocked(ApexClassRepository).mockImplementation(() => ({
+          read: vi.fn().mockImplementation((name: string) => {
             if (name === 'TestClass') return Promise.resolve(mockApexClass)
             return Promise.resolve(mockTestClass)
           }),
-          update: jest.fn().mockResolvedValue({}),
-          getApexClassDependencies: jest.fn().mockResolvedValue([]),
+          update: vi.fn().mockResolvedValue({}),
+          getApexClassDependencies: vi.fn().mockResolvedValue([]),
         }))
-        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
-          compute: jest.fn().mockReturnValue([mockMutation]),
-          mutate: jest.fn().mockReturnValue('mutated code'),
+        vi.mocked(MutantGenerator).mockImplementation(() => ({
+          compute: vi.fn().mockReturnValue([mockMutation]),
+          mutate: vi.fn().mockReturnValue('mutated code'),
         }))
-        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
-          runTestMethods: jest.fn().mockResolvedValue({
+        vi.mocked(ApexTestRunner).mockImplementation(() => ({
+          runTestMethods: vi.fn().mockResolvedValue({
             summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
           }),
-          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+          getTestMethodsPerLines: vi.fn().mockResolvedValue({
             outcome: 'Passed',
             passing: 1,
             failing: 0,
@@ -682,23 +682,23 @@ describe('MutationTestingService', () => {
     describe('When progress bar updates during mutation loop', () => {
       it('then should include remaining time in progress info', async () => {
         // Arrange
-        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockImplementation((name: string) => {
+        vi.mocked(ApexClassRepository).mockImplementation(() => ({
+          read: vi.fn().mockImplementation((name: string) => {
             if (name === 'TestClass') return Promise.resolve(mockApexClass)
             return Promise.resolve(mockTestClass)
           }),
-          update: jest.fn().mockResolvedValue({}),
-          getApexClassDependencies: jest.fn().mockResolvedValue([]),
+          update: vi.fn().mockResolvedValue({}),
+          getApexClassDependencies: vi.fn().mockResolvedValue([]),
         }))
-        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
-          compute: jest.fn().mockReturnValue([mockMutation]),
-          mutate: jest.fn().mockReturnValue('mutated code'),
+        vi.mocked(MutantGenerator).mockImplementation(() => ({
+          compute: vi.fn().mockReturnValue([mockMutation]),
+          mutate: vi.fn().mockReturnValue('mutated code'),
         }))
-        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
-          runTestMethods: jest.fn().mockResolvedValue({
+        vi.mocked(ApexTestRunner).mockImplementation(() => ({
+          runTestMethods: vi.fn().mockResolvedValue({
             summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
           }),
-          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+          getTestMethodsPerLines: vi.fn().mockResolvedValue({
             outcome: 'Passed',
             passing: 1,
             failing: 0,
@@ -711,7 +711,7 @@ describe('MutationTestingService', () => {
         await sut.process()
 
         // Assert
-        const updateCalls = (progress.update as jest.Mock).mock.calls
+        const updateCalls = vi.mocked(progress.update).mock.calls
         const lastUpdateCall = updateCalls[updateCalls.length - 1]
         expect(lastUpdateCall[1].info).toContain('Remaining:')
       })
@@ -719,20 +719,20 @@ describe('MutationTestingService', () => {
       it('then should show remaining time in deploy and running updates after first mutation', async () => {
         // Arrange
         const secondMutation = { ...mockMutation, replacement: '1' }
-        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockImplementation((name: string) => {
+        vi.mocked(ApexClassRepository).mockImplementation(() => ({
+          read: vi.fn().mockImplementation((name: string) => {
             if (name === 'TestClass') return Promise.resolve(mockApexClass)
             return Promise.resolve(mockTestClass)
           }),
-          update: jest.fn().mockResolvedValue({}),
-          getApexClassDependencies: jest.fn().mockResolvedValue([]),
+          update: vi.fn().mockResolvedValue({}),
+          getApexClassDependencies: vi.fn().mockResolvedValue([]),
         }))
-        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
-          compute: jest.fn().mockReturnValue([mockMutation, secondMutation]),
-          mutate: jest.fn().mockReturnValue('mutated code'),
+        vi.mocked(MutantGenerator).mockImplementation(() => ({
+          compute: vi.fn().mockReturnValue([mockMutation, secondMutation]),
+          mutate: vi.fn().mockReturnValue('mutated code'),
         }))
-        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
-          runTestMethods: jest.fn().mockResolvedValue({
+        vi.mocked(ApexTestRunner).mockImplementation(() => ({
+          runTestMethods: vi.fn().mockResolvedValue({
             summary: {
               outcome: 'Failed',
               passing: 0,
@@ -740,7 +740,7 @@ describe('MutationTestingService', () => {
               testsRan: 1,
             },
           }),
-          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+          getTestMethodsPerLines: vi.fn().mockResolvedValue({
             outcome: 'Passed',
             passing: 1,
             failing: 0,
@@ -753,7 +753,7 @@ describe('MutationTestingService', () => {
         await sut.process()
 
         // Assert
-        const updateCalls = (progress.update as jest.Mock).mock.calls
+        const updateCalls = vi.mocked(progress.update).mock.calls
         const infos = updateCalls.map(
           (call: [number, { info: string }]) => call[1].info
         )
@@ -863,25 +863,25 @@ describe('MutationTestingService', () => {
     describe('Given includeTestMethods with testMethodA, When processing, Then only testMethodA is used in testMethodsPerLine', () => {
       it('should only keep testMethodA in testMethodsPerLine', async () => {
         // Arrange
-        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockImplementation((name: string) => {
+        vi.mocked(ApexClassRepository).mockImplementation(() => ({
+          read: vi.fn().mockImplementation((name: string) => {
             if (name === 'TestClass') return Promise.resolve(mockApexClass)
             return Promise.resolve(mockTestClass)
           }),
-          update: jest.fn().mockResolvedValue({}),
-          getApexClassDependencies: jest.fn().mockResolvedValue([]),
+          update: vi.fn().mockResolvedValue({}),
+          getApexClassDependencies: vi.fn().mockResolvedValue([]),
         }))
-        const mockComputeFn = jest.fn().mockReturnValue([mockMutation])
-        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
+        const mockComputeFn = vi.fn().mockReturnValue([mockMutation])
+        vi.mocked(MutantGenerator).mockImplementation(() => ({
           compute: mockComputeFn,
-          mutate: jest.fn().mockReturnValue('mutated code'),
+          mutate: vi.fn().mockReturnValue('mutated code'),
         }))
-        const mockRunTestMethods = jest.fn().mockResolvedValue({
+        const mockRunTestMethods = vi.fn().mockResolvedValue({
           summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
         })
-        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
+        vi.mocked(ApexTestRunner).mockImplementation(() => ({
           runTestMethods: mockRunTestMethods,
-          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+          getTestMethodsPerLines: vi.fn().mockResolvedValue({
             outcome: 'Passed',
             passing: 1,
             failing: 0,
@@ -918,25 +918,25 @@ describe('MutationTestingService', () => {
     describe('Given excludeTestMethods with testMethodA, When processing with testMethodA and testMethodB covering line, Then testMethodA is excluded from testMethodsPerLine', () => {
       it('should exclude testMethodA from testMethodsPerLine', async () => {
         // Arrange
-        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockImplementation((name: string) => {
+        vi.mocked(ApexClassRepository).mockImplementation(() => ({
+          read: vi.fn().mockImplementation((name: string) => {
             if (name === 'TestClass') return Promise.resolve(mockApexClass)
             return Promise.resolve(mockTestClass)
           }),
-          update: jest.fn().mockResolvedValue({}),
-          getApexClassDependencies: jest.fn().mockResolvedValue([]),
+          update: vi.fn().mockResolvedValue({}),
+          getApexClassDependencies: vi.fn().mockResolvedValue([]),
         }))
-        const mockComputeFn = jest.fn().mockReturnValue([mockMutation])
-        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
+        const mockComputeFn = vi.fn().mockReturnValue([mockMutation])
+        vi.mocked(MutantGenerator).mockImplementation(() => ({
           compute: mockComputeFn,
-          mutate: jest.fn().mockReturnValue('mutated code'),
+          mutate: vi.fn().mockReturnValue('mutated code'),
         }))
-        const mockRunTestMethods = jest.fn().mockResolvedValue({
+        const mockRunTestMethods = vi.fn().mockResolvedValue({
           summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
         })
-        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
+        vi.mocked(ApexTestRunner).mockImplementation(() => ({
           runTestMethods: mockRunTestMethods,
-          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+          getTestMethodsPerLines: vi.fn().mockResolvedValue({
             outcome: 'Passed',
             passing: 1,
             failing: 0,
@@ -973,24 +973,24 @@ describe('MutationTestingService', () => {
     describe('Given excludeTestMethods that removes all tests for a line, When processing, Then that line is removed from coveredLines', () => {
       it('should not generate mutations for lines with no remaining test methods', async () => {
         // Arrange
-        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockImplementation((name: string) => {
+        vi.mocked(ApexClassRepository).mockImplementation(() => ({
+          read: vi.fn().mockImplementation((name: string) => {
             if (name === 'TestClass') return Promise.resolve(mockApexClass)
             return Promise.resolve(mockTestClass)
           }),
-          update: jest.fn().mockResolvedValue({}),
-          getApexClassDependencies: jest.fn().mockResolvedValue([]),
+          update: vi.fn().mockResolvedValue({}),
+          getApexClassDependencies: vi.fn().mockResolvedValue([]),
         }))
-        const mockComputeFn = jest.fn().mockReturnValue([mockMutation])
-        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
+        const mockComputeFn = vi.fn().mockReturnValue([mockMutation])
+        vi.mocked(MutantGenerator).mockImplementation(() => ({
           compute: mockComputeFn,
-          mutate: jest.fn().mockReturnValue('mutated code'),
+          mutate: vi.fn().mockReturnValue('mutated code'),
         }))
-        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
-          runTestMethods: jest.fn().mockResolvedValue({
+        vi.mocked(ApexTestRunner).mockImplementation(() => ({
+          runTestMethods: vi.fn().mockResolvedValue({
             summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
           }),
-          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+          getTestMethodsPerLines: vi.fn().mockResolvedValue({
             outcome: 'Passed',
             passing: 1,
             failing: 0,
@@ -1032,24 +1032,24 @@ describe('MutationTestingService', () => {
     describe('Given includeMutators, When processing, Then MutantGenerator.compute receives mutator filter', () => {
       it('should pass mutator filter with include to compute', async () => {
         // Arrange
-        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockImplementation((name: string) => {
+        vi.mocked(ApexClassRepository).mockImplementation(() => ({
+          read: vi.fn().mockImplementation((name: string) => {
             if (name === 'TestClass') return Promise.resolve(mockApexClass)
             return Promise.resolve(mockTestClass)
           }),
-          update: jest.fn().mockResolvedValue({}),
-          getApexClassDependencies: jest.fn().mockResolvedValue([]),
+          update: vi.fn().mockResolvedValue({}),
+          getApexClassDependencies: vi.fn().mockResolvedValue([]),
         }))
-        const mockComputeFn = jest.fn().mockReturnValue([mockMutation])
-        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
+        const mockComputeFn = vi.fn().mockReturnValue([mockMutation])
+        vi.mocked(MutantGenerator).mockImplementation(() => ({
           compute: mockComputeFn,
-          mutate: jest.fn().mockReturnValue('mutated code'),
+          mutate: vi.fn().mockReturnValue('mutated code'),
         }))
-        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
-          runTestMethods: jest.fn().mockResolvedValue({
+        vi.mocked(ApexTestRunner).mockImplementation(() => ({
+          runTestMethods: vi.fn().mockResolvedValue({
             summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
           }),
-          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+          getTestMethodsPerLines: vi.fn().mockResolvedValue({
             outcome: 'Passed',
             passing: 1,
             failing: 0,
@@ -1088,24 +1088,24 @@ describe('MutationTestingService', () => {
     describe('Given excludeMutators, When processing, Then MutantGenerator.compute receives mutator filter with exclude', () => {
       it('should pass mutator filter with exclude to compute', async () => {
         // Arrange
-        ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
-          read: jest.fn().mockImplementation((name: string) => {
+        vi.mocked(ApexClassRepository).mockImplementation(() => ({
+          read: vi.fn().mockImplementation((name: string) => {
             if (name === 'TestClass') return Promise.resolve(mockApexClass)
             return Promise.resolve(mockTestClass)
           }),
-          update: jest.fn().mockResolvedValue({}),
-          getApexClassDependencies: jest.fn().mockResolvedValue([]),
+          update: vi.fn().mockResolvedValue({}),
+          getApexClassDependencies: vi.fn().mockResolvedValue([]),
         }))
-        const mockComputeFn = jest.fn().mockReturnValue([mockMutation])
-        ;(MutantGenerator as jest.Mock).mockImplementation(() => ({
+        const mockComputeFn = vi.fn().mockReturnValue([mockMutation])
+        vi.mocked(MutantGenerator).mockImplementation(() => ({
           compute: mockComputeFn,
-          mutate: jest.fn().mockReturnValue('mutated code'),
+          mutate: vi.fn().mockReturnValue('mutated code'),
         }))
-        ;(ApexTestRunner as jest.Mock).mockImplementation(() => ({
-          runTestMethods: jest.fn().mockResolvedValue({
+        vi.mocked(ApexTestRunner).mockImplementation(() => ({
+          runTestMethods: vi.fn().mockResolvedValue({
             summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
           }),
-          getTestMethodsPerLines: jest.fn().mockResolvedValue({
+          getTestMethodsPerLines: vi.fn().mockResolvedValue({
             outcome: 'Passed',
             passing: 1,
             failing: 0,

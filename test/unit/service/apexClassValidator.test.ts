@@ -1,10 +1,11 @@
 import { Connection } from '@salesforce/core'
+import type { Mocked } from 'vitest'
 import { ApexClassRepository } from '../../../src/adapter/apexClassRepository.js'
 import { ApexClassValidator } from '../../../src/service/apexClassValidator.js'
 import { ApexClass } from '../../../src/type/ApexClass.js'
 
-jest.mock('../../../src/adapter/apexClassRepository.js')
-const readMock = jest.fn()
+vi.mock('../../../src/adapter/apexClassRepository.js')
+const readMock = vi.fn()
 
 describe('ApexClassValidator', () => {
   let sut: ApexClassValidator
@@ -16,12 +17,12 @@ describe('ApexClassValidator', () => {
 
   beforeEach(() => {
     // Arrange
-    ;(ApexClassRepository as jest.Mock).mockImplementation(() => ({
+    vi.mocked(ApexClassRepository).mockImplementation(() => ({
       read: readMock,
     }))
     readMock.mockReset()
 
-    sut = new ApexClassValidator({} as jest.Mocked<Connection>)
+    sut = new ApexClassValidator({} as Mocked<Connection>)
   })
 
   describe('validate', () => {

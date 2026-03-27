@@ -35,7 +35,7 @@ describe('ExperimentalSwitchMutator', () => {
             text: 'when else { handleDefault(); }',
             start: { tokenIndex: 8, line: 10 } as Token,
             stop: { tokenIndex: 15 } as Token,
-            getChild: jest.fn().mockImplementation(index => {
+            getChild: vi.fn().mockImplementation(index => {
               if (index === 0) return whenKeyword
               if (index === 1) return whenValueCtx
               return blockCtx
@@ -47,7 +47,7 @@ describe('ExperimentalSwitchMutator', () => {
             text: 'when 1 { handle1(); }',
             start: { tokenIndex: 2, line: 5 } as Token,
             stop: { tokenIndex: 6 } as Token,
-            getChild: jest.fn().mockImplementation(index => {
+            getChild: vi.fn().mockImplementation(index => {
               if (index === 0)
                 return new TerminalNode({ text: 'when' } as Token)
               if (index === 1)
@@ -68,10 +68,8 @@ describe('ExperimentalSwitchMutator', () => {
             text: 'switch on value { when 1 { handle1(); } when else { handleDefault(); } }',
             start: { tokenIndex: 0, line: 4 } as Token,
             stop: { tokenIndex: 16 } as Token,
-            whenControl: jest
-              .fn()
-              .mockReturnValue([regularWhenCtx, elseWhenCtx]),
-            getChild: jest.fn(),
+            whenControl: vi.fn().mockReturnValue([regularWhenCtx, elseWhenCtx]),
+            getChild: vi.fn(),
           } as unknown as ParserRuleContext
 
           // Act
@@ -107,7 +105,7 @@ describe('ExperimentalSwitchMutator', () => {
             text: 'when 1 { handle1(); }',
             start: { tokenIndex: 2, line: 5 } as Token,
             stop: { tokenIndex: 6 } as Token,
-            getChild: jest.fn().mockImplementation(index => {
+            getChild: vi.fn().mockImplementation(index => {
               if (index === 0) return whenKeyword
               if (index === 1)
                 return {
@@ -122,7 +120,7 @@ describe('ExperimentalSwitchMutator', () => {
 
           const switchCtx = {
             childCount: 5,
-            whenControl: jest.fn().mockReturnValue([regularWhenCtx]),
+            whenControl: vi.fn().mockReturnValue([regularWhenCtx]),
           } as unknown as ParserRuleContext
 
           // Act
@@ -159,7 +157,7 @@ describe('ExperimentalSwitchMutator', () => {
             text: 'when 1 { handle1(); }',
             start: { tokenIndex: 2, line: 5 } as Token,
             stop: { tokenIndex: 6 } as Token,
-            getChild: jest.fn().mockImplementation(index => {
+            getChild: vi.fn().mockImplementation(index => {
               if (index === 0) return whenKeyword
               if (index === 1) return firstWhenValueCtx
               return firstBlockCtx
@@ -182,7 +180,7 @@ describe('ExperimentalSwitchMutator', () => {
             text: 'when else { handleDefault(); }',
             start: { tokenIndex: 8, line: 10 } as Token,
             stop: { tokenIndex: 15 } as Token,
-            getChild: jest.fn().mockImplementation(index => {
+            getChild: vi.fn().mockImplementation(index => {
               if (index === 0) return whenKeyword
               if (index === 1) return elseWhenValueCtx
               return elseBlockCtx
@@ -191,7 +189,7 @@ describe('ExperimentalSwitchMutator', () => {
 
           const switchCtx = {
             childCount: 6,
-            whenControl: jest.fn().mockReturnValue([firstWhenCtx, elseWhenCtx]),
+            whenControl: vi.fn().mockReturnValue([firstWhenCtx, elseWhenCtx]),
           } as unknown as ParserRuleContext
 
           // Act
@@ -230,7 +228,7 @@ describe('ExperimentalSwitchMutator', () => {
             text: 'when else { handleDefault(); }',
             start: { tokenIndex: 8, line: 10 } as Token,
             stop: { tokenIndex: 15 } as Token,
-            getChild: jest.fn().mockImplementation(index => {
+            getChild: vi.fn().mockImplementation(index => {
               if (index === 0) return whenKeyword
               if (index === 1) return elseWhenValueCtx
               return elseBlockCtx
@@ -239,7 +237,7 @@ describe('ExperimentalSwitchMutator', () => {
 
           const switchCtx = {
             childCount: 5,
-            whenControl: jest.fn().mockReturnValue([elseWhenCtx]),
+            whenControl: vi.fn().mockReturnValue([elseWhenCtx]),
           } as unknown as ParserRuleContext
 
           // Act
@@ -281,7 +279,7 @@ describe('ExperimentalSwitchMutator', () => {
             text: 'when 1 { handle1(); }',
             start: { tokenIndex: 2, line: 5 } as Token,
             stop: { tokenIndex: 6 } as Token,
-            getChild: jest.fn().mockImplementation(index => {
+            getChild: vi.fn().mockImplementation(index => {
               if (index === 0) return whenKeyword
               if (index === 1) return firstWhenValueCtx
               return firstBlockCtx
@@ -306,7 +304,7 @@ describe('ExperimentalSwitchMutator', () => {
             text: 'when 2 { handle2(); }',
             start: { tokenIndex: 7, line: 8 } as Token,
             stop: { tokenIndex: 11 } as Token,
-            getChild: jest.fn().mockImplementation(index => {
+            getChild: vi.fn().mockImplementation(index => {
               if (index === 0) return whenKeyword
               if (index === 1) return secondWhenValueCtx
               return secondBlockCtx
@@ -315,9 +313,7 @@ describe('ExperimentalSwitchMutator', () => {
 
           const switchCtx = {
             childCount: 6,
-            whenControl: jest
-              .fn()
-              .mockReturnValue([firstWhenCtx, secondWhenCtx]),
+            whenControl: vi.fn().mockReturnValue([firstWhenCtx, secondWhenCtx]),
           } as unknown as ParserRuleContext
 
           // Act
@@ -362,7 +358,7 @@ describe('ExperimentalSwitchMutator', () => {
             text: 'when 1 { handle1(); }',
             start: { tokenIndex: 2, line: 5 } as Token,
             stop: { tokenIndex: 6 } as Token,
-            getChild: jest.fn().mockImplementation(index => {
+            getChild: vi.fn().mockImplementation(index => {
               if (index === 0) return whenKeyword
               if (index === 1) return firstWhenValueCtx
               return {
@@ -373,7 +369,7 @@ describe('ExperimentalSwitchMutator', () => {
 
           const switchCtx = {
             childCount: 5,
-            whenControl: jest.fn().mockReturnValue([firstWhenCtx]),
+            whenControl: vi.fn().mockReturnValue([firstWhenCtx]),
           } as unknown as ParserRuleContext
 
           // Act
@@ -391,7 +387,7 @@ describe('ExperimentalSwitchMutator', () => {
           // Arrange
           const switchCtx = {
             childCount: 3,
-            whenControl: jest.fn().mockReturnValue(null),
+            whenControl: vi.fn().mockReturnValue(null),
           } as unknown as ParserRuleContext
 
           // Act
@@ -420,7 +416,7 @@ describe('ExperimentalSwitchMutator', () => {
             text: 'when 1 {}',
             start: { tokenIndex: 2, line: 5 } as Token,
             stop: { tokenIndex: 6 } as Token,
-            getChild: jest.fn().mockImplementation(index => {
+            getChild: vi.fn().mockImplementation(index => {
               if (index === 0) return whenKeyword
               if (index === 1) return firstWhenValueCtx
               return { text: '' } as unknown as ParserRuleContext
@@ -443,7 +439,7 @@ describe('ExperimentalSwitchMutator', () => {
             text: 'when else { handleDefault(); }',
             start: { tokenIndex: 8, line: 10 } as Token,
             stop: { tokenIndex: 15 } as Token,
-            getChild: jest.fn().mockImplementation(index => {
+            getChild: vi.fn().mockImplementation(index => {
               if (index === 0) return whenKeyword
               if (index === 1) return elseWhenValueCtx
               return elseBlockCtx
@@ -452,7 +448,7 @@ describe('ExperimentalSwitchMutator', () => {
 
           const switchCtx = {
             childCount: 6,
-            whenControl: jest.fn().mockReturnValue([firstWhenCtx, elseWhenCtx]),
+            whenControl: vi.fn().mockReturnValue([firstWhenCtx, elseWhenCtx]),
           } as unknown as ParserRuleContext
 
           // Act
@@ -474,7 +470,7 @@ describe('ExperimentalSwitchMutator', () => {
           // Arrange
           const switchCtx = {
             childCount: 3,
-            whenControl: jest.fn().mockReturnValue([]),
+            whenControl: vi.fn().mockReturnValue([]),
           } as unknown as ParserRuleContext
 
           // Act
@@ -497,7 +493,7 @@ describe('ExperimentalSwitchMutator', () => {
             text: 'when 1 { handle1(); }',
             start: { tokenIndex: 2, line: 5 } as Token,
             stop: { tokenIndex: 6 } as Token,
-            getChild: jest.fn().mockImplementation(index => {
+            getChild: vi.fn().mockImplementation(index => {
               if (index === 0) return whenKeyword
               if (index === 1)
                 return {
@@ -513,7 +509,7 @@ describe('ExperimentalSwitchMutator', () => {
             text: 'when 2 { handle2(); }',
             start: { tokenIndex: 7, line: 8 } as Token,
             stop: { tokenIndex: 11 } as Token,
-            getChild: jest.fn().mockImplementation(index => {
+            getChild: vi.fn().mockImplementation(index => {
               if (index === 0) return whenKeyword
               if (index === 1)
                 return {
@@ -526,9 +522,7 @@ describe('ExperimentalSwitchMutator', () => {
 
           const switchCtx = {
             childCount: 6,
-            whenControl: jest
-              .fn()
-              .mockReturnValue([firstWhenCtx, secondWhenCtx]),
+            whenControl: vi.fn().mockReturnValue([firstWhenCtx, secondWhenCtx]),
           } as unknown as ParserRuleContext
 
           // Act
@@ -556,7 +550,7 @@ describe('ExperimentalSwitchMutator', () => {
             text: 'when 1 { handle1(); }',
             start: null,
             stop: { tokenIndex: 6 } as Token,
-            getChild: jest.fn().mockImplementation(index => {
+            getChild: vi.fn().mockImplementation(index => {
               if (index === 0) return whenKeyword
               if (index === 1) return firstWhenValueCtx
               return {
@@ -575,7 +569,7 @@ describe('ExperimentalSwitchMutator', () => {
             text: 'when 2 { handle2(); }',
             start: { tokenIndex: 7, line: 8 } as Token,
             stop: null,
-            getChild: jest.fn().mockImplementation(index => {
+            getChild: vi.fn().mockImplementation(index => {
               if (index === 0) return whenKeyword
               if (index === 1) return secondWhenValueCtx
               return {
@@ -586,9 +580,7 @@ describe('ExperimentalSwitchMutator', () => {
 
           const switchCtx = {
             childCount: 6,
-            whenControl: jest
-              .fn()
-              .mockReturnValue([firstWhenCtx, secondWhenCtx]),
+            whenControl: vi.fn().mockReturnValue([firstWhenCtx, secondWhenCtx]),
           } as unknown as ParserRuleContext
 
           // Act
@@ -619,7 +611,7 @@ describe('ExperimentalSwitchMutator', () => {
             text: 'when 1 { handle1(); }',
             start: { tokenIndex: 2, line: 5 } as Token,
             stop: { tokenIndex: 6 } as Token,
-            getChild: jest.fn().mockImplementation(index => {
+            getChild: vi.fn().mockImplementation(index => {
               if (index === 0) return whenKeyword
               if (index === 1) return firstWhenValueCtx
               return {
@@ -642,7 +634,7 @@ describe('ExperimentalSwitchMutator', () => {
             text: 'when else { handleDefault(); }',
             start: { tokenIndex: 7, line: 8 } as Token,
             stop: { tokenIndex: 12 } as Token,
-            getChild: jest.fn().mockImplementation(index => {
+            getChild: vi.fn().mockImplementation(index => {
               if (index === 0) return whenKeyword
               if (index === 1) return elseWhenValueCtx
               return {
@@ -655,7 +647,7 @@ describe('ExperimentalSwitchMutator', () => {
 
           const switchCtx = {
             childCount: 6,
-            whenControl: jest.fn().mockReturnValue([firstWhenCtx, elseWhenCtx]),
+            whenControl: vi.fn().mockReturnValue([firstWhenCtx, elseWhenCtx]),
           } as unknown as ParserRuleContext
 
           // Act

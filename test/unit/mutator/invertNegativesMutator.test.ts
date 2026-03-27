@@ -31,7 +31,7 @@ describe('InvertNegativesMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? operatorNode : innerExpression
           }),
           start: mockToken,
@@ -72,7 +72,7 @@ describe('InvertNegativesMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? operatorNode : innerExpression
           }),
           start: mockToken,
@@ -103,7 +103,7 @@ describe('InvertNegativesMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? operatorNode : innerExpression
           }),
         } as unknown as ParserRuleContext
@@ -129,7 +129,7 @@ describe('InvertNegativesMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? operatorNode : innerExpression
           }),
         } as unknown as ParserRuleContext

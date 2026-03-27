@@ -4,9 +4,9 @@ import { ApexClassRepository } from '../../../src/adapter/apexClassRepository.js
 describe('ApexClassRepository', () => {
   let connectionStub: Connection
   let sut: ApexClassRepository
-  const findMock = jest.fn()
-  const createMock = jest.fn()
-  const retrieveMock = jest.fn()
+  const findMock = vi.fn()
+  const createMock = vi.fn()
+  const retrieveMock = vi.fn()
 
   beforeEach(() => {
     connectionStub = {
@@ -42,7 +42,7 @@ describe('ApexClassRepository', () => {
   })
 
   afterEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   describe('when reading an ApexClass', () => {

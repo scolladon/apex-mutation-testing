@@ -34,7 +34,7 @@ describe('VoidMethodCallMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? methodCallExpression : semicolonNode
           }),
           start: mockToken,
@@ -74,7 +74,7 @@ describe('VoidMethodCallMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? dotExpression : semicolonNode
           }),
           start: mockToken,
@@ -104,7 +104,7 @@ describe('VoidMethodCallMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? assignExpression : semicolonNode
           }),
         } as unknown as ParserRuleContext
@@ -130,7 +130,7 @@ describe('VoidMethodCallMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? postOpExpression : semicolonNode
           }),
         } as unknown as ParserRuleContext

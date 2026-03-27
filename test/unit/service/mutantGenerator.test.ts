@@ -148,7 +148,7 @@ describe('MutantGenerator', () => {
       const classContent =
         'public class Test { public static Integer method() { return 1 + 2; } }'
       const coveredLines = new Set([1])
-      const warnSpy = jest
+      const warnSpy = vi
         .spyOn(process, 'emitWarning')
         .mockImplementation(() => undefined)
 

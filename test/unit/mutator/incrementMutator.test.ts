@@ -45,7 +45,7 @@ describe('IncrementMutator', () => {
       // Arrange
       const mockCtx = {
         childCount: 2,
-        getChild: jest.fn(index => {
+        getChild: vi.fn(index => {
           const terminalNode = new TerminalNode({ text: operator } as Token)
           return index === 1 ? terminalNode : {}
         }),
@@ -65,14 +65,14 @@ describe('IncrementMutator', () => {
       description: 'child count is not 2',
       ctx: {
         childCount: 1,
-        getChild: jest.fn(),
+        getChild: vi.fn(),
       },
     },
     {
       description: 'operator is not increment/decrement',
       ctx: {
         childCount: 2,
-        getChild: jest.fn().mockImplementation(index => {
+        getChild: vi.fn().mockImplementation(index => {
           return index === 1 ? { text: '+' } : {}
         }),
       },

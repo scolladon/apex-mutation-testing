@@ -45,9 +45,7 @@ describe('BoundaryConditionMutator', () => {
 
     return {
       childCount: children.length,
-      getChild: jest
-        .fn()
-        .mockImplementation((index: number) => children[index]),
+      getChild: vi.fn().mockImplementation((index: number) => children[index]),
       children,
     } as unknown as ParserRuleContext
   }
@@ -130,7 +128,7 @@ describe('BoundaryConditionMutator', () => {
       // Arrange
       const mockCtx = {
         childCount: 3,
-        getChild: jest.fn().mockReturnValue({ text: 'notTerminalNode' }),
+        getChild: vi.fn().mockReturnValue({ text: 'notTerminalNode' }),
         children: [{ text: 'a' }, { text: 'b' }, { text: 'c' }],
       } as unknown as ParserRuleContext
 
@@ -157,7 +155,7 @@ describe('BoundaryConditionMutator', () => {
 
       const mockCtx = {
         childCount: 3,
-        getChild: jest
+        getChild: vi
           .fn()
           .mockImplementation((index: number) => children[index]),
         children,
@@ -186,7 +184,7 @@ describe('BoundaryConditionMutator', () => {
 
       const mockCtx = {
         childCount: 3,
-        getChild: jest
+        getChild: vi
           .fn()
           .mockImplementation((index: number) => children[index]),
         children,

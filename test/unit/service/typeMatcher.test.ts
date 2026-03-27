@@ -1,3 +1,4 @@
+import type { Mocked } from 'vitest'
 import { SObjectDescribeRepository } from '../../../src/adapter/sObjectDescribeRepository.js'
 import {
   ApexClassTypeMatcher,
@@ -72,14 +73,14 @@ describe('ApexClassTypeMatcher', () => {
 
 describe('SObjectTypeMatcher', () => {
   let sut: SObjectTypeMatcher
-  let mockDescribeRepository: jest.Mocked<SObjectDescribeRepository>
+  let mockDescribeRepository: Mocked<SObjectDescribeRepository>
 
   beforeEach(() => {
     mockDescribeRepository = {
-      describe: jest.fn().mockResolvedValue(undefined),
-      isSObject: jest.fn(),
-      resolveFieldType: jest.fn(),
-    } as unknown as jest.Mocked<SObjectDescribeRepository>
+      describe: vi.fn().mockResolvedValue(undefined),
+      isSObject: vi.fn(),
+      resolveFieldType: vi.fn(),
+    } as unknown as Mocked<SObjectDescribeRepository>
     sut = new SObjectTypeMatcher(
       new Set(['Account', 'Contact', 'Custom__c']),
       mockDescribeRepository

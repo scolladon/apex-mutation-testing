@@ -35,7 +35,7 @@ describe('SwitchMutator', () => {
 
         const ctx = {
           childCount: 3,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             if (index === 0) return whenKeyword
             if (index === 1) return whenValueCtx
             return blockCtx
@@ -82,7 +82,7 @@ describe('SwitchMutator', () => {
 
         const ctx = {
           childCount: 3,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             if (index === 0) return whenKeyword
             if (index === 1) return whenValueCtx
             return blockCtx
@@ -126,7 +126,7 @@ describe('SwitchMutator', () => {
         // Arrange
         const ctx = {
           childCount: 3,
-          getChild: jest.fn().mockImplementation(() => {
+          getChild: vi.fn().mockImplementation(() => {
             return { text: 'something' } // Not a TerminalNode
           }),
         } as unknown as ParserRuleContext
@@ -148,7 +148,7 @@ describe('SwitchMutator', () => {
 
         const ctx = {
           childCount: 3,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             if (index === 0) return notWhenKeyword
             return { text: 'something' }
           }),

@@ -2,16 +2,15 @@ import { TestLevel } from '@salesforce/apex-node'
 import { Connection } from '@salesforce/core'
 import { ApexTestRunner } from '../../../src/adapter/apexTestRunner.js'
 
-const runTestAsynchronousMock = jest.fn()
+const runTestAsynchronousMock = vi.fn()
 
-jest.mock('@salesforce/apex-node', () => {
+vi.mock('@salesforce/apex-node', async importOriginal => {
+  const actual = await importOriginal<typeof import('@salesforce/apex-node')>()
   return {
-    TestService: jest.fn().mockImplementation(() => {
-      return {
-        // Mock the method you want to mock
-        runTestAsynchronous: runTestAsynchronousMock,
-      }
-    }),
+    ...actual,
+    TestService: vi.fn().mockImplementation(() => ({
+      runTestAsynchronous: runTestAsynchronousMock,
+    })),
   }
 })
 
@@ -25,7 +24,7 @@ describe('ApexTestRunner', () => {
   })
 
   afterEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   describe('when getting covered lines', () => {

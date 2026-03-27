@@ -206,7 +206,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
             return APEX_TYPE.STRING
           return undefined
         },
-        describe: jest.fn(),
+        describe: vi.fn(),
       } as unknown as SObjectDescribeRepository
 
       const code = `
@@ -243,7 +243,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
             return APEX_TYPE.INTEGER
           return undefined
         },
-        describe: jest.fn(),
+        describe: vi.fn(),
       } as unknown as SObjectDescribeRepository
 
       const code = `
