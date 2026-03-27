@@ -11,7 +11,7 @@ describe('LogicalOperatorMutator', () => {
     sut = new LogicalOperatorMutator()
     mockCtx = {
       childCount: 3,
-      getChild: jest.fn().mockImplementation(index => {
+      getChild: vi.fn().mockImplementation(index => {
         return index === 1 ? mockTerminalNode : {}
       }),
     } as unknown as ParserRuleContext

@@ -28,7 +28,7 @@ describe('EqualityConditionMutator', () => {
 
     return {
       childCount: 3,
-      getChild: jest.fn().mockImplementation((index: number) => {
+      getChild: vi.fn().mockImplementation((index: number) => {
         if (index === 1) return mockTerminalNode
         return { text: 'operand' }
       }),
@@ -72,9 +72,7 @@ describe('EqualityConditionMutator', () => {
     const mockCtx = {
       childCount: 3,
       children,
-      getChild: jest
-        .fn()
-        .mockImplementation((index: number) => children[index]),
+      getChild: vi.fn().mockImplementation((index: number) => children[index]),
     } as unknown as ParserRuleContext
 
     // Act

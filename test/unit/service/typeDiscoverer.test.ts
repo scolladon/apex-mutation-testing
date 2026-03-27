@@ -113,8 +113,8 @@ describe('TypeDiscoverer', () => {
         }
       `
       const matcher: TypeMatcher = {
-        matches: jest.fn().mockReturnValue(false),
-        collect: jest.fn(),
+        matches: vi.fn().mockReturnValue(false),
+        collect: vi.fn(),
         collectedTypes: new Set(),
       }
       const sut = new TypeDiscoverer().withMatcher(matcher)
@@ -208,8 +208,8 @@ describe('TypeDiscoverer', () => {
         }
       `
       const matcher: TypeMatcher = {
-        matches: jest.fn().mockReturnValue(false),
-        collect: jest.fn(),
+        matches: vi.fn().mockReturnValue(false),
+        collect: vi.fn(),
         collectedTypes: new Set(),
       }
       const sut = new TypeDiscoverer().withMatcher(matcher)
@@ -401,8 +401,8 @@ describe('TypeDiscoverer', () => {
         }
       `
       const matcher: TypeMatcher = {
-        matches: jest.fn().mockReturnValue(false),
-        collect: jest.fn(),
+        matches: vi.fn().mockReturnValue(false),
+        collect: vi.fn(),
         collectedTypes: new Set(),
       }
       const sut = new TypeDiscoverer().withMatcher(matcher)
@@ -429,8 +429,8 @@ describe('TypeDiscoverer', () => {
         }
       `
       const matcher: TypeMatcher = {
-        matches: jest.fn().mockReturnValue(false),
-        collect: jest.fn(),
+        matches: vi.fn().mockReturnValue(false),
+        collect: vi.fn(),
         collectedTypes: new Set(),
       }
       const sut = new TypeDiscoverer().withMatcher(matcher)
@@ -450,10 +450,10 @@ describe('TypeDiscoverer', () => {
         }
       `
       const matcher: TypeMatcher = {
-        matches: jest.fn().mockReturnValue(false),
-        collect: jest.fn(),
+        matches: vi.fn().mockReturnValue(false),
+        collect: vi.fn(),
         collectedTypes: new Set(),
-        populate: jest.fn().mockResolvedValue(undefined),
+        populate: vi.fn().mockResolvedValue(undefined),
       }
       const sut = new TypeDiscoverer().withMatcher(matcher)
 
@@ -472,8 +472,8 @@ describe('TypeDiscoverer', () => {
         }
       `
       const matcher: TypeMatcher = {
-        matches: jest.fn().mockReturnValue(false),
-        collect: jest.fn(),
+        matches: vi.fn().mockReturnValue(false),
+        collect: vi.fn(),
         collectedTypes: new Set(),
       }
       const sut = new TypeDiscoverer().withMatcher(matcher)
@@ -491,16 +491,16 @@ describe('TypeDiscoverer', () => {
         }
       `
       const matcher1: TypeMatcher = {
-        matches: jest.fn().mockReturnValue(false),
-        collect: jest.fn(),
+        matches: vi.fn().mockReturnValue(false),
+        collect: vi.fn(),
         collectedTypes: new Set(),
-        populate: jest.fn().mockResolvedValue(undefined),
+        populate: vi.fn().mockResolvedValue(undefined),
       }
       const matcher2: TypeMatcher = {
-        matches: jest.fn().mockReturnValue(false),
-        collect: jest.fn(),
+        matches: vi.fn().mockReturnValue(false),
+        collect: vi.fn(),
         collectedTypes: new Set(),
-        populate: jest.fn().mockResolvedValue(undefined),
+        populate: vi.fn().mockResolvedValue(undefined),
       }
       const sut = new TypeDiscoverer()
         .withMatcher(matcher1)
@@ -526,8 +526,8 @@ describe('TypeDiscoverer', () => {
         }
       `
       const matcher: TypeMatcher = {
-        matches: jest.fn().mockImplementation((t: string) => t === 'Account'),
-        collect: jest.fn(),
+        matches: vi.fn().mockImplementation((t: string) => t === 'Account'),
+        collect: vi.fn(),
         collectedTypes: new Set(),
       }
       const sut = new TypeDiscoverer().withMatcher(matcher)
@@ -649,8 +649,8 @@ describe('TypeDiscoverer', () => {
     it('Given withMatcher call, When chaining, Then returns same instance', () => {
       // Arrange
       const matcher: TypeMatcher = {
-        matches: jest.fn(),
-        collect: jest.fn(),
+        matches: vi.fn(),
+        collect: vi.fn(),
         collectedTypes: new Set(),
       }
       const sut = new TypeDiscoverer()
@@ -676,8 +676,8 @@ describe('TypeDiscoverer', () => {
         }
       `
       const matcher: TypeMatcher = {
-        matches: jest.fn().mockReturnValue(false),
-        collect: jest.fn(),
+        matches: vi.fn().mockReturnValue(false),
+        collect: vi.fn(),
         collectedTypes: new Set(),
       }
       const sut = new TypeDiscoverer().withMatcher(matcher)

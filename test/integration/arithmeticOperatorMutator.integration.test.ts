@@ -351,7 +351,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
             return APEX_TYPE.STRING
           return undefined
         },
-        describe: jest.fn(),
+        describe: vi.fn(),
       }
 
       // Act
@@ -387,7 +387,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
             return APEX_TYPE.STRING
           return undefined
         },
-        describe: jest.fn(),
+        describe: vi.fn(),
       }
 
       // Act
@@ -421,7 +421,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
           if (t === 'account' && f === 'name') return APEX_TYPE.STRING
           return undefined
         },
-        describe: jest.fn(),
+        describe: vi.fn(),
       }
 
       // Act
@@ -458,7 +458,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
           if (t === 'account' && f === 'name') return APEX_TYPE.STRING
           return undefined
         },
-        describe: jest.fn(),
+        describe: vi.fn(),
       }
 
       // Act

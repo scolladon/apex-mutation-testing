@@ -5,7 +5,7 @@ import { APEX_TYPE } from '../../../src/type/ApexMethod.js'
 describe('SObjectDescribeRepository', () => {
   let connectionStub: Connection
   let sut: SObjectDescribeRepository
-  const describeMock = jest.fn()
+  const describeMock = vi.fn()
 
   beforeEach(() => {
     connectionStub = {
@@ -15,7 +15,7 @@ describe('SObjectDescribeRepository', () => {
   })
 
   afterEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   describe('Given describe is called with sObject names', () => {

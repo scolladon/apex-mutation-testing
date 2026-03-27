@@ -196,10 +196,10 @@ describe('TypeRegistry', () => {
         ['myMethod', new Map([['account', 'Account']])],
       ])
       const matcher: TypeMatcher = {
-        matches: jest.fn().mockReturnValue(true),
-        collect: jest.fn(),
+        matches: vi.fn().mockReturnValue(true),
+        collect: vi.fn(),
         collectedTypes: new Set(),
-        getFieldType: jest.fn().mockReturnValue(APEX_TYPE.STRING),
+        getFieldType: vi.fn().mockReturnValue(APEX_TYPE.STRING),
       }
       const registry = new TypeRegistry(
         methodTypeTable,
@@ -234,10 +234,10 @@ describe('TypeRegistry', () => {
       ])
       const classFields = new Map<string, string>([['contact', 'Contact']])
       const matcher: TypeMatcher = {
-        matches: jest.fn().mockReturnValue(true),
-        collect: jest.fn(),
+        matches: vi.fn().mockReturnValue(true),
+        collect: vi.fn(),
         collectedTypes: new Set(),
-        getFieldType: jest.fn().mockReturnValue(APEX_TYPE.STRING),
+        getFieldType: vi.fn().mockReturnValue(APEX_TYPE.STRING),
       }
       const registry = new TypeRegistry(
         methodTypeTable,
@@ -286,10 +286,10 @@ describe('TypeRegistry', () => {
     it('Given dotted expression where fieldType has no name mapping, When resolveType, Then falls back to rootType as typeName', () => {
       // Arrange
       const matcher: TypeMatcher = {
-        matches: jest.fn().mockReturnValue(true),
-        collect: jest.fn(),
+        matches: vi.fn().mockReturnValue(true),
+        collect: vi.fn(),
         collectedTypes: new Set(),
-        getFieldType: jest.fn().mockReturnValue('UNMAPPED_TYPE' as ApexType),
+        getFieldType: vi.fn().mockReturnValue('UNMAPPED_TYPE' as ApexType),
       }
       const registry = new TypeRegistry(
         new Map([
@@ -321,10 +321,10 @@ describe('TypeRegistry', () => {
     it('Given dotted expression where getFieldType returns undefined, When resolveType, Then returns null', () => {
       // Arrange
       const matcher: TypeMatcher = {
-        matches: jest.fn().mockReturnValue(true),
-        collect: jest.fn(),
+        matches: vi.fn().mockReturnValue(true),
+        collect: vi.fn(),
         collectedTypes: new Set(),
-        getFieldType: jest.fn().mockReturnValue(undefined),
+        getFieldType: vi.fn().mockReturnValue(undefined),
       }
       const registry = new TypeRegistry(
         new Map([
@@ -353,8 +353,8 @@ describe('TypeRegistry', () => {
     it('Given dotted expression where no matcher has getFieldType, When resolveType, Then returns null', () => {
       // Arrange
       const matcher: TypeMatcher = {
-        matches: jest.fn().mockReturnValue(false),
-        collect: jest.fn(),
+        matches: vi.fn().mockReturnValue(false),
+        collect: vi.fn(),
         collectedTypes: new Set(),
       }
       const registry = new TypeRegistry(
@@ -617,8 +617,8 @@ describe('TypeRegistry', () => {
     it('Given variable type matching a matcher, When resolveType, Then classifies as OBJECT', () => {
       // Arrange
       const matcher: TypeMatcher = {
-        matches: jest.fn().mockReturnValue(true),
-        collect: jest.fn(),
+        matches: vi.fn().mockReturnValue(true),
+        collect: vi.fn(),
         collectedTypes: new Set(),
       }
       const variableScopes = new Map([
@@ -654,8 +654,8 @@ describe('TypeRegistry', () => {
     it('Given variable type not matching any known type or matcher, When resolveType, Then classifies as VOID', () => {
       // Arrange
       const matcher: TypeMatcher = {
-        matches: jest.fn().mockReturnValue(false),
-        collect: jest.fn(),
+        matches: vi.fn().mockReturnValue(false),
+        collect: vi.fn(),
         collectedTypes: new Set(),
       }
       const variableScopes = new Map([

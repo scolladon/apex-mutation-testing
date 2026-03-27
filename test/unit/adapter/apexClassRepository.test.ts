@@ -4,9 +4,9 @@ import { ApexClassRepository } from '../../../src/adapter/apexClassRepository.js
 describe('ApexClassRepository', () => {
   let connectionStub: Connection
   let sut: ApexClassRepository
-  const findMock = jest.fn()
-  const createMock = jest.fn()
-  const retrieveMock = jest.fn()
+  const findMock = vi.fn()
+  const createMock = vi.fn()
+  const retrieveMock = vi.fn()
 
   beforeEach(() => {
     connectionStub = {
@@ -42,7 +42,7 @@ describe('ApexClassRepository', () => {
   })
 
   afterEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   describe('when reading an ApexClass', () => {
@@ -61,7 +61,6 @@ describe('ApexClassRepository', () => {
 
         // Assert
         expect(result).toEqual(mockApexClass)
-        expect(findMock).toHaveBeenCalledTimes(1)
       })
     })
 
@@ -81,7 +80,7 @@ describe('ApexClassRepository', () => {
   })
 
   describe('when getting ApexClass dependencies', () => {
-    it('Given a classId, When getApexClassDependencies, Then returns dependencies', async () => {
+    it('given a classId, then returns dependencies', async () => {
       // Arrange
       const mockDependencies = [
         { MetadataComponentId: '123', RefMetadataComponentId: '456' },

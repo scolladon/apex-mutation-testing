@@ -684,15 +684,15 @@ Four test tiers with distinct scopes and runners:
 │  npm run test:e2e                                          │
 │  setup → execute command → git diff snapshot → teardown    │
 ├────────────────────────────────────────────────────────────┤
-│  NUT Tests (Jest + experimental ESM, mocked Connection)    │
-│  jest --config jest.config.nut.js                          │
+│  NUT Tests (Vitest, mocked Connection)                     │
+│  vitest run --config vitest.config.nut.ts                  │
 │  SfCommand.run() with mocked org, validators, services     │
 ├────────────────────────────────────────────────────────────┤
-│  Integration Tests (Jest, real ANTLR parsing)              │
+│  Integration Tests (Vitest, real ANTLR parsing)            │
 │  test/integration/*.integration.test.ts                    │
 │  Source → parse → mutate → verify mutations                │
 ├────────────────────────────────────────────────────────────┤
-│  Unit Tests (Jest, 100% coverage threshold)                │
+│  Unit Tests (Vitest, 100% coverage threshold)              │
 │  test/unit/**/*.test.ts                                    │
 │  Isolated class/function tests with mocked dependencies    │
 └────────────────────────────────────────────────────────────┘
@@ -700,12 +700,12 @@ Four test tiers with distinct scopes and runners:
 
 | Tier | Runner | Config | Org Required | Speed | Scope |
 | --- | --- | --- | --- | --- | --- |
-| Unit | Jest | `jest.config.js` | No | ~8s | Class-level isolation |
-| Integration | Jest | `jest.config.js` | No | Included in unit run | ANTLR parse + mutate |
-| NUT | Jest (ESM) | `jest.config.nut.js` | No (mocked) | ~1.5s | Command-level with mocked org |
+| Unit | Vitest | `vitest.config.ts` | No | ~8s | Class-level isolation |
+| Integration | Vitest | `vitest.config.ts` | No | Included in unit run | ANTLR parse + mutate |
+| NUT | Vitest | `vitest.config.nut.ts` | No (mocked) | ~1.5s | Command-level with mocked org |
 | E2E | npm scripts | N/A | Yes | Minutes | Full plugin command against real org |
 
-**NUT tests** use `--experimental-vm-modules` for native ESM support, enabling `jest.unstable_mockModule()` with dynamic imports to mock `@salesforce/core` and `@salesforce/sf-plugins-core` at the module level.
+**NUT tests** use Vitest's `vi.mock()` (auto-hoisted) with static imports to mock `@salesforce/core` and `@salesforce/sf-plugins-core` at the module level. Variables read directly inside mock factories are declared with `vi.hoisted()` to ensure they are initialized before factory execution.
 
 **E2E tests** run the published plugin command via `sf apex mutation test run`,
 normalize the generated HTML report (parse embedded JSON, sort mutants deterministically

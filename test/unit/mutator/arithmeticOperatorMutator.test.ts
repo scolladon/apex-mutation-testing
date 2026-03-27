@@ -152,7 +152,7 @@ describe('ArithmeticOperatorMutator', () => {
         const sut = new ArithmeticOperatorMutator(typeRegistry)
         const ctx = {
           childCount: 3,
-          getChild: jest.fn().mockReturnValue({}),
+          getChild: vi.fn().mockReturnValue({}),
         } as unknown as ParserRuleContext
 
         // Act
@@ -216,7 +216,7 @@ describe('ArithmeticOperatorMutator', () => {
         } as unknown as Token)
         const ctx = {
           childCount: 3,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             if (index === 0) return { text: 'a' }
             if (index === 1) return mockTerminalNode
             return { text: 'b' }
@@ -239,7 +239,7 @@ describe('ArithmeticOperatorMutator', () => {
         } as unknown as Token)
         const ctx = {
           childCount: 3,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             if (index === 0) return { text: 'a' }
             if (index === 1) return mockTerminalNode
             return { text: 'b' }
@@ -270,7 +270,7 @@ describe('ArithmeticOperatorMutator', () => {
         const sut = new ArithmeticOperatorMutator(typeRegistry)
         const assignCtx = {
           childCount: 3,
-          getChild: jest.fn().mockReturnValue({}),
+          getChild: vi.fn().mockReturnValue({}),
         } as unknown as ParserRuleContext
 
         // Act
@@ -286,7 +286,7 @@ describe('ArithmeticOperatorMutator', () => {
         const sut = new ArithmeticOperatorMutator(typeRegistry)
         const assignCtx = {
           childCount: 3,
-          getChild: jest.fn().mockReturnValue({}),
+          getChild: vi.fn().mockReturnValue({}),
         } as unknown as ParserRuleContext
         const arithmeticCtx = createArithmeticCtxInMethod(
           'a',

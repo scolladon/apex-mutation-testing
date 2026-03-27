@@ -31,7 +31,7 @@ describe('RemoveIncrementsMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? innerExpression : operatorNode
           }),
           start: mockToken,
@@ -72,7 +72,7 @@ describe('RemoveIncrementsMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? innerExpression : operatorNode
           }),
           start: mockToken,
@@ -112,7 +112,7 @@ describe('RemoveIncrementsMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? operatorNode : innerExpression
           }),
           start: mockToken,
@@ -152,7 +152,7 @@ describe('RemoveIncrementsMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? operatorNode : innerExpression
           }),
           start: mockToken,
@@ -182,7 +182,7 @@ describe('RemoveIncrementsMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? operatorNode : innerExpression
           }),
         } as unknown as ParserRuleContext
@@ -208,7 +208,7 @@ describe('RemoveIncrementsMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? operatorNode : innerExpression
           }),
         } as unknown as ParserRuleContext
@@ -246,7 +246,7 @@ describe('RemoveIncrementsMutator', () => {
         // Arrange
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? { text: 'i' } : { text: '++' } // Not a TerminalNode
           }),
         } as unknown as ParserRuleContext
@@ -266,7 +266,7 @@ describe('RemoveIncrementsMutator', () => {
         // Arrange
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? { text: '++' } : { text: 'i' } // Not a TerminalNode
           }),
         } as unknown as ParserRuleContext
@@ -288,7 +288,7 @@ describe('RemoveIncrementsMutator', () => {
 
         const ctx = {
           childCount: 2,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             return index === 0 ? { text: 'i' } : operatorNode
           }),
         } as unknown as ParserRuleContext

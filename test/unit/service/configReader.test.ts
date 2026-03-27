@@ -3,19 +3,19 @@ import { readFile } from 'node:fs/promises'
 import { ConfigReader } from '../../../src/service/configReader.js'
 import { ApexMutationParameter } from '../../../src/type/ApexMutationParameter.js'
 
-jest.mock('node:fs/promises')
+vi.mock('node:fs/promises')
 
 let re2Behavior: 'noop' | 'throw-error' | 'throw-string' = 'noop'
-jest.mock('re2', () => {
-  return function MockRE2() {
+vi.mock('re2', () => ({
+  default: function MockRE2() {
     if (re2Behavior === 'throw-error') {
       throw new Error('invalid regex')
     }
     if (re2Behavior === 'throw-string') {
       throw 'string thrown'
     }
-  }
-})
+  },
+}))
 
 describe('ConfigReader', () => {
   let sut: ConfigReader
@@ -28,7 +28,7 @@ describe('ConfigReader', () => {
   beforeEach(() => {
     sut = new ConfigReader()
     re2Behavior = 'noop'
-    ;(readFile as jest.Mock).mockRejectedValue({ code: 'ENOENT' })
+    vi.mocked(readFile).mockRejectedValue({ code: 'ENOENT' })
   })
 
   it('Given no config file exists, When resolving config, Then returns parameter defaults', async () => {
@@ -49,7 +49,7 @@ describe('ConfigReader', () => {
   it('Given valid config file with mutator include, When resolving config, Then returns includeMutators from file', async () => {
     // Arrange
     const config = { mutators: { include: ['ArithmeticOperator'] } }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
     const parameter = { ...baseParameter }
 
     // Act
@@ -62,7 +62,7 @@ describe('ConfigReader', () => {
   it('Given valid config file with testMethods exclude, When resolving config, Then returns excludeTestMethods from file', async () => {
     // Arrange
     const config = { testMethods: { exclude: ['slowTest'] } }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
     const parameter = { ...baseParameter }
 
     // Act
@@ -75,7 +75,7 @@ describe('ConfigReader', () => {
   it('Given valid config file with threshold, When resolving config, Then returns threshold from file', async () => {
     // Arrange
     const config = { threshold: 80 }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
     const parameter = { ...baseParameter }
 
     // Act
@@ -87,7 +87,7 @@ describe('ConfigReader', () => {
 
   it('Given invalid JSON in config file, When resolving config, Then throws parse error', async () => {
     // Arrange
-    ;(readFile as jest.Mock).mockResolvedValue('{ invalid json }')
+    vi.mocked(readFile).mockResolvedValue('{ invalid json }')
     const parameter = { ...baseParameter }
 
     // Act & Assert
@@ -98,7 +98,7 @@ describe('ConfigReader', () => {
 
   it('Given non-Error thrown when reading config, When resolving config, Then wraps it in error message', async () => {
     // Arrange
-    ;(readFile as jest.Mock).mockRejectedValue('unexpected string error')
+    vi.mocked(readFile).mockRejectedValue('unexpected string error')
     const parameter = { ...baseParameter }
 
     // Act & Assert
@@ -114,7 +114,7 @@ describe('ConfigReader', () => {
       testMethods: { exclude: ['fileExcludeMethod'] },
       threshold: 60,
     }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
     const parameter: ApexMutationParameter = {
       ...baseParameter,
       includeMutators: ['FromCLI'],
@@ -152,7 +152,7 @@ describe('ConfigReader', () => {
     const config = {
       mutators: { include: ['ArithmeticOperator'], exclude: ['Increment'] },
     }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
     const parameter = { ...baseParameter }
 
     // Act & Assert
@@ -166,7 +166,7 @@ describe('ConfigReader', () => {
     const config = {
       testMethods: { include: ['testA'], exclude: ['testB'] },
     }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
     const parameter = { ...baseParameter }
 
     // Act & Assert
@@ -178,7 +178,7 @@ describe('ConfigReader', () => {
   it('Given config file with threshold below 0, When resolving config, Then throws validation error', async () => {
     // Arrange
     const config = { threshold: -1 }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
     const parameter = { ...baseParameter }
 
     // Act & Assert
@@ -190,7 +190,7 @@ describe('ConfigReader', () => {
   it('Given config file with threshold above 100, When resolving config, Then throws validation error', async () => {
     // Arrange
     const config = { threshold: 101 }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
     const parameter = { ...baseParameter }
 
     // Act & Assert
@@ -202,7 +202,7 @@ describe('ConfigReader', () => {
   it('Given explicit configFile path that exists, When resolving config, Then reads from that path', async () => {
     // Arrange
     const config = { threshold: 50 }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
     const parameter: ApexMutationParameter = {
       ...baseParameter,
       configFile: 'custom/config.json',
@@ -219,7 +219,7 @@ describe('ConfigReader', () => {
   it('Given config file with valid lines ranges, When resolving config, Then returns lines from file', async () => {
     // Arrange
     const config = { lines: ['1-10', '25-30', '42'] }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
     const parameter = { ...baseParameter }
 
     // Act
@@ -232,7 +232,7 @@ describe('ConfigReader', () => {
   it('Given CLI lines and config file lines, When resolving config, Then CLI lines override config file', async () => {
     // Arrange
     const config = { lines: ['1-10'] }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
     const parameter: ApexMutationParameter = {
       ...baseParameter,
       lines: ['50-60'],
@@ -248,7 +248,7 @@ describe('ConfigReader', () => {
   it('Given config file with invalid line range format, When resolving config, Then throws validation error', async () => {
     // Arrange
     const config = { lines: ['abc'] }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
     const parameter = { ...baseParameter }
 
     // Act & Assert
@@ -258,7 +258,7 @@ describe('ConfigReader', () => {
   it('Given config file with reversed line range, When resolving config, Then throws validation error', async () => {
     // Arrange
     const config = { lines: ['10-5'] }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
     const parameter = { ...baseParameter }
 
     // Act & Assert
@@ -270,7 +270,7 @@ describe('ConfigReader', () => {
   it('Given config file with single line number, When resolving config, Then accepts it', async () => {
     // Arrange
     const config = { lines: ['42'] }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
     const parameter = { ...baseParameter }
 
     // Act
@@ -283,7 +283,7 @@ describe('ConfigReader', () => {
   it('Given config file with valid skipPatterns, When resolving config, Then returns skipPatterns from file', async () => {
     // Arrange
     const config = { skipPatterns: ['System\\.debug', 'Logger\\.'] }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
     const parameter = { ...baseParameter }
 
     // Act
@@ -296,7 +296,7 @@ describe('ConfigReader', () => {
   it('Given CLI skipPatterns and config file skipPatterns, When resolving config, Then CLI overrides config file', async () => {
     // Arrange
     const config = { skipPatterns: ['FromFile'] }
-    ;(readFile as jest.Mock).mockResolvedValue(JSON.stringify(config))
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
     const parameter: ApexMutationParameter = {
       ...baseParameter,
       skipPatterns: ['FromCLI'],

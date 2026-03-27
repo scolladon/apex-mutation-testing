@@ -16,19 +16,17 @@
   "devDependencies": {
     "@biomejs/biome": "2.4.9",
     "@commitlint/config-conventional": "^20.5.0",
-    "@jest/globals": "^30.3.0",
     "@oclif/plugin-help": "^6.2.40",
     "@salesforce/dev-config": "^4.3.3",
     "@types/async": "^3.2.25",
-    "@types/jest": "^30.0.0",
+    "@vitest/coverage-v8": "^4.1.2",
     "husky": "^9.1.7",
-    "jest": "^30.3.0",
     "knip": "^6.0.6",
     "oclif": "^4.22.96",
     "shx": "^0.4.0",
-    "ts-jest": "^29.4.6",
     "tslib": "^2.8.1",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2",
     "wireit": "^0.14.12"
   },
   "engines": {
@@ -219,7 +217,7 @@
       ]
     },
     "test:nut": {
-      "command": "NODE_OPTIONS='--experimental-vm-modules' jest --config jest.config.nut.js --no-coverage",
+      "command": "vitest run --config vitest.config.nut.ts",
       "files": [
         "src/**/*.ts",
         "test/nut/**/*.ts",
@@ -233,10 +231,10 @@
       ]
     },
     "test:unit": {
-      "command": "jest --coverage",
+      "command": "vitest run --coverage",
       "files": [
         "src/**/*.ts",
-        "__tests__/**/*.ts",
+        "test/**/*.ts",
         "messages/**",
         "**/tsconfig.json"
       ],

@@ -35,7 +35,7 @@ describe('RemoveConditionalsMutator', () => {
 
         const ctx = {
           childCount: 3,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             if (index === 0) return ifKeyword
             if (index === 1) return conditionCtx
             return thenBlock
@@ -89,7 +89,7 @@ describe('RemoveConditionalsMutator', () => {
 
         const ctx = {
           childCount: 5,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             if (index === 0) return ifKeyword
             if (index === 1) return conditionCtx
             if (index === 2) return thenBlock
@@ -136,7 +136,7 @@ describe('RemoveConditionalsMutator', () => {
         // Arrange
         const ctx = {
           childCount: 3,
-          getChild: jest.fn().mockImplementation(() => {
+          getChild: vi.fn().mockImplementation(() => {
             return { text: 'something' } // Not a TerminalNode
           }),
         } as unknown as ParserRuleContext
@@ -158,7 +158,7 @@ describe('RemoveConditionalsMutator', () => {
 
         const ctx = {
           childCount: 3,
-          getChild: jest.fn().mockImplementation(index => {
+          getChild: vi.fn().mockImplementation(index => {
             if (index === 0) return notIfKeyword
             return { text: 'something' }
           }),

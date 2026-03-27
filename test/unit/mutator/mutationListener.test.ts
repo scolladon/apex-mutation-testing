@@ -1,25 +1,26 @@
 import { MethodCallContext } from 'apex-parser'
 import RE2 from 're2'
+import type { Mocked } from 'vitest'
 import { BaseListener } from '../../../src/mutator/baseListener.js'
 import { MutationListener } from '../../../src/mutator/mutationListener.js'
 
 describe('MutationListener', () => {
   // Arrange
-  let mockListener1: jest.Mocked<BaseListener>
-  let mockListener2: jest.Mocked<BaseListener>
+  let mockListener1: Mocked<BaseListener>
+  let mockListener2: Mocked<BaseListener>
   let sut: MutationListener
   let coveredLines: Set<number>
 
   beforeEach(() => {
     mockListener1 = {
-      enterMethodCall: jest.fn(),
-      exitMethodCall: jest.fn(),
-    } as unknown as jest.Mocked<BaseListener>
+      enterMethodCall: vi.fn(),
+      exitMethodCall: vi.fn(),
+    } as unknown as Mocked<BaseListener>
 
     mockListener2 = {
-      enterMethodCall: jest.fn(),
-      exitMethodCall: jest.fn(),
-    } as unknown as jest.Mocked<BaseListener>
+      enterMethodCall: vi.fn(),
+      exitMethodCall: vi.fn(),
+    } as unknown as Mocked<BaseListener>
 
     coveredLines = new Set([10, 20, 30])
     sut = new MutationListener([mockListener1, mockListener2], coveredLines)
@@ -77,7 +78,7 @@ describe('MutationListener', () => {
     // Arrange
     const mockListener3 = {
       // Doesn't implement enterMethodCall
-    } as unknown as jest.Mocked<BaseListener>
+    } as unknown as Mocked<BaseListener>
     sut = new MutationListener([mockListener1, mockListener3], coveredLines)
 
     // Act

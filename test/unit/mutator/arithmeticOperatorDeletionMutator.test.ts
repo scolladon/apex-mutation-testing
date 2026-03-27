@@ -462,7 +462,7 @@ describe('ArithmeticOperatorDeletionMutator', () => {
       const sut = new ArithmeticOperatorDeletionMutator()
       const ctx = {
         childCount: 3,
-        getChild: jest.fn().mockReturnValue({}),
+        getChild: vi.fn().mockReturnValue({}),
       } as unknown as ParserRuleContext
 
       // Act
