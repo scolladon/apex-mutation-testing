@@ -11,6 +11,13 @@ import type { ApexMethod } from '../type/ApexMethod.js'
 import { classifyApexType, TypeRegistry } from '../type/TypeRegistry.js'
 import { TypeMatcher } from './typeMatcher.js'
 
+// Apex catch clause grammar: catch ( ExceptionType varName ) block
+// Indices from start: [0]=catch [1]=( [2]=ExceptionType [3]=varName [4]=) [5]=block
+// Minimum 6 children; ExceptionType and varName are at fixed offsets from the end.
+const CATCH_TYPE_OFFSET = 4 // ctx.children.length - 4 => ExceptionType
+const CATCH_VAR_OFFSET = 3 // ctx.children.length - 3 => varName
+const CATCH_MIN_CHILDREN = 6
+
 // @ts-ignore: ANTLR listener implementing only the hooks we need
 class TypeDiscoverListener implements ApexParserListener {
   private _methodTypeTable: Map<string, ApexMethod> = new Map()
@@ -128,6 +135,17 @@ class TypeDiscoverListener implements ApexParserListener {
     if (ctx.children && ctx.children.length >= 2) {
       const typeName = ctx.children[0].text
       const varName = ctx.children[1].text
+      this.currentMethodVariables.set(varName, typeName.toLowerCase())
+      this.collectToMatchers(typeName)
+    }
+  }
+
+  enterCatchClause(ctx: ParserRuleContext): void {
+    /* istanbul ignore next -- defensive guard: parser always produces well-formed contexts */
+    if (ctx.children && ctx.children.length >= CATCH_MIN_CHILDREN) {
+      const typeName =
+        ctx.children[ctx.children.length - CATCH_TYPE_OFFSET].text
+      const varName = ctx.children[ctx.children.length - CATCH_VAR_OFFSET].text
       this.currentMethodVariables.set(varName, typeName.toLowerCase())
       this.collectToMatchers(typeName)
     }

@@ -1,5 +1,7 @@
 # Changelog
 
+<!-- markdownlint-disable MD024 -->
+
 ## [1.5.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.4.0...v1.5.0) (2026-02-27)
 
 

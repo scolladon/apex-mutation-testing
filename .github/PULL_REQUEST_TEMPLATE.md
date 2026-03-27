@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD025 -->
 <!--
 Thanks for sending a pull request! Please make sure to have a look to the contribution guidelines, then fill out the blanks below.
 -->

@@ -9,14 +9,10 @@ export interface TypeMatcher {
   getFieldType?(objectType: string, fieldName: string): ApexType | undefined
 }
 
-export class ApexClassTypeMatcher implements TypeMatcher {
-  private readonly _collectedTypes: Set<string> = new Set()
+abstract class BaseTypeMatcher implements TypeMatcher {
+  protected readonly _collectedTypes: Set<string> = new Set()
 
-  constructor(private apexClassTypes: Set<string>) {}
-
-  matches(typeName: string): boolean {
-    return this.apexClassTypes.has(typeName)
-  }
+  abstract matches(typeName: string): boolean
 
   collect(typeName: string): void {
     if (this.matches(typeName)) {
@@ -29,26 +25,26 @@ export class ApexClassTypeMatcher implements TypeMatcher {
   }
 }
 
-export class SObjectTypeMatcher implements TypeMatcher {
-  private readonly _collectedTypes: Set<string> = new Set()
+export class ApexClassTypeMatcher extends BaseTypeMatcher {
+  constructor(private apexClassTypes: Set<string>) {
+    super()
+  }
 
+  matches(typeName: string): boolean {
+    return this.apexClassTypes.has(typeName)
+  }
+}
+
+export class SObjectTypeMatcher extends BaseTypeMatcher {
   constructor(
     private sObjectTypes: Set<string>,
     private readonly describeRepository?: SObjectDescribeRepository
-  ) {}
+  ) {
+    super()
+  }
 
   matches(typeName: string): boolean {
     return this.sObjectTypes.has(typeName)
-  }
-
-  collect(typeName: string): void {
-    if (this.matches(typeName)) {
-      this._collectedTypes.add(typeName)
-    }
-  }
-
-  get collectedTypes(): ReadonlySet<string> {
-    return this._collectedTypes
   }
 
   async populate(): Promise<void> {

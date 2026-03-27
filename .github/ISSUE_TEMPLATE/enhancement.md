@@ -6,6 +6,7 @@ labels: enhancement
 assignees: scolladon
 ---
 
+<!-- markdownlint-disable MD001 -->
 ### Is your proposal related to a problem?
 
 ---
