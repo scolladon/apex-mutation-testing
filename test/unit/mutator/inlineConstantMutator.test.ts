@@ -49,6 +49,22 @@ describe('InlineConstantMutator', () => {
     sut = new InlineConstantMutator()
   })
 
+  describe('Given a literal that matches no handler', () => {
+    describe('When entering the literal', () => {
+      it('Then creates no mutations', () => {
+        // Arrange
+        const node = createTerminalNode('unknown')
+        const ctx = createLiteralCtx('unknown', node)
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
   describe('Given a boolean literal true', () => {
     describe('When entering the literal', () => {
       it('Then should create mutation replacing true with false', () => {

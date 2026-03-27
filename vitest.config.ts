@@ -8,7 +8,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['**/test/**/*.test.ts'],
-    exclude: ['**/test/nut/**', '**/test/utils/**', '**/node_modules/**'],
+    exclude: ['**/test/utils/**', '**/node_modules/**'],
     clearMocks: true,
     coverage: {
       provider: 'v8',
@@ -20,6 +20,7 @@ export default defineConfig({
         lines: 100,
         statements: 100,
       },
+      include: ['src/**/*.ts'],
       exclude: ['test/utils/**', 'reports/**'],
     },
   },

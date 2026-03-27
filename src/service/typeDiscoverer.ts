@@ -41,18 +41,20 @@ class TypeDiscoverListener implements ApexParserListener {
   }
 
   enterMethodDeclaration(ctx: ParserRuleContext): void {
-    /* istanbul ignore next -- defensive guard: parser always produces well-formed contexts */
+    /* c8 ignore start -- defensive guard: parser always produces well-formed contexts */
     if (!ctx.children || ctx.children.length < 4) {
       return
     }
+    /* c8 ignore stop */
 
     const returnType = ctx.children[0].text
     const methodName = ctx.children[1].text
 
-    /* istanbul ignore next -- defensive guard: parser always produces non-empty text */
+    /* c8 ignore start -- defensive guard: parser always produces non-empty text */
     if (!returnType || !methodName) {
       return
     }
+    /* c8 ignore stop */
 
     this.currentMethodName = methodName
     this.currentMethodVariables = new Map()
@@ -81,9 +83,9 @@ class TypeDiscoverListener implements ApexParserListener {
 
     const type = classifyApexType(returnType, this.matchers)
 
-    /* istanbul ignore next -- defensive guard: parser always provides start/stop tokens */
+    /* c8 ignore next -- defensive guard: parser always provides start/stop tokens */
     const startLine = ctx.start?.line || 0
-    /* istanbul ignore next -- defensive guard: parser always provides start/stop tokens */
+    /* c8 ignore next -- defensive guard: parser always provides start/stop tokens */
     const endLine = ctx.stop?.line || 0
 
     const methodInfo: ApexMethod = {
