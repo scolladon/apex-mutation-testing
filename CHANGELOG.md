@@ -2,6 +2,15 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [1.5.1](https://github.com/scolladon/apex-mutation-testing/compare/v1.5.0...v1.5.1) (2026-03-27)
+
+
+### Bug Fixes
+
+* adding condition to skip mutations if parsing a throw statement ([#107](https://github.com/scolladon/apex-mutation-testing/issues/107)) ([c00a3fe](https://github.com/scolladon/apex-mutation-testing/commit/c00a3febaeb716e60ca9e787502c792469fb20b5))
+* filter ApexClasses by Namespace ([#104](https://github.com/scolladon/apex-mutation-testing/issues/104)) ([c02d257](https://github.com/scolladon/apex-mutation-testing/commit/c02d25724cc65ec42cec11cf6db6482ace6bc7ef))
+* skip UOI Mutator For Non-Numeric References ([#109](https://github.com/scolladon/apex-mutation-testing/issues/109)) ([9cecbb5](https://github.com/scolladon/apex-mutation-testing/commit/9cecbb51affd9e82daf8dad550e369a205a3e436))
+
 ## [1.5.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.4.0...v1.5.0) (2026-02-27)
 
 
