@@ -17,9 +17,11 @@ describe('ApexClassValidator', () => {
 
   beforeEach(() => {
     // Arrange
-    vi.mocked(ApexClassRepository).mockImplementation(() => ({
-      read: readMock,
-    }))
+    vi.mocked(ApexClassRepository).mockImplementation(
+      class {
+        read = readMock
+      }
+    )
     readMock.mockReset()
 
     sut = new ApexClassValidator({} as Mocked<Connection>)

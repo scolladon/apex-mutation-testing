@@ -19,14 +19,14 @@
     "@oclif/plugin-help": "^6.2.40",
     "@salesforce/dev-config": "^4.3.3",
     "@types/async": "^3.2.25",
-    "@vitest/coverage-v8": "^3.1.1",
+    "@vitest/coverage-v8": "^4.1.2",
     "husky": "^9.1.7",
     "knip": "^6.0.6",
     "oclif": "^4.22.96",
     "shx": "^0.4.0",
     "tslib": "^2.8.1",
     "typescript": "^6.0.2",
-    "vitest": "^3.1.1",
+    "vitest": "^4.1.2",
     "wireit": "^0.14.12"
   },
   "engines": {

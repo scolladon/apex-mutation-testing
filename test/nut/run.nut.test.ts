@@ -77,9 +77,11 @@ vi.mock('../../src/reporter/HTMLReporter.js', () => ({
 
 const mockConfigReaderResolve = vi.hoisted(() => vi.fn())
 vi.mock('../../src/service/configReader.js', () => ({
-  ConfigReader: vi.fn().mockImplementation(() => ({
-    resolve: mockConfigReaderResolve,
-  })),
+  ConfigReader: vi.fn().mockImplementation(
+    class {
+      resolve = mockConfigReaderResolve
+    }
+  ),
 }))
 
 import { default as ApexMutationTest } from '../../src/commands/apex/mutation/test/run.js'
@@ -99,28 +101,25 @@ describe('apex mutation test run NUT', () => {
       Promise.resolve(args[0])
     )
     vi.mocked(ApexClassValidator).mockImplementation(
-      () =>
-        ({
-          validate: vi.fn().mockResolvedValue(undefined as never),
-        }) as never
+      class {
+        validate = vi.fn().mockResolvedValue(undefined as never)
+      }
     )
     vi.mocked(MutationTestingService).mockImplementation(
-      () =>
-        ({
-          process: vi.fn().mockResolvedValue({
-            sourceFile: 'TestClass',
-            sourceFileContent: 'class TestClass {}',
-            testFile: 'TestClassTest',
-            mutants: [{ status: 'Killed' }, { status: 'Survived' }],
-          } as never),
-          calculateScore: vi.fn().mockReturnValue(50),
-        }) as never
+      class {
+        process = vi.fn().mockResolvedValue({
+          sourceFile: 'TestClass',
+          sourceFileContent: 'class TestClass {}',
+          testFile: 'TestClassTest',
+          mutants: [{ status: 'Killed' }, { status: 'Survived' }],
+        } as never)
+        calculateScore = vi.fn().mockReturnValue(50)
+      }
     )
     vi.mocked(ApexMutationHTMLReporter).mockImplementation(
-      () =>
-        ({
-          generateReport: vi.fn().mockResolvedValue(undefined as never),
-        }) as never
+      class {
+        generateReport = vi.fn().mockResolvedValue(undefined as never)
+      }
     )
   })
 
@@ -223,12 +222,11 @@ describe('apex mutation test run NUT', () => {
     it('When apex class is invalid, Then throws error', async () => {
       // Arrange
       vi.mocked(ApexClassValidator).mockImplementation(
-        () =>
-          ({
-            validate: vi
-              .fn()
-              .mockRejectedValue(new Error('InvalidClass not found') as never),
-          }) as never
+        class {
+          validate = vi
+            .fn()
+            .mockRejectedValue(new Error('InvalidClass not found') as never)
+        }
       )
 
       // Act & Assert
@@ -240,12 +238,11 @@ describe('apex mutation test run NUT', () => {
     it('When test class is invalid, Then throws error', async () => {
       // Arrange
       vi.mocked(ApexClassValidator).mockImplementation(
-        () =>
-          ({
-            validate: vi
-              .fn()
-              .mockRejectedValue(new Error('InvalidTest not found') as never),
-          }) as never
+        class {
+          validate = vi
+            .fn()
+            .mockRejectedValue(new Error('InvalidTest not found') as never)
+        }
       )
 
       // Act & Assert
@@ -259,13 +256,12 @@ describe('apex mutation test run NUT', () => {
     it('When process throws, Then propagates error', async () => {
       // Arrange
       vi.mocked(MutationTestingService).mockImplementation(
-        () =>
-          ({
-            process: vi
-              .fn()
-              .mockRejectedValue(new Error('No test coverage found') as never),
-            calculateScore: vi.fn(),
-          }) as never
+        class {
+          process = vi
+            .fn()
+            .mockRejectedValue(new Error('No test coverage found') as never)
+          calculateScore = vi.fn()
+        }
       )
 
       // Act & Assert
@@ -278,50 +274,49 @@ describe('apex mutation test run NUT', () => {
   describe('Given dry-run flag', () => {
     beforeEach(() => {
       vi.mocked(MutationTestingService).mockImplementation(
-        () =>
-          ({
-            process: vi.fn().mockResolvedValue({
-              sourceFile: 'MyClass',
-              sourceFileContent: 'class MyClass {}',
-              testFile: 'MyClassTest',
-              mutants: [
-                {
-                  id: 'MyClass-0',
-                  mutatorName: 'ArithmeticOperator',
-                  status: 'Pending',
-                  location: {
-                    start: { line: 10, column: 1 },
-                    end: { line: 10, column: 2 },
-                  },
-                  original: '+',
-                  replacement: '-',
+        class {
+          process = vi.fn().mockResolvedValue({
+            sourceFile: 'MyClass',
+            sourceFileContent: 'class MyClass {}',
+            testFile: 'MyClassTest',
+            mutants: [
+              {
+                id: 'MyClass-0',
+                mutatorName: 'ArithmeticOperator',
+                status: 'Pending',
+                location: {
+                  start: { line: 10, column: 1 },
+                  end: { line: 10, column: 2 },
                 },
-                {
-                  id: 'MyClass-1',
-                  mutatorName: 'BoundaryCondition',
-                  status: 'Pending',
-                  location: {
-                    start: { line: 10, column: 5 },
-                    end: { line: 10, column: 6 },
-                  },
-                  original: '<',
-                  replacement: '<=',
+                original: '+',
+                replacement: '-',
+              },
+              {
+                id: 'MyClass-1',
+                mutatorName: 'BoundaryCondition',
+                status: 'Pending',
+                location: {
+                  start: { line: 10, column: 5 },
+                  end: { line: 10, column: 6 },
                 },
-                {
-                  id: 'MyClass-2',
-                  mutatorName: 'ArithmeticOperator',
-                  status: 'Pending',
-                  location: {
-                    start: { line: 20, column: 1 },
-                    end: { line: 20, column: 2 },
-                  },
-                  original: '*',
-                  replacement: '/',
+                original: '<',
+                replacement: '<=',
+              },
+              {
+                id: 'MyClass-2',
+                mutatorName: 'ArithmeticOperator',
+                status: 'Pending',
+                location: {
+                  start: { line: 20, column: 1 },
+                  end: { line: 20, column: 2 },
                 },
-              ],
-            } as never),
-            calculateScore: vi.fn().mockReturnValue(null),
-          }) as never
+                original: '*',
+                replacement: '/',
+              },
+            ],
+          } as never)
+          calculateScore = vi.fn().mockReturnValue(null)
+        }
       )
     })
 
@@ -364,20 +359,30 @@ describe('apex mutation test run NUT', () => {
     })
   })
 
+  describe('Given threshold flag at or below score', () => {
+    it('When running, Then does not throw', async () => {
+      // Arrange — score=50, threshold=30: score >= threshold → no error
+
+      // Act & Assert
+      await expect(
+        runCommand(['-c', 'MyClass', '-t', 'MyClassTest'], { threshold: 30 })
+      ).resolves.not.toThrow()
+    })
+  })
+
   describe('Given threshold flag above score', () => {
     it('When running, Then throws threshold error', async () => {
       // Arrange
       vi.mocked(MutationTestingService).mockImplementation(
-        () =>
-          ({
-            process: vi.fn().mockResolvedValue({
-              sourceFile: 'MyClass',
-              sourceFileContent: 'class MyClass {}',
-              testFile: 'MyClassTest',
-              mutants: [{ status: 'Killed' }, { status: 'Survived' }],
-            } as never),
-            calculateScore: vi.fn().mockReturnValue(50),
-          }) as never
+        class {
+          process = vi.fn().mockResolvedValue({
+            sourceFile: 'MyClass',
+            sourceFileContent: 'class MyClass {}',
+            testFile: 'MyClassTest',
+            mutants: [{ status: 'Killed' }, { status: 'Survived' }],
+          } as never)
+          calculateScore = vi.fn().mockReturnValue(50)
+        }
       )
 
       // Act & Assert

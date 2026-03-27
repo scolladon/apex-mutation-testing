@@ -8,9 +8,11 @@ vi.mock('@salesforce/apex-node', async importOriginal => {
   const actual = await importOriginal<typeof import('@salesforce/apex-node')>()
   return {
     ...actual,
-    TestService: vi.fn().mockImplementation(() => ({
-      runTestAsynchronous: runTestAsynchronousMock,
-    })),
+    TestService: vi.fn().mockImplementation(
+      class {
+        runTestAsynchronous = runTestAsynchronousMock
+      }
+    ),
   }
 })
 
