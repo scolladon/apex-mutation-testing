@@ -10,6 +10,29 @@ class TestableBaseListener extends BaseListener {
     return this.getEnclosingMethodName(ctx)
   }
 
+  createMutationPublic(
+    startToken: Token,
+    endToken: Token,
+    originalText: string,
+    replacement: string
+  ): void {
+    this.createMutation(startToken, endToken, originalText, replacement)
+  }
+
+  createMutationFromParserRuleContextPublic(
+    ctx: ParserRuleContext,
+    replacement: string
+  ): void {
+    this.createMutationFromParserRuleContext(ctx, replacement)
+  }
+
+  createMutationFromTerminalNodePublic(
+    node: TerminalNode,
+    replacement: string
+  ): void {
+    this.createMutationFromTerminalNode(node, replacement)
+  }
+
   get exposedTypeRegistry(): TypeRegistry | undefined {
     return this.typeRegistry
   }
@@ -142,7 +165,7 @@ describe('BaseListener', () => {
       const endToken = TestUtil.createToken(1, 5)
 
       // Act
-      listener['createMutation'](
+      listener.createMutationPublic(
         startToken,
         endToken,
         'original',
@@ -167,7 +190,7 @@ describe('BaseListener', () => {
       } as unknown as ParserRuleContext
 
       // Act
-      listener['createMutationFromParserRuleContext'](ctx, 'replacement')
+      listener.createMutationFromParserRuleContextPublic(ctx, 'replacement')
 
       // Assert
       expect(listener._mutations).toHaveLength(0)
@@ -183,7 +206,7 @@ describe('BaseListener', () => {
       } as unknown as ParserRuleContext
 
       // Act
-      listener['createMutationFromParserRuleContext'](ctx, 'replacement')
+      listener.createMutationFromParserRuleContextPublic(ctx, 'replacement')
 
       // Assert
       expect(listener._mutations).toHaveLength(0)
@@ -200,7 +223,7 @@ describe('BaseListener', () => {
       } as unknown as TerminalNode
 
       // Act
-      listener['createMutationFromTerminalNode'](node, 'replacement')
+      listener.createMutationFromTerminalNodePublic(node, 'replacement')
 
       // Assert
       expect(listener._mutations).toHaveLength(0)

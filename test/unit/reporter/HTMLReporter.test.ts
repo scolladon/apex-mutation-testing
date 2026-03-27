@@ -77,8 +77,8 @@ describe('HTMLReporter', () => {
     sut = new ApexMutationHTMLReporter()
   })
 
-  describe('when generating report', () => {
-    it('should generate HTML content with mutation results', async () => {
+  describe('Given valid mutation test results, When generating report', () => {
+    it('Then generates HTML content', async () => {
       // Act
       await sut.generateReport(testResults)
 
@@ -89,7 +89,7 @@ describe('HTMLReporter', () => {
       )
     })
 
-    it('should mark Pending mutants as untested', async () => {
+    it('Then marks Pending mutants as untested', async () => {
       // Act
       await sut.generateReport(testResults)
 

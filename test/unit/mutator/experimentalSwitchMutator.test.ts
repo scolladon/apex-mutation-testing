@@ -78,18 +78,21 @@ describe('ExperimentalSwitchMutator', () => {
           // Assert - 2 mutations: remove else + duplicate first into else
           expect(sut._mutations).toHaveLength(2)
 
-          const removeMutation = sut._mutations.find(m => m.replacement === '')
-          expect(removeMutation).toBeDefined()
-          expect(removeMutation?.target.text).toBe(
-            'when else { handleDefault(); }'
+          expect(sut._mutations).toContainEqual(
+            expect.objectContaining({
+              replacement: '',
+              target: expect.objectContaining({
+                text: 'when else { handleDefault(); }',
+              }),
+              mutationName: 'ExperimentalSwitchMutator',
+            })
           )
-          expect(removeMutation?.mutationName).toBe('ExperimentalSwitchMutator')
-
-          const duplicateMutation = sut._mutations.find(
-            m => m.replacement === '{ handle1(); }'
+          expect(sut._mutations).toContainEqual(
+            expect.objectContaining({
+              replacement: '{ handle1(); }',
+              target: expect.objectContaining({ text: '{ handleDefault(); }' }),
+            })
           )
-          expect(duplicateMutation).toBeDefined()
-          expect(duplicateMutation?.target.text).toBe('{ handleDefault(); }')
         })
       })
     })
@@ -196,11 +199,12 @@ describe('ExperimentalSwitchMutator', () => {
           sut.enterSwitchStatement(switchCtx)
 
           // Assert
-          const duplicateMutation = sut._mutations.find(
-            m => m.replacement === '{ handle1(); }'
+          expect(sut._mutations).toContainEqual(
+            expect.objectContaining({
+              replacement: '{ handle1(); }',
+              target: expect.objectContaining({ text: '{ handleDefault(); }' }),
+            })
           )
-          expect(duplicateMutation).toBeDefined()
-          expect(duplicateMutation?.target.text).toBe('{ handleDefault(); }')
         })
       })
     })
@@ -321,13 +325,15 @@ describe('ExperimentalSwitchMutator', () => {
 
           // Assert - should have ONE atomic swap mutation spanning both when clauses
           // The mutation should swap the entire clauses to avoid duplicate value compilation errors
-          const swapMutation = sut._mutations.find(
-            m =>
-              m.target.text === 'when 1 { handle1(); }when 2 { handle2(); }' &&
-              m.replacement === 'when 2 { handle1(); }when 1 { handle2(); }'
+          expect(sut._mutations).toContainEqual(
+            expect.objectContaining({
+              target: expect.objectContaining({
+                text: 'when 1 { handle1(); }when 2 { handle2(); }',
+              }),
+              replacement: 'when 2 { handle1(); }when 1 { handle2(); }',
+              mutationName: 'ExperimentalSwitchMutator',
+            })
           )
-          expect(swapMutation).toBeDefined()
-          expect(swapMutation?.mutationName).toBe('ExperimentalSwitchMutator')
 
           // Should NOT have individual swap mutations that would cause compilation errors
           const individualSwapMutation = sut._mutations.find(

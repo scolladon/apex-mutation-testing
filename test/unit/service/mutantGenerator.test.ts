@@ -86,24 +86,24 @@ describe('MutantGenerator', () => {
       // Assert - at least 3 mutations: < -> <=, ++ -> --, ++i -> i
       expect(result.length).toBeGreaterThanOrEqual(3)
 
-      const incrementMutation = result.find(
-        m => m.mutationName === 'IncrementMutator'
+      expect(result).toContainEqual(
+        expect.objectContaining({
+          mutationName: 'IncrementMutator',
+          replacement: '--',
+        })
       )
-      const boundaryMutation = result.find(
-        m => m.mutationName === 'BoundaryConditionMutator'
+      expect(result).toContainEqual(
+        expect.objectContaining({
+          mutationName: 'BoundaryConditionMutator',
+          replacement: '<=',
+        })
       )
-      const removeIncrementsMutation = result.find(
-        m => m.mutationName === 'RemoveIncrementsMutator'
+      expect(result).toContainEqual(
+        expect.objectContaining({
+          mutationName: 'RemoveIncrementsMutator',
+          replacement: 'i',
+        })
       )
-
-      expect(incrementMutation).toBeDefined()
-      expect(incrementMutation?.replacement).toBe('--')
-
-      expect(boundaryMutation).toBeDefined()
-      expect(boundaryMutation?.replacement).toBe('<=')
-
-      expect(removeIncrementsMutation).toBeDefined()
-      expect(removeIncrementsMutation?.replacement).toBe('i')
     })
   })
 
@@ -119,8 +119,8 @@ describe('MutantGenerator', () => {
         include: ['ArithmeticOperator'],
       })
 
-      // Assert
-      expect(result.length).toBeGreaterThan(0)
+      // Assert - + generates 3 mutations: -, *, /
+      expect(result).toHaveLength(3)
       expect(
         result.every(m => m.mutationName === 'ArithmeticOperatorMutator')
       ).toBe(true)
@@ -157,8 +157,8 @@ describe('MutantGenerator', () => {
         include: ['ArithmeticOperator', 'NonExistentMutator'],
       })
 
-      // Assert
-      expect(result.length).toBeGreaterThan(0)
+      // Assert - + generates 3 mutations: -, *, /
+      expect(result).toHaveLength(3)
       expect(
         result.every(m => m.mutationName === 'ArithmeticOperatorMutator')
       ).toBe(true)
@@ -193,8 +193,8 @@ describe('MutantGenerator', () => {
         include: ['arithmeticoperator'],
       })
 
-      // Assert
-      expect(result.length).toBeGreaterThan(0)
+      // Assert - + generates 3 mutations: -, *, /
+      expect(result).toHaveLength(3)
       expect(
         result.every(m => m.mutationName === 'ArithmeticOperatorMutator')
       ).toBe(true)
@@ -266,7 +266,9 @@ describe('MutantGenerator', () => {
       )
 
       // Assert
-      expect(result.length).toBeGreaterThan(0)
+      expect(result).toContainEqual(
+        expect.objectContaining({ mutationName: 'InlineConstantMutator' })
+      )
       expect(result.every(m => m.target.startToken.line === 3)).toBe(true)
     })
   })

@@ -174,9 +174,8 @@ describe('apex mutation test run NUT', () => {
 
     it('Then validates classes', () => {
       expect(ApexClassValidator).toHaveBeenCalledWith(mockConnection)
-      // biome-ignore lint/suspicious/noExplicitAny: mock instance access
-      const validatorInstance = (ApexClassValidator as any).mock.results[0]
-        .value
+      const validatorInstance = vi.mocked(ApexClassValidator).mock.results[0]
+        .value as { validate: ReturnType<typeof vi.fn> }
       expect(validatorInstance.validate).toHaveBeenCalledWith(
         expect.objectContaining({
           apexClassName: 'MyClass',
@@ -201,9 +200,8 @@ describe('apex mutation test run NUT', () => {
 
     it('Then generates HTML report', () => {
       expect(ApexMutationHTMLReporter).toHaveBeenCalled()
-      // biome-ignore lint/suspicious/noExplicitAny: mock instance access
-      const reporterInstance = (ApexMutationHTMLReporter as any).mock.results[0]
-        .value
+      const reporterInstance = vi.mocked(ApexMutationHTMLReporter).mock
+        .results[0].value as { generateReport: ReturnType<typeof vi.fn> }
       expect(reporterInstance.generateReport).toHaveBeenCalled()
     })
 
@@ -435,6 +433,75 @@ describe('apex mutation test run NUT', () => {
         expect.objectContaining({
           configFile: '.mutation-testing.json',
         })
+      )
+    })
+  })
+
+  describe('Given exclude-mutators flag', () => {
+    it('When running, Then passes to MutationTestingService', async () => {
+      // Arrange
+      const excludeMutators = ['ArithmeticOperator']
+
+      // Act
+      await runCommand(['-c', 'MyClass', '-t', 'MyClassTest'], {
+        'exclude-mutators': excludeMutators,
+      })
+
+      // Assert
+      expect(MutationTestingService).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        mockConnection,
+        expect.objectContaining({
+          excludeMutators: ['ArithmeticOperator'],
+        }),
+        expect.anything()
+      )
+    })
+  })
+
+  describe('Given exclude-test-methods flag', () => {
+    it('When running, Then passes to MutationTestingService', async () => {
+      // Arrange
+      const excludeTestMethods = ['testSlowMethod']
+
+      // Act
+      await runCommand(['-c', 'MyClass', '-t', 'MyClassTest'], {
+        'exclude-test-methods': excludeTestMethods,
+      })
+
+      // Assert
+      expect(MutationTestingService).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        mockConnection,
+        expect.objectContaining({
+          excludeTestMethods: ['testSlowMethod'],
+        }),
+        expect.anything()
+      )
+    })
+  })
+
+  describe('Given skip-patterns flag', () => {
+    it('When running, Then passes to MutationTestingService', async () => {
+      // Arrange
+      const skipPatterns = ['System\\.debug']
+
+      // Act
+      await runCommand(['-c', 'MyClass', '-t', 'MyClassTest'], {
+        'skip-patterns': skipPatterns,
+      })
+
+      // Assert
+      expect(MutationTestingService).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        mockConnection,
+        expect.objectContaining({
+          skipPatterns: ['System\\.debug'],
+        }),
+        expect.anything()
       )
     })
   })

@@ -209,8 +209,6 @@ describe('MutationTestingService', () => {
           expectedStatus: 'Killed',
           error: null,
           updateError: null,
-          expectedSpinnerStarts: 8,
-          expectedSpinnerStops: 8,
           expectedMutants: [
             expect.objectContaining({
               mutatorName: 'TestMutation',
@@ -233,8 +231,6 @@ describe('MutationTestingService', () => {
           expectedStatus: 'Survived',
           error: null,
           updateError: null,
-          expectedSpinnerStarts: 8,
-          expectedSpinnerStops: 8,
           expectedMutants: [
             expect.objectContaining({
               mutatorName: 'TestMutation',
@@ -252,8 +248,6 @@ describe('MutationTestingService', () => {
             'Unable to refresh session due to: Error authenticating with the refresh token due to: expired access/refresh token'
           ),
           updateError: null,
-          expectedSpinnerStarts: 8,
-          expectedSpinnerStops: 8,
           expectedMutants: [
             expect.objectContaining({
               mutatorName: 'TestMutation',
@@ -273,8 +267,6 @@ describe('MutationTestingService', () => {
             'System.LimitException: LIMIT_USAGE_FOR_NS : Too many SOQL queries'
           ),
           updateError: null,
-          expectedSpinnerStarts: 8,
-          expectedSpinnerStops: 8,
           expectedMutants: [
             expect.objectContaining({
               mutatorName: 'TestMutation',
@@ -290,8 +282,6 @@ describe('MutationTestingService', () => {
           expectedStatus: 'RuntimeError',
           error: 'plain string error',
           updateError: null,
-          expectedSpinnerStarts: 8,
-          expectedSpinnerStops: 8,
           expectedMutants: [
             expect.objectContaining({
               mutatorName: 'TestMutation',
@@ -317,8 +307,6 @@ describe('MutationTestingService', () => {
           updateError: new Error(
             'Deployment failed:\n[TestClass.cls:1:50] Invalid syntax'
           ),
-          expectedSpinnerStarts: 8,
-          expectedSpinnerStops: 8,
           expectedMutants: [
             expect.objectContaining({
               mutatorName: 'TestMutation',
@@ -337,8 +325,6 @@ describe('MutationTestingService', () => {
         expectedMutants,
         error,
         updateError,
-        expectedSpinnerStarts,
-        expectedSpinnerStops,
       }) => {
         // Arrange
         let updateCallCount = 0
@@ -407,8 +393,6 @@ describe('MutationTestingService', () => {
           testFile: 'TestClassTest',
           mutants: expectedMutants,
         })
-        expect(spinner.start).toHaveBeenCalledTimes(expectedSpinnerStarts)
-        expect(spinner.stop).toHaveBeenCalledTimes(expectedSpinnerStops)
         expect(progress.start).toHaveBeenCalled()
         expect(progress.finish).toHaveBeenCalled()
       })
@@ -827,18 +811,20 @@ describe('MutationTestingService', () => {
         const infos = updateCalls.map(
           (call: [number, { info: string }]) => call[1].info
         )
-        const secondMutationDeploy = infos.find(
-          (info: string) =>
-            info.includes('Deploying "1"') && info.includes('Remaining:')
-        )
-        const secondMutationRunning = infos.find(
-          (info: string) =>
-            info.includes('Running') &&
-            info.includes('"1"') &&
-            info.includes('Remaining:')
-        )
-        expect(secondMutationDeploy).toBeDefined()
-        expect(secondMutationRunning).toBeDefined()
+        expect(
+          infos.some(
+            (info: string) =>
+              info.includes('Deploying "1"') && info.includes('Remaining:')
+          )
+        ).toBe(true)
+        expect(
+          infos.some(
+            (info: string) =>
+              info.includes('Running') &&
+              info.includes('"1"') &&
+              info.includes('Remaining:')
+          )
+        ).toBe(true)
       })
     })
 

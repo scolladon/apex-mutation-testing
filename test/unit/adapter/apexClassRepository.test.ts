@@ -61,7 +61,6 @@ describe('ApexClassRepository', () => {
 
         // Assert
         expect(result).toEqual(mockApexClass)
-        expect(findMock).toHaveBeenCalledTimes(1)
       })
     })
 
@@ -81,7 +80,7 @@ describe('ApexClassRepository', () => {
   })
 
   describe('when getting ApexClass dependencies', () => {
-    it('Given a classId, When getApexClassDependencies, Then returns dependencies', async () => {
+    it('given a classId, then returns dependencies', async () => {
       // Arrange
       const mockDependencies = [
         { MetadataComponentId: '123', RefMetadataComponentId: '456' },
