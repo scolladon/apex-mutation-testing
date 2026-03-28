@@ -162,6 +162,31 @@ describe('ArithmeticOperatorMutator', () => {
         expect(sut._mutations).toHaveLength(0)
       })
 
+      it('Then should not mutate when child at index 1 is not a TerminalNode even if it has operator text and symbol (kills instanceof→true mutant)', () => {
+        // Arrange — a plain object with text '-' and symbol is NOT a TerminalNode
+        // With instanceof→true mutant: the object is processed, symbol is truthy, mutations ARE created
+        const typeRegistry = createTypeRegistry(new Map())
+        const sut = new ArithmeticOperatorMutator(typeRegistry)
+        const fakeOperatorNode = {
+          text: '-',
+          symbol: TestUtil.createToken(1, 5),
+        }
+        const ctx = {
+          childCount: 3,
+          getChild: vi.fn().mockImplementation((index: number) => {
+            if (index === 0) return { text: 'a' }
+            if (index === 1) return fakeOperatorNode
+            return { text: 'b' }
+          }),
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterArth1Expression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+
       it('Then should not mutate when operator is not in replacement map', () => {
         // Arrange
         const typeRegistry = createTypeRegistry(new Map())

@@ -3,6 +3,7 @@ import {
   DotExpressionContext,
   DotMethodCallContext,
   MethodCallExpressionContext,
+  MethodDeclarationContext,
 } from 'apex-parser'
 import { ArgumentPropagationMutator } from '../../../src/mutator/argumentPropagationMutator.js'
 import { APEX_TYPE, type ApexMethod } from '../../../src/type/ApexMethod.js'
@@ -363,6 +364,65 @@ describe('ArgumentPropagationMutator', () => {
     })
   })
 
+  describe('Given a method call where child is not ParserRuleContext but has valid structure', () => {
+    it('Then should not create any mutations even though child passes all structure guards', () => {
+      // Arrange
+      // Set up typeRegistry and parent so all guards after line 23 would pass if we bypass the instanceof check
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('process', {
+        returnType: 'String',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.STRING,
+      })
+      const typeRegistry = TestUtil.createTypeRegistry(typeTable)
+      const sut = new ArgumentPropagationMutator(typeRegistry)
+
+      // Non-PRC child with children.length >= 3 and valid method name at [0]
+      const argNode = TestUtil.createArgNode("'hello'")
+      const expressionList = TestUtil.createExpressionListCtx([argNode])
+      const nonPrcChild = {
+        text: 'process',
+        children: [
+          { text: 'process' },
+          { text: '(' },
+          expressionList,
+          { text: ')' },
+        ],
+      }
+
+      // Build a ctx with a parent MethodDeclarationContext so enclosingMethod is found
+      const ctx = {
+        childCount: 1,
+        text: 'process()',
+        start: TestUtil.createToken(1, 0),
+        stop: TestUtil.createToken(1, 9),
+        getChild: () => nonPrcChild,
+      } as unknown as ParserRuleContext
+
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'void' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      Object.defineProperty(ctx, 'parent', {
+        value: methodCtx,
+        writable: true,
+        configurable: true,
+      })
+
+      // Act
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
+
+      // Assert: guard at line 23 prevents processing even though child has valid structure
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
   describe('Given a dot expression with insufficient children', () => {
     it('Then should not create any mutations', () => {
       // Arrange
@@ -597,6 +657,302 @@ describe('ArgumentPropagationMutator', () => {
       const ctx = TestUtil.createDotExpressionInMethod(
         'obj',
         'unknownMethod',
+        'testMethod',
+        [argNode]
+      )
+
+      // Act
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('Given a method call where typeRegistry exists but no enclosing method', () => {
+    it('Then should not create any mutations', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('process', {
+        returnType: 'String',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.STRING,
+      })
+      const typeRegistry = TestUtil.createTypeRegistry(typeTable)
+      const sut = new ArgumentPropagationMutator(typeRegistry)
+
+      const argNode = TestUtil.createArgNode('input')
+      // Build ctx with childCount === 1, valid ParserRuleContext child with children.length >= 3,
+      // but no parent MethodDeclarationContext so enclosingMethod resolves to null
+      const expressionList = TestUtil.createExpressionListCtx([argNode])
+      const methodCallChildren: unknown[] = [
+        { text: 'process' },
+        { text: '(' },
+        expressionList,
+        { text: ')' },
+      ]
+      const methodCall = {
+        children: methodCallChildren,
+        childCount: methodCallChildren.length,
+      } as unknown as ParserRuleContext
+      Object.setPrototypeOf(methodCall, ParserRuleContext.prototype)
+
+      const ctx = {
+        childCount: 1,
+        text: 'process(input)',
+        start: TestUtil.createToken(1, 0),
+        stop: TestUtil.createToken(1, 14),
+        getChild: (index: number) => (index === 0 ? methodCall : null),
+        // No parent set — getEnclosingMethodName will return null
+      } as unknown as ParserRuleContext
+
+      // Act
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('Given a method call child with exactly 2 children (boundary for length < 3)', () => {
+    it('Then should not create any mutations', () => {
+      // Arrange
+      // Use full setup so the only guard that triggers is the length < 3 check
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('process', {
+        returnType: 'String',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.STRING,
+      })
+      const typeRegistry = TestUtil.createTypeRegistry(typeTable)
+      const sut = new ArgumentPropagationMutator(typeRegistry)
+
+      // Build methodCall with exactly 2 children including an ExpressionListContext
+      // so that bypassing the length guard would actually produce mutations
+      const argNode = TestUtil.createArgNode("'hello'")
+      const expressionList = TestUtil.createExpressionListCtx([argNode])
+      const methodCall = {
+        children: [{ text: 'process' }, expressionList],
+        childCount: 2,
+      } as unknown as ParserRuleContext
+      Object.setPrototypeOf(methodCall, ParserRuleContext.prototype)
+
+      const ctx = {
+        childCount: 1,
+        text: 'process()',
+        start: TestUtil.createToken(1, 0),
+        stop: TestUtil.createToken(1, 9),
+        getChild: () => methodCall,
+      } as unknown as ParserRuleContext
+
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'void' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      Object.defineProperty(ctx, 'parent', {
+        value: methodCtx,
+        writable: true,
+        configurable: true,
+      })
+
+      // Act
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
+
+      // Assert: length < 3 guard rejects this context (only 2 children)
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('Given a method call where methodCall.children is null', () => {
+    it('Then should not create any mutations', () => {
+      // Arrange
+      const typeRegistry = TestUtil.createTypeRegistry()
+      const sut = new ArgumentPropagationMutator(typeRegistry)
+
+      const methodCall = {
+        children: null,
+        childCount: 0,
+      } as unknown as ParserRuleContext
+      Object.setPrototypeOf(methodCall, ParserRuleContext.prototype)
+
+      const ctx = {
+        childCount: 1,
+        getChild: () => methodCall,
+      } as unknown as ParserRuleContext
+
+      // Act
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('Given a method call child with exactly 3 children (boundary for length >= 3 passing)', () => {
+    it('Then should create a mutation when children has exactly 3 elements including an arg', () => {
+      // Arrange — length=3 should PASS the < 3 guard (3 is not < 3) and produce a mutation
+      // This distinguishes `< 3` from `<= 3` (which would block length=3)
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('process', {
+        returnType: 'String',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.STRING,
+      })
+      const typeRegistry = TestUtil.createTypeRegistry(typeTable)
+      const sut = new ArgumentPropagationMutator(typeRegistry)
+
+      // 3 children: methodName, expressionList, ')' — unusual but sufficient for boundary test
+      const argNode = TestUtil.createArgNode("'hello'")
+      const expressionList = TestUtil.createExpressionListCtx([argNode])
+      const methodCall = {
+        children: [{ text: 'process' }, expressionList, { text: ')' }],
+        childCount: 3,
+      } as unknown as ParserRuleContext
+      Object.setPrototypeOf(methodCall, ParserRuleContext.prototype)
+
+      const ctx = {
+        childCount: 1,
+        text: 'process()',
+        start: TestUtil.createToken(1, 0),
+        stop: TestUtil.createToken(1, 9),
+        getChild: () => methodCall,
+      } as unknown as ParserRuleContext
+
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'void' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      Object.defineProperty(ctx, 'parent', {
+        value: methodCtx,
+        writable: true,
+        configurable: true,
+      })
+
+      // Act
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
+
+      // Assert: 3 children passes the length < 3 guard, and the mutation is created
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe("'hello'")
+    })
+  })
+
+  describe('Given a method call with childCount of 0', () => {
+    it('Then should not create any mutations', () => {
+      // Arrange
+      const typeRegistry = TestUtil.createTypeRegistry()
+      const sut = new ArgumentPropagationMutator(typeRegistry)
+      const ctx = { childCount: 0 } as unknown as ParserRuleContext
+
+      // Act
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('Given a dot expression where no enclosing method exists', () => {
+    it('Then should not create any mutations', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('transform', {
+        returnType: 'String',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.STRING,
+      })
+      const typeRegistry = TestUtil.createTypeRegistry(typeTable)
+      const sut = new ArgumentPropagationMutator(typeRegistry)
+      const argNode = TestUtil.createArgNode('input')
+      const dotMethodCall = TestUtil.createDotMethodCallCtx('transform', [
+        argNode,
+      ])
+      // No parent set — getEnclosingMethodName will return null
+      const ctx = {
+        children: [{ text: 'obj' }, { text: '.' }, dotMethodCall],
+        childCount: 3,
+        text: 'obj.transform(input)',
+        start: TestUtil.createToken(1, 0),
+        stop: TestUtil.createToken(1, 20),
+      } as unknown as ParserRuleContext
+
+      // Act
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('Given a method call where argType does not equal returnType (non-null but mismatched)', () => {
+    it('Then should not create mutations when Long arg is passed to String-returning method', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('process', {
+        returnType: 'String',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.STRING,
+      })
+      const typeRegistry = TestUtil.createTypeRegistry(typeTable)
+      const sut = new ArgumentPropagationMutator(typeRegistry)
+
+      // '42L' resolves to APEX_TYPE.LONG, which !== APEX_TYPE.STRING
+      const argNode = TestUtil.createArgNode('42L')
+      const ctx = TestUtil.createMethodCallExpressionInMethod(
+        'process',
+        [argNode],
+        'testMethod'
+      )
+
+      // Act
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('Given a dot expression where argType does not equal returnType', () => {
+    it('Then should not create mutations when Long arg passed to String-returning dot method', () => {
+      // Arrange
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('transform', {
+        returnType: 'String',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.STRING,
+      })
+      const typeRegistry = TestUtil.createTypeRegistry(typeTable)
+      const sut = new ArgumentPropagationMutator(typeRegistry)
+
+      // '42L' resolves to APEX_TYPE.LONG, which !== APEX_TYPE.STRING
+      const argNode = TestUtil.createArgNode('42L')
+      const ctx = TestUtil.createDotExpressionInMethod(
+        'obj',
+        'transform',
         'testMethod',
         [argNode]
       )

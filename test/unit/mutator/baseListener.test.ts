@@ -184,6 +184,24 @@ describe('BaseListener', () => {
   })
 
   describe('createMutationFromParserRuleContext', () => {
+    it('Given context with both start and stop tokens, When creating mutation, Then mutation is added', () => {
+      // Arrange
+      const listener = new TestableBaseListener()
+      const ctx = {
+        start: TestUtil.createToken(1, 0),
+        stop: TestUtil.createToken(1, 5),
+        text: 'original',
+      } as unknown as ParserRuleContext
+
+      // Act
+      listener.createMutationFromParserRuleContextPublic(ctx, 'replacement')
+
+      // Assert
+      expect(listener._mutations).toHaveLength(1)
+      expect(listener._mutations[0].replacement).toBe('replacement')
+      expect(listener._mutations[0].target.text).toBe('original')
+    })
+
     it('Given context with missing start token, When creating mutation, Then no mutation is added', () => {
       // Arrange
       const listener = new TestableBaseListener()
@@ -218,6 +236,24 @@ describe('BaseListener', () => {
   })
 
   describe('createMutationFromTerminalNode', () => {
+    it('Given terminal node with a symbol, When creating mutation, Then mutation is added', () => {
+      // Arrange
+      const listener = new TestableBaseListener()
+      const symbol = TestUtil.createToken(1, 3)
+      const node = {
+        symbol,
+        text: 'original',
+      } as unknown as TerminalNode
+
+      // Act
+      listener.createMutationFromTerminalNodePublic(node, 'replacement')
+
+      // Assert
+      expect(listener._mutations).toHaveLength(1)
+      expect(listener._mutations[0].replacement).toBe('replacement')
+      expect(listener._mutations[0].target.text).toBe('original')
+    })
+
     it('Given terminal node with missing symbol, When creating mutation, Then no mutation is added', () => {
       // Arrange
       const listener = new TestableBaseListener()

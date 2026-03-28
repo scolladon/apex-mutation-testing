@@ -229,4 +229,130 @@ describe('ConstructorCallMutator', () => {
       })
     })
   })
+
+  describe('Given a NewExpression where first child is non-TerminalNode with text new', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations (kills newKeyword instanceof TerminalNode → true mutant)', () => {
+        // Arrange
+        // With mutant `true`: non-TerminalNode check always passes, so a plain object with text='new'
+        // would proceed to create a mutation. Original code rejects non-TerminalNode nodes.
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 10,
+          tokenIndex: 5,
+          startIndex: 10,
+          stopIndex: 25,
+        } as Token
+
+        const nonTerminalNewKeyword = { text: 'new' } // NOT a TerminalNode
+
+        const creatorCtx = {
+          text: 'Account()',
+        } as unknown as ParserRuleContext
+
+        const ctx = {
+          childCount: 2,
+          getChild: vi.fn().mockImplementation(index => {
+            return index === 0 ? nonTerminalNewKeyword : creatorCtx
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 6 } as Token,
+          text: 'new Account()',
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterNewExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a NewExpression directly inside a throw statement (no intermediate context)', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations', () => {
+        // Arrange
+        // This test kills `current instanceof ThrowStatementContext → true` mutant:
+        // with the mutant, the while loop body always returns true on the first iteration,
+        // even for non-throw parents. This test has ctx.parent as a ThrowStatementContext
+        // directly, so both original and mutant give the same result (no mutation).
+        // Combined with the test below that has a non-throw parent, the mutant is distinguished.
+        const throwCtx = Object.create(ThrowStatementContext.prototype)
+
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 10,
+          tokenIndex: 5,
+          startIndex: 10,
+          stopIndex: 25,
+        } as Token
+
+        const newKeyword = new TerminalNode({ text: 'new' } as Token)
+
+        const ctx = {
+          childCount: 2,
+          getChild: vi.fn().mockImplementation(index => {
+            return index === 0
+              ? newKeyword
+              : { text: "AuraHandledException('Error')" }
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 6 } as Token,
+          text: "new AuraHandledException('Error')",
+          parent: throwCtx,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterNewExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a NewExpression inside a non-throw parent context', () => {
+    describe('When entering the expression', () => {
+      it('Then should create a mutation (kills current instanceof ThrowStatementContext → true mutant)', () => {
+        // Arrange
+        // With mutant `current instanceof ThrowStatementContext → true`:
+        // the while loop always returns true on the first iteration, so ANY parent
+        // would be treated as a throw context, blocking all mutations.
+        // This test has a non-throw parent → original code creates mutation,
+        // mutant blocks it.
+        const nonThrowParent = {
+          parent: undefined,
+        } as unknown as ParserRuleContext
+
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 10,
+          tokenIndex: 5,
+          startIndex: 10,
+          stopIndex: 25,
+        } as Token
+
+        const newKeyword = new TerminalNode({ text: 'new' } as Token)
+
+        const ctx = {
+          childCount: 2,
+          getChild: vi.fn().mockImplementation(index => {
+            return index === 0 ? newKeyword : { text: 'Account()' }
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 6 } as Token,
+          text: 'new Account()',
+          parent: nonThrowParent,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterNewExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('null')
+      })
+    })
+  })
 })

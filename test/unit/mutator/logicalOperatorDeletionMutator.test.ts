@@ -244,4 +244,84 @@ describe('LogicalOperatorDeletionMutator', () => {
       expect(sut._mutations[0].replacement).toBe('TRUE')
     })
   })
+
+  describe('Given an expression with childCount=2 but operator child is a TerminalNode', () => {
+    it('Then should not create any mutations (kills ctx.childCount !== 3 → false mutant)', () => {
+      // Arrange
+      // With mutant ConditionalExpression `false` on `childCount !== 3`:
+      // childCount=2 passes the check, then the TerminalNode instanceof passes too,
+      // and if start/stop are present, mutations would be created.
+      // Original `!== 3`: 2 !== 3 → returns early. 0 mutations.
+      const operatorNode = new TerminalNode({ text: '&&' } as Token)
+      const ctx = {
+        childCount: 2,
+        text: 'x&&',
+        start: TestUtil.createToken(1, 0),
+        stop: TestUtil.createToken(1, 3),
+        getChild: (index: number) => {
+          if (index === 1) return operatorNode
+          return { text: 'x' }
+        },
+      } as unknown as ParserRuleContext
+
+      // Act
+      sut.enterLogAndExpression(ctx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('Given an expression with childCount=3 and non-TerminalNode operator but with start/stop tokens', () => {
+    it('Then should not create any mutations (kills !(operatorNode instanceof TerminalNode) → false mutant)', () => {
+      // Arrange
+      // With mutant `false` on instanceof check:
+      // non-TerminalNode operator passes through, and with start/stop present, mutations are created.
+      // Original: non-TerminalNode → returns early. 0 mutations.
+      const ctx = {
+        childCount: 3,
+        text: 'x&&y',
+        start: TestUtil.createToken(1, 0),
+        stop: TestUtil.createToken(1, 4),
+        getChild: (index: number) => {
+          if (index === 0) return { text: 'x' }
+          if (index === 1) return { text: '&&' } // plain object, not TerminalNode
+          return { text: 'y' }
+        },
+      } as unknown as ParserRuleContext
+
+      // Act
+      sut.enterLogAndExpression(ctx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('Given a context where stop is missing but start is present', () => {
+    it('Then should not create any mutations (kills !ctx.stop → ctx.stop mutant)', () => {
+      // Arrange
+      // With mutant `ctx.stop` in `!ctx.start || !ctx.stop` → `!ctx.start || ctx.stop`:
+      // start is present (so !start=false) and stop is null (ctx.stop=null falsy),
+      // result: false || null = null (falsy) → does NOT return → creates mutations.
+      // Original: !start=false, !stop=true → false || true → returns. 0 mutations.
+      const operatorNode = new TerminalNode({ text: '&&' } as Token)
+      const ctx = {
+        childCount: 3,
+        text: 'x&&y',
+        start: TestUtil.createToken(1, 0),
+        stop: null,
+        getChild: (index: number) => {
+          if (index === 1) return operatorNode
+          return { text: 'x' }
+        },
+      } as unknown as ParserRuleContext
+
+      // Act
+      sut.enterLogAndExpression(ctx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
 })

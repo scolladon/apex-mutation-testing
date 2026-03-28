@@ -196,5 +196,128 @@ describe('BoundaryConditionMutator', () => {
       // Assert
       expect(sut['_mutations']).toHaveLength(0)
     })
+
+    it('Given a TerminalNode with operator text not in replacement map but valid symbol, When enterCmpExpression, Then no mutation is created (kills && to || mutant)', () => {
+      // Arrange — operatorText='!' is in the includes list but not in REPLACEMENT_MAP
+      // With &&→|| mutant: (undefined || operatorTokens.length > 0) = true → mutation attempted
+      const operatorToken: Token = {
+        text: '!',
+        line: 1,
+        charPositionInLine: 10,
+        tokenIndex: 1,
+        startIndex: 10,
+        stopIndex: 10,
+      } as Token
+
+      const exclamationNode: TerminalNode = {
+        text: '!',
+        symbol: operatorToken,
+      } as unknown as TerminalNode
+      Object.setPrototypeOf(exclamationNode, TerminalNode.prototype)
+
+      const children = [
+        { text: 'leftOperand' },
+        exclamationNode,
+        { text: 'rightOperand' },
+      ]
+
+      const mockCtx = {
+        childCount: 3,
+        getChild: vi
+          .fn()
+          .mockImplementation((index: number) => children[index]),
+        children,
+      } as unknown as ParserRuleContext
+
+      // Act
+      sut.enterCmpExpression(mockCtx)
+
+      // Assert
+      expect(sut['_mutations']).toHaveLength(0)
+    })
+
+    it('Given a non-TerminalNode child with operator text, When enterCmpExpression, Then no mutation is created (kills instanceof→true mutant)', () => {
+      // Arrange — plain object with text '<' is NOT a TerminalNode
+      // With instanceof→true mutant: the plain object is processed, its undefined symbol passes !== null check,
+      // a null token is added to operatorTokens and createMutation is called with undefined tokens
+      const plainOperatorNode = {
+        text: '<',
+        symbol: undefined,
+      }
+
+      const children = [
+        { text: 'leftOperand' },
+        plainOperatorNode,
+        { text: 'rightOperand' },
+      ]
+
+      const mockCtx = {
+        childCount: 3,
+        getChild: vi
+          .fn()
+          .mockImplementation((index: number) => children[index]),
+        children,
+      } as unknown as ParserRuleContext
+
+      // Act
+      sut.enterCmpExpression(mockCtx)
+
+      // Assert
+      expect(sut['_mutations']).toHaveLength(0)
+    })
+
+    it('Given a TerminalNode with non-operator text preceding a valid operator TerminalNode, When enterCmpExpression, Then mutation is created only for the valid operator (kills includes→true mutant)', () => {
+      // Arrange — with includes→true mutant: 'a' is also processed, corrupting operatorText to 'a<'
+      // which has no REPLACEMENT_MAP entry, so no mutation would be created
+      const nonOperatorToken: Token = {
+        text: 'a',
+        line: 1,
+        charPositionInLine: 9,
+        tokenIndex: 1,
+        startIndex: 9,
+        stopIndex: 9,
+      } as Token
+      const nonOperatorNode: TerminalNode = {
+        text: 'a',
+        symbol: nonOperatorToken,
+      } as unknown as TerminalNode
+      Object.setPrototypeOf(nonOperatorNode, TerminalNode.prototype)
+
+      const operatorToken: Token = {
+        text: '<',
+        line: 1,
+        charPositionInLine: 10,
+        tokenIndex: 2,
+        startIndex: 10,
+        stopIndex: 10,
+      } as Token
+      const operatorNode: TerminalNode = {
+        text: '<',
+        symbol: operatorToken,
+      } as unknown as TerminalNode
+      Object.setPrototypeOf(operatorNode, TerminalNode.prototype)
+
+      const children = [
+        { text: 'leftOperand' },
+        nonOperatorNode,
+        operatorNode,
+        { text: 'rightOperand' },
+      ]
+
+      const mockCtx = {
+        childCount: 4,
+        getChild: vi
+          .fn()
+          .mockImplementation((index: number) => children[index]),
+        children,
+      } as unknown as ParserRuleContext
+
+      // Act
+      sut.enterCmpExpression(mockCtx)
+
+      // Assert — only the '<' operator is counted; 'a' is not in includes so operatorText='<'
+      expect(sut['_mutations']).toHaveLength(1)
+      expect(sut['_mutations'][0].replacement).toBe('<=')
+    })
   })
 })

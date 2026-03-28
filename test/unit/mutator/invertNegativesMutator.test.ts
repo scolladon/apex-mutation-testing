@@ -178,4 +178,136 @@ describe('InvertNegativesMutator', () => {
       })
     })
   })
+
+  describe('Given a PreOpExpression with 3 children but first is a minus TerminalNode', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations because childCount is not exactly 2', () => {
+        // Arrange
+        // Kills: `ctx.childCount !== 2` → `false`
+        // With mutant `false`, the guard is skipped and code proceeds past it.
+        // Since the first child IS a TerminalNode('-'), the text check also passes,
+        // which would cause a mutation to be created — contradicting the expected behaviour.
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 0,
+          tokenIndex: 1,
+          startIndex: 0,
+          stopIndex: 5,
+        } as Token
+
+        const operatorNode = new TerminalNode({ text: '-' } as Token)
+
+        const innerExpression = {
+          text: 'x',
+          start: { tokenIndex: 2 } as Token,
+          stop: { tokenIndex: 2 } as Token,
+        } as unknown as ParserRuleContext
+
+        const extraChild = { text: 'extra' } as unknown as ParserRuleContext
+
+        const ctx = {
+          childCount: 3,
+          getChild: vi.fn().mockImplementation(index => {
+            if (index === 0) return operatorNode
+            if (index === 1) return innerExpression
+            return extraChild
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 3 } as Token,
+          text: '-x extra',
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterPreOpExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a PreOpExpression with increment operator (++) and valid start/stop tokens', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations', () => {
+        // Arrange
+        // Kills: `operatorNode.text !== '-'` → `false`
+        // With mutant `false`, the guard is skipped so any operator proceeds.
+        // With valid start/stop tokens, `createMutationFromParserRuleContext` would
+        // actually create a mutation — contradicting the expected behaviour.
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 0,
+          tokenIndex: 1,
+          startIndex: 0,
+          stopIndex: 5,
+        } as Token
+
+        const operatorNode = new TerminalNode({ text: '++' } as Token)
+
+        const innerExpression = {
+          text: 'i',
+          start: { tokenIndex: 2 } as Token,
+          stop: { tokenIndex: 2 } as Token,
+        } as unknown as ParserRuleContext
+
+        const ctx = {
+          childCount: 2,
+          getChild: vi.fn().mockImplementation(index => {
+            return index === 0 ? operatorNode : innerExpression
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 2 } as Token,
+          text: '++i',
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterPreOpExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a PreOpExpression with decrement operator (--) and valid start/stop tokens', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations', () => {
+        // Arrange
+        // Kills: `operatorNode.text !== '-'` → `false` and StringLiteral `'-'` → `""`
+        // With either mutant the guard is bypassed; with valid tokens a mutation would be
+        // created — contradicting the expected behaviour.
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 0,
+          tokenIndex: 1,
+          startIndex: 0,
+          stopIndex: 5,
+        } as Token
+
+        const operatorNode = new TerminalNode({ text: '--' } as Token)
+
+        const innerExpression = {
+          text: 'i',
+          start: { tokenIndex: 2 } as Token,
+          stop: { tokenIndex: 2 } as Token,
+        } as unknown as ParserRuleContext
+
+        const ctx = {
+          childCount: 2,
+          getChild: vi.fn().mockImplementation(index => {
+            return index === 0 ? operatorNode : innerExpression
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 2 } as Token,
+          text: '--i',
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterPreOpExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
 })

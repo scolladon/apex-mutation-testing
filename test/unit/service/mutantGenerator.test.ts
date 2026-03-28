@@ -307,6 +307,94 @@ describe('MutantGenerator', () => {
         })
       ).toThrow('All mutators have been excluded by configuration')
     })
+
+    it('Given excludeMutators with a single mutator, When computing mutations, Then excluded mutator is absent and others are present', () => {
+      // Arrange — kills isInclude ? match : !match → isInclude ? match : match (same result for include/exclude)
+      // With exclude mode, the excluded mutator must NOT appear; if isInclude were always true it would
+      const classContent =
+        'public class Test { public static Integer method() { return 1 + 2; } }'
+      const coveredLines = new Set([1])
+
+      // Act
+      const resultWithExclude = sut.compute(
+        classContent,
+        coveredLines,
+        undefined,
+        { exclude: ['ArithmeticOperator'] }
+      )
+      const resultWithAll = new MutantGenerator().compute(
+        classContent,
+        coveredLines
+      )
+
+      // Assert — excluding ArithmeticOperator gives fewer mutations than including all
+      expect(resultWithExclude.length).toBeLessThan(resultWithAll.length)
+      expect(
+        resultWithExclude.every(
+          m => m.mutationName !== 'ArithmeticOperatorMutator'
+        )
+      ).toBe(true)
+    })
+
+    it('Given no mutatorFilter at all, When computing mutations, Then returns all mutators (kills !mutatorFilter → false mutant)', () => {
+      // Arrange — kills if (!mutatorFilter) → if (false): without the early-return, undefined filter
+      // would fall through to the nameSet logic and set names=[], skip warning, then filter with empty set
+      const classContent =
+        'public class Test { public static Integer method() { return 1 + 2; } }'
+      const coveredLines = new Set([1])
+
+      // Act — no mutatorFilter argument
+      const resultNoFilter = sut.compute(classContent, coveredLines)
+      // explicit undefined is the same code path
+      const resultUndefinedFilter = new MutantGenerator().compute(
+        classContent,
+        coveredLines,
+        undefined,
+        undefined
+      )
+
+      // Assert — both must return same result (all mutators)
+      expect(resultNoFilter.length).toBe(resultUndefinedFilter.length)
+      expect(resultNoFilter.length).toBeGreaterThan(0)
+    })
+
+    it('Given includeMutators with one mutator, When computing mutations, Then only that mutator produces mutations (kills isInclude=false mutant)', () => {
+      // Arrange — kills Boolean(mutatorFilter.include) → false: if isInclude were always false,
+      // include mode would behave like exclude (returning everything EXCEPT the named mutator)
+      const classContent =
+        'public class Test { public static Integer method() { return 1 + 2; } }'
+      const coveredLines = new Set([1])
+
+      // Act
+      const result = sut.compute(classContent, coveredLines, undefined, {
+        include: ['BoundaryCondition'],
+      })
+
+      // Assert — BoundaryCondition on "1 + 2" produces 0 mutations (no boundary operators)
+      // but the point is ALL mutations must come from BoundaryConditionMutator
+      expect(
+        result.every(m => m.mutationName === 'BoundaryConditionMutator')
+      ).toBe(true)
+    })
+
+    it('Given warnUnknownMutators with only known names, When computing mutations, Then no warning is emitted', () => {
+      // Arrange — kills !knownNames.has(name) → knownNames.has(name) mutation
+      const classContent =
+        'public class Test { public static Integer method() { return 1 + 2; } }'
+      const coveredLines = new Set([1])
+      const warnSpy = vi
+        .spyOn(process, 'emitWarning')
+        .mockImplementation(() => undefined)
+
+      // Act — only known mutator names, no unknown
+      sut.compute(classContent, coveredLines, undefined, {
+        include: ['ArithmeticOperator'],
+      })
+
+      // Assert — no warning should be emitted for known mutators
+      expect(warnSpy).not.toHaveBeenCalled()
+      warnSpy.mockRestore()
+    })
   })
 
   describe('getTokenStream', () => {

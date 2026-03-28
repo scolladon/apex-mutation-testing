@@ -1,4 +1,5 @@
-import { ParserRuleContext } from 'antlr4ts'
+import { ParserRuleContext, Token } from 'antlr4ts'
+import { TerminalNode } from 'antlr4ts/tree/index.js'
 import { MethodDeclarationContext } from 'apex-parser'
 import { NegationMutator } from '../../../src/mutator/negationMutator.js'
 import { APEX_TYPE, ApexMethod } from '../../../src/type/ApexMethod.js'
@@ -654,6 +655,158 @@ describe('NegationMutator', () => {
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
+    })
+
+    it('Given return statement with one child only, When entering return statement, Then no mutation created', () => {
+      // Arrange
+      // Kills: `ctx.children.length < 2` → `<= 2` (length=1 triggers the guard for both,
+      // but distinguishes from tests that only use `children: null` to reach the early return)
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+
+      const returnCtx = {
+        children: [{ text: 'return' }],
+        childCount: 1,
+      } as unknown as ParserRuleContext
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'Integer' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      Object.defineProperty(returnCtx, 'parent', {
+        value: methodCtx,
+        writable: true,
+        configurable: true,
+      })
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('isNegatedExpression boundary conditions', () => {
+    it('Given expression with childCount=3 and first child is TerminalNode minus, When entering return statement, Then creates mutation', () => {
+      // Arrange
+      // Kills: `expr.childCount !== 2` → `=== 2`
+      // With original `!== 2`: childCount=3 → true → returns false → mutation proceeds.
+      // With mutant `=== 2`: childCount=3 → false → checks TerminalNode('-') → returns true → blocks mutation.
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+
+      const minusNode = new TerminalNode({ text: '-' } as Token)
+      const child2 = { text: 'a' }
+      const child3 = { text: 'b' }
+
+      const expressionNode = {
+        text: '-ab',
+        start: TestUtil.createToken(1, 7),
+        stop: TestUtil.createToken(1, 10),
+        childCount: 3,
+        children: [minusNode, child2, child3],
+        getChild: (i: number) => {
+          if (i === 0) return minusNode
+          if (i === 1) return child2
+          return child3
+        },
+      } as unknown as ParserRuleContext
+      Object.setPrototypeOf(expressionNode, ParserRuleContext.prototype)
+
+      const returnCtx = {
+        children: [{ text: 'return' }, expressionNode],
+        childCount: 2,
+        getChild: (i: number) =>
+          i === 0 ? { text: 'return' } : expressionNode,
+      } as unknown as ParserRuleContext
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'Integer' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      Object.defineProperty(returnCtx, 'parent', {
+        value: methodCtx,
+        writable: true,
+        configurable: true,
+      })
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('-(-ab)')
+    })
+
+    it('Given expression with childCount=1, When entering return statement, Then creates mutation without wrapping in parentheses', () => {
+      // Arrange
+      // Kills: `expressionNode.childCount > 1` → `>= 1`
+      // With original `> 1`: childCount=1 → false → no parens → `-x`.
+      // With mutant `>= 1`: childCount=1 → true → wraps → `-(x)`.
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+
+      const expressionNode = {
+        text: 'x',
+        start: TestUtil.createToken(1, 7),
+        stop: TestUtil.createToken(1, 8),
+        childCount: 1,
+        children: [{ text: 'x' }],
+        getChild: (_i: number) => ({ text: 'x' }),
+      } as unknown as ParserRuleContext
+      Object.setPrototypeOf(expressionNode, ParserRuleContext.prototype)
+
+      const returnCtx = {
+        children: [{ text: 'return' }, expressionNode],
+        childCount: 2,
+        getChild: (i: number) =>
+          i === 0 ? { text: 'return' } : expressionNode,
+      } as unknown as ParserRuleContext
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'Integer' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      Object.defineProperty(returnCtx, 'parent', {
+        value: methodCtx,
+        writable: true,
+        configurable: true,
+      })
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('-x')
     })
   })
 })

@@ -272,4 +272,118 @@ describe('MemberVariableMutator', () => {
       })
     })
   })
+
+  describe('Given a field declaration child that is not a ParserRuleContext but contains PRC declarators', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations (kills !(child instanceof ParserRuleContext) → false mutant)', () => {
+        // Arrange
+        // With mutant `false`: condition never skips, so a non-PRC child that contains
+        // PRC declarators with start/stop would be processed and create a mutation.
+        // Original code skips non-PRC children entirely.
+        const validDeclarator = createVariableDeclarator('count', true, '5')
+        const nonPrcDeclaratorsChild = {
+          children: [validDeclarator],
+          childCount: 1,
+          // NOT setPrototypeOf to PRC — this is NOT a ParserRuleContext
+        } as unknown as ParserRuleContext
+
+        const ctx = {
+          children: [
+            { text: 'Integer' },
+            nonPrcDeclaratorsChild,
+            { text: ';' },
+          ],
+          childCount: 3,
+          start: TestUtil.createToken(1, 0),
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterFieldDeclaration(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a variable declarators node containing a non-ParserRuleContext child that has children', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations (kills !(declarator instanceof ParserRuleContext) → false mutant)', () => {
+        // Arrange
+        // With mutant `false`: non-PRC declarators with children/start/stop would be processed
+        // and create a mutation. Original code skips them via the instanceof guard.
+        const nonPrcDeclarator = {
+          text: 'count=5',
+          children: [{ text: 'count' }, { text: '=' }, { text: '5' }],
+          childCount: 3,
+          start: TestUtil.createToken(1, 0),
+          stop: TestUtil.createToken(1, 10),
+        } as unknown as ParserRuleContext
+
+        const declarators = {
+          children: [nonPrcDeclarator],
+          childCount: 1,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarators, ParserRuleContext.prototype)
+
+        const ctx = createFieldDeclaration('Integer', declarators)
+
+        // Act
+        sut.enterFieldDeclaration(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a variable declarator with exactly 2 children (missing initializer value)', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations (kills declarator.children.length < 3 → < 2 mutant)', () => {
+        // Arrange
+        // With mutant `< 2`: length=2 → 2 < 2 → false → continues processing.
+        // Original `< 3`: length=2 → 2 < 3 → true → returns early (correct).
+        const declarator = {
+          children: [{ text: 'count' }, { text: '=' }],
+          childCount: 2,
+          text: 'count=',
+          start: TestUtil.createToken(1, 0),
+          stop: TestUtil.createToken(1, 6),
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarator, ParserRuleContext.prototype)
+        const declarators = createVariableDeclarators([declarator])
+        const ctx = createFieldDeclaration('Integer', declarators)
+
+        // Act
+        sut.enterFieldDeclaration(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a field declaration with multiple declarators only one of which is valid', () => {
+    describe('When entering the expression', () => {
+      it('Then should create exactly one mutation for the valid declarator', () => {
+        // Arrange
+        // Exercises the loop in processVariableDeclarators with mixed declarators,
+        // killing any ConditionalExpression that skips all declarators.
+        const validDeclarator = createVariableDeclarator('count', true, '5')
+        const invalidDeclarator = createVariableDeclarator('other', false)
+        const declarators = createVariableDeclarators([
+          validDeclarator,
+          invalidDeclarator,
+        ])
+        const ctx = createFieldDeclaration('Integer', declarators)
+
+        // Act
+        sut.enterFieldDeclaration(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('count')
+      })
+    })
+  })
 })

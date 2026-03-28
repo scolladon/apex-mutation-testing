@@ -499,4 +499,211 @@ describe('RemoveIncrementsMutator', () => {
       })
     })
   })
+
+  describe('Given a PostOpExpression with childCount=3 but valid TerminalNode increment operator', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations (childCount guard rejects non-binary expressions)', () => {
+        // Arrange — kills ConditionalExpression false → if (false) mutant on childCount check
+        // With 'false': skips childCount guard, gets to TerminalNode check, passes (is TerminalNode),
+        // passes has('++') check, creates mutation — but test expects 0
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 10,
+          tokenIndex: 5,
+          startIndex: 10,
+          stopIndex: 10,
+        } as Token
+
+        const innerExpression = {
+          text: 'i',
+          start: mockToken,
+          stop: { tokenIndex: 5 } as Token,
+        } as unknown as ParserRuleContext
+
+        const operatorNode = new TerminalNode({ text: '++' } as Token)
+        const extraChild = { text: 'extra' } as unknown as ParserRuleContext
+
+        const ctx = {
+          childCount: 3, // not 2 — should be rejected by childCount guard
+          getChild: vi.fn().mockImplementation(index => {
+            if (index === 0) return innerExpression
+            if (index === 1) return operatorNode
+            return extraChild
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 6 } as Token,
+          text: 'i++extra',
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterPostOpExpression(ctx)
+
+        // Assert — childCount !== 2 must cause early return
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a PostOpExpression with childCount=3 but valid TerminalNode decrement operator', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations (childCount guard rejects non-binary expressions)', () => {
+        // Arrange — kills ConditionalExpression false on childCount check for -- operator
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 10,
+          tokenIndex: 5,
+          startIndex: 10,
+          stopIndex: 10,
+        } as Token
+
+        const innerExpression = {
+          text: 'j',
+          start: mockToken,
+          stop: { tokenIndex: 5 } as Token,
+        } as unknown as ParserRuleContext
+
+        const operatorNode = new TerminalNode({ text: '--' } as Token)
+
+        const ctx = {
+          childCount: 3,
+          getChild: vi.fn().mockImplementation(index => {
+            if (index === 0) return innerExpression
+            if (index === 1) return operatorNode
+            return { text: 'extra' } as unknown as ParserRuleContext
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 6 } as Token,
+          text: 'j--extra',
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterPostOpExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a PreOpExpression with childCount=3 but valid TerminalNode increment operator', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations (childCount guard rejects non-binary expressions)', () => {
+        // Arrange — kills ConditionalExpression false on childCount check for pre-op
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 10,
+          tokenIndex: 5,
+          startIndex: 10,
+          stopIndex: 10,
+        } as Token
+
+        const operatorNode = new TerminalNode({ text: '++' } as Token)
+
+        const innerExpression = {
+          text: 'i',
+          start: { tokenIndex: 6 } as Token,
+          stop: { tokenIndex: 6 } as Token,
+        } as unknown as ParserRuleContext
+
+        const ctx = {
+          childCount: 3,
+          getChild: vi.fn().mockImplementation(index => {
+            if (index === 0) return operatorNode
+            if (index === 1) return innerExpression
+            return { text: 'extra' } as unknown as ParserRuleContext
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 6 } as Token,
+          text: '++iextra',
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterPreOpExpression(ctx)
+
+        // Assert — childCount !== 2 must cause early return
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a PreOpExpression with childCount=3 but valid TerminalNode decrement operator', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations (childCount guard rejects non-binary expressions)', () => {
+        // Arrange — kills ConditionalExpression false on childCount check for pre-op with --
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 10,
+          tokenIndex: 5,
+          startIndex: 10,
+          stopIndex: 10,
+        } as Token
+
+        const operatorNode = new TerminalNode({ text: '--' } as Token)
+
+        const innerExpression = {
+          text: 'j',
+          start: { tokenIndex: 6 } as Token,
+          stop: { tokenIndex: 6 } as Token,
+        } as unknown as ParserRuleContext
+
+        const ctx = {
+          childCount: 3,
+          getChild: vi.fn().mockImplementation(index => {
+            if (index === 0) return operatorNode
+            if (index === 1) return innerExpression
+            return { text: 'extra' } as unknown as ParserRuleContext
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 6 } as Token,
+          text: '--jextra',
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterPreOpExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a PreOpExpression with non-increment operator that IS a TerminalNode', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations (INCREMENT_OPERATORS check rejects it)', () => {
+        // Arrange — kills ConditionalExpression false on !INCREMENT_OPERATORS.has() for pre-op
+        // TerminalNode with text '-' — not in the increment set
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 10,
+          tokenIndex: 5,
+          startIndex: 10,
+          stopIndex: 10,
+        } as Token
+
+        const operatorNode = new TerminalNode({ text: '-' } as Token)
+
+        const innerExpression = {
+          text: 'x',
+          start: { tokenIndex: 6 } as Token,
+          stop: { tokenIndex: 6 } as Token,
+        } as unknown as ParserRuleContext
+
+        const ctx = {
+          childCount: 2,
+          getChild: vi.fn().mockImplementation(index => {
+            return index === 0 ? operatorNode : innerExpression
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 6 } as Token,
+          text: '-x',
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterPreOpExpression(ctx)
+
+        // Assert — '-' is not in INCREMENT_OPERATORS, must not create mutation
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
 })

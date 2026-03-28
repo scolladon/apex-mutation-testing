@@ -283,6 +283,132 @@ describe('UnaryOperatorInsertionMutator', () => {
     })
   })
 
+  describe('Given a primary expression with uppercase boolean/null literals', () => {
+    describe('When entering the expression', () => {
+      it.each([
+        'TRUE',
+        'FALSE',
+        'NULL',
+        'True',
+        'False',
+        'Null',
+      ])('Then should not create mutations for %s (case-insensitive)', literal => {
+        // Arrange
+        const ctx = createPrimaryExpression(literal)
+
+        // Act
+        sut.enterPrimaryExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given isLiteral: only true is a known keyword, When false and null are different keywords, Then each independently triggers early return', () => {
+    it('Given "false" identifier alone, Then should not create mutations', () => {
+      // Arrange — kills lower==="true" && lower==="false" || ... mutation where "false" alone must return true
+      const ctx = createPrimaryExpression('false')
+
+      // Act
+      sut.enterPrimaryExpression(ctx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+
+    it('Given "null" identifier alone, Then should not create mutations', () => {
+      // Arrange — kills lower==="true" || lower==="false" && lower==="null" mutation where "null" alone must return true
+      const ctx = createPrimaryExpression('null')
+
+      // Act
+      sut.enterPrimaryExpression(ctx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+
+    it('Given "true" identifier alone, Then should not create mutations', () => {
+      // Arrange — kills lower==="false" || lower==="null" replacing the whole condition
+      const ctx = createPrimaryExpression('true')
+
+      // Act
+      sut.enterPrimaryExpression(ctx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('Given a numeric literal starting with digit, When entering the expression, Then should not create mutations', () => {
+    it.each([
+      '0',
+      '1',
+      '99',
+      '3.14',
+    ])('Then should not create mutations for numeric literal %s', numLiteral => {
+      // Arrange — kills /^\\d/.test(text) → false BlockStatement mutant
+      const ctx = createPrimaryExpression(numLiteral)
+
+      // Act
+      sut.enterPrimaryExpression(ctx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('Given "this" keyword only, When super is not the text, Then mutations are still suppressed', () => {
+    it('Given "this" alone, Then should not create mutations (kills this&&super mutation)', () => {
+      // Arrange — kills text==='this' && text==='super' mutation: 'this' must independently suppress
+      const ctx = createPrimaryExpression('this')
+
+      // Act
+      sut.enterPrimaryExpression(ctx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+
+    it('Given "super" alone, Then should not create mutations (kills this&&super mutation)', () => {
+      // Arrange — kills text==='this' && text==='super' mutation: 'super' must independently suppress
+      const ctx = createPrimaryExpression('super')
+
+      // Act
+      sut.enterPrimaryExpression(ctx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('Given a string literal starting with single quote, When entering the expression, Then should not create mutations', () => {
+    it("Given a string literal 'x', Then should produce 0 mutations (the quote prefix is sufficient to suppress)", () => {
+      // Arrange — kills text.startsWith("'") → text.startsWith("") StringLiteral mutant:
+      // startsWith("") is always true for any string, so a plain identifier would also be blocked.
+      // Pairing this test with the 4-mutations test for 'counter' ensures the check is specific to "'".
+      const ctx = createPrimaryExpression("'x'")
+
+      // Act
+      sut.enterPrimaryExpression(ctx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+
+    it('Given a plain identifier not starting with a quote, Then should produce 4 mutations (confirms the quote check is specific)', () => {
+      // Arrange — kills startsWith("'") → startsWith("") mutant: if startsWith("") were used,
+      // even 'counter' would be blocked because every string starts with "".
+      const ctx = createPrimaryExpression('counter')
+
+      // Act
+      sut.enterPrimaryExpression(ctx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(4)
+    })
+  })
+
   describe('Given a primary expression directly inside a ReturnStatement', () => {
     describe('When entering the expression', () => {
       it('Then should create only 2 mutations (++x and --x), skipping post-op x++ and x-- as they are equivalent', () => {

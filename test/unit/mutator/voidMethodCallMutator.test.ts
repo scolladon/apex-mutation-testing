@@ -161,4 +161,97 @@ describe('VoidMethodCallMutator', () => {
       })
     })
   })
+
+  describe('Given an ExpressionStatement with 3 children where first is a method call', () => {
+    describe('When entering the statement', () => {
+      it('Then should not create any mutations because childCount is not exactly 2', () => {
+        // Arrange
+        // Kills: `ctx.childCount !== 2` → `false`
+        // With mutant `false`, the guard is skipped; since the first child IS a
+        // MethodCallExpressionContext with valid tokens, a mutation would be created —
+        // contradicting the expected behaviour.
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 0,
+          tokenIndex: 1,
+          startIndex: 0,
+          stopIndex: 30,
+        } as Token
+
+        const methodCallExpression = {
+          text: 'doSomething()',
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(
+          methodCallExpression,
+          MethodCallExpressionContext.prototype
+        )
+
+        const semicolonNode = new TerminalNode({ text: ';' } as Token)
+        const extraChild = { text: 'extra' } as unknown as ParserRuleContext
+
+        const ctx = {
+          childCount: 3,
+          getChild: vi.fn().mockImplementation(index => {
+            if (index === 0) return methodCallExpression
+            if (index === 1) return semicolonNode
+            return extraChild
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 6 } as Token,
+          text: 'doSomething(); extra',
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterExpressionStatement(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given an ExpressionStatement with 3 children where first is a dot expression', () => {
+    describe('When entering the statement', () => {
+      it('Then should not create any mutations because childCount is not exactly 2', () => {
+        // Arrange
+        // Kills: `ctx.childCount !== 2` → `false`
+        // With mutant `false`, the guard is skipped; since the first child IS a
+        // DotExpressionContext with valid tokens, a mutation would be created —
+        // contradicting the expected behaviour.
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 0,
+          tokenIndex: 1,
+          startIndex: 0,
+          stopIndex: 35,
+        } as Token
+
+        const dotExpression = {
+          text: "System.debug('test')",
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(dotExpression, DotExpressionContext.prototype)
+
+        const semicolonNode = new TerminalNode({ text: ';' } as Token)
+        const extraChild = { text: 'extra' } as unknown as ParserRuleContext
+
+        const ctx = {
+          childCount: 3,
+          getChild: vi.fn().mockImplementation(index => {
+            if (index === 0) return dotExpression
+            if (index === 1) return semicolonNode
+            return extraChild
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 7 } as Token,
+          text: "System.debug('test'); extra",
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterExpressionStatement(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
 })

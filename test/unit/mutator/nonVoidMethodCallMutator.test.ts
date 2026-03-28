@@ -1078,6 +1078,309 @@ describe('NonVoidMethodCallMutator', () => {
         expect(sut._mutations).toHaveLength(1)
         expect(sut._mutations[0].replacement).toBe('0')
       })
+
+      it('Given dot expression as child of wrapper, When entering statement, Then should detect and mutate', () => {
+        // Arrange — kills mutations on `child instanceof DotExpressionContext` check
+        // (if that check is removed, only MethodCallExpressionContext children are detected)
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const dotChild = {
+          text: 'obj.getValue()',
+          start: TestUtil.createToken(1, 0),
+          stop: TestUtil.createToken(1, 14),
+          childCount: 0,
+          children: [],
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(dotChild, DotExpressionContext.prototype)
+
+        const wrapperExpression = {
+          text: '(obj.getValue())',
+          start: TestUtil.createToken(1, 0),
+          stop: TestUtil.createToken(1, 16),
+          childCount: 1,
+          children: [dotChild],
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(wrapperExpression, ParserRuleContext.prototype)
+
+        const ctx = createVariableDeclarationStatement(
+          'String',
+          's',
+          wrapperExpression
+        )
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe("''")
+      })
+    })
+
+    describe('enterAssignExpression with dot expression RHS', () => {
+      it('Given dot expression as RHS, When assigning to known variable, Then should mutate', () => {
+        // Arrange — exercises isMethodCall for DotExpressionContext in the assignment path
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['result', 'string']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const dotRhs = createDotExpression('helper.getName()')
+        const assignCtx = createAssignExpression('result', dotRhs)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe("''")
+      })
+
+      it('Given dot expression as RHS with integer variable, When assigning, Then should mutate with numeric default', () => {
+        // Arrange
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['count', 'integer']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const dotRhs = createDotExpression('repo.getCount()')
+        const assignCtx = createAssignExpression('count', dotRhs)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('0')
+      })
+    })
+
+    describe('enterAssignExpression with Set and Map variable types', () => {
+      it('Given Set<String> variable, When assigning method call, Then replaces with new Set<String>()', () => {
+        // Arrange — exercises generateDefaultValue set branch via enterAssignExpression
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['mySet', 'Set<String>']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('getNames()')
+        const assignCtx = createAssignExpression('mySet', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('new Set<String>()')
+      })
+
+      it('Given Map<String,Integer> variable, When assigning method call, Then replaces with new Map<String,Integer>()', () => {
+        // Arrange — exercises generateDefaultValue map branch via enterAssignExpression
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['myMap', 'Map<String,Integer>']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('buildMap()')
+        const assignCtx = createAssignExpression('myMap', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('new Map<String,Integer>()')
+      })
+
+      it('Given String[] array-syntax variable, When assigning method call, Then replaces with new List<String>()', () => {
+        // Arrange — exercises the endsWith('[]') branch of generateDefaultValue
+        // via enterAssignExpression; type stored with [] suffix
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['items', 'String[]']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('getItems()')
+        const assignCtx = createAssignExpression('items', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('new List<String>()')
+      })
+
+      it('Given Blob variable, When assigning method call, Then replaces with Blob.valueOf(empty string)', () => {
+        // Arrange — exercises generateDefaultValue blob path via enterAssignExpression
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['data', 'Blob']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('encode()')
+        const assignCtx = createAssignExpression('data', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe("Blob.valueOf('')")
+      })
+
+      it('Given Long variable, When assigning method call, Then replaces with 0L', () => {
+        // Arrange — exercises generateDefaultValue long path via enterAssignExpression
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['size', 'Long']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('computeSize()')
+        const assignCtx = createAssignExpression('size', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('0L')
+      })
+
+      it('Given Boolean variable, When assigning method call, Then replaces with false', () => {
+        // Arrange — exercises generateDefaultValue boolean path via enterAssignExpression
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['active', 'Boolean']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('isActive()')
+        const assignCtx = createAssignExpression('active', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('false')
+      })
+
+      it('Given Double variable, When assigning method call, Then replaces with 0.0', () => {
+        // Arrange — exercises generateDefaultValue double path via enterAssignExpression
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['rate', 'Double']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('getRate()')
+        const assignCtx = createAssignExpression('rate', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('0.0')
+      })
+
+      it('Given Decimal variable, When assigning method call, Then replaces with 0.0', () => {
+        // Arrange — exercises generateDefaultValue decimal path via enterAssignExpression
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['amount', 'Decimal']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('getAmount()')
+        const assignCtx = createAssignExpression('amount', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('0.0')
+      })
+
+      it('Given Id variable, When assigning method call, Then replaces with empty string literal', () => {
+        // Arrange — exercises generateDefaultValue id path via enterAssignExpression
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['recordId', 'Id']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('resolveId()')
+        const assignCtx = createAssignExpression('recordId', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe("''")
+      })
+
+      it('Given int (short form) variable, When assigning method call, Then replaces with 0', () => {
+        // Arrange — exercises generateDefaultValue int (alias) path via enterAssignExpression
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['num', 'int']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('parse()')
+        const assignCtx = createAssignExpression('num', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('0')
+      })
+
+      it('Given custom class variable, When assigning method call, Then replaces with null', () => {
+        // Arrange — exercises generateDefaultValue null fallback via enterAssignExpression
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['account', 'Account']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('buildAccount()')
+        const assignCtx = createAssignExpression('account', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('null')
+      })
     })
   })
 })

@@ -54,6 +54,41 @@ describe('EqualityConditionMutator', () => {
     expect(mutator['_mutations'][0].replacement).toBe('==')
   })
 
+  it('should mutate === to !==', () => {
+    // Arrange
+    const mockCtx = createMockContext('===')
+
+    // Act
+    mutator.enterEqualityExpression(mockCtx)
+
+    // Assert
+    expect(mutator['_mutations']).toHaveLength(1)
+    expect(mutator['_mutations'][0].replacement).toBe('!==')
+  })
+
+  it('should mutate !== to ===', () => {
+    // Arrange
+    const mockCtx = createMockContext('!==')
+
+    // Act
+    mutator.enterEqualityExpression(mockCtx)
+
+    // Assert
+    expect(mutator['_mutations']).toHaveLength(1)
+    expect(mutator['_mutations'][0].replacement).toBe('===')
+  })
+
+  it('Given null context, When enterEqualityExpression, Then no mutation is added', () => {
+    // Arrange — covers the !ctx branch
+    const nullCtx = null as unknown as ParserRuleContext
+
+    // Act
+    mutator.enterEqualityExpression(nullCtx)
+
+    // Assert
+    expect(mutator['_mutations']).toHaveLength(0)
+  })
+
   it('should not mutate when child count is insufficient', () => {
     const mockCtx = { childCount: 2 } as unknown as ParserRuleContext
     mutator.enterEqualityExpression(mockCtx)

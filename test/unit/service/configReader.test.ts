@@ -378,6 +378,113 @@ describe('ConfigReader', () => {
     expect(parsed).toEqual(new Set([42]))
   })
 
+  it('Given only includeMutators set (no excludeMutators), When resolving config, Then does not throw (kills includeMutators&&true mutation)', async () => {
+    // Arrange — kills "parameter.includeMutators && true" ConditionalExpression mutant:
+    // if excludeMutators were replaced by `true`, this would throw even with only include set
+    const parameter: ApexMutationParameter = {
+      ...baseParameter,
+      includeMutators: ['ArithmeticOperator'],
+    }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).resolves.not.toThrow()
+  })
+
+  it('Given only excludeMutators set (no includeMutators), When resolving config, Then does not throw (kills true&&excludeMutators mutation)', async () => {
+    // Arrange — kills "true && parameter.excludeMutators" ConditionalExpression mutant:
+    // if includeMutators were replaced by `true`, this would throw even with only exclude set
+    const parameter: ApexMutationParameter = {
+      ...baseParameter,
+      excludeMutators: ['Increment'],
+    }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).resolves.not.toThrow()
+  })
+
+  it('Given only includeTestMethods set (no excludeTestMethods), When resolving config, Then does not throw (kills includeTestMethods&&true mutation)', async () => {
+    // Arrange — kills "parameter.includeTestMethods && true" ConditionalExpression mutant
+    const parameter: ApexMutationParameter = {
+      ...baseParameter,
+      includeTestMethods: ['myTest'],
+    }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).resolves.not.toThrow()
+  })
+
+  it('Given only excludeTestMethods set (no includeTestMethods), When resolving config, Then does not throw (kills true&&excludeTestMethods mutation)', async () => {
+    // Arrange — kills "true && parameter.excludeTestMethods" ConditionalExpression mutant
+    const parameter: ApexMutationParameter = {
+      ...baseParameter,
+      excludeTestMethods: ['slowTest'],
+    }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).resolves.not.toThrow()
+  })
+
+  it('Given error object without code property when reading config, When resolving config, Then throws wrapped error', async () => {
+    // Arrange — kills 'code' in error → true ConditionalExpression mutant:
+    // an error object without 'code' should not be silently swallowed
+    vi.mocked(readFile).mockRejectedValue({
+      message: 'some error without code',
+    })
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(
+      /Failed to parse config file/
+    )
+  })
+
+  it('Given falsy error value when reading config, When resolving config, Then throws wrapped error', async () => {
+    // Arrange — kills error && ... → true && ... ConditionalExpression mutant:
+    // a falsy error (null) should not be silently swallowed as ENOENT
+    vi.mocked(readFile).mockRejectedValue(null)
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(
+      /Failed to parse config file/
+    )
+  })
+
+  it('Given non-object error when reading config, When resolving config, Then throws wrapped error', async () => {
+    // Arrange — kills typeof error === 'object' → true ConditionalExpression mutant:
+    // a non-object error (number) should not be silently swallowed as ENOENT
+    vi.mocked(readFile).mockRejectedValue(42)
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(
+      /Failed to parse config file/
+    )
+  })
+
+  it('Given config file with valid lines, When resolving config, Then lines are accepted', async () => {
+    // Arrange — kills parameter.lines truthy check → true: without this guard, undefined lines
+    // would cause the for loop to crash on undefined
+    const config = { lines: ['1-5'] }
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act
+    const result = await sut.resolve(parameter)
+
+    // Assert
+    expect(result.lines).toEqual(['1-5'])
+  })
+
+  it('Given no lines in config or CLI, When resolving config, Then no validation error is thrown (kills lines&&true guard)', async () => {
+    // Arrange — kills if (parameter.lines) → if (true) mutation:
+    // if the guard were removed, iterating undefined.lines would crash
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).resolves.not.toThrow()
+  })
+
   it('Given config file with valid skipPatterns, When resolving config, Then returns skipPatterns from file', async () => {
     // Arrange
     const config = { skipPatterns: ['System\\.debug', 'Logger\\.'] }
