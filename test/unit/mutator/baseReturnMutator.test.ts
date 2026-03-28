@@ -284,4 +284,122 @@ describe('BaseReturnMutator', () => {
       expect(sut._mutations).toHaveLength(0)
     })
   })
+
+  describe('Given TypeRegistry and return expression matching returnValue with surrounding whitespace', () => {
+    it('Then should not create any mutations (kills trim() removal mutant)', () => {
+      // Arrange
+      // Expression text has surrounding whitespace: ' stub '
+      // Without trim(), ' stub '.toLowerCase() === 'stub' is false → mutation created (wrong)
+      // With trim(), 'stub' === 'stub' is true → no mutation (correct)
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'String',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.STRING,
+      })
+      const sut = new StubReturnMutator(createTypeRegistry(typeTable))
+      const returnCtx = createReturnCtxInMethod(' stub ', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('Given TypeRegistry and return expression matching returnValue with whitespace and different case', () => {
+    it('Then should not create any mutations (kills both trim() and toLowerCase() removal mutants)', () => {
+      // Arrange
+      // Expression ' STUB ' requires both trim and toLowerCase to match 'stub'
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'String',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.STRING,
+      })
+      const sut = new StubReturnMutator(createTypeRegistry(typeTable))
+      const returnCtx = createReturnCtxInMethod(' STUB ', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('Given TypeRegistry and return statement where children.length < 2 but children[1] exists as ParserRuleContext', () => {
+    it('Then should not create any mutations (kills length > 2 / length >= 2 / length < 1 mutants on the guard)', () => {
+      // Arrange
+      // Stryker mutates `ctx.children.length < 2` to `> 2`, `>= 2`, `< 1` etc.
+      // Those mutants survive when children.length is 1 and children[1] is undefined (instanceof check saves them).
+      // To kill them, we need children.length === 1 but children[1] to be a valid ParserRuleContext
+      // so that without the length guard the code would proceed and create a mutation.
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'String',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.STRING,
+      })
+      const sut = new StubReturnMutator(createTypeRegistry(typeTable))
+
+      // Build a fake expression node that is a ParserRuleContext with text != 'stub'
+      const expressionNode = TestUtil.createExpressionNode('someValue')
+
+      // children.length === 1 (so the guard `< 2` fires), but [1] returns the expression node.
+      // Use a plain object shaped as an array-like: length=1 but index 1 is accessible.
+      // This exposes mutants that skip the length check: they would proceed to instanceof check
+      // (passes), text check ('someValue' !== 'stub'), and create a mutation.
+      // Using a plain object (not Array) because JS arrays don't allow redefining length.
+      const fakeChildren: { length: number; [index: number]: unknown } = {
+        length: 1,
+        0: { text: 'return' },
+        1: expressionNode,
+      }
+
+      const returnCtx = {
+        children: fakeChildren,
+        childCount: 1,
+      } as unknown as ParserRuleContext
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'String' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      TestUtil.setParent(returnCtx, methodCtx)
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert — length guard must fire, preventing any mutation
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('Given TypeRegistry and eligible return with children having exactly 2 entries', () => {
+    it('Then should create a mutation confirming length < 2 does not block the happy path', () => {
+      // Arrange — verifies `< 2` (not `> 2` or other mutants) allows exactly-2-children through
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'String',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.STRING,
+      })
+      const sut = new StubReturnMutator(createTypeRegistry(typeTable))
+      const returnCtx = createReturnCtxInMethod('someValue', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+    })
+  })
 })

@@ -1382,5 +1382,333 @@ describe('NonVoidMethodCallMutator', () => {
         expect(sut._mutations[0].replacement).toBe('null')
       })
     })
+
+    describe('guard clause || vs && kills', () => {
+      it('Given declCtx that is a PRC with null children, When entering LVDS, Then should not mutate (kills || → && on declCtx.children guard)', () => {
+        // Arrange
+        // The guard `!declCtx.children || declCtx.children.length < 2` with || → && becomes
+        // `!declCtx.children && declCtx.children.length < 2`. When children IS null, the mutant
+        // would evaluate null.length and throw, whereas the original short-circuits safely.
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        const declCtx = {
+          children: null,
+          childCount: 0,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declCtx, ParserRuleContext.prototype)
+
+        const ctx = {
+          children: [declCtx, { text: ';' }],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given declarator PRC with null children, When entering LVDS, Then should not mutate (kills || → && on declarator.children guard)', () => {
+        // Arrange
+        // The guard `!ctx.children || ctx.children.length < 3` in processVariableDeclarator
+        // with || → && becomes `!ctx.children && ctx.children.length < 3`.
+        // When children IS null, the mutant evaluates null.length and throws.
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        const declarator = {
+          children: null,
+          childCount: 0,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarator, ParserRuleContext.prototype)
+
+        const declarators = {
+          children: [declarator],
+          childCount: 1,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarators, ParserRuleContext.prototype)
+
+        const declCtx = {
+          children: [{ text: 'Integer' }, declarators],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declCtx, ParserRuleContext.prototype)
+
+        const ctx = {
+          children: [declCtx, { text: ';' }],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given NewExpressionContext with MethodCallExpression child, When entering LVDS, Then should NOT mutate (kills NewExpression → false mutant)', () => {
+        // Arrange
+        // The guard `if (initializer instanceof NewExpressionContext) { return }` with
+        // the condition mutated to false would cause this constructor-with-method-arg to
+        // be processed, and isMethodCall would return true (via child check), producing a
+        // spurious mutation. The guard must remain to prevent this.
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        const methodCallChild = {
+          text: 'computeName()',
+          start: TestUtil.createToken(1, 0),
+          stop: TestUtil.createToken(1, 13),
+          childCount: 0,
+          children: [],
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(
+          methodCallChild,
+          MethodCallExpressionContext.prototype
+        )
+
+        const newExpr = {
+          text: 'new Account(computeName())',
+          start: TestUtil.createToken(1, 0),
+          stop: TestUtil.createToken(1, 26),
+          childCount: 2,
+          children: [methodCallChild],
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(newExpr, NewExpressionContext.prototype)
+
+        const ctx = createVariableDeclarationStatement(
+          'Account',
+          'acc',
+          newExpr
+        )
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert — constructor call must NOT be mutated even if it contains a method call
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given no enclosing method but class field exists with same name, When assigning method call, Then should NOT mutate (kills !methodName → false mutant)', () => {
+        // Arrange
+        // The guard `if (!methodName) { return }` with condition mutated to false would
+        // let execution continue. resolveType(null, 'x') falls back to classFields.get('x')
+        // which finds the type and would create a spurious mutation.
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map(),
+          new Map([['x', 'integer']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('getValue()')
+        const assignCtx = createAssignExpression('x', methodCall)
+        // No setEnclosingMethod — methodName will be null
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert — must return early at !methodName, not fall through to classField resolution
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given non-PRC RHS with MethodCallExpression child, When assigning to known variable, Then should NOT mutate (kills !(rhs instanceof PRC) → false mutant)', () => {
+        // Arrange
+        // The guard `if (!(rhs instanceof ParserRuleContext)) { return }` with condition
+        // mutated to false would let a non-PRC rhs proceed to isMethodCall. If that rhs has
+        // a children array containing a MethodCallExpressionContext, isMethodCall returns true
+        // and a spurious mutation is created.
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['x', 'integer']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        const methodCallChild = {
+          text: 'getValue()',
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(
+          methodCallChild,
+          MethodCallExpressionContext.prototype
+        )
+
+        // Non-PRC node (does not extend ParserRuleContext) but has a MCEL child and
+        // token positions so createMutationFromParserRuleContext would succeed if reached
+        const nonPrcRhs = {
+          text: 'getValue()',
+          start: TestUtil.createToken(1, 0),
+          stop: TestUtil.createToken(1, 10),
+          children: [methodCallChild],
+        }
+
+        const assignCtx = {
+          childCount: 3,
+          children: [{ text: 'x' }, { text: '=' }, nonPrcRhs],
+          getChild: (i: number) => {
+            if (i === 0) return { text: 'x' }
+            if (i === 1) return { text: '=' }
+            return nonPrcRhs
+          },
+        } as unknown as ParserRuleContext
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert — non-PRC rhs must be rejected before isMethodCall is invoked
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given non-PRC first child of outer ctx with valid declaration structure, When entering LVDS, Then should NOT mutate (kills !(declCtx instanceof PRC) → false mutant)', () => {
+        // Arrange
+        // The guard `if (!(declCtx instanceof ParserRuleContext)) { return }` with condition
+        // mutated to false would proceed with a non-PRC declCtx. If that non-PRC declCtx has
+        // children containing a declarators PRC with a method call, a spurious mutation is created.
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        const methodCall = createMethodCallExpression('getValue()')
+        const declarator = {
+          text: 'x=getValue()',
+          children: [{ text: 'x' }, { text: '=' }, methodCall],
+          childCount: 3,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarator, ParserRuleContext.prototype)
+
+        const declarators = {
+          text: 'x=getValue()',
+          children: [declarator],
+          childCount: 1,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarators, ParserRuleContext.prototype)
+
+        // Non-PRC declCtx (does not extend ParserRuleContext) but has valid children
+        const nonPrcDeclCtx = {
+          children: [{ text: 'Integer' }, declarators],
+          childCount: 2,
+        }
+
+        const ctx = {
+          children: [nonPrcDeclCtx, { text: ';' }],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert — non-PRC declCtx must be rejected at the instanceof guard
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given non-PRC initializer with MethodCallExpression child, When entering LVDS, Then should NOT mutate (kills !(initializer instanceof PRC) → false mutant)', () => {
+        // Arrange
+        // The guard `if (!(initializer instanceof ParserRuleContext)) { return }` with
+        // condition mutated to false would let a non-PRC initializer proceed. If it has a
+        // children array with a MethodCallExpression, isMethodCall returns true and a
+        // spurious mutation is created.
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        const methodCallChild = {
+          text: 'getValue()',
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(
+          methodCallChild,
+          MethodCallExpressionContext.prototype
+        )
+
+        // Non-PRC initializer (does not extend ParserRuleContext) with MCEL child
+        const nonPrcInitializer = {
+          text: 'getValue()',
+          start: TestUtil.createToken(1, 0),
+          stop: TestUtil.createToken(1, 10),
+          children: [methodCallChild],
+          childCount: 1,
+        }
+
+        const declarator = {
+          text: 'x=getValue()',
+          children: [{ text: 'x' }, { text: '=' }, nonPrcInitializer],
+          childCount: 3,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarator, ParserRuleContext.prototype)
+
+        const declarators = {
+          text: 'x=getValue()',
+          children: [declarator],
+          childCount: 1,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarators, ParserRuleContext.prototype)
+
+        const declCtx = {
+          children: [{ text: 'Integer' }, declarators],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declCtx, ParserRuleContext.prototype)
+
+        const ctx = {
+          children: [declCtx, { text: ';' }],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert — non-PRC initializer must be rejected at the instanceof guard
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given non-PRC declarator child with method call structure, When entering LVDS, Then should NOT mutate (kills declarator instanceof PRC → true mutant)', () => {
+        // Arrange
+        // The condition `if (declarator instanceof ParserRuleContext)` with ConditionalExpression
+        // mutated to true would call processVariableDeclarator on a non-PRC declarator.
+        // If that non-PRC declarator has the structure of a valid declarator with a MCEL
+        // initializer, a spurious mutation is created.
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        const methodCall = createMethodCallExpression('getValue()')
+
+        // Non-PRC declarator with full method-call-declarator structure
+        const nonPrcDeclarator = {
+          text: 'y=getValue()',
+          children: [{ text: 'y' }, { text: '=' }, methodCall],
+          childCount: 3,
+        }
+
+        const declarators = {
+          text: 'y=getValue()',
+          children: [nonPrcDeclarator],
+          childCount: 1,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarators, ParserRuleContext.prototype)
+
+        const declCtx = {
+          children: [{ text: 'Integer' }, declarators],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declCtx, ParserRuleContext.prototype)
+
+        const ctx = {
+          children: [declCtx, { text: ';' }],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert — non-PRC declarator must be skipped in the loop
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
   })
 })

@@ -458,4 +458,89 @@ describe('MutationListener', () => {
     // Assert — line 3 is beyond sourceLines (length 2), skip check not applied, line is eligible
     expect(mockListener1['enterMethodCall']).toHaveBeenCalledWith(mockContext)
   })
+
+  it('Given listener with setCoveredLines method, When constructing MutationListener, Then setCoveredLines is called on that listener', () => {
+    // Arrange — kills BlockStatement mutant on line 25 that empties the setCoveredLines forEach body
+    // If the body is emptied, setCoveredLines would never be invoked on the listener
+    const listenerWithSetCoveredLines = {
+      enterMethodCall: vi.fn(),
+      setCoveredLines: vi.fn(),
+    } as unknown as BaseListener
+    const lines = new Set([5, 10])
+
+    // Act
+    new MutationListener([listenerWithSetCoveredLines], lines)
+
+    // Assert — setCoveredLines must be called exactly once with the coveredLines set
+    expect(
+      (
+        listenerWithSetCoveredLines as BaseListener & {
+          setCoveredLines: ReturnType<typeof vi.fn>
+        }
+      ).setCoveredLines
+    ).toHaveBeenCalledWith(lines)
+  })
+
+  it('Given listener without _mutations property, When constructing MutationListener, Then _mutations is NOT shared to that listener', () => {
+    // Arrange — kills MethodExpression mutant on line 29 that removes .filter(listener => '_mutations' in listener)
+    // Without the filter, ALL listeners (even those without _mutations) would get _mutations assigned
+    const listenerWithoutMutations = {
+      enterMethodCall: vi.fn(),
+      // deliberately no _mutations property
+    } as unknown as BaseListener
+    sut = new MutationListener([listenerWithoutMutations], coveredLines)
+
+    // Assert — listener without _mutations must NOT have its _mutations set to sut._mutations
+    expect((listenerWithoutMutations as BaseListener)._mutations).not.toBe(
+      sut._mutations
+    )
+  })
+
+  it('Given no skipPatterns provided (default), When entering covered line with non-empty sourceLines, Then propagates to listeners without errors', () => {
+    // Arrange — kills ArrayDeclaration mutant on line 19 that changes default skipPatterns from []
+    // to ["Stryker was here"]. With the mutant default, skipPatterns would be a non-empty array
+    // of strings; calling .test() on a string throws TypeError.
+    // Passing undefined explicitly triggers the default parameter.
+    const sourceLines = ['Integer x = 5;']
+    sut = new MutationListener(
+      [mockListener1],
+      new Set([1]),
+      undefined, // triggers default skipPatterns value
+      undefined,
+      sourceLines
+    )
+    const mockContext = {
+      start: { line: 1 },
+    } as unknown as MethodCallContext
+
+    // Act & Assert — with real default ([]), no skip check runs; with mutant (["Stryker was here"]),
+    // calling "Stryker was here".test(sourceLine) throws TypeError
+    expect(() => sut['enterMethodCall'](mockContext)).not.toThrow()
+    expect(mockListener1['enterMethodCall']).toHaveBeenCalledWith(mockContext)
+  })
+
+  it('Given no sourceLines provided (default), When entering covered line with skip patterns and line 1, Then propagates because default sourceLines is empty', () => {
+    // Arrange — kills ArrayDeclaration mutant on line 21 that changes default sourceLines from []
+    // to ["Stryker was here"]. With the mutant default, sourceLines.length (1) >= line (1) is true,
+    // so the skip pattern IS applied to "Stryker was here". If the pattern matches, propagation is blocked.
+    // With real default ([]), sourceLines.length (0) >= line (1) is false, so no check runs.
+    const skipPatterns = [new RE2('Stryker was here')]
+    sut = new MutationListener(
+      [mockListener1],
+      new Set([1]),
+      skipPatterns,
+      undefined,
+      undefined // triggers default sourceLines value
+    )
+    const mockContext = {
+      start: { line: 1 },
+    } as unknown as MethodCallContext
+
+    // Act
+    sut['enterMethodCall'](mockContext)
+
+    // Assert — with real default ([]), skip block is not entered, line is eligible and propagates
+    // With mutant (["Stryker was here"]), pattern matches the default line → propagation blocked
+    expect(mockListener1['enterMethodCall']).toHaveBeenCalledWith(mockContext)
+  })
 })

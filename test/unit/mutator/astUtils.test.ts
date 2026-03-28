@@ -92,6 +92,29 @@ describe('astUtils', () => {
       // Assert
       expect(result).toBeNull()
     })
+
+    it('Given a non-MethodDeclarationContext parent with children[1] having text, When called, Then returns null', () => {
+      // Arrange
+      // Kills the `instanceof MethodDeclarationContext → true` mutant.
+      // With `true`, every parent is treated as a MethodDeclarationContext.
+      // If the parent (a plain ParserRuleContext) has children[1].text defined,
+      // the mutant would return that text instead of null.
+      const nonMethodCtx = new ParserRuleContext()
+      // Give the plain ParserRuleContext a children array with a defined [1].text
+      Object.defineProperty(nonMethodCtx, 'children', {
+        value: [{ text: 'String' }, { text: 'shouldNotReturn' }, { text: '(' }],
+        writable: true,
+        configurable: true,
+      })
+      const innerCtx = new ParserRuleContext()
+      TestUtil.setParent(innerCtx, nonMethodCtx)
+
+      // Act
+      const result = getEnclosingMethodName(innerCtx)
+
+      // Assert — parent is not a MethodDeclarationContext, so must return null
+      expect(result).toBeNull()
+    })
   })
 
   describe('resolveDotMethodCall', () => {
@@ -226,6 +249,233 @@ describe('astUtils', () => {
       const result = resolveDotMethodCall(ctx, typeRegistry)
 
       // Assert
+      expect(result).toBeNull()
+    })
+
+    it('Given a context with exactly 2 children where last is DotMethodCallContext, When called, Then returns null', () => {
+      // Arrange
+      // Kills `ctx.children.length < 3 → < 2` mutant (and similar weakened comparisons).
+      // With original `< 3`: 2 < 3 = true → returns null (correct).
+      // With `< 2`: 2 < 2 = false → proceeds; last child IS DotMethodCallContext with valid
+      // children, enclosing method exists and type resolves → returns non-null (wrong).
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('transform', {
+        returnType: 'String',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.STRING,
+      })
+      const typeRegistry = TestUtil.createTypeRegistry(typeTable)
+      const dotMethodCall = TestUtil.createDotMethodCallCtx('transform')
+
+      const ctx = {
+        children: [{ text: 'obj' }, dotMethodCall],
+      } as unknown as ParserRuleContext
+
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'void' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      TestUtil.setParent(ctx as ParserRuleContext, methodCtx)
+
+      // Act
+      const result = resolveDotMethodCall(ctx, typeRegistry)
+
+      // Assert — 2 children is fewer than 3, must return null
+      expect(result).toBeNull()
+    })
+
+    it('Given a context with 4 children where last is DotMethodCallContext, When called, Then returns DotMethodCallInfo', () => {
+      // Arrange
+      // Kills `ctx.children.length < 3 → > 3` mutant: 4 > 3 = true → returns null (wrong).
+      // With original `< 3`: 4 < 3 = false → proceeds and returns valid info (correct).
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('transform', {
+        returnType: 'String',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.STRING,
+      })
+      const typeRegistry = TestUtil.createTypeRegistry(typeTable)
+      const dotMethodCall = TestUtil.createDotMethodCallCtx('transform')
+
+      const ctx = {
+        children: [
+          { text: 'obj' },
+          { text: '.' },
+          { text: 'extra' },
+          dotMethodCall,
+        ],
+      } as unknown as ParserRuleContext
+
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'void' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      TestUtil.setParent(ctx as ParserRuleContext, methodCtx)
+
+      // Act
+      const result = resolveDotMethodCall(ctx, typeRegistry)
+
+      // Assert — 4 children, last is DotMethodCallContext, valid method → must return info
+      expect(result).not.toBeNull()
+      expect(result!.methodName).toBe('transform')
+    })
+
+    it('Given no enclosing method but typeRegistry knows the method, When called, Then returns null', () => {
+      // Arrange
+      // Kills `!enclosingMethod → false` mutant.
+      // With the mutant, the guard is skipped. resolveType(null, 'transform()') still resolves
+      // to STRING (methodName in typeTable). Returns non-null info instead of null.
+      // With original `!enclosingMethod`: null is falsy → returns null (correct).
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('transform', {
+        returnType: 'String',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.STRING,
+      })
+      const typeRegistry = TestUtil.createTypeRegistry(typeTable)
+      const dotMethodCall = TestUtil.createDotMethodCallCtx('transform')
+      const ctx = {
+        children: [{ text: 'obj' }, { text: '.' }, dotMethodCall],
+      } as unknown as ParserRuleContext
+      // No parent — getEnclosingMethodName returns null
+
+      // Act
+      const result = resolveDotMethodCall(ctx, typeRegistry)
+
+      // Assert — no enclosing method means we cannot resolve context → must return null
+      expect(result).toBeNull()
+    })
+
+    it('Given a DotMethodCallContext with null children, When called, Then returns null', () => {
+      // Arrange
+      // Kills `!lastChild.children → false` mutant: with the mutant, the null-children guard
+      // is skipped, then `null.length < 3` throws instead of returning null.
+      // This test exercises the !lastChild.children path directly.
+      const typeRegistry = TestUtil.createTypeRegistry()
+      const dotMethodCall = Object.create(DotMethodCallContext.prototype)
+      Object.defineProperty(dotMethodCall, 'children', {
+        value: null,
+        writable: true,
+        configurable: true,
+      })
+      const ctx = {
+        children: [{ text: 'obj' }, { text: '.' }, dotMethodCall],
+      } as unknown as ParserRuleContext
+
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'void' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      TestUtil.setParent(ctx as ParserRuleContext, methodCtx)
+
+      // Act
+      const result = resolveDotMethodCall(ctx, typeRegistry)
+
+      // Assert
+      expect(result).toBeNull()
+    })
+
+    it('Given a DotMethodCallContext with exactly 2 children and enclosing method with known type, When called, Then returns null', () => {
+      // Arrange
+      // Kills `lastChild.children.length < 3 → < 2` mutant AND `|| → &&` on the lastChild guard.
+      // With `< 3`: 2 < 3 = true → returns null (correct).
+      // With `< 2`: 2 < 2 = false → proceeds; gets methodName, enclosing method, resolves type → returns non-null (wrong).
+      // With `|| → &&` on `!lastChild.children || length < 3`:
+      //   !children = false (children is non-null), && short-circuits to false → doesn't return early
+      //   → proceeds with 2 children, length 2 >= 3 is false for `< 3` check, wait this is the INNER check
+      // Actually the `|| → &&` mutant here changes: `!lastChild.children || lastChild.children.length < 3`
+      //   to `!lastChild.children && lastChild.children.length < 3`.
+      //   With non-null children (length=2): `false && 2 < 3 = false` → doesn't return early
+      //   → proceeds, methodName = children[0].text, enclosingMethod = 'testMethod',
+      //   resolveType = STRING → returns non-null. Test expects null → caught!
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('transform', {
+        returnType: 'String',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.STRING,
+      })
+      const typeRegistry = TestUtil.createTypeRegistry(typeTable)
+
+      const dotMethodCall = Object.create(DotMethodCallContext.prototype)
+      Object.defineProperty(dotMethodCall, 'children', {
+        value: [{ text: 'transform' }, { text: '(' }],
+        writable: true,
+        configurable: true,
+      })
+
+      const ctx = {
+        children: [{ text: 'obj' }, { text: '.' }, dotMethodCall],
+      } as unknown as ParserRuleContext
+
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'void' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      TestUtil.setParent(ctx as ParserRuleContext, methodCtx)
+
+      // Act
+      const result = resolveDotMethodCall(ctx, typeRegistry)
+
+      // Assert — DotMethodCallContext with only 2 children is insufficient → null
+      expect(result).toBeNull()
+    })
+
+    it('Given a DotMethodCallContext with 1 child and enclosing method with known type, When called, Then returns null', () => {
+      // Arrange
+      // Kills `lastChild.children.length < 3 → > 3` mutant.
+      // With `> 3`: 1 > 3 = false → doesn't return early → proceeds;
+      // methodName = children[0].text, getEnclosingMethodName succeeds,
+      // resolveType returns STRING → returns non-null (wrong).
+      // With original `< 3`: 1 < 3 = true → returns null (correct).
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('transform', {
+        returnType: 'String',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.STRING,
+      })
+      const typeRegistry = TestUtil.createTypeRegistry(typeTable)
+
+      const dotMethodCall = Object.create(DotMethodCallContext.prototype)
+      Object.defineProperty(dotMethodCall, 'children', {
+        value: [{ text: 'transform' }],
+        writable: true,
+        configurable: true,
+      })
+
+      const ctx = {
+        children: [{ text: 'obj' }, { text: '.' }, dotMethodCall],
+      } as unknown as ParserRuleContext
+
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'void' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      TestUtil.setParent(ctx as ParserRuleContext, methodCtx)
+
+      // Act
+      const result = resolveDotMethodCall(ctx, typeRegistry)
+
+      // Assert — DotMethodCallContext with only 1 child is insufficient → null
       expect(result).toBeNull()
     })
   })
