@@ -216,6 +216,97 @@ describe('MutantGenerator', () => {
       // Assert
       expect(withFilter.length).toBe(withoutFilter.length)
     })
+
+    it('Given include filter with empty names array, When computing mutations, Then returns all mutations (nameSet.size === 0 guard)', () => {
+      // Arrange — kills the "nameSet.size === 0" → "nameSet.size !== 0" mutant
+      const classContent =
+        'public class Test { public static void method() { integer i = 0; ++i; } }'
+      const coveredLines = new Set([1])
+
+      // Act — include with empty array has nameSet.size === 0, so all mutators should run
+      const withEmptyInclude = sut.compute(
+        classContent,
+        coveredLines,
+        undefined,
+        {
+          include: [],
+        }
+      )
+      const withoutFilter = new MutantGenerator().compute(
+        classContent,
+        coveredLines
+      )
+
+      // Assert — empty include should behave like no filter
+      expect(withEmptyInclude.length).toBe(withoutFilter.length)
+    })
+
+    it('Given exclude filter with empty names array, When computing mutations, Then returns all mutations', () => {
+      // Arrange — exercises the exclude path of the Boolean(mutatorFilter.include) check
+      const classContent =
+        'public class Test { public static void method() { integer i = 0; ++i; } }'
+      const coveredLines = new Set([1])
+
+      // Act — exclude with empty array has nameSet.size === 0, so all mutators should run
+      const withEmptyExclude = sut.compute(
+        classContent,
+        coveredLines,
+        undefined,
+        {
+          exclude: [],
+        }
+      )
+      const withoutFilter = new MutantGenerator().compute(
+        classContent,
+        coveredLines
+      )
+
+      // Assert — empty exclude should behave like no filter
+      expect(withEmptyExclude.length).toBe(withoutFilter.length)
+    })
+
+    it('Given excludeMutators resulting in zero mutators, When computing mutations, Then throws error', () => {
+      // Arrange — kills Boolean(mutatorFilter.include) mutant: with exclude, isInclude=false so !match filters
+      const classContent =
+        'public class Test { public static Integer method() { return 1 + 2; } }'
+      const coveredLines = new Set([1])
+      // Exclude ALL known mutators to cause "all excluded" error
+      const allMutatorNames = [
+        'ArgumentPropagation',
+        'ArithmeticOperator',
+        'ArithmeticOperatorDeletion',
+        'BitwiseOperator',
+        'BoundaryCondition',
+        'ConstructorCall',
+        'EmptyReturn',
+        'EqualityCondition',
+        'ExperimentalSwitch',
+        'FalseReturn',
+        'Increment',
+        'InlineConstant',
+        'InvertNegatives',
+        'LogicalOperator',
+        'LogicalOperatorDeletion',
+        'MemberVariable',
+        'NakedReceiver',
+        'Negation',
+        'NonVoidMethodCall',
+        'NullReturn',
+        'RemoveConditionals',
+        'RemoveIncrements',
+        'Switch',
+        'TrueReturn',
+        'UnaryOperatorInsertion',
+        'VoidMethodCall',
+      ]
+
+      // Act & Assert
+      expect(() =>
+        sut.compute(classContent, coveredLines, undefined, {
+          exclude: allMutatorNames,
+        })
+      ).toThrow('All mutators have been excluded by configuration')
+    })
   })
 
   describe('getTokenStream', () => {

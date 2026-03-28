@@ -663,6 +663,70 @@ describe('TypeDiscoverer', () => {
     })
   })
 
+  describe('variable tracking — loop and filter edge cases', () => {
+    it('Given local variable declaration, When analyze, Then type name itself is NOT tracked as variable', async () => {
+      // Arrange — kills mutation i=0 (which would track type name as variable name)
+      const code = `
+        public class TestClass {
+          public void process() {
+            String name = 'test';
+          }
+        }
+      `
+      const sut = new TypeDiscoverer()
+
+      // Act
+      const registry = await sut.analyze(code)
+
+      // Assert — 'String' should not be a variable in scope
+      expect(registry.resolveType('process', 'String')).toBeNull()
+      expect(registry.resolveType('process', 'name')).not.toBeNull()
+    })
+
+    it('Given variable declaration with initializer, When analyze, Then variable name (not equals sign) is tracked', async () => {
+      // Arrange — exercises the childText !== '=' filter in the loop
+      const code = `
+        public class TestClass {
+          public void process() {
+            Integer count = 0;
+          }
+        }
+      `
+      const sut = new TypeDiscoverer()
+
+      // Act
+      const registry = await sut.analyze(code)
+
+      // Assert — variable 'count' tracked, '=' not tracked as variable
+      expect(registry.resolveType('process', 'count')).toEqual({
+        apexType: APEX_TYPE.INTEGER,
+        typeName: 'integer',
+      })
+      expect(registry.resolveType('process', '=')).toBeNull()
+    })
+
+    it('Given field declaration without initializer, When analyze, Then field is tracked', async () => {
+      // Arrange — exercises trackVariableDeclaration for fields
+      const code = `
+        public class TestClass {
+          Integer count;
+          public void process() {}
+        }
+      `
+      const sut = new TypeDiscoverer()
+
+      // Act
+      const registry = await sut.analyze(code)
+
+      // Assert — field tracked, type name itself not tracked as field
+      expect(registry.resolveType('process', 'count')).toEqual({
+        apexType: APEX_TYPE.INTEGER,
+        typeName: 'integer',
+      })
+      expect(registry.resolveType('process', 'Integer')).toBeNull()
+    })
+  })
+
   describe('end-to-end integration', () => {
     it('Given class with fields, parameters, and local variables, When analyze, Then registry resolves all types correctly', async () => {
       // Arrange

@@ -201,6 +201,17 @@ describe('SObjectTypeMatcher', () => {
       // Assert
       expect(result).toBeUndefined()
     })
+
+    it('Given no describeRepository, When getFieldType is called, Then it returns undefined without throwing', () => {
+      // Arrange
+      const matcherWithoutRepo = new SObjectTypeMatcher(new Set(['Account']))
+
+      // Act
+      const result = matcherWithoutRepo.getFieldType('Account', 'Name')
+
+      // Assert
+      expect(result).toBeUndefined()
+    })
   })
 
   describe('Given no describeRepository, When constructed without one', () => {

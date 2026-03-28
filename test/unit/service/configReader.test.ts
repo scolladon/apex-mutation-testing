@@ -280,6 +280,104 @@ describe('ConfigReader', () => {
     expect(result.lines).toEqual(['42'])
   })
 
+  it('Given no configFile parameter, When resolving config, Then reads default .mutation-testing.json', async () => {
+    // Arrange — kills DEFAULT_CONFIG_FILE → "" mutant
+    const parameter = { ...baseParameter }
+
+    // Act
+    await sut.resolve(parameter)
+
+    // Assert — must use the literal default filename, not empty string
+    expect(readFile).toHaveBeenCalledWith('.mutation-testing.json', 'utf-8')
+  })
+
+  it('Given non-ENOENT error reading config file, When resolving config, Then rethrows as wrapped error', async () => {
+    // Arrange — kills error.code === 'ENOENT' → true mutant
+    vi.mocked(readFile).mockRejectedValue({
+      code: 'EACCES',
+      message: 'Permission denied',
+    })
+    const parameter = { ...baseParameter }
+
+    // Act & Assert — EACCES must NOT be silently swallowed as undefined
+    await expect(sut.resolve(parameter)).rejects.toThrow(
+      /Failed to parse config file/
+    )
+  })
+
+  it('Given threshold of exactly 0, When resolving config, Then does not throw', async () => {
+    // Arrange — kills threshold < 0 → <= 0 mutant: 0 is valid
+    const parameter: ApexMutationParameter = { ...baseParameter, threshold: 0 }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).resolves.not.toThrow()
+  })
+
+  it('Given threshold of exactly 100, When resolving config, Then does not throw', async () => {
+    // Arrange — kills threshold > 100 → >= 100 mutant: 100 is valid
+    const parameter: ApexMutationParameter = {
+      ...baseParameter,
+      threshold: 100,
+    }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).resolves.not.toThrow()
+  })
+
+  it('Given threshold undefined, When resolving config, Then threshold validation is skipped', async () => {
+    // Arrange — kills threshold !== undefined → true mutant
+    // If validation ran unconditionally, valid param would be invalid because check would run
+    const parameter = { ...baseParameter }
+
+    // Act & Assert — no threshold means no validation error
+    await expect(sut.resolve(parameter)).resolves.toBeDefined()
+  })
+
+  it('Given line range with trailing non-digit characters, When resolving config, Then throws validation error', async () => {
+    // Arrange — kills $ anchor removal mutant: "123abc" passes /^\d+(-\d+)?/ without $
+    const config = { lines: ['123abc'] }
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(/Invalid line range/)
+  })
+
+  it('Given line range with leading non-digit characters, When resolving config, Then throws validation error', async () => {
+    // Arrange — kills ^ anchor removal mutant: "abc123" passes /\d+(-\d+)?$/ without ^
+    const config = { lines: ['abc123'] }
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(/Invalid line range/)
+  })
+
+  it('Given line range where start equals end, When resolving config, Then does not throw', async () => {
+    // Arrange — kills start > end → start >= end mutant: 5-5 is valid (equal is OK)
+    const config = { lines: ['5-5'] }
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).resolves.not.toThrow()
+  })
+
+  it('Given line range without dash (single number), When includes check runs, Then takes else branch', async () => {
+    // Arrange — kills range.includes('-') → range.includes('') mutant
+    // includes('') always returns true, so single number '42' would be treated as a dash-range
+    const config = { lines: ['42'] }
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act
+    const result = await sut.resolve(parameter)
+
+    // Assert — '42' is valid single number; parsed set should include 42
+    const parsed = ConfigReader.parseLineRanges(result.lines)
+    expect(parsed).toEqual(new Set([42]))
+  })
+
   it('Given config file with valid skipPatterns, When resolving config, Then returns skipPatterns from file', async () => {
     // Arrange
     const config = { skipPatterns: ['System\\.debug', 'Logger\\.'] }
