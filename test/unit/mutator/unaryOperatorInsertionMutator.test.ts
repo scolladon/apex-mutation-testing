@@ -1,5 +1,5 @@
 import { ParserRuleContext } from 'antlr4ts'
-import { MethodDeclarationContext } from 'apex-parser'
+import { MethodDeclarationContext, ReturnStatementContext } from 'apex-parser'
 import { UnaryOperatorInsertionMutator } from '../../../src/mutator/unaryOperatorInsertionMutator.js'
 import { TestUtil } from '../../utils/testUtil.js'
 
@@ -287,6 +287,47 @@ describe('UnaryOperatorInsertionMutator', () => {
 
         // Assert
         expect(sut._mutations).toHaveLength(4)
+      })
+    })
+  })
+
+  describe('Given a primary expression directly inside a ReturnStatement', () => {
+    describe('When entering the expression', () => {
+      it('Then should create only 2 mutations (++x and --x), skipping post-op x++ and x-- as they are equivalent', () => {
+        // Arrange
+        const returnCtx = Object.create(ReturnStatementContext.prototype)
+        const ctx = createPrimaryExpression('counter')
+        TestUtil.setParent(ctx, returnCtx)
+
+        // Act
+        sut.enterPrimaryExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(2)
+        expect(sut._mutations[0].replacement).toBe('++counter')
+        expect(sut._mutations[1].replacement).toBe('--counter')
+      })
+    })
+  })
+
+  describe('Given a primary expression nested inside a ReturnStatement via intermediate context', () => {
+    describe('When entering the expression', () => {
+      it('Then should create only 2 mutations (++x and --x)', () => {
+        // Arrange
+        const returnCtx = Object.create(ReturnStatementContext.prototype)
+        const intermediateCtx = {
+          parent: returnCtx,
+        } as unknown as ParserRuleContext
+        const ctx = createPrimaryExpression('value')
+        TestUtil.setParent(ctx, intermediateCtx)
+
+        // Act
+        sut.enterPrimaryExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(2)
+        expect(sut._mutations[0].replacement).toBe('++value')
+        expect(sut._mutations[1].replacement).toBe('--value')
       })
     })
   })

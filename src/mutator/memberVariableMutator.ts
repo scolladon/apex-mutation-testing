@@ -33,8 +33,13 @@ export class MemberVariableMutator extends BaseListener {
       return
     }
 
-    const hasAssignment = declarator.children.some(c => c.text === '=')
-    if (!hasAssignment) {
+    const assignIdx = declarator.children.findIndex(c => c.text === '=')
+    if (assignIdx === -1) {
+      return
+    }
+
+    const initValue = declarator.children[assignIdx + 1]?.text
+    if (initValue?.toLowerCase() === 'null') {
       return
     }
 

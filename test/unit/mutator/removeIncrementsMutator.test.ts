@@ -1,5 +1,6 @@
 import { ParserRuleContext, Token } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
+import { ReturnStatementContext } from 'apex-parser'
 import { RemoveIncrementsMutator } from '../../../src/mutator/removeIncrementsMutator.js'
 
 describe('RemoveIncrementsMutator', () => {
@@ -313,6 +314,93 @@ describe('RemoveIncrementsMutator', () => {
 
         // Act
         sut.enterPreOpExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a PostOpExpression (i++) directly inside a ReturnStatement', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations as return i++ is always equivalent to return i', () => {
+        // Arrange
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 10,
+          tokenIndex: 5,
+          startIndex: 10,
+          stopIndex: 10,
+        } as Token
+
+        const innerExpression = {
+          text: 'i',
+          start: mockToken,
+          stop: { tokenIndex: 5 } as Token,
+        } as unknown as ParserRuleContext
+
+        const operatorNode = new TerminalNode({ text: '++' } as Token)
+
+        const returnCtx = Object.create(ReturnStatementContext.prototype)
+
+        const ctx = {
+          childCount: 2,
+          getChild: vi.fn().mockImplementation(index => {
+            return index === 0 ? innerExpression : operatorNode
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 6 } as Token,
+          text: 'i++',
+          parent: returnCtx,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterPostOpExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a PostOpExpression (i--) nested inside a ReturnStatement', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations as return i-- is always equivalent to return i', () => {
+        // Arrange
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 10,
+          tokenIndex: 5,
+          startIndex: 10,
+          stopIndex: 10,
+        } as Token
+
+        const innerExpression = {
+          text: 'i',
+          start: mockToken,
+          stop: { tokenIndex: 5 } as Token,
+        } as unknown as ParserRuleContext
+
+        const operatorNode = new TerminalNode({ text: '--' } as Token)
+
+        const returnCtx = Object.create(ReturnStatementContext.prototype)
+        const expressionCtx = {
+          parent: returnCtx,
+        } as unknown as ParserRuleContext
+
+        const ctx = {
+          childCount: 2,
+          getChild: vi.fn().mockImplementation(index => {
+            return index === 0 ? innerExpression : operatorNode
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 6 } as Token,
+          text: 'i--',
+          parent: expressionCtx,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterPostOpExpression(ctx)
 
         // Assert
         expect(sut._mutations).toHaveLength(0)

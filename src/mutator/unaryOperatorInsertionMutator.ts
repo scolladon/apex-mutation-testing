@@ -35,9 +35,16 @@ export class UnaryOperatorInsertionMutator extends BaseListener {
     }
 
     if (ctx.start && ctx.stop) {
-      this.createMutation(ctx.start, ctx.stop, text, `${text}++`)
+      // Post-op mutations (x++, x--) inside a return statement are always equivalent:
+      // return x++ returns the pre-increment value, identical to return x.
+      const inReturn = this.isInsideReturnStatement(ctx)
+      if (!inReturn) {
+        this.createMutation(ctx.start, ctx.stop, text, `${text}++`)
+      }
       this.createMutation(ctx.start, ctx.stop, text, `++${text}`)
-      this.createMutation(ctx.start, ctx.stop, text, `${text}--`)
+      if (!inReturn) {
+        this.createMutation(ctx.start, ctx.stop, text, `${text}--`)
+      }
       this.createMutation(ctx.start, ctx.stop, text, `--${text}`)
     }
   }
