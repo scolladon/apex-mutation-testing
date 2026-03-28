@@ -553,11 +553,11 @@ Zero is matched as `0`, `0L`, `0.0`, `0.0d`, etc. One is matched as `1`, `1L`, `
 | `a \|\| false` | `a \|\| false → a` | `false` is right-identity for `\|\|` |
 | `false \|\| b` | `false \|\| b → b` | `false` is left-identity for `\|\|` |
 
-### Null-Initialised Member Variables
+### Null-Initialized Member Variables
 
-In Apex (unlike Java), every field type defaults to `null` when no initialiser is present. Mutating `private String name = null` to `private String name` would always produce identical behaviour.
+In Apex (unlike Java), every field type defaults to `null` when no initializer is present. Mutating `private String name = null` to `private String name` would always produce identical behaviour.
 
-`MemberVariableMutator` skips field declarations whose initialiser is the literal `null`.
+`MemberVariableMutator` skips field declarations whose initializer is the literal `null`.
 
 ### No-Op Condition Replacement
 
@@ -967,7 +967,7 @@ This section documents approaches that were considered for reducing equivalent m
 
 ### SMT-Based Equivalence Detection
 
-**What it is**: Using a Satisfiability Modulo Theories (SMT) solver (e.g., Z3, MEDIC) to statically prove that a mutated expression is semantically equivalent to the original — for example, proving `a + 0 ≡ a` in all models.
+**What it is**: Using a Satisfiability-Modulo-Theories (SMT) solver (e.g., Z3, MEDIC) to statically prove that a mutated expression is semantically equivalent to the original — for example, proving `a + 0 ≡ a` in all models.
 
 **Why not implemented**:
 
