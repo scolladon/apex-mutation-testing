@@ -3,14 +3,6 @@ import { MethodDeclarationContext, ReturnStatementContext } from 'apex-parser'
 import { UnaryOperatorInsertionMutator } from '../../../src/mutator/unaryOperatorInsertionMutator.js'
 import { TestUtil } from '../../utils/testUtil.js'
 
-function setParent(child: ParserRuleContext, parent: ParserRuleContext): void {
-  Object.defineProperty(child, 'parent', {
-    value: parent,
-    writable: true,
-    configurable: true,
-  })
-}
-
 function createMethodParent(methodName: string): ParserRuleContext {
   const methodCtx = Object.create(MethodDeclarationContext.prototype)
   methodCtx.children = [
@@ -216,16 +208,16 @@ describe('UnaryOperatorInsertionMutator', () => {
           new Map(),
           new Map([['testMethod', new Map([['s', 'string']])]])
         )
-        const mutator = new UnaryOperatorInsertionMutator(typeRegistry)
+        const sut = new UnaryOperatorInsertionMutator(typeRegistry)
         const ctx = createPrimaryExpression('s')
         const methodCtx = createMethodParent('testMethod')
-        setParent(ctx, methodCtx)
+        TestUtil.setParent(ctx, methodCtx)
 
         // Act
-        mutator.enterPrimaryExpression(ctx)
+        sut.enterPrimaryExpression(ctx)
 
         // Assert
-        expect(mutator._mutations).toHaveLength(0)
+        expect(sut._mutations).toHaveLength(0)
       })
     })
   })
@@ -243,16 +235,16 @@ describe('UnaryOperatorInsertionMutator', () => {
           new Map(),
           new Map([['testMethod', new Map([['x', typeName]])]])
         )
-        const mutator = new UnaryOperatorInsertionMutator(typeRegistry)
+        const sut = new UnaryOperatorInsertionMutator(typeRegistry)
         const ctx = createPrimaryExpression('x')
         const methodCtx = createMethodParent('testMethod')
-        setParent(ctx, methodCtx)
+        TestUtil.setParent(ctx, methodCtx)
 
         // Act
-        mutator.enterPrimaryExpression(ctx)
+        sut.enterPrimaryExpression(ctx)
 
         // Assert
-        expect(mutator._mutations).toHaveLength(4)
+        expect(sut._mutations).toHaveLength(4)
       })
     })
   })
@@ -262,16 +254,16 @@ describe('UnaryOperatorInsertionMutator', () => {
       it('Then should still create 4 mutations (permissive fallback)', () => {
         // Arrange
         const typeRegistry = TestUtil.createTypeRegistry()
-        const mutator = new UnaryOperatorInsertionMutator(typeRegistry)
+        const sut = new UnaryOperatorInsertionMutator(typeRegistry)
         const ctx = createPrimaryExpression('unknown')
         const methodCtx = createMethodParent('testMethod')
-        setParent(ctx, methodCtx)
+        TestUtil.setParent(ctx, methodCtx)
 
         // Act
-        mutator.enterPrimaryExpression(ctx)
+        sut.enterPrimaryExpression(ctx)
 
         // Assert
-        expect(mutator._mutations).toHaveLength(4)
+        expect(sut._mutations).toHaveLength(4)
       })
     })
   })
