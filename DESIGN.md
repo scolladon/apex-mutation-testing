@@ -967,7 +967,7 @@ This section documents approaches that were considered for reducing equivalent m
 
 ### SMT-Based Equivalence Detection
 
-**What it is**: Using a Satisfiability-Modulo-Theories (SMT) solver (e.g., Z3, MEDIC) to statically prove that a mutated expression is semantically equivalent to the original — for example, proving `a + 0 ≡ a` in all models.
+**What it is**: Using a Satisfiability Modulo Theories (SMT) solver (e.g., Z3, MEDIC) to statically prove that a mutated expression is semantically equivalent to the original — for example, proving `a + 0 ≡ a` in all models.
 
 **Why not implemented**:
 
