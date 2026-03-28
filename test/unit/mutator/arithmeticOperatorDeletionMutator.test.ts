@@ -617,6 +617,118 @@ describe('ArithmeticOperatorDeletionMutator', () => {
     })
   })
 
+  describe('Given identity element operands', () => {
+    it('Then should not generate a + 0 → a (equivalent: a + 0 = a)', () => {
+      // Arrange
+      const typeRegistry = createTypeRegistry()
+      const sut = new ArithmeticOperatorDeletionMutator(typeRegistry)
+      const ctx = createArithmeticCtxInMethod('a', '+', '0', 'testMethod')
+
+      // Act
+      sut.enterArth2Expression(ctx as unknown as Arth2ExpressionContext)
+
+      // Assert — only the non-equivalent mutation (→ 0) should be generated
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('0')
+    })
+
+    it('Then should not generate 0 + b → b (equivalent: 0 + b = b)', () => {
+      // Arrange
+      const typeRegistry = createTypeRegistry()
+      const sut = new ArithmeticOperatorDeletionMutator(typeRegistry)
+      const ctx = createArithmeticCtxInMethod('0', '+', 'b', 'testMethod')
+
+      // Act
+      sut.enterArth2Expression(ctx as unknown as Arth2ExpressionContext)
+
+      // Assert — only the non-equivalent mutation (→ 0) should be generated
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('0')
+    })
+
+    it('Then should not generate a - 0 → a (equivalent: a - 0 = a)', () => {
+      // Arrange
+      const typeRegistry = createTypeRegistry()
+      const sut = new ArithmeticOperatorDeletionMutator(typeRegistry)
+      const ctx = createArithmeticCtxInMethod('a', '-', '0', 'testMethod')
+
+      // Act
+      sut.enterArth2Expression(ctx as unknown as Arth2ExpressionContext)
+
+      // Assert — only the non-equivalent mutation (→ 0) should be generated
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('0')
+    })
+
+    it('Then should generate 0 - b → 0 and 0 - b → b (0 - b ≠ b so both are non-equivalent)', () => {
+      // Arrange
+      const typeRegistry = createTypeRegistry()
+      const sut = new ArithmeticOperatorDeletionMutator(typeRegistry)
+      const ctx = createArithmeticCtxInMethod('0', '-', 'b', 'testMethod')
+
+      // Act
+      sut.enterArth2Expression(ctx as unknown as Arth2ExpressionContext)
+
+      // Assert — both mutations generated since neither is equivalent
+      expect(sut._mutations).toHaveLength(2)
+    })
+
+    it('Then should not generate a * 1 → a (equivalent: a * 1 = a)', () => {
+      // Arrange
+      const typeRegistry = createTypeRegistry()
+      const sut = new ArithmeticOperatorDeletionMutator(typeRegistry)
+      const ctx = createArithmeticCtxInMethod('a', '*', '1', 'testMethod')
+
+      // Act
+      sut.enterArth1Expression(ctx as unknown as Arth1ExpressionContext)
+
+      // Assert — only the non-equivalent mutation (→ 1) should be generated
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('1')
+    })
+
+    it('Then should not generate 1 * b → b (equivalent: 1 * b = b)', () => {
+      // Arrange
+      const typeRegistry = createTypeRegistry()
+      const sut = new ArithmeticOperatorDeletionMutator(typeRegistry)
+      const ctx = createArithmeticCtxInMethod('1', '*', 'b', 'testMethod')
+
+      // Act
+      sut.enterArth1Expression(ctx as unknown as Arth1ExpressionContext)
+
+      // Assert — only the non-equivalent mutation (→ 1) should be generated
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('1')
+    })
+
+    it('Then should not generate a / 1 → a (equivalent: a / 1 = a)', () => {
+      // Arrange
+      const typeRegistry = createTypeRegistry()
+      const sut = new ArithmeticOperatorDeletionMutator(typeRegistry)
+      const ctx = createArithmeticCtxInMethod('a', '/', '1', 'testMethod')
+
+      // Act
+      sut.enterArth1Expression(ctx as unknown as Arth1ExpressionContext)
+
+      // Assert — only the non-equivalent mutation (→ 1) should be generated
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('1')
+    })
+
+    it('Then should generate 1 / b → 1 and 1 / b → b (1 / b ≠ b so both are non-equivalent)', () => {
+      // Arrange
+      const typeRegistry = createTypeRegistry()
+      const sut = new ArithmeticOperatorDeletionMutator(typeRegistry)
+      const ctx = createArithmeticCtxInMethod('1', '/', 'b', 'testMethod')
+
+      // Act
+      sut.enterArth1Expression(ctx as unknown as Arth1ExpressionContext)
+
+      // Assert — both mutations generated since 1 / b ≠ b in general
+      expect(sut._mutations).toHaveLength(2)
+    })
+  })
+
   describe('Given no enclosing method', () => {
     it('Then should allow mutation for + when no method context exists', () => {
       // Arrange

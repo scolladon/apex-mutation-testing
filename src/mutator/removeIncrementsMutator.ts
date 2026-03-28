@@ -22,6 +22,12 @@ export class RemoveIncrementsMutator extends BaseListener {
       return
     }
 
+    // Post-op in return is always equivalent: return i++ returns the pre-increment value,
+    // identical to return i. The increment side-effect on a local variable is not observed.
+    if (this.isInsideReturnStatement(ctx)) {
+      return
+    }
+
     // Get the inner expression (the variable)
     const innerExpression = ctx.getChild(0) as ParserRuleContext
 

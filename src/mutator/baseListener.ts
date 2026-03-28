@@ -1,6 +1,6 @@
 import { ParserRuleContext, Token } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
-import { ApexParserListener } from 'apex-parser'
+import { ApexParserListener, ReturnStatementContext } from 'apex-parser'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { TypeRegistry } from '../type/TypeRegistry.js'
 import { getEnclosingMethodName } from './astUtils.js'
@@ -18,6 +18,19 @@ export class BaseListener implements ApexParserListener {
 
   protected getEnclosingMethodName(ctx: ParserRuleContext): string | null {
     return getEnclosingMethodName(ctx)
+  }
+
+  protected isInsideReturnStatement(ctx: ParserRuleContext): boolean {
+    let current: ParserRuleContext | undefined = ctx.parent as
+      | ParserRuleContext
+      | undefined
+    while (current) {
+      if (current instanceof ReturnStatementContext) {
+        return true
+      }
+      current = current.parent as ParserRuleContext | undefined
+    }
+    return false
   }
 
   protected createMutation(

@@ -40,7 +40,7 @@ sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --config-
 │  │  mutationListener.ts │  │  typeMatcher.ts            │ │
 │  │  baseListener.ts     │  │  TypeRegistry.ts           │ │
 │  │  astUtils.ts         │  │  ApexMethod.ts             │ │
-│  │  [25 mutators]       │  │                            │ │
+│  │  [26 mutators]       │  │                            │ │
 │  └─────────────────────┘  └────────────────────────────┘ │
 ├──────────────────────────────────────────────────────────┤
 │                   Infrastructure Layer                    │
@@ -435,7 +435,7 @@ Source Code ─── Parse #1 (TypeDiscoverer) ──► TypeRegistry
 
 ## Mutation Operators
 
-### 25 Mutation Operators by Category
+### 26 Mutation Operators by Category
 
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
@@ -451,8 +451,9 @@ Source Code ─── Parse #1 (TypeDiscoverer) ──► TypeRegistry
 │                    STATEMENT DELETION                            │
 │                                                                  │
 │  VoidMethodCallMutator       receiver.method(args); → (deleted)  │
-│  RemoveIncrementsMutator     i++ → i                             │
+│  RemoveIncrementsMutator     i++ → i  (skips post-op in return)  │
 │  ArithmeticOperatorDeletion  a + b → a  or  a + b → b           │
+│  LogicalOperatorDeletion     a && b → a  or  a && b → b         │
 ├──────────────────────────────────────────────────────────────────┤
 │                 RETURN VALUE MUTATION                             │
 │                                                                  │
@@ -508,6 +509,61 @@ Source Code ─── Parse #1 (TypeDiscoverer) ──► TypeRegistry
 | ArithmeticOperatorDeletionMutator | Yes | Must skip string concatenation (`+`) |
 | UnaryOperatorInsertionMutator | Yes | Must target numeric variables/parameters only |
 | InlineConstantMutator | Yes | Null literal replacement depends on declared/return type |
+
+---
+
+## Equivalent Mutant Avoidance
+
+An **equivalent mutant** is one that modifies code but produces identical observable behaviour — no test can ever kill it. Generating equivalent mutants wastes org deployment cycles and distorts the mutation score. The following static guards are applied at generation time to avoid producing them.
+
+### Post-Operator in Return Context
+
+`return x++` returns the pre-increment value of `x`, identical to `return x`. Only the side-effect (incrementing `x`) differs, but a local variable mutation in a return statement is never observable.
+
+| Mutator | Guard |
+| --- | --- |
+| `RemoveIncrementsMutator` | Skips post-op deletion (`i++ → i`) when inside a `return` statement |
+| `UnaryOperatorInsertionMutator` | Skips post-op insertion (`x → x++`, `x → x--`) when inside a `return` statement; pre-ops (`++x`, `--x`) are still generated |
+
+### Arithmetic Identity Elements
+
+Replacing `a + 0` with `a` (or `a * 1` with `a`) is always a no-op — the identity property guarantees semantic equivalence regardless of the value of `a`.
+
+`ArithmeticOperatorDeletionMutator` skips the operand that would produce an equivalent result:
+
+| Expression | Skipped mutation | Reason |
+| --- | --- | --- |
+| `a + 0`, `a - 0` | `a + 0 → a` | Adding or subtracting zero is identity |
+| `0 + b` | `0 + b → b` | Zero is left-identity for `+` |
+| `a * 1`, `a / 1` | `a * 1 → a` | Multiplying or dividing by one is identity |
+| `1 * b` | `1 * b → b` | One is left-identity for `*` |
+
+Zero is matched as `0`, `0L`, `0.0`, `0.0d`, etc. One is matched as `1`, `1L`, `1.0`, `1.0d`, etc.
+
+### Logical Identity Elements
+
+`a && true` is always equal to `a`, and `a || false` is always equal to `a` — these are the identity elements for logical AND and OR.
+
+`LogicalOperatorDeletionMutator` skips the deletion that would produce an equivalent result:
+
+| Expression | Skipped mutation | Reason |
+| --- | --- | --- |
+| `a && true` | `a && true → a` | `true` is right-identity for `&&` |
+| `true && b` | `true && b → b` | `true` is left-identity for `&&` |
+| `a \|\| false` | `a \|\| false → a` | `false` is right-identity for `\|\|` |
+| `false \|\| b` | `false \|\| b → b` | `false` is left-identity for `\|\|` |
+
+### Null-Initialized Member Variables
+
+In Apex (unlike Java), every field type defaults to `null` when no initializer is present. Mutating `private String name = null` to `private String name` would always produce identical behaviour.
+
+`MemberVariableMutator` skips field declarations whose initializer is the literal `null`.
+
+### No-Op Condition Replacement
+
+Replacing a condition with a constant it already equals (`if (true) → if (true)`) is a no-op.
+
+`RemoveConditionalsMutator` skips the `→ (true)` mutation when the condition text is already `(true)`, and the `→ (false)` mutation when it is already `(false)`.
 
 ---
 
@@ -902,3 +958,41 @@ text starts with digit?
 ```
 
 This enables `ArgumentPropagationMutator` to correctly match numeric arguments to method parameter types.
+
+---
+
+## Further Improvements Not Implemented
+
+This section documents approaches that were considered for reducing equivalent mutants but deliberately not implemented, and explains why.
+
+### SMT-Based Equivalence Detection
+
+**What it is**: Using a Satisfiability Modulo Theories (SMT) solver (e.g., Z3, MEDIC) to statically prove that a mutated expression is semantically equivalent to the original — for example, proving `a + 0 ≡ a` in all models.
+
+**Why not implemented**:
+
+1. **Apex platform coupling**: The vast majority of Apex code touches Salesforce platform types (`SObject`, `Limits`, `Database`, `SOQL results`) whose semantics are not modelled by standard SMT theories. Encoding these would require a custom Salesforce theory layer, which is a major research project in its own right.
+
+2. **Small pure-expression subset**: SMT is only tractable for closed, pure arithmetic/boolean expressions. In practice, almost every non-trivial Apex mutation involves method calls or platform-dependent state, putting it outside the scope where SMT provides value.
+
+3. **Engineering cost vs. impact**: Integrating a JVM or native SMT solver into a Node.js Salesforce CLI plugin adds non-trivial dependency weight, increases build complexity, and introduces solver timeout risks — all for a payoff limited to a small fraction of mutations (integer arithmetic with literal operands).
+
+4. **Static identity guards already cover the easy cases**: The guards documented in [Equivalent Mutant Avoidance](#equivalent-mutant-avoidance) — `isLiteralZero`, `isLiteralOne`, `isIdentityOperand`, and the post-op-in-return context checks — eliminate the most common SMT-detectable equivalences with zero added complexity.
+
+**Alternative explored**: Lightweight symbolic analysis for constant-folding cases (e.g., `0 + 0`, `1 * 1`) — assessed as having negligible real-world frequency and therefore not worth the implementation effort.
+
+---
+
+### Mutant Subsumption
+
+**What it is**: Post-hoc filtering that removes a mutation from the result set when another mutation already "subsumes" it — i.e., any test that kills mutation B also kills mutation A, so A is redundant. Example: if `a > b → false` subsumes `a > b → a != b`, the latter can be removed.
+
+**Why not implemented**:
+
+1. **Wrong cost model for Apex**: Each mutant requires a full Salesforce org deployment + Apex test execution cycle (seconds to minutes per mutant). Subsumption filtering happens *after* generating the mutant set, so it does not reduce deployment cost — it only reduces the number of entries in the report. The bottleneck is org round-trips, not report size.
+
+2. **Requires running tests first**: Subsumption analysis needs test execution results to determine which tests kill which mutants. This makes it a post-processing concern that would require significant orchestration changes (retain per-test kill sets, compare across all mutants). The benefit — a cleaner report — does not justify this overhead.
+
+3. **Correct approach is pre-generation filtering**: The effective way to reduce redundancy in this codebase is to *not generate* equivalent or dominated mutations in the first place (via identity guards, type-aware checks, and context guards). This is the approach taken throughout the mutators.
+
+4. **Static subsumption is undecidable in general**: Dynamic subsumption requires test execution. Static subsumption (proving at parse time that mutation B is dominated by A) is only decidable for specific patterns and overlaps heavily with the SMT-based approach, which is already ruled out above.

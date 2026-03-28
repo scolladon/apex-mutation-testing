@@ -24,10 +24,18 @@ export class RemoveConditionalsMutator extends BaseListener {
     // Get the condition (child 1 is the ParExpression)
     const conditionCtx = ctx.getChild(1) as ParserRuleContext
 
+    const conditionText = conditionCtx.text.toLowerCase()
+
     // Replace condition with (true) - always execute if block
-    this.createMutationFromParserRuleContext(conditionCtx, '(true)')
+    // Skip if already (true): replacing (true) → (true) is a no-op
+    if (conditionText !== '(true)') {
+      this.createMutationFromParserRuleContext(conditionCtx, '(true)')
+    }
 
     // Replace condition with (false) - never execute if block
-    this.createMutationFromParserRuleContext(conditionCtx, '(false)')
+    // Skip if already (false): replacing (false) → (false) is a no-op
+    if (conditionText !== '(false)') {
+      this.createMutationFromParserRuleContext(conditionCtx, '(false)')
+    }
   }
 }

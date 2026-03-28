@@ -52,8 +52,55 @@ export class ArithmeticOperatorDeletionMutator extends BaseListener {
     const rightOperand = ctx.getChild(2)
 
     if (ctx.start && ctx.stop) {
-      this.createMutation(ctx.start, ctx.stop, ctx.text, leftOperand.text)
-      this.createMutation(ctx.start, ctx.stop, ctx.text, rightOperand.text)
+      // Skip "→ left" when right is the identity element (a OP identity = a)
+      if (
+        !ArithmeticOperatorDeletionMutator.isRightIdentity(
+          operatorText,
+          rightOperand.text
+        )
+      ) {
+        this.createMutation(ctx.start, ctx.stop, ctx.text, leftOperand.text)
+      }
+      // Skip "→ right" when left is the identity element (identity OP b = b)
+      if (
+        !ArithmeticOperatorDeletionMutator.isLeftIdentity(
+          operatorText,
+          leftOperand.text
+        )
+      ) {
+        this.createMutation(ctx.start, ctx.stop, ctx.text, rightOperand.text)
+      }
     }
+  }
+
+  private static isRightIdentity(
+    operator: string,
+    operandText: string
+  ): boolean {
+    if (operator === '+' || operator === '-') {
+      return ArithmeticOperatorDeletionMutator.isLiteralZero(operandText)
+    }
+    return ArithmeticOperatorDeletionMutator.isLiteralOne(operandText)
+  }
+
+  private static isLeftIdentity(
+    operator: string,
+    operandText: string
+  ): boolean {
+    if (operator === '+') {
+      return ArithmeticOperatorDeletionMutator.isLiteralZero(operandText)
+    }
+    if (operator === '*') {
+      return ArithmeticOperatorDeletionMutator.isLiteralOne(operandText)
+    }
+    return false
+  }
+
+  private static isLiteralZero(text: string): boolean {
+    return /^0[lL]?$|^0\.0+[dDfF]?$/.test(text)
+  }
+
+  private static isLiteralOne(text: string): boolean {
+    return /^1[lL]?$|^1\.0+[dDfF]?$/.test(text)
   }
 }
