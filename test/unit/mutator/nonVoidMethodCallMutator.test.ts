@@ -501,6 +501,73 @@ describe('NonVoidMethodCallMutator', () => {
         expect(sut._mutations).toHaveLength(0)
       })
 
+      it('Given dotted expression with unknown SObject type, When assigning method call, Then should NOT mutate', () => {
+        // Arrange — the variable type is unknown so resolveType returns null
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('getValue()')
+        const assignCtx = createAssignExpression('unknownObj.field', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given simple List<String> variable, When assigning method call, Then replaces with new List<String>() not null (kills . → "" mutant)', () => {
+        // Arrange — lhsText has no dot; original code uses generateDefaultValue which handles list types.
+        // The StringLiteral mutant changes '.' to "" making includes("") always true,
+        // taking the getDefaultValueForApexType path which returns null for LIST (no typeName).
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['myList', 'List<String>']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('getItems()')
+        const assignCtx = createAssignExpression('myList', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert — generateDefaultValue('List<String>') = 'new List<String>()'; mutant would give 'null'
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('new List<String>()')
+      })
+
+      it('Given dotted assignment where getDefaultValueForApexType returns null (no typeName), When assigning method call, Then replacement is null literal', () => {
+        // Arrange — the field is of type VOID (default fallback) which maps to null
+        const fieldMap = new Map([
+          ['account', new Map([['customfield', APEX_TYPE.VOID]])],
+        ])
+        const matcher = createSObjectFieldMatcher(
+          new Set(['account']),
+          fieldMap
+        )
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['acc', 'account']]),
+          new Map(),
+          [matcher]
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('getValue()')
+        const assignCtx = createAssignExpression('acc.customField', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert — null is the fallback when getDefaultValueForApexType returns null
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('null')
+      })
+
       it('Given non-method-call RHS, When assigning, Then should NOT mutate', () => {
         // Arrange
         const typeRegistry = createTypeRegistryWithVars(
@@ -662,6 +729,36 @@ describe('NonVoidMethodCallMutator', () => {
         sut.enterLocalVariableDeclarationStatement(ctx)
 
         // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given declarators that IS ParserRuleContext but has null children, When entering, Then should not mutate (kills || → && mutant)', () => {
+        // Arrange — the declarators node IS a PRC (first condition false with ||), but has no children.
+        // With || → && mutant, both conditions must be true, so null-children PRC would NOT trigger the guard.
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const declarators = {
+          text: 'x',
+          children: null,
+          childCount: 0,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarators, ParserRuleContext.prototype)
+
+        const declCtx = {
+          children: [{ text: 'Integer' }, declarators],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declCtx, ParserRuleContext.prototype)
+        const ctx = {
+          children: [declCtx, { text: ';' }],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert — no children means no declarators to process
         expect(sut._mutations).toHaveLength(0)
       })
 

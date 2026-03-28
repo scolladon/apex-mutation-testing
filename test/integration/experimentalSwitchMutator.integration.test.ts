@@ -149,6 +149,53 @@ describe('ExperimentalSwitchMutator Integration', () => {
     })
   })
 
+  describe('Given Apex code with switch statement with three non-else cases', () => {
+    it('Then should generate two atomic swap mutations (for adjacent pairs)', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public void test(Integer value) {
+            switch on value {
+              when 1 {
+                handle1();
+              }
+              when 2 {
+                handle2();
+              }
+              when 3 {
+                handle3();
+              }
+            }
+          }
+        }
+      `
+
+      // Act
+      const mutations = parseAndMutate(code, new Set([4]))
+
+      // Assert — 2 atomic swaps: (1,2) and (2,3)
+      expect(mutations.length).toBe(2)
+
+      // First swap covers cases 1 and 2
+      const swap12 = mutations.find(
+        m =>
+          m.target.text.includes('when1') &&
+          m.target.text.includes('when2') &&
+          !m.target.text.includes('when3')
+      )
+      expect(swap12).toBeDefined()
+
+      // Second swap covers cases 2 and 3
+      const swap23 = mutations.find(
+        m =>
+          m.target.text.includes('when2') &&
+          m.target.text.includes('when3') &&
+          !m.replacement.includes('when1')
+      )
+      expect(swap23).toBeDefined()
+    })
+  })
+
   describe('Given Apex code with switch on uncovered line', () => {
     it('Then should not generate mutations', () => {
       // Arrange

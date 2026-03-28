@@ -255,4 +255,21 @@ describe('MemberVariableMutator', () => {
       })
     })
   })
+
+  describe('Given a field declaration with uppercase NULL initializer (String name = NULL)', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations (case-insensitive null check)', () => {
+        // Arrange — tests that toLowerCase() is used so 'NULL' is also skipped
+        const declarator = createVariableDeclarator('name', true, 'NULL')
+        const declarators = createVariableDeclarators([declarator])
+        const ctx = createFieldDeclaration('String', declarators)
+
+        // Act
+        sut.enterFieldDeclaration(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
 })

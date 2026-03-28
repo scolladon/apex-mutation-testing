@@ -447,5 +447,51 @@ describe('astUtils', () => {
       // Assert
       expect(result).toBeNull()
     })
+
+    it('Given text with digit not at start (e.g. a1b), When called, Then does not classify as numeric', () => {
+      // Arrange — kills /^\d/ → /\d/ anchor removal mutant: /\d/ matches 'a1b' but /^\d/ does not
+      const typeRegistry = TestUtil.createTypeRegistry()
+
+      // Act
+      const result = resolveExpressionApexType(
+        'a1b',
+        'testMethod',
+        typeRegistry
+      )
+
+      // Assert
+      expect(result).toBeNull()
+    })
+
+    it('Given numeric literal with L in the middle (12L34), When called, Then returns INTEGER not LONG', () => {
+      // Arrange — kills /L$/ → /L/ anchor removal mutant: /L/ matches '12L34' but /L$/ does not
+      const typeRegistry = TestUtil.createTypeRegistry()
+
+      // Act
+      const result = resolveExpressionApexType(
+        '12L34',
+        'testMethod',
+        typeRegistry
+      )
+
+      // Assert
+      expect(result).toBe(APEX_TYPE.INTEGER)
+    })
+
+    it("Given text starting with quote but not ending with one ('hello), When called, Then returns STRING", () => {
+      // Arrange — kills startsWith("'") → endsWith("'") mutant:
+      //   endsWith does not match "'hello" (ends with 'o'), but startsWith does
+      const typeRegistry = TestUtil.createTypeRegistry()
+
+      // Act
+      const result = resolveExpressionApexType(
+        "'hello",
+        'testMethod',
+        typeRegistry
+      )
+
+      // Assert
+      expect(result).toBe(APEX_TYPE.STRING)
+    })
   })
 })

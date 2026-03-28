@@ -598,6 +598,61 @@ describe('ExperimentalSwitchMutator', () => {
       })
     })
 
+    describe('Given a switch statement with three adjacent non-else cases', () => {
+      describe('When entering the switch statement', () => {
+        it('Then should create two atomic swap mutations (one for each adjacent pair)', () => {
+          // Arrange
+          const whenKeyword = new TerminalNode({ text: 'when' } as Token)
+
+          const makeCase = (
+            value: string,
+            block: string,
+            startIdx: number,
+            stopIdx: number,
+            line: number
+          ) => {
+            const valueCtx = {
+              text: value,
+              ELSE: () => undefined,
+            } as unknown as ParserRuleContext
+            const blockCtx = {
+              text: block,
+            } as unknown as ParserRuleContext
+            return {
+              childCount: 3,
+              text: `when ${value} ${block}`,
+              start: { tokenIndex: startIdx, line } as Token,
+              stop: { tokenIndex: stopIdx } as Token,
+              getChild: vi.fn().mockImplementation((index: number) => {
+                if (index === 0) return whenKeyword
+                if (index === 1) return valueCtx
+                return blockCtx
+              }),
+            } as unknown as ParserRuleContext
+          }
+
+          const case1 = makeCase('1', '{ h1(); }', 2, 6, 5)
+          const case2 = makeCase('2', '{ h2(); }', 8, 12, 8)
+          const case3 = makeCase('3', '{ h3(); }', 14, 18, 11)
+
+          const switchCtx = {
+            childCount: 7,
+            whenControl: vi.fn().mockReturnValue([case1, case2, case3]),
+          } as unknown as ParserRuleContext
+
+          // Act
+          sut.enterSwitchStatement(switchCtx)
+
+          // Assert - two adjacent pair swaps: (1,2) and (2,3)
+          expect(sut._mutations).toHaveLength(2)
+          expect(sut._mutations[0].target.text).toContain('when 1 { h1(); }')
+          expect(sut._mutations[0].target.text).toContain('when 2 { h2(); }')
+          expect(sut._mutations[1].target.text).toContain('when 2 { h2(); }')
+          expect(sut._mutations[1].target.text).toContain('when 3 { h3(); }')
+        })
+      })
+    })
+
     describe('Given a switch with non-else case followed by else case', () => {
       describe('When entering the switch statement', () => {
         it('Then should not create swap mutation between them', () => {

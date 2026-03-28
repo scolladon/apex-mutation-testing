@@ -184,6 +184,30 @@ describe('LogicalOperatorDeletionMutator', () => {
     })
   })
 
+  describe('Given a context where start is missing but stop is present', () => {
+    it('Then should not create any mutations (kills || → && mutant on start/stop guard)', () => {
+      // Arrange — kills LogicalOperator || → && at line 24:
+      //   with &&, only both-missing triggers guard; one-missing continues and crashes on null start
+      const operatorNode = new TerminalNode({ text: '&&' } as Token)
+      const ctx = {
+        childCount: 3,
+        text: 'x&&y',
+        start: null,
+        stop: TestUtil.createToken(1, 4),
+        getChild: (index: number) => {
+          if (index === 1) return operatorNode
+          return { text: 'x' }
+        },
+      } as unknown as ParserRuleContext
+
+      // Act
+      sut.enterLogAndExpression(ctx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
   describe('Given a context without start/stop tokens', () => {
     it('Then should not create any mutations', () => {
       // Arrange

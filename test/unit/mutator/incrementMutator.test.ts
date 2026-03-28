@@ -91,4 +91,42 @@ describe('IncrementMutator', () => {
       expect(sut['_mutations']).toHaveLength(0)
     })
   })
+
+  describe('Given a pre-increment operator at child index 0 (++i form)', () => {
+    it('Given pre-op ++ at index 0, When enterPreOpExpression, Then should create mutation replacing ++ with --', () => {
+      // Arrange — pre-op: child[0]=operator, child[1]=operand (e.g., ++i)
+      const operator = new TerminalNode({ text: '++' } as Token)
+      const mockCtx = {
+        childCount: 2,
+        getChild: vi.fn(index => {
+          return index === 0 ? operator : { text: 'i' }
+        }),
+      } as unknown as ParserRuleContext
+
+      // Act
+      sut['enterPreOpExpression'](mockCtx)
+
+      // Assert
+      expect(sut['_mutations']).toHaveLength(1)
+      expect(sut['_mutations'][0].replacement).toBe('--')
+    })
+
+    it('Given pre-op -- at index 0, When enterPreOpExpression, Then should create mutation replacing -- with ++', () => {
+      // Arrange — pre-op: child[0]=operator, child[1]=operand (e.g., --i)
+      const operator = new TerminalNode({ text: '--' } as Token)
+      const mockCtx = {
+        childCount: 2,
+        getChild: vi.fn(index => {
+          return index === 0 ? operator : { text: 'i' }
+        }),
+      } as unknown as ParserRuleContext
+
+      // Act
+      sut['enterPreOpExpression'](mockCtx)
+
+      // Assert
+      expect(sut['_mutations']).toHaveLength(1)
+      expect(sut['_mutations'][0].replacement).toBe('++')
+    })
+  })
 })

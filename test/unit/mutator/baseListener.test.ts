@@ -10,6 +10,10 @@ class TestableBaseListener extends BaseListener {
     return this.getEnclosingMethodName(ctx)
   }
 
+  isNonNumericContextPublic(ctx: ParserRuleContext): boolean {
+    return this.isNonNumericContext(ctx)
+  }
+
   createMutationPublic(
     startToken: Token,
     endToken: Token,
@@ -227,6 +231,179 @@ describe('BaseListener', () => {
 
       // Assert
       expect(listener._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('isNonNumericContext', () => {
+    function createBinaryCtx(
+      leftText: string,
+      rightText: string
+    ): ParserRuleContext {
+      return {
+        getChild: (index: number) => {
+          if (index === 0) return { text: leftText }
+          if (index === 2) return { text: rightText }
+          return { text: '+' }
+        },
+      } as unknown as ParserRuleContext
+    }
+
+    it('Given left operand with string literal (contains apostrophe), When isNonNumericContext, Then returns true', () => {
+      // Arrange — kills the || → && mutant: left is string, right is numeric
+      const listener = new TestableBaseListener()
+      const ctx = createBinaryCtx("'hello'", 'count')
+
+      // Act
+      const result = listener.isNonNumericContextPublic(ctx)
+
+      // Assert
+      expect(result).toBe(true)
+    })
+
+    it('Given right operand with string literal (contains apostrophe), When isNonNumericContext, Then returns true', () => {
+      // Arrange — kills the || → && mutant: left is numeric, right is string literal
+      const listener = new TestableBaseListener()
+      const ctx = createBinaryCtx('count', "'world'")
+
+      // Act
+      const result = listener.isNonNumericContextPublic(ctx)
+
+      // Assert
+      expect(result).toBe(true)
+    })
+
+    it('Given no typeRegistry, When isNonNumericContext, Then returns false', () => {
+      // Arrange
+      const listener = new TestableBaseListener()
+      const ctx = createBinaryCtx('x', 'y')
+
+      // Act
+      const result = listener.isNonNumericContextPublic(ctx)
+
+      // Assert
+      expect(result).toBe(false)
+    })
+
+    it('Given typeRegistry but no enclosing method, When isNonNumericContext, Then returns false', () => {
+      // Arrange
+      const registry = new TypeRegistry(new Map(), new Map(), new Map(), [])
+      const listener = new TestableBaseListener(registry)
+      const ctx = createBinaryCtx('x', 'y')
+      // No parent — getEnclosingMethodName returns null
+
+      // Act
+      const result = listener.isNonNumericContextPublic(ctx)
+
+      // Assert
+      expect(result).toBe(false)
+    })
+
+    it('Given typeRegistry, enclosing method, both operands numeric, When isNonNumericContext, Then returns false', () => {
+      // Arrange
+      const variableScopes = new Map([
+        [
+          'testMethod',
+          new Map([
+            ['x', 'integer'],
+            ['y', 'integer'],
+          ]),
+        ],
+      ])
+      const registry = new TypeRegistry(
+        new Map(),
+        variableScopes,
+        new Map(),
+        []
+      )
+      const listener = new TestableBaseListener(registry)
+
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'void' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      const ctx = createBinaryCtx('x', 'y')
+      setParent(ctx as ParserRuleContext, methodCtx)
+
+      // Act
+      const result = listener.isNonNumericContextPublic(ctx)
+
+      // Assert
+      expect(result).toBe(false)
+    })
+
+    it('Given typeRegistry, enclosing method, left operand String right numeric, When isNonNumericContext, Then returns true (kills || → && mutant)', () => {
+      // Arrange — kills || → && mutant: exactly one operand non-numeric on the left side
+      const variableScopes = new Map([
+        [
+          'testMethod',
+          new Map([
+            ['name', 'string'],
+            ['count', 'integer'],
+          ]),
+        ],
+      ])
+      const registry = new TypeRegistry(
+        new Map(),
+        variableScopes,
+        new Map(),
+        []
+      )
+      const listener = new TestableBaseListener(registry)
+
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'void' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      const ctx = createBinaryCtx('name', 'count')
+      setParent(ctx as ParserRuleContext, methodCtx)
+
+      // Act
+      const result = listener.isNonNumericContextPublic(ctx)
+
+      // Assert
+      expect(result).toBe(true)
+    })
+
+    it('Given typeRegistry, enclosing method, left operand numeric right String, When isNonNumericContext, Then returns true (kills || → && mutant)', () => {
+      // Arrange — kills || → && mutant: exactly one operand non-numeric on the right side
+      const variableScopes = new Map([
+        [
+          'testMethod',
+          new Map([
+            ['count', 'integer'],
+            ['suffix', 'string'],
+          ]),
+        ],
+      ])
+      const registry = new TypeRegistry(
+        new Map(),
+        variableScopes,
+        new Map(),
+        []
+      )
+      const listener = new TestableBaseListener(registry)
+
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'void' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      const ctx = createBinaryCtx('count', 'suffix')
+      setParent(ctx as ParserRuleContext, methodCtx)
+
+      // Act
+      const result = listener.isNonNumericContextPublic(ctx)
+
+      // Assert
+      expect(result).toBe(true)
     })
   })
 })

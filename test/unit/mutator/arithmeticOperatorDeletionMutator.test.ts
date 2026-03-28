@@ -729,6 +729,136 @@ describe('ArithmeticOperatorDeletionMutator', () => {
     })
   })
 
+  describe('Given identity elements with Long and float suffixes', () => {
+    it.each([
+      { right: '0L', description: 'Long zero' },
+      { right: '0l', description: 'long zero lowercase' },
+      { right: '0.0', description: 'float zero' },
+      { right: '0.00', description: 'float multi-zero' },
+      { right: '0.0d', description: 'double zero lowercase d' },
+      { right: '0.0D', description: 'double zero uppercase D' },
+      { right: '0.0f', description: 'float zero lowercase f' },
+      { right: '0.0F', description: 'float zero uppercase F' },
+    ])('Then should NOT generate right mutation for a + $description (equivalent)', ({
+      right,
+    }) => {
+      // Arrange
+      const typeRegistry = createTypeRegistry()
+      const sut = new ArithmeticOperatorDeletionMutator(typeRegistry)
+      const ctx = createArithmeticCtxInMethod('a', '+', right, 'testMethod')
+
+      // Act
+      sut.enterArth2Expression(ctx as unknown as Arth2ExpressionContext)
+
+      // Assert — right identity for + means a + 0 = a, so only left mutation (→ right) skipped
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe(right)
+    })
+
+    it.each([
+      { right: '1L', description: 'Long one' },
+      { right: '1l', description: 'long one lowercase' },
+      { right: '1.0', description: 'float one' },
+      { right: '1.00', description: 'float multi-one' },
+      { right: '1.0d', description: 'double one lowercase d' },
+      { right: '1.0D', description: 'double one uppercase D' },
+      { right: '1.0f', description: 'float one lowercase f' },
+      { right: '1.0F', description: 'float one uppercase F' },
+    ])('Then should NOT generate right mutation for a * $description (equivalent)', ({
+      right,
+    }) => {
+      // Arrange
+      const typeRegistry = createTypeRegistry()
+      const sut = new ArithmeticOperatorDeletionMutator(typeRegistry)
+      const ctx = createArithmeticCtxInMethod('a', '*', right, 'testMethod')
+
+      // Act
+      sut.enterArth1Expression(ctx as unknown as Arth1ExpressionContext)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe(right)
+    })
+
+    it.each([
+      { left: '0L', description: 'Long zero uppercase L' },
+      { left: '0l', description: 'long zero lowercase l' },
+      { left: '0.0', description: 'float zero' },
+      { left: '0.00', description: 'float multi-zero' },
+      { left: '0.0d', description: 'double zero lowercase d' },
+      { left: '0.0D', description: 'double zero uppercase D' },
+      { left: '0.0f', description: 'float zero lowercase f' },
+      { left: '0.0F', description: 'float zero uppercase F' },
+    ])('Then should NOT generate left mutation for $description + b (equivalent)', ({
+      left,
+    }) => {
+      // Arrange
+      const typeRegistry = createTypeRegistry()
+      const sut = new ArithmeticOperatorDeletionMutator(typeRegistry)
+      const ctx = createArithmeticCtxInMethod(left, '+', 'b', 'testMethod')
+
+      // Act
+      sut.enterArth2Expression(ctx as unknown as Arth2ExpressionContext)
+
+      // Assert — left identity for + means 0 + b = b
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe(left)
+    })
+
+    it.each([
+      { left: '1L', description: 'Long one uppercase L' },
+      { left: '1l', description: 'long one lowercase l' },
+      { left: '1.0', description: 'float one' },
+      { left: '1.00', description: 'float multi-one' },
+      { left: '1.0d', description: 'double one lowercase d' },
+      { left: '1.0D', description: 'double one uppercase D' },
+      { left: '1.0f', description: 'float one lowercase f' },
+      { left: '1.0F', description: 'float one uppercase F' },
+    ])('Then should NOT generate left mutation for $description * b (equivalent)', ({
+      left,
+    }) => {
+      // Arrange
+      const typeRegistry = createTypeRegistry()
+      const sut = new ArithmeticOperatorDeletionMutator(typeRegistry)
+      const ctx = createArithmeticCtxInMethod(left, '*', 'b', 'testMethod')
+
+      // Act
+      sut.enterArth1Expression(ctx as unknown as Arth1ExpressionContext)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe(left)
+    })
+
+    it('Then should generate mutations for a - 0L (0 right not identity for -)', () => {
+      // Arrange
+      const typeRegistry = createTypeRegistry()
+      const sut = new ArithmeticOperatorDeletionMutator(typeRegistry)
+      const ctx = createArithmeticCtxInMethod('a', '-', '0L', 'testMethod')
+
+      // Act
+      sut.enterArth2Expression(ctx as unknown as Arth2ExpressionContext)
+
+      // Assert — a - 0L = a, so right is identity, only one mutation
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('0L')
+    })
+
+    it('Then should generate mutations for a / 1L (1 right is identity for /)', () => {
+      // Arrange
+      const typeRegistry = createTypeRegistry()
+      const sut = new ArithmeticOperatorDeletionMutator(typeRegistry)
+      const ctx = createArithmeticCtxInMethod('a', '/', '1L', 'testMethod')
+
+      // Act
+      sut.enterArth1Expression(ctx as unknown as Arth1ExpressionContext)
+
+      // Assert — a / 1L = a, right is identity
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('1L')
+    })
+  })
+
   describe('Given no enclosing method', () => {
     it('Then should allow mutation for + when no method context exists', () => {
       // Arrange

@@ -208,6 +208,83 @@ describe('EmptyReturnMutator', () => {
       // Assert
       expect(result).toBe(testCase.expected)
     })
+
+    describe('Double and Decimal zero value edge cases', () => {
+      it.each([
+        { type: 'Double', value: '0', expected: true },
+        { type: 'Decimal', value: '0', expected: true },
+        { type: 'Double', value: '0.00', expected: true },
+        { type: 'Decimal', value: '0.00', expected: true },
+        { type: 'Double', value: '0.000', expected: true },
+        { type: 'Decimal', value: '0.000', expected: true },
+        { type: 'Double', value: '1.0', expected: false },
+        { type: 'Decimal', value: '1.0', expected: false },
+      ])('Given $type type with value $value, When checking isEmpty, Then returns $expected', testCase => {
+        // Arrange
+        const sut = new EmptyReturnMutator()
+
+        // Act
+        const result = sut.isEmptyValue(testCase.type, testCase.value)
+
+        // Assert
+        expect(result).toBe(testCase.expected)
+      })
+
+      it('Given Double type with 00.0 (not anchored at start), When checking isEmpty, Then returns false', () => {
+        // Arrange
+        const sut = new EmptyReturnMutator()
+
+        // Act — 00.0 should NOT be treated as empty (it's not zero in the sense 0.0)
+        const result = sut.isEmptyValue('Double', '00.0')
+
+        // Assert — regex /^0\.0+$/ anchors at start so 00.0 doesn't match
+        expect(result).toBe(false)
+      })
+
+      it('Given Decimal type with 00.0 (not anchored at start), When checking isEmpty, Then returns false', () => {
+        // Arrange
+        const sut = new EmptyReturnMutator()
+
+        // Act
+        const result = sut.isEmptyValue('Decimal', '00.0')
+
+        // Assert
+        expect(result).toBe(false)
+      })
+
+      it('Given Double type with 0.0abc (not anchored at end), When checking isEmpty, Then returns false', () => {
+        // Arrange
+        const sut = new EmptyReturnMutator()
+
+        // Act — regex /^0\.0+$/ anchors at end so 0.0abc doesn't match
+        const result = sut.isEmptyValue('Double', '0.0abc')
+
+        // Assert
+        expect(result).toBe(false)
+      })
+
+      it('Given Decimal type with 0.0abc (not anchored at end), When checking isEmpty, Then returns false', () => {
+        // Arrange
+        const sut = new EmptyReturnMutator()
+
+        // Act
+        const result = sut.isEmptyValue('Decimal', '0.0abc')
+
+        // Assert
+        expect(result).toBe(false)
+      })
+
+      it('Given Long type with 0 (string literal), When checking isEmpty, Then returns true', () => {
+        // Arrange
+        const sut = new EmptyReturnMutator()
+
+        // Act
+        const result = sut.isEmptyValue('Long', '0')
+
+        // Assert
+        expect(result).toBe(true)
+      })
+    })
   })
 
   describe('validation and edge cases', () => {
@@ -371,6 +448,258 @@ describe('EmptyReturnMutator', () => {
 
       // Assert
       expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('array notation type — isEmptyValue edge cases', () => {
+    it('Given String[] type with matching new array syntax, When checking isEmpty, Then returns true', () => {
+      // Arrange — exercises the lowerType.endsWith('[]') branch of the || operator
+      const sut = new EmptyReturnMutator()
+
+      // Act
+      const result = sut.isEmptyValue('String[]', 'new String[]{}')
+
+      // Assert — kills lowerType.endsWith('[]') removal / || → && mutant
+      expect(result).toBe(true)
+    })
+
+    it('Given String[] type with non-empty array, When checking isEmpty, Then returns false', () => {
+      // Arrange — exercises the endsWith('[]') branch with a non-empty expression
+      const sut = new EmptyReturnMutator()
+
+      // Act
+      const result = sut.isEmptyValue('String[]', 'myArray')
+
+      // Assert
+      expect(result).toBe(false)
+    })
+
+    it('Given List<String> type (startsWith list<) with array init syntax, When checking isEmpty, Then returns true', () => {
+      // Arrange — exercises the || between the two regexes: array syntax matches second regex
+      const sut = new EmptyReturnMutator()
+
+      // Act
+      const result = sut.isEmptyValue('List<String>', 'new String[]{}')
+
+      // Assert — the second regex /new\s+[^[\]]+\[\s*\]\s*\{\s*\}/ should match
+      expect(result).toBe(true)
+    })
+
+    it('Given List<String> type with spaced array init syntax, When checking isEmpty, Then returns true', () => {
+      // Arrange — exercises whitespace in the array regex
+      const sut = new EmptyReturnMutator()
+
+      // Act
+      const result = sut.isEmptyValue('List<String>', 'new String[ ]{ }')
+
+      // Assert
+      expect(result).toBe(true)
+    })
+
+    it('Given List<String> type with non-empty list constructor, When checking isEmpty, Then returns false', () => {
+      // Arrange — null check happens before list check — this verifies it is still false
+      const sut = new EmptyReturnMutator()
+
+      // Act
+      const result = sut.isEmptyValue('List<String>', 'new List<String>(1)')
+
+      // Assert
+      expect(result).toBe(false)
+    })
+
+    it('Given Long type with 0 as integer literal, When checking isEmpty, Then returns true', () => {
+      // Arrange — exercises the first part of Long: expr === '0' (kills 0 → '' mutation on right side of ||)
+      const sut = new EmptyReturnMutator()
+
+      // Act
+      const result = sut.isEmptyValue('Long', '0')
+
+      // Assert
+      expect(result).toBe(true)
+    })
+
+    it('Given String type with non-empty string, When checking isEmpty, Then returns false', () => {
+      // Arrange
+      const sut = new EmptyReturnMutator()
+
+      // Act
+      const result = sut.isEmptyValue('String', "'hello'")
+
+      // Assert — exercises the == check for String which is exact match to "''"
+      expect(result).toBe(false)
+    })
+
+    it('Given Integer type with 0 (string), When checking isEmpty, Then returns true', () => {
+      // Arrange
+      const sut = new EmptyReturnMutator()
+
+      // Act
+      const result = sut.isEmptyValue('Integer', '0')
+
+      // Assert — kills mutation changing === '0' to === '' or similar
+      expect(result).toBe(true)
+    })
+
+    it('Given unknown type with null expression, When checking isEmpty, Then returns true', () => {
+      // Arrange — exercises the null check before emptyValuePatterns lookup
+      const sut = new EmptyReturnMutator()
+
+      // Act
+      const result = sut.isEmptyValue('CustomType', 'null')
+
+      // Assert — null is always empty regardless of type
+      expect(result).toBe(true)
+    })
+
+    it('Given unknown type with non-null expression, When checking isEmpty, Then returns false', () => {
+      // Arrange — exercises the fallthrough return false
+      const sut = new EmptyReturnMutator()
+
+      // Act
+      const result = sut.isEmptyValue('CustomType', 'someValue')
+
+      // Assert
+      expect(result).toBe(false)
+    })
+  })
+
+  describe('regex whitespace sensitivity — isEmptyValue', () => {
+    describe('List type regex — multi-space and spaced parens', () => {
+      it('Given List<String> type with multiple spaces after new, When checking isEmpty, Then returns true (kills \\s+ → \\s mutant)', () => {
+        // Arrange — two spaces after 'new' distinguishes \s+ (one-or-more) from \s (exactly one)
+        const sut = new EmptyReturnMutator()
+
+        // Act
+        const result = sut.isEmptyValue('List<String>', 'new  List<String>()')
+
+        // Assert
+        expect(result).toBe(true)
+      })
+
+      it('Given List<String> type with space between > and (, When checking isEmpty, Then returns true (kills \\s* → \\S* mutant)', () => {
+        // Arrange — \s* matches the space before (, \S* would not
+        const sut = new EmptyReturnMutator()
+
+        // Act
+        const result = sut.isEmptyValue('List<String>', 'new List<String> ()')
+
+        // Assert
+        expect(result).toBe(true)
+      })
+
+      it('Given List<String> type with spaces inside parens, When checking isEmpty, Then returns true (kills inner \\s* → \\S* mutant)', () => {
+        // Arrange — \s* inside () matches the spaces, \S* would not
+        const sut = new EmptyReturnMutator()
+
+        // Act
+        const result = sut.isEmptyValue('List<String>', 'new List<String>(  )')
+
+        // Assert
+        expect(result).toBe(true)
+      })
+    })
+
+    describe('Array notation regex — multi-space and spaced braces', () => {
+      it('Given List type with array init and multiple spaces after new, When checking isEmpty, Then returns true (kills \\s+ → \\s mutant)', () => {
+        // Arrange — two spaces after 'new' in the array-init syntax
+        const sut = new EmptyReturnMutator()
+
+        // Act
+        const result = sut.isEmptyValue('List<String>', 'new  String[]{}')
+
+        // Assert
+        expect(result).toBe(true)
+      })
+
+      it('Given List type with array init and space between ] and {, When checking isEmpty, Then returns true (kills \\s* → \\S* mutant)', () => {
+        // Arrange — space between ] and { distinguishes \s* from \S*
+        const sut = new EmptyReturnMutator()
+
+        // Act
+        const result = sut.isEmptyValue('List<String>', 'new String[] {}')
+
+        // Assert
+        expect(result).toBe(true)
+      })
+    })
+
+    describe('Set type regex — multi-space and spaced parens', () => {
+      it('Given Set<String> type with multiple spaces after new, When checking isEmpty, Then returns true (kills \\s+ → \\s mutant)', () => {
+        // Arrange — two spaces after 'new'
+        const sut = new EmptyReturnMutator()
+
+        // Act
+        const result = sut.isEmptyValue('Set<String>', 'new  Set<String>()')
+
+        // Assert
+        expect(result).toBe(true)
+      })
+
+      it('Given Set<String> type with space between > and (, When checking isEmpty, Then returns true (kills \\s* → \\S* mutant)', () => {
+        // Arrange — space between > and (
+        const sut = new EmptyReturnMutator()
+
+        // Act
+        const result = sut.isEmptyValue('Set<String>', 'new Set<String> ()')
+
+        // Assert
+        expect(result).toBe(true)
+      })
+
+      it('Given Set<String> type with spaces inside parens, When checking isEmpty, Then returns true (kills inner \\s* → \\S* mutant)', () => {
+        // Arrange — spaces inside ()
+        const sut = new EmptyReturnMutator()
+
+        // Act
+        const result = sut.isEmptyValue('Set<String>', 'new Set<String>(  )')
+
+        // Assert
+        expect(result).toBe(true)
+      })
+    })
+
+    describe('Map type regex — multi-space and spaced parens', () => {
+      it('Given Map<String,Integer> type with multiple spaces after new, When checking isEmpty, Then returns true (kills \\s+ → \\s mutant)', () => {
+        // Arrange — two spaces after 'new'
+        const sut = new EmptyReturnMutator()
+
+        // Act
+        const result = sut.isEmptyValue(
+          'Map<String,Integer>',
+          'new  Map<String,Integer>()'
+        )
+
+        // Assert
+        expect(result).toBe(true)
+      })
+
+      it('Given Map<String,Integer> type with space between > and (, When checking isEmpty, Then returns true (kills \\s* → \\S* mutant)', () => {
+        // Arrange — space between > and (
+        const sut = new EmptyReturnMutator()
+
+        // Act
+        const result = sut.isEmptyValue(
+          'Map<String,Integer>',
+          'new Map<String,Integer> ()'
+        )
+
+        // Assert
+        expect(result).toBe(true)
+      })
+
+      it('Given Map<String,Integer> type with spaces inside parens, When checking isEmpty, Then returns true (kills inner \\s* → \\S* mutant)', () => {
+        // Arrange — spaces inside ()
+        const sut = new EmptyReturnMutator()
+
+        // Act
+        const result = sut.isEmptyValue(
+          'Map<String,Integer>',
+          'new Map<String,Integer>(  )'
+        )
+
+        // Assert
+        expect(result).toBe(true)
+      })
     })
   })
 

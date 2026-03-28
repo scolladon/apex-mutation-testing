@@ -246,6 +246,49 @@ describe('MutationListener', () => {
     expect(mockListener1['enterMethodCall']).toHaveBeenCalledWith(mockContext)
   })
 
+  it('Given skip pattern matching last source line (line === sourceLines.length), When entering rule, Then does not propagate to listeners', () => {
+    // Arrange — line 2 equals sourceLines.length (2), so >= condition is satisfied
+    const sourceLines = ['normal line', 'System.debug("last")']
+    const skipPatterns = [new RE2('System\\.debug')]
+    sut = new MutationListener(
+      [mockListener1, mockListener2],
+      new Set([2]),
+      skipPatterns,
+      undefined,
+      sourceLines
+    )
+    const mockContext = {
+      start: { line: 2 },
+    } as unknown as MethodCallContext
+
+    // Act
+    sut['enterMethodCall'](mockContext)
+
+    // Assert — >= ensures the boundary line is checked against skip patterns
+    expect(mockListener1['enterMethodCall']).not.toHaveBeenCalled()
+  })
+
+  it('Given no skip patterns with non-empty sourceLines, When entering covered line, Then propagates to listeners', () => {
+    // Arrange — skipPatterns.length === 0 means skip-pattern check is bypassed entirely
+    const sourceLines = ['System.debug("hello")']
+    sut = new MutationListener(
+      [mockListener1, mockListener2],
+      new Set([1]),
+      [],
+      undefined,
+      sourceLines
+    )
+    const mockContext = {
+      start: { line: 1 },
+    } as unknown as MethodCallContext
+
+    // Act
+    sut['enterMethodCall'](mockContext)
+
+    // Assert — empty skipPatterns means no filtering even if sourceLine would match
+    expect(mockListener1['enterMethodCall']).toHaveBeenCalledWith(mockContext)
+  })
+
   it('Given line covered and in range but matching skip pattern, When entering rule, Then does not propagate', () => {
     // Arrange
     const sourceLines = ['System.debug("hello")']
@@ -267,5 +310,71 @@ describe('MutationListener', () => {
 
     // Assert
     expect(mockListener1['enterMethodCall']).not.toHaveBeenCalled()
+  })
+
+  it('Given proxy method called with empty array args, When calling, Then does not forward to listeners', () => {
+    // Arrange — kills args.length > 0 mutant (>= 0 would pass empty array through)
+
+    // Act: call via proxy with no arguments simulates empty args scenario
+    // The proxy wraps args as rest params so calling with no args gives []
+    sut['enterMethodCall']()
+
+    // Assert
+    expect(mockListener1['enterMethodCall']).not.toHaveBeenCalled()
+    expect(mockListener2['enterMethodCall']).not.toHaveBeenCalled()
+  })
+
+  it('Given listener has a non-function property matching prop name, When proxy calls, Then does not invoke it', () => {
+    // Arrange — kills typeof listener[prop] === 'function' → true mutant
+    // Listener has 'enterMethodCall' as a non-function property value
+    const listenerWithNonFunctionProp = {
+      enterMethodCall: 'not-a-function',
+    } as unknown as BaseListener
+    sut = new MutationListener([listenerWithNonFunctionProp], new Set([10]))
+    const mockContext = {
+      start: { line: 10 },
+    } as unknown as MethodCallContext
+
+    // Act & Assert — should not throw; non-function props must be skipped
+    expect(() => sut['enterMethodCall'](mockContext)).not.toThrow()
+  })
+
+  it('Given line is 0 (falsy), When checking eligibility, Then returns false and does not propagate', () => {
+    // Arrange — kills if (!line) → if (false) mutant; line=0 is falsy
+    const mockContext = {
+      start: { line: 0 },
+    } as unknown as MethodCallContext
+
+    // Act
+    sut['enterMethodCall'](mockContext)
+
+    // Assert — line 0 is not a valid line, must be rejected
+    expect(mockListener1['enterMethodCall']).not.toHaveBeenCalled()
+    expect(mockListener2['enterMethodCall']).not.toHaveBeenCalled()
+  })
+
+  it('Given line matching only one of two skip patterns, When entering rule, Then does not propagate (some, not every)', () => {
+    // Arrange — kills .some() → .every() mutant
+    // Only patternA matches the line; with 'every', both would need to match (line would pass through)
+    const sourceLines = ['System.debug("hello")']
+    const patternA = new RE2('System\\.debug')
+    const patternB = new RE2('NonMatching')
+    sut = new MutationListener(
+      [mockListener1, mockListener2],
+      new Set([1]),
+      [patternA, patternB],
+      undefined,
+      sourceLines
+    )
+    const mockContext = {
+      start: { line: 1 },
+    } as unknown as MethodCallContext
+
+    // Act
+    sut['enterMethodCall'](mockContext)
+
+    // Assert — some(patternA matches) → skip; every would require patternB to match too → propagate
+    expect(mockListener1['enterMethodCall']).not.toHaveBeenCalled()
+    expect(mockListener2['enterMethodCall']).not.toHaveBeenCalled()
   })
 })
