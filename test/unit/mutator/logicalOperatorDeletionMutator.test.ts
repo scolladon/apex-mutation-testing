@@ -67,7 +67,7 @@ describe('LogicalOperatorDeletionMutator', () => {
   })
 
   describe('Given a LogAndExpression where left operand is true (true && y)', () => {
-    it('Then should create only 1 mutation: right operand (left is identity for &&)', () => {
+    it('Then should create only 1 mutation: left operand (left is identity for &&, skip → y)', () => {
       // Arrange
       const ctx = createLogicalCtx('true', '&&', 'y')
 
@@ -126,7 +126,7 @@ describe('LogicalOperatorDeletionMutator', () => {
   })
 
   describe('Given a LogOrExpression where left operand is false (false || y)', () => {
-    it('Then should create only 1 mutation: right operand (left is identity for ||)', () => {
+    it('Then should create only 1 mutation: left operand (left is identity for ||, skip → y)', () => {
       // Arrange
       const ctx = createLogicalCtx('false', '||', 'y')
 
