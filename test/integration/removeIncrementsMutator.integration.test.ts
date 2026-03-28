@@ -212,4 +212,43 @@ describe('RemoveIncrementsMutator Integration', () => {
       expect(mutations[0].replacement).toBe('i')
     })
   })
+
+  describe('Given Apex code with post-increment in return statement (return i++)', () => {
+    it('Then should NOT generate mutations — return i++ is always equivalent to return i', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public Integer test() {
+            return i++;
+          }
+        }
+      `
+
+      // Act
+      const mutations = parseAndMutate(code, new Set([4]))
+
+      // Assert
+      expect(mutations.length).toBe(0)
+    })
+  })
+
+  describe('Given Apex code with pre-increment in return statement (return ++i)', () => {
+    it('Then should generate mutation — return ++i is NOT equivalent to return i', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public Integer test() {
+            return ++i;
+          }
+        }
+      `
+
+      // Act
+      const mutations = parseAndMutate(code, new Set([4]))
+
+      // Assert
+      expect(mutations.length).toBe(1)
+      expect(mutations[0].replacement).toBe('i')
+    })
+  })
 })

@@ -169,6 +169,50 @@ describe('RemoveConditionalsMutator Integration', () => {
     })
   })
 
+  describe('Given Apex code with condition already true (if (true))', () => {
+    it('Then should generate only 1 mutation: (false)', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public void test() {
+            if (true) {
+              doSomething();
+            }
+          }
+        }
+      `
+
+      // Act
+      const mutations = parseAndMutate(code, new Set([4]))
+
+      // Assert — skip (true)→(true), only (true)→(false) survives
+      expect(mutations.length).toBe(1)
+      expect(mutations[0].replacement).toBe('(false)')
+    })
+  })
+
+  describe('Given Apex code with condition already false (if (false))', () => {
+    it('Then should generate only 1 mutation: (true)', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public void test() {
+            if (false) {
+              doSomething();
+            }
+          }
+        }
+      `
+
+      // Act
+      const mutations = parseAndMutate(code, new Set([4]))
+
+      // Assert — skip (false)→(false), only (false)→(true) survives
+      expect(mutations.length).toBe(1)
+      expect(mutations[0].replacement).toBe('(true)')
+    })
+  })
+
   describe('Given Apex code with ternary operator', () => {
     it('Then should not generate mutations for ternary', () => {
       // Arrange

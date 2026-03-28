@@ -77,6 +77,23 @@ describe('MemberVariableMutator Integration', () => {
     })
   })
 
+  describe('Given Apex code with null-initialized member variable', () => {
+    it('Then should NOT generate any mutations (null is the Apex default, equivalent mutant)', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          private String name = null;
+        }
+      `
+
+      // Act
+      const mutations = parseAndMutate(code, new Set([3]))
+
+      // Assert — removing "= null" leaves the default, so mutation is equivalent
+      expect(mutations.length).toBe(0)
+    })
+  })
+
   describe('Given Apex code with member variable on uncovered line', () => {
     it('Then should not generate mutations', () => {
       // Arrange
