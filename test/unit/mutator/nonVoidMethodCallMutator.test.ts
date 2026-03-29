@@ -1118,6 +1118,119 @@ describe('NonVoidMethodCallMutator', () => {
       })
     })
 
+    describe('enterAssignExpression with wrapper expression RHS containing method call child', () => {
+      it('Given wrapper PRC containing MethodCallExpression child as RHS, When assigning to known variable, Then should mutate (kills isMethodCall children check via enterAssignExpression path)', () => {
+        // Arrange — exercises the `isMethodCall` children-loop detection path when called from
+        // `enterAssignExpression`. The RHS is NOT directly a MCEL/DEC but CONTAINS one as a child.
+        // Mutations targeting the children check in `isMethodCall` (e.g., `child instanceof MCEL → false`)
+        // would make `isMethodCall` return false → enterAssignExpression returns early → no mutation.
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['result', 'integer']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        const methodCallChild = {
+          text: 'compute()',
+          start: TestUtil.createToken(1, 0),
+          stop: TestUtil.createToken(1, 9),
+          childCount: 0,
+          children: [],
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(
+          methodCallChild,
+          MethodCallExpressionContext.prototype
+        )
+
+        const wrapperRhs = {
+          text: '(compute())',
+          start: TestUtil.createToken(1, 0),
+          stop: TestUtil.createToken(1, 11),
+          childCount: 1,
+          children: [methodCallChild],
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(wrapperRhs, ParserRuleContext.prototype)
+
+        const assignCtx = createAssignExpression('result', wrapperRhs)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert — isMethodCall(wrapperRhs) returns true via children check → should mutate
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('0')
+      })
+
+      it('Given wrapper PRC containing DotExpression child as RHS, When assigning to known String variable, Then should mutate (kills DotExpressionContext child check in isMethodCall)', () => {
+        // Arrange — exercises the `child instanceof DotExpressionContext` check in isMethodCall
+        // when called from enterAssignExpression. Mutations removing this check would cause
+        // the DEC child to not be recognized → isMethodCall returns false → no mutation.
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['name', 'string']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        const dotChild = {
+          text: 'obj.getName()',
+          start: TestUtil.createToken(1, 0),
+          stop: TestUtil.createToken(1, 13),
+          childCount: 0,
+          children: [],
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(dotChild, DotExpressionContext.prototype)
+
+        const wrapperRhs = {
+          text: '(obj.getName())',
+          start: TestUtil.createToken(1, 0),
+          stop: TestUtil.createToken(1, 15),
+          childCount: 1,
+          children: [dotChild],
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(wrapperRhs, ParserRuleContext.prototype)
+
+        const assignCtx = createAssignExpression('name', wrapperRhs)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert — DEC child detected → isMethodCall returns true → should mutate with ''
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe("''")
+      })
+
+      it('Given wrapper PRC with null children as RHS, When assigning, Then should not mutate (kills if(node.children) → if(true) in isMethodCall)', () => {
+        // Arrange — exercises the `if (node.children)` null-guard in isMethodCall when called
+        // from enterAssignExpression. With mutation to `if (true)`, for(null) would throw.
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['x', 'integer']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        const wrapperRhs = {
+          text: 'x',
+          start: TestUtil.createToken(1, 0),
+          stop: TestUtil.createToken(1, 1),
+          childCount: 0,
+          children: null,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(wrapperRhs, ParserRuleContext.prototype)
+
+        const assignCtx = createAssignExpression('x', wrapperRhs)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act & Assert — no throw, no mutation
+        expect(() => sut.enterAssignExpression(assignCtx)).not.toThrow()
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+
     describe('enterAssignExpression with dot expression RHS', () => {
       it('Given dot expression as RHS, When assigning to known variable, Then should mutate', () => {
         // Arrange — exercises isMethodCall for DotExpressionContext in the assignment path
@@ -1755,6 +1868,30 @@ describe('NonVoidMethodCallMutator', () => {
         expect(sut._mutations[0].replacement).toBe('0')
       })
 
+      it('Given List<String>[] type (both list prefix AND array suffix), When entering statement, Then should mutate with List<List<String>>() (kills inner endsWith([]) → false)', () => {
+        // Arrange — exercises the inner `if (lowerType.endsWith('[]'))` branch when the outer
+        // `startsWith('list<')` is also true. If the inner check is mutated to false, the code
+        // falls to `return \`new ${typeName}()\`` giving 'new List<String>[]()' instead of
+        // 'new List<List<String>>()'.
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('getMatrix()')
+        const ctx = createVariableDeclarationStatement(
+          'List<String>[]',
+          'matrix',
+          methodCall
+        )
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert — inner endsWith('[]') = true → elementType = 'List<String>' → 'new List<List<String>>()'
+        // With inner check → false: returns 'new List<String>[]()' (using typeName directly) → test fails → kills mutant
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('new List<List<String>>()')
+      })
+
       it('Given non-PRC declarators WITH children array containing method call, When entering LVDS, Then should NOT mutate (kills !(declarators instanceof PRC) → false)', () => {
         // Arrange
         // The guard `!(declarators instanceof PRC) || !declarators.children` with
@@ -1883,6 +2020,39 @@ describe('NonVoidMethodCallMutator', () => {
         expect(sut._mutations).toHaveLength(0)
       })
 
+      it('Given assign expression with childCount=2, When entering, Then should not mutate (kills != 3 → > 3 — childCount=2 proceeds with mutant but getChild(2) is undefined)', () => {
+        // Arrange
+        // The guard `ctx.childCount !== 3` with `> 3` mutant:
+        // childCount=2 → 2 > 3 = false → doesn't return → proceeds.
+        // getChild(2) returns undefined (no such child) → not PRC → returns early.
+        // Original: 2 != 3 = true → returns early immediately.
+        // With `> 3`: getChild(2) must be undefined or non-PRC so no mutation is created.
+        // This confirms != 3 is the correct guard (not > 3 which would let childCount=2 through).
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['x', 'integer']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('getValue()')
+        const ctx = {
+          childCount: 2,
+          children: [{ text: 'x' }, { text: '=' }],
+          getChild: (i: number) => {
+            if (i === 0) return { text: 'x' }
+            return { text: '=' }
+          },
+        } as unknown as ParserRuleContext
+        setEnclosingMethod(ctx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(ctx)
+
+        // Assert — original: 2 != 3 = true → returns early → no mutation
+        expect(sut._mutations).toHaveLength(0)
+        void methodCall
+      })
+
       it('Given assign expression with childCount=4, When entering, Then should not mutate (kills != 3 → < 3 and <= 2)', () => {
         // Arrange
         // The guard `ctx.childCount !== 3` with `< 3` mutant:
@@ -1921,6 +2091,129 @@ describe('NonVoidMethodCallMutator', () => {
         // Assert — original: 4 != 3 = true → returns early → no mutation
         // Mutant `< 3`: 4 < 3 = false → proceeds → x is a known integer → creates mutation → test fails
         expect(sut._mutations).toHaveLength(0)
+      })
+    })
+
+    describe('generateDefaultValue boundary conditions', () => {
+      it('Given List<String>[] type via enterAssignExpression, When assigning method call, Then replaces with new List<List<String>>() (kills inner endsWith([]) → false)', () => {
+        // Arrange — exercises both outer startsWith('list<') AND inner endsWith('[]') simultaneously.
+        // If the inner `endsWith('[]')` check is mutated to false, the code takes
+        // `return \`new ${typeName}()\`` = 'new List<String>[]()' instead of
+        // `return \`new List<${elementType}>()\`` = 'new List<List<String>>()'.
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['matrix', 'List<String>[]']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('getMatrix()')
+        const assignCtx = createAssignExpression('matrix', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert — inner endsWith('[]') = true takes precedence:
+        // elementType = 'List<String>[]'.slice(0,-2) = 'List<String>' → 'new List<List<String>>()'
+        // With inner check → false: returns 'new List<String>[]()' → test fails → kills mutant
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('new List<List<String>>()')
+      })
+
+      it('Given String type stored as uppercase via enterAssignExpression, When assigning, Then replaces with empty string (kills toLowerCase() removal)', () => {
+        // Arrange — exercises the `lowerType = typeName.toLowerCase()` step.
+        // TypeRegistry stores the variable type as 'String' (PascalCase).
+        // generateDefaultValue receives 'String', lowercases to 'string', finds in defaultValues.
+        // If toLowerCase() is removed: 'String'.startsWith('list<') = false → not list/set/map →
+        // defaultValues['String'] = undefined (key 'string' exists, not 'String') → returns 'null'.
+        // Test asserts '' → fails with mutation → kills it.
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['label', 'String']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('getLabel()')
+        const assignCtx = createAssignExpression('label', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert — toLowerCase makes 'String' → 'string' → defaultValues['string'] = "''"
+        // Without toLowerCase: defaultValues['String'] = undefined → returns 'null' → test fails
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe("''")
+      })
+
+      it('Given Integer type stored as PascalCase via enterAssignExpression, When assigning, Then replaces with 0 (kills toLowerCase() removal for numeric types)', () => {
+        // Arrange — same as above but for numeric type.
+        // TypeRegistry stores 'Integer' (PascalCase). generateDefaultValue lowercases to 'integer'.
+        // Without toLowerCase: defaultValues['Integer'] = undefined → returns 'null' not '0'.
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['count', 'Integer']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('getCount()')
+        const assignCtx = createAssignExpression('count', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert — toLowerCase makes 'Integer' → 'integer' → returns '0'
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('0')
+      })
+
+      it('Given List<String> type stored as PascalCase via enterAssignExpression, When assigning, Then replaces with new List<String>() (kills toLowerCase() removal for collection types)', () => {
+        // Arrange — TypeRegistry stores 'List<String>'. generateDefaultValue lowercases to 'list<string>'.
+        // Without toLowerCase: 'List<String>'.startsWith('list<') = false (capital L) → falls to set/map →
+        // also false → defaultValues lookup: 'List<String>' not a key → returns 'null' not list constructor.
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['items', 'List<String>']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('fetchItems()')
+        const assignCtx = createAssignExpression('items', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert — toLowerCase('List<String>') = 'list<string>' → startsWith('list<') = true → 'new List<String>()'
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('new List<String>()')
+      })
+
+      it('Given String[] type stored as-is via enterAssignExpression, When assigning, Then replaces with new List<String>() (kills endsWith([]) check specifically)', () => {
+        // Arrange — tests the endsWith('[]') branch of generateDefaultValue when invoked through
+        // the enterAssignExpression → resolveVariable → generateDefaultValue path.
+        // Specifically: 'String[]' lowercased is 'string[]', which does NOT startWith 'list<' but
+        // DOES endWith '[]' — so it enters via the second condition of the outer OR.
+        // This kills mutations where `|| lowerType.endsWith('[]')` is removed (replaced by false):
+        // 'string[]' wouldn't enter the block → falls through → defaultValues['string[]'] = undefined → 'null'.
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['arr', 'String[]']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('fetchArr()')
+        const assignCtx = createAssignExpression('arr', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert — endsWith('[]') triggers → elementType = 'String' → 'new List<String>()'
+        // Without endsWith check: 'null' → test fails → kills mutant
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('new List<String>()')
       })
     })
   })

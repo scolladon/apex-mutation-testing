@@ -3809,6 +3809,133 @@ describe('MutationTestingService', () => {
       })
     })
 
+    describe('When skipPatterns are provided to constructor, Then they are forwarded to mutantGenerator.compute', () => {
+      it('Given skipPatterns in constructor, When processing, Then compute receives compiled skip patterns', async () => {
+        // Arrange — kills survivors related to this.skipPatterns being passed to compute()
+        // No existing test creates the service with skipPatterns set
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        const mockComputeFn = vi.fn().mockReturnValue([mockMutation])
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = mockComputeFn
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+            })
+          }
+        )
+
+        const serviceWithPatterns = new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassName: 'TestClassTest',
+            skipPatterns: ['System\\.debug'],
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+        // Act
+        await serviceWithPatterns.process()
+
+        // Assert — compute must receive the compiled RE2 instances (non-empty array), not []
+        const computeCall = mockComputeFn.mock.calls[0]
+        const passedSkipPatterns = computeCall[4]
+        expect(passedSkipPatterns).toHaveLength(1)
+      })
+    })
+
+    describe('When lines are provided to constructor, Then they are forwarded to mutantGenerator.compute', () => {
+      it('Given lines in constructor, When processing, Then compute receives parsed line ranges as Set', async () => {
+        // Arrange — kills survivors related to this.allowedLines being passed to compute()
+        // No existing test creates the service with lines set
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        const mockComputeFn = vi.fn().mockReturnValue([mockMutation])
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = mockComputeFn
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+            })
+          }
+        )
+
+        const serviceWithLines = new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassName: 'TestClassTest',
+            lines: ['1-5'],
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+        // Act
+        await serviceWithLines.process()
+
+        // Assert — compute must receive a Set of line numbers, not undefined
+        const computeCall = mockComputeFn.mock.calls[0]
+        const passedAllowedLines = computeCall[5]
+        expect(passedAllowedLines).toBeInstanceOf(Set)
+        expect(passedAllowedLines).toEqual(new Set([1, 2, 3, 4, 5]))
+      })
+    })
+
     describe('When calculateScore handles boundary cases', () => {
       it('Given only Survived and Killed mutants, When calculating score, Then compile error filter has no effect', () => {
         // Arrange

@@ -435,6 +435,65 @@ describe('ConstructorCallMutator', () => {
     })
   })
 
+  describe('Given a NewExpression with childCount of 1 and valid new TerminalNode at index 0', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations (kills childCount !== 2 → > 2 mutant)', () => {
+        // Arrange — childCount === 1, child[0] is a valid 'new' TerminalNode.
+        // With mutant `childCount > 2`: 1 > 2 = false → guard does NOT fire → proceeds.
+        // child[0] is TerminalNode 'new', passes the instanceof and lowercase checks.
+        // ctx has start/stop → createMutationFromParserRuleContext would produce a mutation.
+        // Original `!== 2`: 1 !== 2 = true → returns early → 0 mutations.
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 10,
+          tokenIndex: 5,
+          startIndex: 10,
+          stopIndex: 25,
+        } as Token
+
+        const newKeyword = new TerminalNode({ text: 'new' } as Token)
+
+        const ctx = {
+          childCount: 1,
+          getChild: vi.fn().mockImplementation(index => {
+            return index === 0 ? newKeyword : undefined
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 6 } as Token,
+          text: 'new',
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterNewExpression(ctx)
+
+        // Assert — childCount !== 2 guard fires → no mutation created
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a NewExpression with childCount of 0', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations (kills childCount !== 2 → < 2 mutant)', () => {
+        // Arrange — childCount === 0.
+        // With mutant `childCount < 2`: 0 < 2 = true → returns early.
+        // Original: 0 !== 2 = true → also returns early.
+        // This test acts as a complement: childCount=0 must always produce 0 mutations.
+        // Combined with the childCount=1 test above, it covers the > 2 mutant range.
+        const ctx = {
+          childCount: 0,
+          getChild: vi.fn(),
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterNewExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
   describe('Given a NewExpression inside a non-throw parent context', () => {
     describe('When entering the expression', () => {
       it('Then should create a mutation (kills current instanceof ThrowStatementContext → true mutant)', () => {

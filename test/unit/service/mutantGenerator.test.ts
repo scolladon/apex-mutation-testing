@@ -534,6 +534,36 @@ describe('MutantGenerator', () => {
       // Assert
       expect(result.every(m => m.target.startToken.line !== 3)).toBe(true)
     })
+
+    it('Given multiline content and skip pattern, When computing, Then sourceLines split correctly matches pattern on specific line (kills classContent.split mutation)', () => {
+      // Arrange — kills `classContent.split('\\n')` → `classContent.split('')` mutation:
+      // With split(''), sourceLines is an array of individual characters, not lines.
+      // The skip pattern 'debug' would not match a single character, so line 3 would
+      // NOT be skipped — mutations on line 3 would appear, breaking the first assertion.
+      const classContent = [
+        'public class Test {',
+        '  public static void method() {',
+        '    System.debug(5 < 10);',
+        '    Integer j = 5 < 10 ? 1 : 0;',
+        '  }',
+        '}',
+      ].join('\n')
+      const coveredLines = new Set([3, 4])
+      const skipPatterns = [new RE2('System\\.debug')]
+
+      // Act
+      const result = sut.compute(
+        classContent,
+        coveredLines,
+        undefined,
+        undefined,
+        skipPatterns
+      )
+
+      // Assert — line 3 (System.debug call) must be skipped; line 4 must produce mutations
+      expect(result.every(m => m.target.startToken.line !== 3)).toBe(true)
+      expect(result.some(m => m.target.startToken.line === 4)).toBe(true)
+    })
   })
 
   describe('when mutating code', () => {

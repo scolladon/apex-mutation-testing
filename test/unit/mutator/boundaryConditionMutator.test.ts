@@ -113,6 +113,44 @@ describe('BoundaryConditionMutator', () => {
       expect(sut['_mutations']).toHaveLength(0)
     })
 
+    it('Given childCount of 2 with a valid TerminalNode < operator, When enterCmpExpression, Then should not create mutation (kills childCount < 3 → < 2 mutant)', () => {
+      // Arrange — kills `childCount < 3` → `childCount < 2` mutant:
+      // With original `< 3`: 2 < 3 = true → returns early → 0 mutations.
+      // With mutant `< 2`: 2 < 2 = false → does NOT return → loops over children → finds '<' TerminalNode →
+      // operatorText='<' → REPLACEMENT_MAP['<']='<=' → operatorTokens.length>0 → creates mutation.
+      // This distinguishes the original from the mutant.
+      const operatorToken = {
+        text: '<',
+        line: 1,
+        charPositionInLine: 10,
+        tokenIndex: 1,
+        startIndex: 10,
+        stopIndex: 10,
+      } as Token
+
+      const operatorNode: TerminalNode = {
+        text: '<',
+        symbol: operatorToken,
+      } as unknown as TerminalNode
+      Object.setPrototypeOf(operatorNode, TerminalNode.prototype)
+
+      const children = [{ text: 'leftOperand' }, operatorNode]
+
+      const mockCtx = {
+        childCount: 2,
+        getChild: vi
+          .fn()
+          .mockImplementation((index: number) => children[index]),
+        children,
+      } as unknown as ParserRuleContext
+
+      // Act
+      sut.enterCmpExpression(mockCtx)
+
+      // Assert — original guard fires (2 < 3 → true → return) → 0 mutations
+      expect(sut['_mutations']).toHaveLength(0)
+    })
+
     it('should not mutate when operator is not in replacement map', () => {
       // Arrange
       const mockCtx = createMockContext('==')

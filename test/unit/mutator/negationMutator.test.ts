@@ -930,6 +930,61 @@ describe('NegationMutator', () => {
       expect(sut._mutations[0].replacement).toBe('-(-ab)')
     })
 
+    it('Given expression with childCount=2 and first child TerminalNode with text +, When entering return statement, Then creates mutation (kills === - → === + mutant)', () => {
+      // Arrange — kills `firstChild.text === '-'` → `firstChild.text === '+'` mutant:
+      // With original `=== '-'`: '+' !== '-' → false → not negated → creates mutation.
+      // With mutant `=== '+'`: '+' === '+' → true → treated as negated → blocks mutation.
+      // Combined with the existing test where '-' returns true, both sides of the `===` are pinned.
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.INTEGER,
+      })
+      const typeRegistry = createTypeRegistry(typeTable)
+      const sut = new NegationMutator(typeRegistry)
+
+      const plusNode = new TerminalNode({ text: '+' } as Token)
+      const innerChild = { text: 'x' }
+
+      const expressionNode = {
+        text: '+x',
+        start: TestUtil.createToken(1, 7),
+        stop: TestUtil.createToken(1, 9),
+        childCount: 2,
+        children: [plusNode, innerChild],
+        getChild: (i: number) => (i === 0 ? plusNode : innerChild),
+      } as unknown as ParserRuleContext
+      Object.setPrototypeOf(expressionNode, ParserRuleContext.prototype)
+
+      const returnCtx = {
+        children: [{ text: 'return' }, expressionNode],
+        childCount: 2,
+        getChild: (i: number) =>
+          i === 0 ? { text: 'return' } : expressionNode,
+      } as unknown as ParserRuleContext
+      const methodCtx = Object.create(MethodDeclarationContext.prototype)
+      methodCtx.children = [
+        { text: 'Integer' },
+        { text: 'testMethod' },
+        { text: '(' },
+        { text: ')' },
+      ]
+      Object.defineProperty(returnCtx, 'parent', {
+        value: methodCtx,
+        writable: true,
+        configurable: true,
+      })
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert — '+' is not '-' → not treated as negated → mutation is created (wrapped since childCount > 1)
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('-(+x)')
+    })
+
     it('Given expression with childCount=1, When entering return statement, Then creates mutation without wrapping in parentheses', () => {
       // Arrange
       // Kills: `expressionNode.childCount > 1` → `>= 1`
