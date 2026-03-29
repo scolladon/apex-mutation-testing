@@ -382,6 +382,78 @@ describe('BaseReturnMutator', () => {
     })
   })
 
+  describe('Given TypeRegistry with eligible return type Integer', () => {
+    it('Then should create mutation (confirms isEligibleReturnType works for non-VOID non-STRING types)', () => {
+      // Arrange — INTEGER is eligible (non-VOID), so a mutation should be created.
+      // This exercises isMutableReturn returning true for INTEGER type,
+      // which helps kill BlockStatement mutant on the `isMutableReturn` body.
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Integer',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.INTEGER,
+      })
+      const sut = new StubReturnMutator(createTypeRegistry(typeTable))
+      const returnCtx = createReturnCtxInMethod('someValue', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('stub')
+    })
+  })
+
+  describe('Given TypeRegistry and isMutableReturn where typeInfo exists but isEligibleReturnType is false', () => {
+    it('Then should not create mutations (kills !!typeInfo && isEligible → !!typeInfo || isEligible mutant)', () => {
+      // Arrange — VOID type: typeInfo is non-null (method exists), but isEligibleReturnType returns false.
+      // With mutant `&&` → `||`: `!!typeInfo || false` = `true || false` = true → proceeds → creates mutation.
+      // Original: `!!typeInfo && false` = `true && false` = false → returns false → no mutation.
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'void',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.VOID,
+      })
+      const sut = new StubReturnMutator(createTypeRegistry(typeTable))
+      const returnCtx = createReturnCtxInMethod('someValue', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('Given TypeRegistry where typeRegistry is provided but methodName matches a method returning eligible type', () => {
+    it('Then should create mutation (confirms both !!typeInfo and isEligibleReturnType must be true)', () => {
+      // Arrange — Both conditions in `!!typeInfo && isEligibleReturnType(...)` must be true.
+      // This test paired with the VOID test above kills `&&` → `||` because:
+      // VOID test: typeInfo non-null, eligible=false → `||` mutant would create mutation (wrong)
+      // This test: typeInfo non-null, eligible=true → both guards give same result → need both
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('testMethod', {
+        returnType: 'Boolean',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.BOOLEAN,
+      })
+      const sut = new StubReturnMutator(createTypeRegistry(typeTable))
+      const returnCtx = createReturnCtxInMethod('someValue', 'testMethod')
+
+      // Act
+      sut.enterReturnStatement(returnCtx)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('stub')
+    })
+  })
+
   describe('Given TypeRegistry and eligible return with children having exactly 2 entries', () => {
     it('Then should create a mutation confirming length < 2 does not block the happy path', () => {
       // Arrange — verifies `< 2` (not `> 2` or other mutants) allows exactly-2-children through

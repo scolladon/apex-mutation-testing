@@ -632,6 +632,35 @@ describe('ArithmeticOperatorMutator', () => {
         expect(sut._mutations).toHaveLength(3)
       })
 
+      it('Then should generate mutations for - even when operands are String variables (kills && → || mutant)', () => {
+        // Arrange — kills `operatorText === '+' && isNonNumericContext` → `||` mutant:
+        // With || mutant: `-` operator → `false || isNonNumericContext(string vars)` = true → skips → 0 mutations.
+        // Original &&: `-` operator → `false && ...` = false → never skips → 3 mutations.
+        const variableScopes = new Map([
+          [
+            'testMethod',
+            new Map([
+              ['name', 'string'],
+              ['suffix', 'string'],
+            ]),
+          ],
+        ])
+        const typeRegistry = createTypeRegistry(new Map(), variableScopes)
+        const sut = new ArithmeticOperatorMutator(typeRegistry)
+        const ctx = createArithmeticCtxInMethod(
+          'name',
+          '-',
+          'suffix',
+          'testMethod'
+        )
+
+        // Act
+        sut.enterArth2Expression(ctx)
+
+        // Assert — `-` always generates mutations regardless of operand types
+        expect(sut._mutations).toHaveLength(3)
+      })
+
       it('Then should always generate mutations for * regardless of operand types', () => {
         // Arrange
         const typeRegistry = createTypeRegistry(new Map())

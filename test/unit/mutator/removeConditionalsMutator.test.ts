@@ -443,4 +443,50 @@ describe('RemoveConditionalsMutator', () => {
       })
     })
   })
+
+  describe('Given an IfStatement where first child is not a TerminalNode but has text "if" and valid condition tokens', () => {
+    describe('When entering the statement', () => {
+      it('Then should not create any mutations (kills !(ifKeyword instanceof TerminalNode) → false mutant)', () => {
+        // Arrange
+        // With mutant `false`, the instanceof guard is bypassed. The non-TerminalNode
+        // with text 'if' passes the toLowerCase() text check, so code proceeds to
+        // createMutationFromParserRuleContext(conditionCtx) — producing 2 mutations instead of 0.
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 0,
+          tokenIndex: 1,
+          startIndex: 0,
+          stopIndex: 20,
+        } as Token
+
+        const nonTerminalIfNode = { text: 'if' } // NOT a TerminalNode, but has text 'if'
+        const conditionCtx = {
+          text: '(x > 0)',
+          start: mockToken,
+          stop: { tokenIndex: 6 } as Token,
+        } as unknown as ParserRuleContext
+        const thenBlock = {
+          text: '{ doA(); }',
+        } as unknown as ParserRuleContext
+
+        const ctx = {
+          childCount: 3,
+          getChild: vi.fn().mockImplementation(index => {
+            if (index === 0) return nonTerminalIfNode
+            if (index === 1) return conditionCtx
+            return thenBlock
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 10 } as Token,
+          text: 'if (x > 0) { doA(); }',
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterIfStatement(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
 })

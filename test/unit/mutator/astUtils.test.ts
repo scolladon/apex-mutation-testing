@@ -743,5 +743,49 @@ describe('astUtils', () => {
       // Assert
       expect(result).toBe(APEX_TYPE.STRING)
     })
+
+    it('Given text that starts with a digit and is neither long nor double, When called, Then returns INTEGER not null', () => {
+      // Arrange — kills `if (/^\d/.test(text)) { ... } → if (false)` ConditionalExpression mutant:
+      // With if(false), the block is skipped entirely and '42' falls through to string/boolean checks
+      // returning null instead of INTEGER.
+      const typeRegistry = TestUtil.createTypeRegistry()
+
+      // Act
+      const result = resolveExpressionApexType('42', 'testMethod', typeRegistry)
+
+      // Assert — must return INTEGER, not null
+      expect(result).toBe(APEX_TYPE.INTEGER)
+      expect(result).not.toBeNull()
+    })
+
+    it('Given text starting with digit followed by L (long literal), When called, Then returns LONG not null', () => {
+      // Arrange — kills inner `if (/L$/i.test(text)) return LONG` ConditionalExpression (→ false):
+      // With false, 5L would skip LONG check and fall to `.includes('.')` check returning INTEGER.
+      const typeRegistry = TestUtil.createTypeRegistry()
+
+      // Act
+      const result = resolveExpressionApexType('5L', 'testMethod', typeRegistry)
+
+      // Assert — must return LONG, not INTEGER
+      expect(result).toBe(APEX_TYPE.LONG)
+      expect(result).not.toBe(APEX_TYPE.INTEGER)
+    })
+
+    it('Given true string, When called, Then returns BOOLEAN not null (kills lower === true || false → false ConditionalExpression)', () => {
+      // Arrange — kills `lower === 'true' || lower === 'false'` → `false` ConditionalExpression mutant:
+      // With false, 'true' falls through to typeRegistry lookup which returns null.
+      const typeRegistry = TestUtil.createTypeRegistry()
+
+      // Act
+      const result = resolveExpressionApexType(
+        'true',
+        'testMethod',
+        typeRegistry
+      )
+
+      // Assert — must return BOOLEAN, not null
+      expect(result).toBe(APEX_TYPE.BOOLEAN)
+      expect(result).not.toBeNull()
+    })
   })
 })

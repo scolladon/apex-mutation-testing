@@ -395,6 +395,62 @@ describe('MutantGenerator', () => {
       expect(warnSpy).not.toHaveBeenCalled()
       warnSpy.mockRestore()
     })
+
+    it('Given include filter with mixed-case mutator name, When computing mutations, Then names are lowercased before matching (kills n.toLowerCase() → n mutant)', () => {
+      // Arrange — kills `n.toLowerCase()` → `n` mutant:
+      // Without toLowerCase, 'ArithmeticOperator' stored as-is would not match 'arithmeticoperator'
+      // (the lowercased registry name), producing 0 mutations instead of 3.
+      const classContent =
+        'public class Test { public static Integer method() { return 1 + 2; } }'
+      const coveredLines = new Set([1])
+
+      // Act — mixed-case include name (same as registry name before lowercasing)
+      const result = sut.compute(classContent, coveredLines, undefined, {
+        include: ['ArithmeticOperator'],
+      })
+
+      // Assert — must produce mutations (3 for +: -, *, /)
+      expect(result).toHaveLength(3)
+    })
+
+    it('Given include filter with all-uppercase mutator name, When computing mutations, Then names are lowercased and match (kills n.toLowerCase() → n mutant)', () => {
+      // Arrange — kills `n.toLowerCase()` → `n` mutant using fully uppercase name.
+      // Without toLowerCase, 'ARITHMETICOPERATOR' would not match 'arithmeticoperator'.
+      const classContent =
+        'public class Test { public static Integer method() { return 1 + 2; } }'
+      const coveredLines = new Set([1])
+
+      // Act
+      const result = sut.compute(classContent, coveredLines, undefined, {
+        include: ['ARITHMETICOPERATOR'],
+      })
+
+      // Assert — must produce mutations; lowercase matching means ARITHMETICOPERATOR = arithmeticoperator
+      expect(result).toHaveLength(3)
+      expect(
+        result.every(m => m.mutationName === 'ArithmeticOperatorMutator')
+      ).toBe(true)
+    })
+
+    it('Given exclude filter uses include path when include is undefined (kills ?? order mutant)', () => {
+      // Arrange — kills `mutatorFilter.include ?? mutatorFilter.exclude ?? []` mutant
+      // where the ?? chain is reordered. With exclude only, it should use excludeMutators path.
+      const classContent =
+        'public class Test { public static void method() { integer i = 0; ++i; } }'
+      const coveredLines = new Set([1])
+
+      // Act — exclude with known name
+      const withExclude = sut.compute(classContent, coveredLines, undefined, {
+        exclude: ['Increment'],
+      })
+      const withAll = new MutantGenerator().compute(classContent, coveredLines)
+
+      // Assert — result must differ (Increment mutations removed)
+      expect(withExclude.length).toBeLessThan(withAll.length)
+      expect(
+        withExclude.every(m => m.mutationName !== 'IncrementMutator')
+      ).toBe(true)
+    })
   })
 
   describe('getTokenStream', () => {

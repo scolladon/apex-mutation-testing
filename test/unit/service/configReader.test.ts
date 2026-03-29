@@ -582,6 +582,42 @@ describe('ConfigReader', () => {
       // Assert
       expect(sut).toEqual(new Set([1, 2, 3, 4, 5, 6, 7, 8]))
     })
+
+    it('Given non-empty array, When parsing, Then returns defined set (kills lines.length === 0 → true ConditionalExpression)', () => {
+      // Arrange — kills `lines.length === 0` → `true` mutant:
+      // With true, non-empty arrays are also treated as empty → returns undefined
+      // Original: only empty arrays return undefined.
+
+      // Act
+      const sut = ConfigReader.parseLineRanges(['5'])
+
+      // Assert — non-empty array must return a Set, not undefined
+      expect(sut).not.toBeUndefined()
+      expect(sut).toBeInstanceOf(Set)
+    })
+
+    it('Given range string with dash, When parsing, Then iterates from start to end (kills i <= end → i < end)', () => {
+      // Arrange — kills `i <= end` → `i < end` mutant: with `<`, end value is excluded.
+      // With `<=`, 1-3 produces {1, 2, 3}; with `<`, produces {1, 2}.
+
+      // Act
+      const sut = ConfigReader.parseLineRanges(['1-3'])
+
+      // Assert — end must be included
+      expect(sut).toContain(3)
+      expect(sut?.size).toBe(3)
+    })
+
+    it('Given range with equal start and end, When parsing, Then returns set with single value (kills i <= end boundary)', () => {
+      // Arrange — reinforces i <= end: with i < end, 5-5 would produce empty set
+      // because i=5 < 5 is false immediately.
+
+      // Act
+      const sut = ConfigReader.parseLineRanges(['5-5'])
+
+      // Assert
+      expect(sut).toEqual(new Set([5]))
+    })
   })
 
   describe('compileSkipPatterns', () => {

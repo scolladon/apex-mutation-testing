@@ -1,6 +1,6 @@
-import { ParserRuleContext } from 'antlr4ts'
+import { ParserRuleContext, Token } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
-import { MethodDeclarationContext } from 'apex-parser'
+import { MethodDeclarationContext, ReturnStatementContext } from 'apex-parser'
 import { BaseListener } from '../../../src/mutator/baseListener.js'
 import { TypeRegistry } from '../../../src/type/TypeRegistry.js'
 import { TestUtil } from '../../utils/testUtil.js'
@@ -8,6 +8,10 @@ import { TestUtil } from '../../utils/testUtil.js'
 class TestableBaseListener extends BaseListener {
   getEnclosingMethodNamePublic(ctx: ParserRuleContext): string | null {
     return this.getEnclosingMethodName(ctx)
+  }
+
+  isInsideReturnStatementPublic(ctx: ParserRuleContext): boolean {
+    return this.isInsideReturnStatement(ctx)
   }
 
   isNonNumericContextPublic(ctx: ParserRuleContext): boolean {
@@ -267,6 +271,81 @@ describe('BaseListener', () => {
 
       // Assert
       expect(listener._mutations).toHaveLength(0)
+    })
+  })
+
+  describe('isInsideReturnStatement', () => {
+    it('Given a context directly inside a ReturnStatementContext, When isInsideReturnStatement, Then returns true', () => {
+      // Arrange — kills `instanceof ReturnStatementContext → true` ConditionalExpression mutant:
+      // With mutant `false`, the check always returns false, never detecting return contexts.
+      const listener = new TestableBaseListener()
+      const returnCtx = Object.create(ReturnStatementContext.prototype)
+      const innerCtx = new ParserRuleContext()
+      setParent(innerCtx, returnCtx)
+
+      // Act
+      const result = listener.isInsideReturnStatementPublic(innerCtx)
+
+      // Assert
+      expect(result).toBe(true)
+    })
+
+    it('Given a context with no ReturnStatementContext ancestor, When isInsideReturnStatement, Then returns false', () => {
+      // Arrange — verifies the false-return path when no return statement ancestor exists
+      const listener = new TestableBaseListener()
+      const rootCtx = new ParserRuleContext()
+      const innerCtx = new ParserRuleContext()
+      setParent(innerCtx, rootCtx)
+
+      // Act
+      const result = listener.isInsideReturnStatementPublic(innerCtx)
+
+      // Assert
+      expect(result).toBe(false)
+    })
+
+    it('Given a context deeply nested inside a ReturnStatementContext, When isInsideReturnStatement, Then returns true', () => {
+      // Arrange — walks up multiple levels to find ReturnStatementContext
+      const listener = new TestableBaseListener()
+      const returnCtx = Object.create(ReturnStatementContext.prototype)
+      const middleCtx = new ParserRuleContext()
+      setParent(middleCtx, returnCtx)
+      const innerCtx = new ParserRuleContext()
+      setParent(innerCtx, middleCtx)
+
+      // Act
+      const result = listener.isInsideReturnStatementPublic(innerCtx)
+
+      // Assert
+      expect(result).toBe(true)
+    })
+
+    it('Given a context with no parent, When isInsideReturnStatement, Then returns false', () => {
+      // Arrange
+      const listener = new TestableBaseListener()
+      const ctx = new ParserRuleContext()
+
+      // Act
+      const result = listener.isInsideReturnStatementPublic(ctx)
+
+      // Assert
+      expect(result).toBe(false)
+    })
+
+    it('Given a non-ReturnStatementContext parent with prototype matching ParserRuleContext, When isInsideReturnStatement, Then returns false (kills instanceof → true mutant)', () => {
+      // Arrange — kills `instanceof ReturnStatementContext → true` mutant:
+      // With true, every parent is treated as a return statement, so any context would return true.
+      // This test ensures a plain ParserRuleContext parent returns false.
+      const listener = new TestableBaseListener()
+      const nonReturnCtx = new ParserRuleContext()
+      const innerCtx = new ParserRuleContext()
+      setParent(innerCtx, nonReturnCtx)
+
+      // Act
+      const result = listener.isInsideReturnStatementPublic(innerCtx)
+
+      // Assert — plain ParserRuleContext is not a ReturnStatementContext
+      expect(result).toBe(false)
     })
   })
 

@@ -1104,6 +1104,86 @@ describe('ExperimentalSwitchMutator', () => {
       })
     })
 
+    describe('Given a switch with two adjacent non-else cases where swap text format is verified', () => {
+      describe('When entering the switch statement', () => {
+        it('Then swap replacement includes "when " prefix for both cases (kills StringLiteral mutant removing "when ")', () => {
+          // Arrange — kills StringLiteral `'when '` → `''` mutant in swappedText template literal.
+          // With empty string, replacement becomes `${nextValue.text} ${currentBlock.text}${currentValue.text} ${nextBlock.text}`
+          // which does not start with 'when'.
+          const whenKeyword = new TerminalNode({ text: 'when' } as Token)
+
+          const firstBlockCtx = {
+            text: '{ handle1(); }',
+            start: { tokenIndex: 4 } as Token,
+            stop: { tokenIndex: 6 } as Token,
+          } as unknown as ParserRuleContext
+
+          const firstWhenValueCtx = {
+            text: '1',
+            start: { tokenIndex: 3 } as Token,
+            stop: { tokenIndex: 3 } as Token,
+            ELSE: () => undefined,
+          } as unknown as ParserRuleContext
+
+          const firstWhenCtx = {
+            childCount: 3,
+            text: 'when 1 { handle1(); }',
+            start: { tokenIndex: 2, line: 5 } as Token,
+            stop: { tokenIndex: 6 } as Token,
+            getChild: vi.fn().mockImplementation(index => {
+              if (index === 0) return whenKeyword
+              if (index === 1) return firstWhenValueCtx
+              return firstBlockCtx
+            }),
+          } as unknown as ParserRuleContext
+
+          const secondBlockCtx = {
+            text: '{ handle2(); }',
+            start: { tokenIndex: 9 } as Token,
+            stop: { tokenIndex: 11 } as Token,
+          } as unknown as ParserRuleContext
+
+          const secondWhenValueCtx = {
+            text: '2',
+            start: { tokenIndex: 8 } as Token,
+            stop: { tokenIndex: 8 } as Token,
+            ELSE: () => undefined,
+          } as unknown as ParserRuleContext
+
+          const secondWhenCtx = {
+            childCount: 3,
+            text: 'when 2 { handle2(); }',
+            start: { tokenIndex: 7, line: 8 } as Token,
+            stop: { tokenIndex: 11 } as Token,
+            getChild: vi.fn().mockImplementation(index => {
+              if (index === 0) return whenKeyword
+              if (index === 1) return secondWhenValueCtx
+              return secondBlockCtx
+            }),
+          } as unknown as ParserRuleContext
+
+          const switchCtx = {
+            childCount: 6,
+            whenControl: vi.fn().mockReturnValue([firstWhenCtx, secondWhenCtx]),
+          } as unknown as ParserRuleContext
+
+          // Act
+          sut.enterSwitchStatement(switchCtx)
+
+          // Assert — replacement text must begin with 'when ' (not be empty prefix)
+          const swapMutation = sut._mutations.find(
+            m =>
+              m.replacement.includes('{ handle1(); }') &&
+              m.replacement.includes('{ handle2(); }')
+          )
+          expect(swapMutation).toBeDefined()
+          expect(swapMutation!.replacement).toMatch(/^when /)
+          expect(swapMutation!.replacement).toContain('when 2 { handle1(); }')
+          expect(swapMutation!.replacement).toContain('when 1 { handle2(); }')
+        })
+      })
+    })
+
     describe('Given a switch with non-else case followed by else case', () => {
       describe('When entering the switch statement', () => {
         it('Then should not create swap mutation between them', () => {

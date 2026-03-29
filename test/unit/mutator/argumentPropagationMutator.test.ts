@@ -904,6 +904,132 @@ describe('ArgumentPropagationMutator', () => {
     })
   })
 
+  describe('Given boolean false literal argument matching Boolean return type', () => {
+    it('Then should create mutation (kills lower === true || lower === false → && mutant)', () => {
+      // Arrange — 'false' text must independently resolve to BOOLEAN.
+      // With mutant `||` → `&&`: only text that is BOTH 'true' AND 'false' resolves to BOOLEAN,
+      // which is impossible → 'false' alone would not match → no mutation created.
+      // Original code: 'false'.toLowerCase() === 'false' is true → returns BOOLEAN → mutation created.
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('process', {
+        returnType: 'Boolean',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.BOOLEAN,
+      })
+      const typeRegistry = TestUtil.createTypeRegistry(typeTable)
+      const sut = new ArgumentPropagationMutator(typeRegistry)
+
+      const argNode = TestUtil.createArgNode('false')
+      const ctx = TestUtil.createMethodCallExpressionInMethod(
+        'process',
+        [argNode],
+        'testMethod'
+      )
+
+      // Act
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('false')
+    })
+  })
+
+  describe('Given a float literal argument with a dot matching Double return type', () => {
+    it('Then should create mutation (exercises numeric-with-dot branch of resolveExpressionApexType)', () => {
+      // Arrange — '3.14' starts with digit and contains '.', so resolves to DOUBLE
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('process', {
+        returnType: 'Double',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.DOUBLE,
+      })
+      const typeRegistry = TestUtil.createTypeRegistry(typeTable)
+      const sut = new ArgumentPropagationMutator(typeRegistry)
+
+      const argNode = TestUtil.createArgNode('3.14')
+      const ctx = TestUtil.createMethodCallExpressionInMethod(
+        'process',
+        [argNode],
+        'testMethod'
+      )
+
+      // Act
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('3.14')
+    })
+  })
+
+  describe('Given a Long literal argument matching Long return type', () => {
+    it('Then should create mutation (exercises numeric-with-L branch of resolveExpressionApexType)', () => {
+      // Arrange — '10L' starts with digit and ends with L, so resolves to LONG
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('process', {
+        returnType: 'Long',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.LONG,
+      })
+      const typeRegistry = TestUtil.createTypeRegistry(typeTable)
+      const sut = new ArgumentPropagationMutator(typeRegistry)
+
+      const argNode = TestUtil.createArgNode('10L')
+      const ctx = TestUtil.createMethodCallExpressionInMethod(
+        'process',
+        [argNode],
+        'testMethod'
+      )
+
+      // Act
+      sut.enterMethodCallExpression(
+        ctx as unknown as MethodCallExpressionContext
+      )
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('10L')
+    })
+  })
+
+  describe('Given a dot expression with boolean false argument matching Boolean return type', () => {
+    it('Then should create mutation (kills || → && mutant in resolveExpressionApexType for dot path)', () => {
+      // Arrange — exercises the 'false' → BOOLEAN branch for the dot expression path
+      const typeTable = new Map<string, ApexMethod>()
+      typeTable.set('transform', {
+        returnType: 'Boolean',
+        startLine: 1,
+        endLine: 5,
+        type: APEX_TYPE.BOOLEAN,
+      })
+      const typeRegistry = TestUtil.createTypeRegistry(typeTable)
+      const sut = new ArgumentPropagationMutator(typeRegistry)
+
+      const argNode = TestUtil.createArgNode('false')
+      const ctx = TestUtil.createDotExpressionInMethod(
+        'obj',
+        'transform',
+        'testMethod',
+        [argNode]
+      )
+
+      // Act
+      sut.enterDotExpression(ctx as unknown as DotExpressionContext)
+
+      // Assert
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('false')
+    })
+  })
+
   describe('Given a method call where argType does not equal returnType (non-null but mismatched)', () => {
     it('Then should not create mutations when Long arg is passed to String-returning method', () => {
       // Arrange

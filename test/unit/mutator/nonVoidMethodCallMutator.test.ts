@@ -1709,6 +1709,219 @@ describe('NonVoidMethodCallMutator', () => {
         // Assert — non-PRC declarator must be skipped in the loop
         expect(sut._mutations).toHaveLength(0)
       })
+
+      it('Given ctx with exactly 1 child (no semicolon) that IS a valid PRC with method call, When entering LVDS, Then should mutate (kills length < 1 → <= 1 and < 2)', () => {
+        // Arrange
+        // The guard `ctx.children.length < 1` with `<= 1` or `< 2` mutant:
+        // length=1 → 1 <= 1 (true) or 1 < 2 (true) → returns early → no mutation.
+        // Original: 1 < 1 = false → proceeds → processes → creates mutation.
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        const methodCall = createMethodCallExpression('getValue()')
+        const declarator = {
+          text: 'x=getValue()',
+          children: [{ text: 'x' }, { text: '=' }, methodCall],
+          childCount: 3,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarator, ParserRuleContext.prototype)
+
+        const declarators = {
+          text: 'x=getValue()',
+          children: [declarator],
+          childCount: 1,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarators, ParserRuleContext.prototype)
+
+        const declCtx = {
+          children: [{ text: 'Integer' }, declarators],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declCtx, ParserRuleContext.prototype)
+
+        // Only 1 child (no semicolon) — this is the key: length === 1
+        const ctx = {
+          children: [declCtx],
+          childCount: 1,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert — original: 1 < 1 = false → proceeds → 1 mutation
+        // Mutants `<= 1` and `< 2`: return early → 0 mutations
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('0')
+      })
+
+      it('Given non-PRC declarators WITH children array containing method call, When entering LVDS, Then should NOT mutate (kills !(declarators instanceof PRC) → false)', () => {
+        // Arrange
+        // The guard `!(declarators instanceof PRC) || !declarators.children` with
+        // !(declarators instanceof PRC) → false becomes `false || !declarators.children`.
+        // When declarators is non-PRC but HAS children: `!children` = false → doesn't return
+        // → iterates children → processes method call → spurious mutation.
+        // Original: `!(non-PRC) = true || ...` = true → returns early → no mutation.
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        const methodCall = createMethodCallExpression('getValue()')
+        const declarator = {
+          text: 'x=getValue()',
+          children: [{ text: 'x' }, { text: '=' }, methodCall],
+          childCount: 3,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarator, ParserRuleContext.prototype)
+
+        // Non-PRC declarators WITH children (not extending ParserRuleContext)
+        const nonPrcDeclarators = {
+          text: 'x=getValue()',
+          children: [declarator],
+          childCount: 1,
+        }
+
+        const declCtx = {
+          children: [{ text: 'Integer' }, nonPrcDeclarators],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declCtx, ParserRuleContext.prototype)
+
+        const ctx = {
+          children: [declCtx, { text: ';' }],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert — non-PRC declarators must be rejected at the instanceof guard
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given declarator with 4 children including = sign, When entering LVDS, Then should mutate (kills length < 3 → != 3)', () => {
+        // Arrange
+        // The guard `ctx.children.length < 3` with `!= 3` mutant in processVariableDeclarator:
+        // length=4 → 4 != 3 (true) → returns early → no mutation.
+        // Original: 4 < 3 = false → proceeds → finds '=' at index 2 → processes → mutation.
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        const methodCall = createMethodCallExpression('getValue()')
+
+        // 4-child declarator: [annotation, varName, '=', methodCall]
+        const declarator = {
+          text: 'x=getValue()',
+          children: [
+            { text: '@Annotation' },
+            { text: 'x' },
+            { text: '=' },
+            methodCall,
+          ],
+          childCount: 4,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarator, ParserRuleContext.prototype)
+
+        const declarators = {
+          text: 'x=getValue()',
+          children: [declarator],
+          childCount: 1,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declarators, ParserRuleContext.prototype)
+
+        const declCtx = {
+          children: [{ text: 'Integer' }, declarators],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(declCtx, ParserRuleContext.prototype)
+
+        const ctx = {
+          children: [declCtx, { text: ';' }],
+          childCount: 2,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert — original: 4 < 3 = false → proceeds → finds '=' at index 2 → mutates
+        // Mutant `!= 3`: 4 != 3 = true → returns early → no mutation
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('0')
+      })
+
+      it('Given wrapper expression with null children that is not MCEL or DEC, When entering LVDS, Then should not mutate (kills if(node.children) → if(true) in isMethodCall)', () => {
+        // Arrange
+        // In isMethodCall: `if (node.children)` with → `if (true)` mutant:
+        // for a non-MCEL/DEC node with children=null, original skips the loop (falsy null).
+        // Mutant enters `for (null)` → TypeError → test fails → mutant killed.
+        // Original: null check → skips loop → returns false → no mutation.
+        const typeRegistry = createTypeRegistryWithVars('testMethod', new Map())
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+
+        // Plain PRC node (not MCEL, not DEC) with children = null
+        const wrapperExpression = {
+          text: 'x',
+          start: TestUtil.createToken(1, 0),
+          stop: TestUtil.createToken(1, 1),
+          childCount: 0,
+          children: null,
+        } as unknown as ParserRuleContext
+        Object.setPrototypeOf(wrapperExpression, ParserRuleContext.prototype)
+
+        const ctx = createVariableDeclarationStatement(
+          'Integer',
+          'y',
+          wrapperExpression
+        )
+
+        // Act
+        sut.enterLocalVariableDeclarationStatement(ctx)
+
+        // Assert — no mutation: isMethodCall returns false since neither MCEL/DEC nor method-call children
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given assign expression with childCount=4, When entering, Then should not mutate (kills != 3 → < 3 and <= 2)', () => {
+        // Arrange
+        // The guard `ctx.childCount !== 3` with `< 3` mutant:
+        // childCount=4 → 4 < 3 = false → doesn't return → proceeds through all checks → creates mutation.
+        // Original: 4 != 3 = true → returns early → no mutation.
+        // Similarly `<= 2`: 4 <= 2 = false → same behavior as `< 3`.
+        // getChild(2) must be a valid method-call PRC so that the mutant fully reaches createMutation.
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['x', 'integer']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        // methodCall at getChild(2) so mutant `< 3` would reach isMethodCall(rhs) check
+        const methodCall = createMethodCallExpression('getValue()')
+
+        const ctx = {
+          childCount: 4,
+          children: [
+            { text: 'x' },
+            { text: '=' },
+            methodCall,
+            { text: 'extra' },
+          ],
+          getChild: (i: number) => {
+            if (i === 0) return { text: 'x' }
+            if (i === 2) return methodCall
+            return { text: '' }
+          },
+        } as unknown as ParserRuleContext
+        setEnclosingMethod(ctx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(ctx)
+
+        // Assert — original: 4 != 3 = true → returns early → no mutation
+        // Mutant `< 3`: 4 < 3 = false → proceeds → x is a known integer → creates mutation → test fails
+        expect(sut._mutations).toHaveLength(0)
+      })
     })
   })
 })

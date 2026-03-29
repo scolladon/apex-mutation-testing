@@ -310,4 +310,46 @@ describe('InvertNegativesMutator', () => {
       })
     })
   })
+
+  describe('Given a PreOpExpression where first child is not a TerminalNode but has text "-" and valid tokens', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations (kills !(operatorNode instanceof TerminalNode) → false mutant)', () => {
+        // Arrange
+        // With mutant `false`, the instanceof guard is bypassed. The non-TerminalNode
+        // with text '-' passes the text check (`'-' !== '-'` = false), so code proceeds
+        // to createMutationFromParserRuleContext — producing 1 mutation instead of 0.
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 0,
+          tokenIndex: 1,
+          startIndex: 0,
+          stopIndex: 5,
+        } as Token
+
+        const nonTerminalMinusNode = { text: '-' } // NOT a TerminalNode, but has text '-'
+
+        const innerExpression = {
+          text: 'x',
+          start: { tokenIndex: 2 } as Token,
+          stop: { tokenIndex: 2 } as Token,
+        } as unknown as ParserRuleContext
+
+        const ctx = {
+          childCount: 2,
+          getChild: vi.fn().mockImplementation(index => {
+            return index === 0 ? nonTerminalMinusNode : innerExpression
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 2 } as Token,
+          text: '-x',
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterPreOpExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
 })

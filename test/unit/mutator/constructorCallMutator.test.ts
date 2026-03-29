@@ -312,6 +312,129 @@ describe('ConstructorCallMutator', () => {
     })
   })
 
+  describe('Given a NewExpression where keyword is uppercase NEW', () => {
+    describe('When entering the expression', () => {
+      it('Then should create mutation — toLowerCase makes NEW equivalent to new (kills toLowerCase removal mutant)', () => {
+        // Arrange — newKeyword.text is 'NEW' (uppercase).
+        // Without toLowerCase(), 'NEW' !== 'new' would be true → returns early, no mutation.
+        // With toLowerCase(), 'NEW'.toLowerCase() === 'new' → proceeds to create mutation.
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 10,
+          tokenIndex: 5,
+          startIndex: 10,
+          stopIndex: 25,
+        } as Token
+
+        const newKeyword = new TerminalNode({ text: 'NEW' } as Token)
+
+        const creatorCtx = {
+          text: 'Account()',
+        } as unknown as ParserRuleContext
+
+        const ctx = {
+          childCount: 2,
+          getChild: vi.fn().mockImplementation(index => {
+            return index === 0 ? newKeyword : creatorCtx
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 6 } as Token,
+          text: 'NEW Account()',
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterNewExpression(ctx)
+
+        // Assert — toLowerCase makes 'NEW' match 'new', so a mutation is created
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('null')
+      })
+    })
+  })
+
+  describe('Given a NewExpression where keyword is mixed-case New', () => {
+    describe('When entering the expression', () => {
+      it('Then should create mutation — toLowerCase makes New equivalent to new (kills toLowerCase removal mutant)', () => {
+        // Arrange — newKeyword.text is 'New' (mixed case).
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 10,
+          tokenIndex: 5,
+          startIndex: 10,
+          stopIndex: 25,
+        } as Token
+
+        const newKeyword = new TerminalNode({ text: 'New' } as Token)
+
+        const creatorCtx = {
+          text: 'Account()',
+        } as unknown as ParserRuleContext
+
+        const ctx = {
+          childCount: 2,
+          getChild: vi.fn().mockImplementation(index => {
+            return index === 0 ? newKeyword : creatorCtx
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 6 } as Token,
+          text: 'New Account()',
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterNewExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('null')
+      })
+    })
+  })
+
+  describe('Given a NewExpression inside a throw statement nested two levels deep', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations (kills while loop body BlockStatement mutant)', () => {
+        // Arrange — ThrowStatementContext is 2 levels up from ctx.
+        // This tests that the while loop traverses multiple levels.
+        // With a BlockStatement mutant (body → {}), the loop never returns true → mutations
+        // are created even inside deeply nested throw statements.
+        const throwCtx = Object.create(ThrowStatementContext.prototype)
+
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 10,
+          tokenIndex: 5,
+          startIndex: 10,
+          stopIndex: 25,
+        } as Token
+
+        const newKeyword = new TerminalNode({ text: 'new' } as Token)
+
+        const intermediateCtx = {
+          parent: throwCtx,
+        } as unknown as ParserRuleContext
+
+        const ctx = {
+          childCount: 2,
+          getChild: vi.fn().mockImplementation(index => {
+            return index === 0
+              ? newKeyword
+              : { text: "AuraHandledException('Error')" }
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 6 } as Token,
+          text: "new AuraHandledException('Error')",
+          parent: intermediateCtx,
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterNewExpression(ctx)
+
+        // Assert — deeply nested throw is detected → no mutation created
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
   describe('Given a NewExpression inside a non-throw parent context', () => {
     describe('When entering the expression', () => {
       it('Then should create a mutation (kills current instanceof ThrowStatementContext → true mutant)', () => {

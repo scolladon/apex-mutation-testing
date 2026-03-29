@@ -219,6 +219,97 @@ describe('UnaryOperatorInsertionMutator', () => {
         // Assert
         expect(sut._mutations).toHaveLength(0)
       })
+
+      it('Then should not create any mutations for Boolean variable', () => {
+        // Arrange — exercises the non-numeric typeRegistry path with a Boolean type.
+        // Kills `if (this.typeRegistry)` → `if (true)` mutant combined with the
+        // "without TypeRegistry" test: when typeRegistry IS present and the variable
+        // resolves to Boolean (non-numeric), mutations are suppressed.
+        const typeRegistry = TestUtil.createTypeRegistry(
+          new Map(),
+          new Map([['testMethod', new Map([['flag', 'boolean']])]])
+        )
+        const sut = new UnaryOperatorInsertionMutator(typeRegistry)
+        const ctx = createPrimaryExpression('flag')
+        const methodCtx = createMethodParent('testMethod')
+        TestUtil.setParent(ctx, methodCtx)
+
+        // Act
+        sut.enterPrimaryExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given no TypeRegistry but an enclosing method context', () => {
+    describe('When entering the expression', () => {
+      it('Then should create 4 mutations (typeRegistry absent → skips isNumericOperand check)', () => {
+        // Arrange — typeRegistry is absent but ctx HAS an enclosing method.
+        // With mutant `if (this.typeRegistry)` → `if (true)`:
+        // `this.typeRegistry.isNumericOperand(...)` crashes (typeRegistry is undefined).
+        // Original: guard is false → skips body → creates 4 mutations.
+        const sut = new UnaryOperatorInsertionMutator() // no typeRegistry
+        const ctx = createPrimaryExpression('counter')
+        const methodCtx = createMethodParent('testMethod')
+        TestUtil.setParent(ctx, methodCtx)
+
+        // Act
+        sut.enterPrimaryExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(4)
+      })
+    })
+  })
+
+  describe('Given TypeRegistry and enclosing method but variable not in scope', () => {
+    describe('When entering the expression', () => {
+      it('Then should create 4 mutations (isNumericOperand returns true for unresolved identifier)', () => {
+        // Arrange — typeRegistry exists and has a method scope, but the variable 'unknownVar'
+        // is not declared there. isNumericOperand returns true (permissive fallback) →
+        // the guard `!isNumericOperand(...)` is false → does not return early → 4 mutations.
+        // This kills `if (methodName && !this.typeRegistry.isNumericOperand(...))` → `if (true)` mutant:
+        // the mutant would unconditionally return early even for unresolved variables → 0 mutations.
+        const typeRegistry = TestUtil.createTypeRegistry(
+          new Map(),
+          new Map([['testMethod', new Map([['knownVar', 'string']])]])
+        )
+        const sut = new UnaryOperatorInsertionMutator(typeRegistry)
+        const ctx = createPrimaryExpression('unknownVar')
+        const methodCtx = createMethodParent('testMethod')
+        TestUtil.setParent(ctx, methodCtx)
+
+        // Act
+        sut.enterPrimaryExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(4)
+      })
+    })
+  })
+
+  describe('Given TypeRegistry and no enclosing method context', () => {
+    describe('When entering the expression', () => {
+      it('Then should create 4 mutations (methodName is null → skips isNumericOperand call)', () => {
+        // Arrange — typeRegistry present but no parent MethodDeclaration → methodName=null.
+        // With mutant `methodName && !...` → `true && !...` or `!...` alone: would call
+        // isNumericOperand(null, 'x') which returns true → !true = false → no early return → 4 mutations (same).
+        // BUT with mutant `methodName && ...` → `methodName || ...`: when methodName=null,
+        // `null || !isNumericOperand(null, 'x')` = `!true` = false → no early return → 4 mutations (same).
+        // This test documents the expected behavior to help Stryker detect any deviations.
+        const typeRegistry = TestUtil.createTypeRegistry()
+        const sut = new UnaryOperatorInsertionMutator(typeRegistry)
+        const ctx = createPrimaryExpression('x')
+        // No parent set → methodName = null
+
+        // Act
+        sut.enterPrimaryExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(4)
+      })
     })
   })
 

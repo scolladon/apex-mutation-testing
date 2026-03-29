@@ -254,4 +254,45 @@ describe('VoidMethodCallMutator', () => {
       })
     })
   })
+
+  describe('Given an ExpressionStatement with 2 children where first is neither MethodCallExpression nor DotExpression but has valid tokens', () => {
+    describe('When entering the statement', () => {
+      it('Then should not create any mutations (kills !(expression instanceof MethodCallExpressionContext) → false mutant)', () => {
+        // Arrange
+        // With mutant `false` on first instanceof: `false && !(expr instanceof DEC)` = false
+        // → never returns early → createMutationFromParserRuleContext is called with valid tokens
+        // → produces 1 mutation instead of 0.
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 0,
+          tokenIndex: 1,
+          startIndex: 0,
+          stopIndex: 10,
+        } as Token
+
+        const plainExpression = {
+          text: 'i++',
+        } as unknown as ParserRuleContext
+        // NOT a MethodCallExpressionContext or DotExpressionContext
+
+        const semicolonNode = new TerminalNode({ text: ';' } as Token)
+
+        const ctx = {
+          childCount: 2,
+          getChild: vi.fn().mockImplementation(index => {
+            return index === 0 ? plainExpression : semicolonNode
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 3 } as Token,
+          text: 'i++;',
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterExpressionStatement(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
 })

@@ -311,4 +311,52 @@ describe('SwitchMutator', () => {
       })
     })
   })
+
+  describe('Given a WhenControl where first child is not a TerminalNode but has text "when" and valid tokens', () => {
+    describe('When entering the when control', () => {
+      it('Then should not create any mutations (kills !(whenKeyword instanceof TerminalNode) → false mutant)', () => {
+        // Arrange
+        // With mutant `false`, the instanceof guard is bypassed. The non-TerminalNode
+        // with text 'when' passes the toLowerCase() text check, so code proceeds to
+        // createMutationFromParserRuleContext(blockCtx) — producing 1 mutation instead of 0.
+        const mockToken = {
+          line: 1,
+          charPositionInLine: 0,
+          tokenIndex: 1,
+          startIndex: 0,
+          stopIndex: 30,
+        } as Token
+
+        const nonTerminalWhenNode = { text: 'when' } // NOT a TerminalNode, but has text 'when'
+
+        const whenValueCtx = {
+          text: '1',
+        } as unknown as ParserRuleContext
+
+        const blockCtx = {
+          text: '{ handle(); }',
+          start: { tokenIndex: 7 } as Token,
+          stop: { tokenIndex: 10 } as Token,
+        } as unknown as ParserRuleContext
+
+        const ctx = {
+          childCount: 3,
+          getChild: vi.fn().mockImplementation(index => {
+            if (index === 0) return nonTerminalWhenNode
+            if (index === 1) return whenValueCtx
+            return blockCtx
+          }),
+          start: mockToken,
+          stop: { tokenIndex: 10 } as Token,
+          text: 'when 1 { handle(); }',
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterWhenControl(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
 })
