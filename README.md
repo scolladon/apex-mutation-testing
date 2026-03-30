@@ -259,6 +259,7 @@ The plugin currently supports the following mutation operators. If your code doe
 | **InlineConstant**             | Mutates literal values                            | `5` → `0`, `true` → `false`              |
 | **InvertNegatives**            | Removes unary negation                            | `-x` → `x`                               |
 | **LogicalOperator**            | Swaps logical operators                           | `a && b` → `a \|\| b`                    |
+| **LogicalOperatorDeletion**    | Removes operator, keeps one operand               | `a && b` → `a`                           |
 | **MemberVariable**             | Removes field initializer                         | `Integer x = 5` → `Integer x`            |
 | **NakedReceiver**              | Replaces method call with receiver                | `receiver.method()` → `receiver`         |
 | **Negation**                   | Adds negation to numeric returns                  | `return 5` → `return -5`                 |

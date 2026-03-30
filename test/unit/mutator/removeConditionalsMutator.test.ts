@@ -172,4 +172,84 @@ describe('RemoveConditionalsMutator', () => {
       })
     })
   })
+
+  describe('Given an IfStatement whose condition is already (true)', () => {
+    it('Then should create only 1 mutation: (false) — skipping (true) as no-op', () => {
+      // Arrange
+      const mockToken = {
+        line: 1,
+        charPositionInLine: 0,
+        tokenIndex: 1,
+        startIndex: 3,
+        stopIndex: 8,
+      } as Token
+
+      const ifKeyword = new TerminalNode({ text: 'if' } as Token)
+      const conditionCtx = {
+        text: '(true)',
+        start: mockToken,
+        stop: { tokenIndex: 3 } as Token,
+      } as unknown as ParserRuleContext
+      const thenBlock = { text: '{ doA(); }' } as unknown as ParserRuleContext
+
+      const ctx = {
+        childCount: 3,
+        getChild: vi.fn().mockImplementation(index => {
+          if (index === 0) return ifKeyword
+          if (index === 1) return conditionCtx
+          return thenBlock
+        }),
+        start: mockToken,
+        stop: { tokenIndex: 10 } as Token,
+        text: 'if (true) { doA(); }',
+      } as unknown as ParserRuleContext
+
+      // Act
+      sut.enterIfStatement(ctx)
+
+      // Assert — replacing (true) → (true) is a no-op, skip it
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('(false)')
+    })
+  })
+
+  describe('Given an IfStatement whose condition is already (false)', () => {
+    it('Then should create only 1 mutation: (true) — skipping (false) as no-op', () => {
+      // Arrange
+      const mockToken = {
+        line: 1,
+        charPositionInLine: 0,
+        tokenIndex: 1,
+        startIndex: 3,
+        stopIndex: 9,
+      } as Token
+
+      const ifKeyword = new TerminalNode({ text: 'if' } as Token)
+      const conditionCtx = {
+        text: '(false)',
+        start: mockToken,
+        stop: { tokenIndex: 3 } as Token,
+      } as unknown as ParserRuleContext
+      const thenBlock = { text: '{ doA(); }' } as unknown as ParserRuleContext
+
+      const ctx = {
+        childCount: 3,
+        getChild: vi.fn().mockImplementation(index => {
+          if (index === 0) return ifKeyword
+          if (index === 1) return conditionCtx
+          return thenBlock
+        }),
+        start: mockToken,
+        stop: { tokenIndex: 10 } as Token,
+        text: 'if (false) { doA(); }',
+      } as unknown as ParserRuleContext
+
+      // Act
+      sut.enterIfStatement(ctx)
+
+      // Assert — replacing (false) → (false) is a no-op, skip it
+      expect(sut._mutations).toHaveLength(1)
+      expect(sut._mutations[0].replacement).toBe('(true)')
+    })
+  })
 })

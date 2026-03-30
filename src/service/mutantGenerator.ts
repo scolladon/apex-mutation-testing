@@ -21,6 +21,7 @@ import { FalseReturnMutator } from '../mutator/falseReturnMutator.js'
 import { IncrementMutator } from '../mutator/incrementMutator.js'
 import { InlineConstantMutator } from '../mutator/inlineConstantMutator.js'
 import { InvertNegativesMutator } from '../mutator/invertNegativesMutator.js'
+import { LogicalOperatorDeletionMutator } from '../mutator/logicalOperatorDeletionMutator.js'
 import { LogicalOperatorMutator } from '../mutator/logicalOperatorMutator.js'
 import { MemberVariableMutator } from '../mutator/memberVariableMutator.js'
 import { MutationListener } from '../mutator/mutationListener.js'
@@ -53,6 +54,7 @@ const MUTATOR_NAME = {
   INLINE_CONSTANT: 'InlineConstant',
   INVERT_NEGATIVES: 'InvertNegatives',
   LOGICAL_OPERATOR: 'LogicalOperator',
+  LOGICAL_OPERATOR_DELETION: 'LogicalOperatorDeletion',
   MEMBER_VARIABLE: 'MemberVariable',
   NAKED_RECEIVER: 'NakedReceiver',
   NEGATION: 'Negation',
@@ -129,6 +131,10 @@ const MUTATOR_REGISTRY: MutatorRegistryEntry[] = [
   {
     name: MUTATOR_NAME.LOGICAL_OPERATOR,
     create: () => new LogicalOperatorMutator(),
+  },
+  {
+    name: MUTATOR_NAME.LOGICAL_OPERATOR_DELETION,
+    create: () => new LogicalOperatorDeletionMutator(),
   },
   {
     name: MUTATOR_NAME.MEMBER_VARIABLE,

@@ -238,4 +238,21 @@ describe('MemberVariableMutator', () => {
       })
     })
   })
+
+  describe('Given a field declaration with null initializer (String name = null)', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations as removing null initializer is always equivalent', () => {
+        // Arrange
+        const declarator = createVariableDeclarator('name', true, 'null')
+        const declarators = createVariableDeclarators([declarator])
+        const ctx = createFieldDeclaration('String', declarators)
+
+        // Act
+        sut.enterFieldDeclaration(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
 })

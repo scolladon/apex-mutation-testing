@@ -34,8 +34,8 @@ describe('UnaryOperatorInsertionMutator Integration', () => {
     return listener.getMutations()
   }
 
-  describe('Given Apex code with a variable reference', () => {
-    it('Then should generate 4 mutations (x++, ++x, x--, --x)', () => {
+  describe('Given Apex code with a variable reference in a return statement', () => {
+    it('Then should generate only 2 pre-op mutations (++x, --x), skipping equivalent post-op (x++, x--)', () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -49,7 +49,36 @@ describe('UnaryOperatorInsertionMutator Integration', () => {
       // Act
       const mutations = parseAndMutate(code, new Set([5]))
 
-      // Assert
+      // Assert — post-op (x++, x--) are equivalent in return context: return x++ returns the
+      // pre-increment value, identical to return x. Only pre-op mutations are meaningful.
+      const uoiMutations = mutations.filter(
+        m => m.mutationName === 'UnaryOperatorInsertionMutator'
+      )
+      expect(uoiMutations.length).toBe(2)
+      expect(uoiMutations.map(m => m.replacement)).toEqual(
+        expect.arrayContaining(['++x', '--x'])
+      )
+    })
+  })
+
+  describe('Given Apex code with a variable reference outside a return statement', () => {
+    it('Then should generate all 4 mutations (x++, ++x, x--, --x)', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public Integer test() {
+            Integer x = 5;
+            Integer y = x;
+            return y;
+          }
+        }
+      `
+      // Line 5: Integer y = x — x is used in an assignment initializer, not inside a return
+
+      // Act
+      const mutations = parseAndMutate(code, new Set([5]))
+
+      // Assert — x is used in an assignment, not a return: all 4 mutations are non-equivalent
       const uoiMutations = mutations.filter(
         m => m.mutationName === 'UnaryOperatorInsertionMutator'
       )
@@ -180,8 +209,8 @@ describe('UnaryOperatorInsertionMutator Integration', () => {
     })
   })
 
-  describe('Given Apex code with a numeric variable and TypeRegistry', () => {
-    it('Then should still generate 4 UOI mutations', async () => {
+  describe('Given Apex code with a numeric variable and TypeRegistry in a return statement', () => {
+    it('Then should generate only 2 pre-op mutations (++x, --x)', async () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -196,19 +225,19 @@ describe('UnaryOperatorInsertionMutator Integration', () => {
       // Act
       const mutations = parseAndMutate(code, new Set([5]), typeRegistry)
 
-      // Assert
+      // Assert — post-op mutations are skipped in return context regardless of TypeRegistry
       const uoiMutations = mutations.filter(
         m => m.mutationName === 'UnaryOperatorInsertionMutator'
       )
-      expect(uoiMutations.length).toBe(4)
+      expect(uoiMutations.length).toBe(2)
       expect(uoiMutations.map(m => m.replacement)).toEqual(
-        expect.arrayContaining(['x++', '++x', 'x--', '--x'])
+        expect.arrayContaining(['++x', '--x'])
       )
     })
   })
 
-  describe('Given Apex code with a variable but no TypeRegistry', () => {
-    it('Then should still generate mutations (permissive fallback)', () => {
+  describe('Given Apex code with a variable but no TypeRegistry in a return statement', () => {
+    it('Then should generate 2 pre-op mutations (permissive fallback, post-op skipped in return)', () => {
       // Arrange
       const code = `
         public class TestClass {
@@ -222,11 +251,14 @@ describe('UnaryOperatorInsertionMutator Integration', () => {
       // Act — no TypeRegistry passed
       const mutations = parseAndMutate(code, new Set([5]))
 
-      // Assert — permissive: mutations still generated when type is unknown
+      // Assert — permissive: pre-op mutations still generated; post-op skipped as equivalent in return
       const uoiMutations = mutations.filter(
         m => m.mutationName === 'UnaryOperatorInsertionMutator'
       )
-      expect(uoiMutations.length).toBe(4)
+      expect(uoiMutations.length).toBe(2)
+      expect(uoiMutations.map(m => m.replacement)).toEqual(
+        expect.arrayContaining(['++s', '--s'])
+      )
     })
   })
 })
