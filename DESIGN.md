@@ -797,7 +797,10 @@ The HTML report is written to `reports/mutation/index.html`.
 
 Stryker's vitest-runner forces `pool: 'threads'` (Node.js worker_threads). The `re2` native addon crashes during module registration inside worker threads because native addons cannot be loaded in a worker context.
 
-`test/setup/mutation-setup.ts` mocks `re2` with a `RegExp` wrapper before any test module loads. This is safe in the mutation testing context: the mock is only active during Stryker runs, not during normal `npm run test:unit` or `npm run test:nut` runs. The substitution is semantically equivalent for the `.test()` and `.exec()` call sites used by production code — RE2's linear-time guarantee is not relevant during test execution.
+`test/setup/mutation-setup.ts` mocks `re2` with a `RegExp` wrapper before any test module loads.
+This is safe in the mutation testing context: the mock is only active during Stryker runs, not during normal `npm run test:unit` or `npm run test:nut` runs.
+The substitution is semantically equivalent for the `.test()` and `.exec()` call sites used by production code.
+RE2's linear-time guarantee is not relevant during test execution.
 
 ### Score Baseline
 
@@ -819,7 +822,7 @@ The ANTLR `apex-parser` always produces well-formed parse trees. Guards that che
 
 **2. Dead fields (`ApexMethod`)**
 
-`ApexMethod.startLine` and `ApexMethod.endLine` are stored but never read by any downstream consumer. Mutations to their default values or initialisation expressions are unobservable.
+`ApexMethod.startLine` and `ApexMethod.endLine` are stored but never read by any downstream consumer. Mutations to their default values or initialization expressions are unobservable.
 
 **3. `??` vs `||` on always-undefined values**
 
