@@ -68,7 +68,21 @@ npm run test:nut
 
 ### E2E Testing
 
-WIP
+E2E tests run the full mutation testing pipeline against a real Salesforce org, produce an HTML report, and validate the output against a committed snapshot (`test/e2e/index.html`).
+
+```bash
+# Run locally (uses node ./bin/run.js + apex-mutation-testing org)
+npm run test:e2e:run:local
+
+# Validate snapshot matches
+npm run test:e2e:validate
+```
+
+The validation step uses `git diff --quiet test/e2e/` — any difference from the committed snapshot fails the check.
+
+#### Known Flaky Mutant
+
+The `MemberVariableMutator` mutation on `String label = ''` (line 2 of `Mutation.cls`) is non-deterministic. The Salesforce org sometimes returns `CompileError` and sometimes `Survived` for this mutation. The committed snapshot uses `Survived` as the stable baseline. If the e2e CI job fails only on this entry, re-run the job.
 
 ## Editor Configurations
 

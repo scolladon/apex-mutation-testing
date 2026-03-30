@@ -162,6 +162,31 @@ describe('ArithmeticOperatorMutator', () => {
         expect(sut._mutations).toHaveLength(0)
       })
 
+      it('Then should not mutate when child at index 1 is not a TerminalNode even if it has operator text and symbol (kills instanceof→true mutant)', () => {
+        // Arrange — a plain object with text '-' and symbol is NOT a TerminalNode
+        // With instanceof→true mutant: the object is processed, symbol is truthy, mutations ARE created
+        const typeRegistry = createTypeRegistry(new Map())
+        const sut = new ArithmeticOperatorMutator(typeRegistry)
+        const fakeOperatorNode = {
+          text: '-',
+          symbol: TestUtil.createToken(1, 5),
+        }
+        const ctx = {
+          childCount: 3,
+          getChild: vi.fn().mockImplementation((index: number) => {
+            if (index === 0) return { text: 'a' }
+            if (index === 1) return fakeOperatorNode
+            return { text: 'b' }
+          }),
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterArth1Expression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+
       it('Then should not mutate when operator is not in replacement map', () => {
         // Arrange
         const typeRegistry = createTypeRegistry(new Map())
@@ -392,6 +417,24 @@ describe('ArithmeticOperatorMutator', () => {
         // Assert
         expect(sut._mutations).toHaveLength(0)
       })
+
+      it("Then should NOT mutate + when only left operand is a string literal ('prefix' + count)", () => {
+        // Arrange — this specifically tests leftText.includes("'") branch of || check
+        const typeRegistry = createTypeRegistry(new Map())
+        const sut = new ArithmeticOperatorMutator(typeRegistry)
+        const ctx = createArithmeticCtxInMethod(
+          "'prefix'",
+          '+',
+          'count',
+          'testMethod'
+        )
+
+        // Act
+        sut.enterArth2Expression(ctx)
+
+        // Assert — left is string literal so no mutation, even though right is not
+        expect(sut._mutations).toHaveLength(0)
+      })
     })
 
     describe('Given string variable operands', () => {
@@ -413,6 +456,60 @@ describe('ArithmeticOperatorMutator', () => {
         sut.enterArth2Expression(ctx)
 
         // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Then should NOT mutate + when left is String and right is Integer (kills || → && mutant)', () => {
+        // Arrange — only left is non-numeric; with || no mutation, with && mutation would be created
+        const variableScopes = new Map([
+          [
+            'testMethod',
+            new Map([
+              ['name', 'string'],
+              ['count', 'integer'],
+            ]),
+          ],
+        ])
+        const typeRegistry = createTypeRegistry(new Map(), variableScopes)
+        const sut = new ArithmeticOperatorMutator(typeRegistry)
+        const ctx = createArithmeticCtxInMethod(
+          'name',
+          '+',
+          'count',
+          'testMethod'
+        )
+
+        // Act
+        sut.enterArth2Expression(ctx)
+
+        // Assert — left is String (non-numeric), so || triggers immediately (right not checked)
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Then should NOT mutate + when left is Integer and right is String (kills || → && mutant)', () => {
+        // Arrange — only right is non-numeric; with || no mutation, with && mutation would be created
+        const variableScopes = new Map([
+          [
+            'testMethod',
+            new Map([
+              ['count', 'integer'],
+              ['suffix', 'string'],
+            ]),
+          ],
+        ])
+        const typeRegistry = createTypeRegistry(new Map(), variableScopes)
+        const sut = new ArithmeticOperatorMutator(typeRegistry)
+        const ctx = createArithmeticCtxInMethod(
+          'count',
+          '+',
+          'suffix',
+          'testMethod'
+        )
+
+        // Act
+        sut.enterArth2Expression(ctx)
+
+        // Assert — right is String (non-numeric), so || triggers via second clause
         expect(sut._mutations).toHaveLength(0)
       })
     })
@@ -532,6 +629,35 @@ describe('ArithmeticOperatorMutator', () => {
         sut.enterArth2Expression(ctx)
 
         // Assert
+        expect(sut._mutations).toHaveLength(3)
+      })
+
+      it('Then should generate mutations for - even when operands are String variables (kills && → || mutant)', () => {
+        // Arrange — kills `operatorText === '+' && isNonNumericContext` → `||` mutant:
+        // With || mutant: `-` operator → `false || isNonNumericContext(string vars)` = true → skips → 0 mutations.
+        // Original &&: `-` operator → `false && ...` = false → never skips → 3 mutations.
+        const variableScopes = new Map([
+          [
+            'testMethod',
+            new Map([
+              ['name', 'string'],
+              ['suffix', 'string'],
+            ]),
+          ],
+        ])
+        const typeRegistry = createTypeRegistry(new Map(), variableScopes)
+        const sut = new ArithmeticOperatorMutator(typeRegistry)
+        const ctx = createArithmeticCtxInMethod(
+          'name',
+          '-',
+          'suffix',
+          'testMethod'
+        )
+
+        // Act
+        sut.enterArth2Expression(ctx)
+
+        // Assert — `-` always generates mutations regardless of operand types
         expect(sut._mutations).toHaveLength(3)
       })
 

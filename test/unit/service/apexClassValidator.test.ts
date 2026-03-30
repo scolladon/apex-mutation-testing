@@ -74,5 +74,15 @@ describe('ApexClassValidator', () => {
         // Act & Assert
         await expect(sut.validate(params)).resolves.not.toThrow()
     })
+
+    it('should join multiple errors with newline when both classes are not found', async () => {
+      // Arrange
+      readMock.mockResolvedValueOnce(null).mockResolvedValueOnce(null)
+
+      // Act & Assert
+      await expect(sut.validate(params)).rejects.toThrow(
+        'Apex class TestClass not found\nApex test class TestClassTest not found'
+      )
+    })
   })
 })

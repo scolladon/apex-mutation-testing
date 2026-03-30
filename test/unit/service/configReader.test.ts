@@ -280,6 +280,211 @@ describe('ConfigReader', () => {
     expect(result.lines).toEqual(['42'])
   })
 
+  it('Given no configFile parameter, When resolving config, Then reads default .mutation-testing.json', async () => {
+    // Arrange — kills DEFAULT_CONFIG_FILE → "" mutant
+    const parameter = { ...baseParameter }
+
+    // Act
+    await sut.resolve(parameter)
+
+    // Assert — must use the literal default filename, not empty string
+    expect(readFile).toHaveBeenCalledWith('.mutation-testing.json', 'utf-8')
+  })
+
+  it('Given non-ENOENT error reading config file, When resolving config, Then rethrows as wrapped error', async () => {
+    // Arrange — kills error.code === 'ENOENT' → true mutant
+    vi.mocked(readFile).mockRejectedValue({
+      code: 'EACCES',
+      message: 'Permission denied',
+    })
+    const parameter = { ...baseParameter }
+
+    // Act & Assert — EACCES must NOT be silently swallowed as undefined
+    await expect(sut.resolve(parameter)).rejects.toThrow(
+      /Failed to parse config file/
+    )
+  })
+
+  it('Given threshold of exactly 0, When resolving config, Then does not throw', async () => {
+    // Arrange — kills threshold < 0 → <= 0 mutant: 0 is valid
+    const parameter: ApexMutationParameter = { ...baseParameter, threshold: 0 }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).resolves.not.toThrow()
+  })
+
+  it('Given threshold of exactly 100, When resolving config, Then does not throw', async () => {
+    // Arrange — kills threshold > 100 → >= 100 mutant: 100 is valid
+    const parameter: ApexMutationParameter = {
+      ...baseParameter,
+      threshold: 100,
+    }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).resolves.not.toThrow()
+  })
+
+  it('Given threshold undefined, When resolving config, Then threshold validation is skipped', async () => {
+    // Arrange — kills threshold !== undefined → true mutant
+    // If validation ran unconditionally, valid param would be invalid because check would run
+    const parameter = { ...baseParameter }
+
+    // Act & Assert — no threshold means no validation error
+    await expect(sut.resolve(parameter)).resolves.toBeDefined()
+  })
+
+  it('Given line range with trailing non-digit characters, When resolving config, Then throws validation error', async () => {
+    // Arrange — kills $ anchor removal mutant: "123abc" passes /^\d+(-\d+)?/ without $
+    const config = { lines: ['123abc'] }
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(/Invalid line range/)
+  })
+
+  it('Given line range with leading non-digit characters, When resolving config, Then throws validation error', async () => {
+    // Arrange — kills ^ anchor removal mutant: "abc123" passes /\d+(-\d+)?$/ without ^
+    const config = { lines: ['abc123'] }
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(/Invalid line range/)
+  })
+
+  it('Given line range where start equals end, When resolving config, Then does not throw', async () => {
+    // Arrange — kills start > end → start >= end mutant: 5-5 is valid (equal is OK)
+    const config = { lines: ['5-5'] }
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).resolves.not.toThrow()
+  })
+
+  it('Given line range without dash (single number), When includes check runs, Then takes else branch', async () => {
+    // Arrange — kills range.includes('-') → range.includes('') mutant
+    // includes('') always returns true, so single number '42' would be treated as a dash-range
+    const config = { lines: ['42'] }
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act
+    const result = await sut.resolve(parameter)
+
+    // Assert — '42' is valid single number; parsed set should include 42
+    const parsed = ConfigReader.parseLineRanges(result.lines)
+    expect(parsed).toEqual(new Set([42]))
+  })
+
+  it('Given only includeMutators set (no excludeMutators), When resolving config, Then does not throw (kills includeMutators&&true mutation)', async () => {
+    // Arrange — kills "parameter.includeMutators && true" ConditionalExpression mutant:
+    // if excludeMutators were replaced by `true`, this would throw even with only include set
+    const parameter: ApexMutationParameter = {
+      ...baseParameter,
+      includeMutators: ['ArithmeticOperator'],
+    }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).resolves.not.toThrow()
+  })
+
+  it('Given only excludeMutators set (no includeMutators), When resolving config, Then does not throw (kills true&&excludeMutators mutation)', async () => {
+    // Arrange — kills "true && parameter.excludeMutators" ConditionalExpression mutant:
+    // if includeMutators were replaced by `true`, this would throw even with only exclude set
+    const parameter: ApexMutationParameter = {
+      ...baseParameter,
+      excludeMutators: ['Increment'],
+    }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).resolves.not.toThrow()
+  })
+
+  it('Given only includeTestMethods set (no excludeTestMethods), When resolving config, Then does not throw (kills includeTestMethods&&true mutation)', async () => {
+    // Arrange — kills "parameter.includeTestMethods && true" ConditionalExpression mutant
+    const parameter: ApexMutationParameter = {
+      ...baseParameter,
+      includeTestMethods: ['myTest'],
+    }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).resolves.not.toThrow()
+  })
+
+  it('Given only excludeTestMethods set (no includeTestMethods), When resolving config, Then does not throw (kills true&&excludeTestMethods mutation)', async () => {
+    // Arrange — kills "true && parameter.excludeTestMethods" ConditionalExpression mutant
+    const parameter: ApexMutationParameter = {
+      ...baseParameter,
+      excludeTestMethods: ['slowTest'],
+    }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).resolves.not.toThrow()
+  })
+
+  it('Given error object without code property when reading config, When resolving config, Then throws wrapped error', async () => {
+    // Arrange — kills 'code' in error → true ConditionalExpression mutant:
+    // an error object without 'code' should not be silently swallowed
+    vi.mocked(readFile).mockRejectedValue({
+      message: 'some error without code',
+    })
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(
+      /Failed to parse config file/
+    )
+  })
+
+  it('Given falsy error value when reading config, When resolving config, Then throws wrapped error', async () => {
+    // Arrange — kills error && ... → true && ... ConditionalExpression mutant:
+    // a falsy error (null) should not be silently swallowed as ENOENT
+    vi.mocked(readFile).mockRejectedValue(null)
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(
+      /Failed to parse config file/
+    )
+  })
+
+  it('Given non-object error when reading config, When resolving config, Then throws wrapped error', async () => {
+    // Arrange — kills typeof error === 'object' → true ConditionalExpression mutant:
+    // a non-object error (number) should not be silently swallowed as ENOENT
+    vi.mocked(readFile).mockRejectedValue(42)
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).rejects.toThrow(
+      /Failed to parse config file/
+    )
+  })
+
+  it('Given config file with valid lines, When resolving config, Then lines are accepted', async () => {
+    // Arrange — kills parameter.lines truthy check → true: without this guard, undefined lines
+    // would cause the for loop to crash on undefined
+    const config = { lines: ['1-5'] }
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act
+    const result = await sut.resolve(parameter)
+
+    // Assert
+    expect(result.lines).toEqual(['1-5'])
+  })
+
+  it('Given no lines in config or CLI, When resolving config, Then no validation error is thrown (kills lines&&true guard)', async () => {
+    // Arrange — kills if (parameter.lines) → if (true) mutation:
+    // if the guard were removed, iterating undefined.lines would crash
+    const parameter = { ...baseParameter }
+
+    // Act & Assert
+    await expect(sut.resolve(parameter)).resolves.not.toThrow()
+  })
+
   it('Given config file with valid skipPatterns, When resolving config, Then returns skipPatterns from file', async () => {
     // Arrange
     const config = { skipPatterns: ['System\\.debug', 'Logger\\.'] }
@@ -376,6 +581,42 @@ describe('ConfigReader', () => {
 
       // Assert
       expect(sut).toEqual(new Set([1, 2, 3, 4, 5, 6, 7, 8]))
+    })
+
+    it('Given non-empty array, When parsing, Then returns defined set (kills lines.length === 0 → true ConditionalExpression)', () => {
+      // Arrange — kills `lines.length === 0` → `true` mutant:
+      // With true, non-empty arrays are also treated as empty → returns undefined
+      // Original: only empty arrays return undefined.
+
+      // Act
+      const sut = ConfigReader.parseLineRanges(['5'])
+
+      // Assert — non-empty array must return a Set, not undefined
+      expect(sut).not.toBeUndefined()
+      expect(sut).toBeInstanceOf(Set)
+    })
+
+    it('Given range string with dash, When parsing, Then iterates from start to end (kills i <= end → i < end)', () => {
+      // Arrange — kills `i <= end` → `i < end` mutant: with `<`, end value is excluded.
+      // With `<=`, 1-3 produces {1, 2, 3}; with `<`, produces {1, 2}.
+
+      // Act
+      const sut = ConfigReader.parseLineRanges(['1-3'])
+
+      // Assert — end must be included
+      expect(sut).toContain(3)
+      expect(sut?.size).toBe(3)
+    })
+
+    it('Given range with equal start and end, When parsing, Then returns set with single value (kills i <= end boundary)', () => {
+      // Arrange — reinforces i <= end: with i < end, 5-5 would produce empty set
+      // because i=5 < 5 is false immediately.
+
+      // Act
+      const sut = ConfigReader.parseLineRanges(['5-5'])
+
+      // Assert
+      expect(sut).toEqual(new Set([5]))
     })
   })
 

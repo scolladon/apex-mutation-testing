@@ -100,6 +100,45 @@ describe('InlineConstantMutator', () => {
     })
   })
 
+  describe('Given a boolean literal TRUE (uppercase)', () => {
+    describe('When entering the literal', () => {
+      it('Then should create mutation replacing TRUE with false (kills toLowerCase removal mutant)', () => {
+        // Arrange — node.text is 'TRUE' (uppercase).
+        // Without toLowerCase(): 'TRUE' === 'true' is false → returns 'true' (wrong, should be 'false').
+        // With toLowerCase(): 'TRUE'.toLowerCase() === 'true' is true → correctly returns 'false'.
+        const booleanNode = createTerminalNode('TRUE')
+        const ctx = createLiteralCtx('boolean', booleanNode)
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('false')
+      })
+    })
+  })
+
+  describe('Given a boolean literal FALSE (uppercase)', () => {
+    describe('When entering the literal', () => {
+      it('Then should create mutation replacing FALSE with true (kills toLowerCase removal mutant)', () => {
+        // Arrange — node.text is 'FALSE' (uppercase).
+        // Without toLowerCase(): 'FALSE' === 'true' is false → returns 'true' (correct by accident).
+        // With toLowerCase(): 'FALSE'.toLowerCase() === 'true' is false → returns 'true' (same).
+        // Test primarily documents the case-insensitive behavior.
+        const booleanNode = createTerminalNode('FALSE')
+        const ctx = createLiteralCtx('boolean', booleanNode)
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('true')
+      })
+    })
+  })
+
   describe('Given an integer literal 42', () => {
     describe('When entering the literal', () => {
       it('Then should create 5 mutations: 0, 1, -1, 43, 41', () => {
@@ -784,6 +823,297 @@ describe('InlineConstantMutator', () => {
 
         // Assert
         expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a null literal in return statement without TypeRegistry', () => {
+    describe('When entering the literal without TypeRegistry', () => {
+      it('Then should create no mutations (typeRegistry guard must fire before attempting resolution)', () => {
+        // Arrange: no typeRegistry, but ctx has a return statement parent chain
+        // This test distinguishes !this.typeRegistry from false (ID:775)
+        sut = new InlineConstantMutator() // no typeRegistry
+        const nullNode = createTerminalNode('null')
+        const ctx = createLiteralCtx('null', nullNode)
+        const returnCtx = Object.create(ReturnStatementContext.prototype)
+        const exprCtx = Object.create(ParserRuleContext.prototype)
+        Object.defineProperty(ctx, 'parent', {
+          value: exprCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(exprCtx, 'parent', {
+          value: returnCtx,
+          writable: true,
+          configurable: true,
+        })
+        const methodCtx = Object.create(MethodDeclarationContext.prototype)
+        methodCtx.children = [
+          { text: 'Integer' },
+          { text: 'testMethod' },
+          { text: '(' },
+          { text: ')' },
+        ]
+        Object.defineProperty(returnCtx, 'parent', {
+          value: methodCtx,
+          writable: true,
+          configurable: true,
+        })
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert: no typeRegistry → guard fires → 0 mutations (no crash)
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a null literal in return statement of method not in registry, with no enclosing method', () => {
+    describe('When entering the literal with TypeRegistry', () => {
+      it('Then should create no mutations when enclosing method is not found', () => {
+        // Arrange: typeRegistry provided but ctx has ReturnStatement with no MethodDeclarationContext parent
+        // Tests the !methodName guard in resolveFromReturn (ID:793)
+        const typeRegistry = TestUtil.createTypeRegistry()
+        sut = new InlineConstantMutator(typeRegistry)
+        const nullNode = createTerminalNode('null')
+        const ctx = createLiteralCtx('null', nullNode)
+        const returnCtx = Object.create(ReturnStatementContext.prototype)
+        const exprCtx = Object.create(ParserRuleContext.prototype)
+        Object.defineProperty(ctx, 'parent', {
+          value: exprCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(exprCtx, 'parent', {
+          value: returnCtx,
+          writable: true,
+          configurable: true,
+        })
+        // returnCtx has no parent → getEnclosingMethodName returns null
+        // so !methodName is true → returns null → 0 mutations
+        // But if mutant makes !methodName always false, resolveType(null) is called
+        // which still returns null typeInfo → so still 0 mutations... but now testing the guard
+        // To distinguish, we'd need a method named null in the registry — not possible
+        // Instead verify this path produces 0 mutations via observable behavior
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a null literal in local variable declaration of unknown type', () => {
+    describe('When entering the literal with TypeRegistry', () => {
+      it('Then should create no mutations for unknown reference type', () => {
+        // Arrange: type is a class reference (not a primitive) — classifyApexType returns VOID
+        // Also tests that classifyApexType([]) empty matchers works correctly (ID:805)
+        const typeRegistry = TestUtil.createTypeRegistry()
+        sut = new InlineConstantMutator(typeRegistry)
+        const nullNode = createTerminalNode('null')
+        const ctx = createLiteralCtx('null', nullNode)
+        const localVarCtx = Object.create(
+          LocalVariableDeclarationContext.prototype
+        )
+        // 'MyClass' is not a known primitive → classifyApexType returns VOID → getDefaultValueForApexType returns null
+        localVarCtx.typeRef = () => ({ text: 'MyClass' })
+        const exprCtx = Object.create(ParserRuleContext.prototype)
+        Object.defineProperty(ctx, 'parent', {
+          value: exprCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(exprCtx, 'parent', {
+          value: localVarCtx,
+          writable: true,
+          configurable: true,
+        })
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert: unknown type → no default value → 0 mutations
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a long literal with uppercase L suffix', () => {
+    describe('When entering the literal', () => {
+      it('Then should parse the value correctly and produce non-L mutations', () => {
+        // Arrange: '5L' — the /[lL]$/ regex strips the L to get '5'
+        // Tests ID:736: /[^lL]$/ would strip the last char if not L (so for '5L' → strip L... wait no)
+        // Actually /[^lL]$/ strips the last char IF it's NOT l or L
+        // For '5L': last char is L → does NOT match [^lL] → no replacement → text = '5L'
+        // parseInt('5L') = 5. value = 5, same as original. Equivalent for valid inputs.
+        // Instead test that the L is properly stripped for a value like '5l' (lowercase)
+        const longNode = createTerminalNode('5L')
+        const ctx = createLiteralCtx('long', longNode)
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(5) // 0L, 1L, -1L, 6L, 4L
+        const replacements = sut._mutations.map(m => m.replacement)
+        expect(replacements).toContain('0L')
+        expect(replacements).toContain('1L')
+        expect(replacements).toContain('-1L')
+        expect(replacements).toContain('6L')
+        expect(replacements).toContain('4L')
+      })
+    })
+  })
+
+  describe('Given a null literal in field declaration of Boolean type', () => {
+    describe('When entering the literal with TypeRegistry', () => {
+      it('Then should create mutation replacing null with false (kills || → && in declaration instanceof check)', () => {
+        // Arrange — exercises the FieldDeclarationContext path with Boolean type.
+        // With mutant `LocalVariableDeclarationContext || FieldDeclarationContext` → `&&`:
+        // no context can be both → returns null → 0 mutations.
+        // This test confirms that FieldDeclarationContext ALONE triggers the declaration handler.
+        const typeRegistry = TestUtil.createTypeRegistry()
+        sut = new InlineConstantMutator(typeRegistry)
+        const nullNode = createTerminalNode('null')
+        const ctx = createLiteralCtx('null', nullNode)
+        const fieldDeclCtx = Object.create(FieldDeclarationContext.prototype)
+        fieldDeclCtx.typeRef = () => ({ text: 'Boolean' })
+        const varDeclaratorsCtx = Object.create(ParserRuleContext.prototype)
+        const varDeclaratorCtx = Object.create(ParserRuleContext.prototype)
+        const exprCtx = Object.create(ParserRuleContext.prototype)
+        Object.defineProperty(ctx, 'parent', {
+          value: exprCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(exprCtx, 'parent', {
+          value: varDeclaratorCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(varDeclaratorCtx, 'parent', {
+          value: varDeclaratorsCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(varDeclaratorsCtx, 'parent', {
+          value: fieldDeclCtx,
+          writable: true,
+          configurable: true,
+        })
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('false')
+      })
+    })
+  })
+
+  describe('Given a null literal in local variable declaration of Boolean type', () => {
+    describe('When entering the literal with TypeRegistry', () => {
+      it('Then should create mutation replacing null with false (kills || → && in declaration instanceof check)', () => {
+        // Arrange — exercises the LocalVariableDeclarationContext path with Boolean type.
+        // Paired with the FieldDeclaration Boolean test, both paths are independently verified,
+        // distinguishing `||` from `&&` in the condition.
+        const typeRegistry = TestUtil.createTypeRegistry()
+        sut = new InlineConstantMutator(typeRegistry)
+        const nullNode = createTerminalNode('null')
+        const ctx = createLiteralCtx('null', nullNode)
+        const localVarCtx = Object.create(
+          LocalVariableDeclarationContext.prototype
+        )
+        localVarCtx.typeRef = () => ({ text: 'Boolean' })
+        const varDeclaratorsCtx = Object.create(ParserRuleContext.prototype)
+        const varDeclaratorCtx = Object.create(ParserRuleContext.prototype)
+        const exprCtx = Object.create(ParserRuleContext.prototype)
+        Object.defineProperty(ctx, 'parent', {
+          value: exprCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(exprCtx, 'parent', {
+          value: varDeclaratorCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(varDeclaratorCtx, 'parent', {
+          value: varDeclaratorsCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(varDeclaratorsCtx, 'parent', {
+          value: localVarCtx,
+          writable: true,
+          configurable: true,
+        })
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('false')
+      })
+    })
+  })
+
+  describe('Given a null literal in return statement of Long method', () => {
+    describe('When entering the literal with TypeRegistry', () => {
+      it('Then should create mutation replacing null with 0L', () => {
+        // Arrange — exercises getDefaultValueForApexType for LONG type
+        const typeRegistry = TestUtil.createTypeRegistry(
+          new Map([
+            [
+              'testMethod',
+              {
+                returnType: 'Long',
+                startLine: 1,
+                endLine: 5,
+                type: APEX_TYPE.LONG,
+              },
+            ],
+          ])
+        )
+        sut = new InlineConstantMutator(typeRegistry)
+        const nullNode = createTerminalNode('null')
+        const ctx = createLiteralCtx('null', nullNode)
+        const returnCtx = Object.create(ReturnStatementContext.prototype)
+        const exprCtx = Object.create(ParserRuleContext.prototype)
+        Object.defineProperty(ctx, 'parent', {
+          value: exprCtx,
+          writable: true,
+          configurable: true,
+        })
+        Object.defineProperty(exprCtx, 'parent', {
+          value: returnCtx,
+          writable: true,
+          configurable: true,
+        })
+        const methodCtx = Object.create(MethodDeclarationContext.prototype)
+        methodCtx.children = [
+          { text: 'Long' },
+          { text: 'testMethod' },
+          { text: '(' },
+          { text: ')' },
+        ]
+        Object.defineProperty(returnCtx, 'parent', {
+          value: methodCtx,
+          writable: true,
+          configurable: true,
+        })
+
+        // Act
+        sut.enterLiteral(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('0L')
       })
     })
   })

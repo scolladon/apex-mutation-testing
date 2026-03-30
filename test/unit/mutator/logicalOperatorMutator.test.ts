@@ -66,6 +66,23 @@ describe('LogicalOperatorMutator', () => {
         // Assert
         expect(sut._mutations).toHaveLength(0)
       })
+
+      it('Given childCount 2 with && TerminalNode at index 1, When enterLogAndExpression, Then no mutation is created (kills childCount===3→true mutant)', () => {
+        // Arrange — with === 3 → true mutant: guard skipped, child[1] is TerminalNode && → mutation created
+        const andNode = new TerminalNode({ text: '&&' } as Token)
+        const ctx = {
+          childCount: 2,
+          getChild: vi.fn().mockImplementation((index: number) => {
+            return index === 1 ? andNode : {}
+          }),
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterLogAndExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
     })
   })
 
@@ -76,6 +93,34 @@ describe('LogicalOperatorMutator', () => {
         const ctx = {
           childCount: 3,
           getChild: () => ({}), // Not a TerminalNode
+        } as unknown as ParserRuleContext
+
+        // Act
+        sut.enterLogAndExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+
+      it('Given non-TerminalNode child with && text and symbol, When enterLogAndExpression, Then no mutation is created (kills instanceof→true mutant)', () => {
+        // Arrange — plain object is NOT instanceof TerminalNode
+        // With instanceof→true mutant: text='&&', replacement='||', symbol is truthy → mutation created
+        const fakeOperatorNode = {
+          text: '&&',
+          symbol: {
+            text: '&&',
+            line: 1,
+            charPositionInLine: 5,
+            tokenIndex: 1,
+            startIndex: 5,
+            stopIndex: 6,
+          } as Token,
+        }
+        const ctx = {
+          childCount: 3,
+          getChild: vi.fn().mockImplementation((index: number) => {
+            return index === 1 ? fakeOperatorNode : {}
+          }),
         } as unknown as ParserRuleContext
 
         // Act

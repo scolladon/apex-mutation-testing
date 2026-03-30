@@ -53,6 +53,7 @@ describe('timeUtils', () => {
           // Assert
           expect(sut.result).toBe('delayed')
           expect(sut.durationMs).toBeGreaterThanOrEqual(delayMs - 10)
+          expect(sut.durationMs).toBeLessThan(delayMs * 10)
         })
       })
     })
