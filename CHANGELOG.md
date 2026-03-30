@@ -2,6 +2,13 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [1.5.2](https://github.com/scolladon/apex-mutation-testing/compare/v1.5.1...v1.5.2) (2026-03-30)
+
+
+### Bug Fixes
+
+* reduce equivalent mutant generation ([#111](https://github.com/scolladon/apex-mutation-testing/issues/111)) ([0c082b7](https://github.com/scolladon/apex-mutation-testing/commit/0c082b7cac496954b0fb2c35a81fbff52c281ed9))
+
 ## [1.5.1](https://github.com/scolladon/apex-mutation-testing/compare/v1.5.0...v1.5.1) (2026-03-27)
 
 
