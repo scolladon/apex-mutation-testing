@@ -3,6 +3,7 @@ export default {
     'src/commands/apex/mutation/test/run.ts',
     'bin/dev.js',
     '**/*.{nut,test}.ts',
+    'test/perf/**/*.{ts,mjs}',
     '.github/**/*.yml',
     'vitest.config.mutation.ts',
     'test/setup/mutation-setup.ts',
