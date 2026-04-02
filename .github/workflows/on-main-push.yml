@@ -9,7 +9,8 @@ on:
       - "**.md"
 
 permissions:
-  contents: 'read'
+  contents: write
+  pull-requests: write
 
 jobs:
   build:
@@ -18,11 +19,22 @@ jobs:
   prepare-release:
     needs: [build]
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
     permissions:
       contents: write
       pull-requests: write
     steps:
       - uses: googleapis/release-please-action@v4
+        id: release
         with:
           token: ${{ secrets.RELEASE_PAT }}
           release-type: node
+
+  perf:
+    needs: [prepare-release]
+    if: ${{ needs.prepare-release.outputs.release_created != 'true' }}
+    uses: ./.github/workflows/reusable-perf.yml
+    secrets: inherit
+    with:
+      auto-push: true
