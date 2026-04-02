@@ -2,6 +2,13 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [1.6.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.5.2...v1.6.0) (2026-04-02)
+
+
+### Features
+
+* **perf:** add comprehensive performance testing infrastructure ([#115](https://github.com/scolladon/apex-mutation-testing/issues/115)) ([699884b](https://github.com/scolladon/apex-mutation-testing/commit/699884b7b7929418efb489be5a567a400a13fb5d))
+
 ## [1.5.2](https://github.com/scolladon/apex-mutation-testing/compare/v1.5.1...v1.5.2) (2026-03-30)
 
 
