@@ -9,7 +9,8 @@ on:
       - "**.md"
 
 permissions:
-  contents: 'read'
+  contents: write
+  pull-requests: write
 
 # Manage concurrency to stop running jobs and start new ones in case of new commit pushed
 concurrency:
@@ -100,3 +101,8 @@ jobs:
 
   build:
     uses: ./.github/workflows/reusable-build.yml
+
+  perf:
+    needs: [build]
+    uses: ./.github/workflows/reusable-perf.yml
+    secrets: inherit
