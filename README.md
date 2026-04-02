@@ -1,6 +1,7 @@
 # Apex Mutation Testing
 
 [![NPM](https://img.shields.io/npm/v/apex-mutation-testing.svg?label=apex-mutation-testing)](https://www.npmjs.com/package/apex-mutation-testing) [![Downloads/week](https://img.shields.io/npm/dw/apex-mutation-testing.svg)](https://npmjs.org/package/apex-mutation-testing) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/scolladon/apex-mutation-testing/main/LICENSE.md)
+[![Performance](https://img.shields.io/badge/Performance-Dashboard-58a6ff)](https://scolladon.github.io/apex-mutation-testing/dev/bench/runtime/)
 ![GitHub Sponsors](https://img.shields.io/github/sponsors/scolladon)
 
 ## Disclaimer
