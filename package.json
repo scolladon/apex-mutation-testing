@@ -14,7 +14,7 @@
     "re2": "^1.24.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.10",
+    "@biomejs/biome": "2.4.11",
     "@commitlint/config-conventional": "^20.5.0",
     "@oclif/plugin-help": "^6.2.41",
     "@salesforce/dev-config": "^4.3.3",
