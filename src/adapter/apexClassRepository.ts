@@ -13,7 +13,7 @@ const TERMINAL_STATES = new Set([
   'Aborted',
 ]) as ReadonlySet<string>
 
-export interface PollOptions {
+interface PollOptions {
   initialIntervalMs?: number
   maxIntervalMs?: number
   timeoutMs?: number

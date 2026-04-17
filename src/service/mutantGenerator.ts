@@ -182,12 +182,12 @@ const MUTATOR_REGISTRY: MutatorRegistryEntry[] = [
   },
 ]
 
-export interface MutantGeneratorComputeResult {
+interface MutantGeneratorComputeResult {
   mutations: ApexMutation[]
   tokenStream: CommonTokenStream
 }
 
-export interface PreParsedInput {
+interface PreParsedInput {
   tree: ParserRuleContext
   tokenStream: CommonTokenStream
 }
