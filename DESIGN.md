@@ -89,9 +89,13 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 ├─ 5. BUILD TYPE SYSTEM
 │     SObjectDescribeRepository.describe(sObjectTypes)
 │       → parallel Describe API calls (max 25 concurrent)
-│     TypeDiscoverer.analyze(Body)
-│       → ANTLR parse #1 → TypeRegistry
-│         (methodTypeTable, variableScopes, classFields)
+│     TypeDiscoverer.analyzeFull(Body)
+│       → single ANTLR parse, returns
+│         { typeRegistry, tree, tokenStream }
+│         (methodTypeTable keyed by name+arity AND name-only,
+│          variableScopes, classFields)
+│       → tree + tokenStream are threaded into step 8 so
+│         MutantGenerator skips its own parse (see Perf-3).
 │
 ├─ 6. COMPILABILITY VERIFICATION
 │     Deploy main class back to org via
@@ -126,14 +130,17 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │
 ├─ 8. GENERATE MUTATIONS
 │     MutantGenerator.compute(Body, coveredLines, typeRegistry,
-│       mutatorFilter, skipPatterns, allowedLines)
-│       → ANTLR parse #2 → AST
+│       mutatorFilter, skipPatterns, allowedLines, preParsed?)
+│       → when preParsed is supplied (from step 5), the lexer
+│         and parser are SKIPPED — tree + tokenStream are reused
+│       → otherwise a fresh parse happens (legacy call sites)
 │       → filter mutator registry by include/exclude
 │         (case-insensitive name matching)
 │       → ParseTreeWalker fires enter*/exit* on filtered mutators
 │         (filtered by isLineEligible() via Proxy —
 │          intersects coverage, line ranges, skip patterns)
-│       → ApexMutation[] (with token ranges)
+│       → returns { mutations: ApexMutation[], tokenStream }
+│         so step 10 can reuse the stream across mutate() calls.
 │
 ├─ 9. TIME ESTIMATION
 │     estimate = (deployTime + testTime) × mutantCount
@@ -151,11 +158,20 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │
 ├─ 10. MUTATION TESTING LOOP (for each mutation)
 │     ┌─────────────────────────────────────────────┐
-│     │ a. MutantGenerator.mutate(mutation)          │
+│     │ a. MutantGenerator.mutate(mutation, tokens)  │
 │     │    → TokenStreamRewriter → mutated source    │
+│     │    (tokens passed from step 8, never cached  │
+│     │     on the generator instance)               │
 │     │                                              │
 │     │ b. ApexClassRepository.update(mutatedSource) │
-│     │    → MetadataContainer deploy + poll         │
+│     │    → try { MetadataContainer deploy + poll   │
+│     │           (exponential backoff, 5-min timeout│
+│     │            → PollTimeoutError on exceed)     │
+│     │      } finally {                             │
+│     │        fire-and-forget deleteContainer(id)   │
+│     │        — non-blocking so N mutants don't     │
+│     │        pay N extra API round-trips           │
+│     │      }                                       │
 │     │                                              │
 │     │ c. ApexTestRunner.runTestMethods(            │
 │     │      testClass, testsForMutatedLine)         │
@@ -176,10 +192,20 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │
 ├─ 11. ROLLBACK
 │      ApexClassRepository.update(originalBody)
+│      On failure: spinner shows "Rollback FAILED …"
+│      and the error is RE-THROWN so CI / scripts observe
+│      a non-zero exit when a class is left mutated.
 │
 ├─ 12. REPORT
-│      HTMLReporter → Stryker JSON schema → HTML with
-│      mutation-test-elements web component
+│      HTMLReporter →
+│        ├─ ensure outputDir exists + resolve within cwd
+│        │  (path.resolve sandbox + post-mkdir realpath check
+│        │   blocks symlinks that dereference out of cwd)
+│        ├─ inline mutation-testing-elements bundle
+│        │  (vendored from node_modules, not a CDN dep)
+│        └─ emit Stryker JSON inside a
+│           <script type="application/json"> data island,
+│           with </, <!--, -->, <script, U+2028/2029 escaped
 │
 ├─ 13. SCORE
 │      score = killed / (total - compileErrors) × 100
@@ -211,7 +237,7 @@ process()
 └── rollback()                  → step 11
 ```
 
-Each method encapsulates one logical concern. `evaluateMutation()` handles the try/catch error classification for a single mutation. `formatRemainingTime()` extracts the time estimation math from the progress update.
+Each method encapsulates one logical concern. `evaluateMutation()` handles the try/catch error classification for a single mutation. `formatRemainingTime()` extracts the time estimation math from the progress update. `rollback()` throws on failure instead of swallowing so that `process()`'s caller observes a non-zero exit whenever the target org is left in a mutated state.
 
 ---
 
@@ -310,6 +336,12 @@ new TypeDiscoverer()
 
 The `_mutations` array is shared by reference across all listeners. This is safe because ANTLR tree walking is **synchronous** — no concurrent writes.
 
+`MutationListener` also keeps a per-instance `dispatchCache: Map<propName, BaseListener[]>` memoising which listeners implement each ANTLR hook. The Proxy trap used to rescan all 25 mutators on every AST-node callback to answer "`prop in listener && typeof listener[prop] === 'function'`"; the cache makes subsequent calls `O(K)` where `K` is the subset that actually implements the hook. Cache is scoped to the Proxy instance, which is short-lived (one per `compute()` call), so it cannot go stale.
+
+### Line/Column Indexing
+
+`LineOffsetIndex` (in `mutationTestingService.ts`) precomputes the absolute offsets of every line start in the class body — one pass at fetch time. `positionAt(absIndex)` does a binary search in `O(log n)` to map an ANTLR token's `startIndex`/`stopIndex` to a `{ line, column }`. This replaces the previous `substring(0, idx).split('\n')` which was `O(n)` per mutation (quadratic over a mutation batch).
+
 ---
 
 ## Type-Awareness System
@@ -368,7 +400,7 @@ Type-aware mutators need to understand Apex types to generate valid mutations (e
 
 ### Phase 2: Type Resolution at Mutation Time
 
-`TypeRegistry.resolveType()` handles four expression forms:
+Phase 2 reuses the tree + tokenStream from phase 1; only the walker and listeners are fresh. `TypeRegistry.resolveType()` handles four expression forms:
 
 | Expression Form | Example | Resolution Strategy |
 | --- | --- | --- |
@@ -569,7 +601,7 @@ Replacing a condition with a constant it already equals (`if (true) → if (true
 
 ## Deployment Mechanism
 
-Each mutation is deployed using the Tooling API **MetadataContainer** pattern:
+Each mutation is deployed using the Tooling API **MetadataContainer** pattern, wrapped in a `try { … } finally { deleteContainer(id) }` so orphaned containers don't accumulate on the target org:
 
 ```text
 ┌─────────────────────┐
@@ -592,19 +624,35 @@ Each mutation is deployed using the Tooling API **MetadataContainer** pattern:
 └──────────┬──────────┘
            │
            ▼
-     ┌───────────┐     poll every 100ms
+     ┌───────────┐   exponential backoff
      │  Polling   │◄────────────────────┐
-     │  Loop      │                     │
-     └─────┬─────┘                      │
+     │  Loop      │   100ms → 2s        │
+     └─────┬─────┘   (factor 1.5)       │
            │                            │
      ┌─────▼─────┐    No    ┌──────────┴─┐
      │ Terminal   ├─────────►│  Retrieve  │
-     │ State?     │          │  + wait    │
+     │ State?     │          │  + sleep   │
      └─────┬─────┘          └────────────┘
-           │ Yes
+           │ Yes                │
+           │                    │ Date.now() > deadline?
+           │                    ▼
+           │               PollTimeoutError
+           │               (default 5 min; configurable)
            ▼
   Completed | Failed | Error | Aborted
+           │
+           ▼
+  ┌────────────────────────────────────┐
+  │ finally {                          │
+  │   fire-and-forget                  │
+  │   MetadataContainer.delete(id)     │
+  │   — rejections swallowed; Salesforce│
+  │     reaps after 24h on failure      │
+  │ }                                  │
+  └────────────────────────────────────┘
 ```
+
+**Poll configuration**. `PollOptions = { initialIntervalMs?, maxIntervalMs?, timeoutMs? }` is validated at construction: negative intervals and the racy `timeoutMs === 0` throw. A negative `timeoutMs` is accepted as "immediate timeout" for test harnesses.
 
 ---
 
@@ -665,6 +713,11 @@ The reporter transforms internal results to the [Stryker Mutation Testing Report
 ```text
 ApexMutationTestResult
     │
+    ├─ resolveSafeOutputDir(outputDir)
+    │   ├─ path.resolve must be inside process.cwd()
+    │   └─ (post-mkdir) realpath(outputDir) must also be
+    │      inside cwd — blocks symlinks that dereference out
+    │
     ├─ transformApexResults()
     │   ├─ language: 'java' (Apex ≈ Java for highlighting)
     │   ├─ source: original Apex source
@@ -673,13 +726,32 @@ ApexMutationTestResult
     │       ├─ status: Killed|Survived|NoCoverage|CompileError|RuntimeError|Pending
     │       └─ location: { start: {line,column}, end: {line,column} }
     │
-    ├─ escapeHtmlTags() → prevent injection in <script>
+    ├─ loadMutationTestElements()
+    │   └─ createRequire + readFile from the vendored
+    │      `mutation-testing-elements` npm package (no CDN)
     │
-    └─ HTML template with:
-        <script src="mutation-testing-elements@3.5.1">
+    ├─ serializeReportForScript() → neutralise every
+    │   context-escape sequence before inlining JSON:
+    │     </  → <\/
+    │     <!--  → <\!--
+    │     -->   → --\>
+    │     <script (case-insensitive) → <\script
+    │     U+2028 / U+2029 → \u2028 / \u2029
+    │
+    └─ HTML template (bundle inlined, data in a data island):
+        <script>{vendored mutation-testing-elements JS}</script>
         <mutation-test-report-app>
-        <script>document.querySelector(...).report = {json}</script>
+        <script id="mutation-report-data" type="application/json">
+          {neutralised JSON}
+        </script>
+        <script>
+          app.report = JSON.parse(
+            document.getElementById('mutation-report-data').textContent
+          );
+        </script>
 ```
+
+This layout avoids the three classes of attack the old `app.report = { … }` inline assignment left open: script-data end tags inside mutant source, CDN tampering, and U+2028/2029 injection. It also keeps e2e snapshots small — the `tooling/normalize-e2e-snapshot.mjs` script strips the inlined bundle before committing.
 
 ---
 
