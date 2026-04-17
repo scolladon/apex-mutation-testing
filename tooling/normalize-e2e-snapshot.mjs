@@ -3,15 +3,44 @@ import { readFileSync, writeFileSync } from 'node:fs'
 const file = 'test/e2e/index.html'
 const content = readFileSync(file, 'utf8')
 
-const reportRegex = /app\.report = (.+);/
-const match = content.match(reportRegex)
+// HTMLReporter now embeds the report JSON inside a data island
+// `<script id="mutation-report-data" type="application/json">…</script>`
+// and inlines the entire mutation-testing-elements bundle in a preceding
+// `<script>…</script>` block. We strip the bundle (not what the e2e is
+// asserting; ~500KB of churn on every regen) and normalise the JSON.
+//
+// The data island is escape-hardened: </, <!--, -->, <script, and
+// line/paragraph separators are backslash-escaped. Reverse those before
+// JSON.parse, and reapply after re-serialising.
+const dataIslandRegex =
+  /<script id="mutation-report-data" type="application\/json">([\s\S]+?)<\/script>/
+
+const match = content.match(dataIslandRegex)
 if (!match) {
-  console.error('Could not find report JSON in HTML')
+  // biome-ignore lint/suspicious/noConsole: surface failure in build logs
+  console.error('Could not find mutation-report-data script block in HTML')
   process.exit(1)
 }
 
-const rawJson = match[1].replaceAll('<"+"', '<')
-const report = JSON.parse(rawJson)
+const unescapeJsonIsland = s =>
+  s
+    .replaceAll('<\\/', '</')
+    .replaceAll('<\\!--', '<!--')
+    .replaceAll('--\\>', '-->')
+    .replaceAll(/<\\script/gi, '<script')
+    .replaceAll('\\u2028', '\u2028')
+    .replaceAll('\\u2029', '\u2029')
+
+const escapeJsonIsland = s =>
+  s
+    .replaceAll('</', '<\\/')
+    .replaceAll('<!--', '<\\!--')
+    .replaceAll('-->', '--\\>')
+    .replaceAll(/<script/gi, '<\\script')
+    .replaceAll('\u2028', '\\u2028')
+    .replaceAll('\u2029', '\\u2029')
+
+const report = JSON.parse(unescapeJsonIsland(match[1]))
 
 for (const fileData of Object.values(report.files)) {
   fileData.mutants.sort((a, b) => {
@@ -32,8 +61,23 @@ for (const fileData of Object.values(report.files)) {
   }
 }
 
-const newJson = JSON.stringify(report)
-const escapedJson = newJson.replaceAll('<', '<"+"')
-const newContent = content.replace(reportRegex, `app.report = ${escapedJson};`)
+const BUNDLE_PLACEHOLDER =
+  '/* mutation-testing-elements bundle stripped for snapshot; not asserted */'
 
-writeFileSync(file, newContent)
+const STRIPPED_BUNDLE_REGEX = /<head>([\s\S]+?)<\/head>/
+
+let normalised = content.replace(
+  dataIslandRegex,
+  `<script id="mutation-report-data" type="application/json">${escapeJsonIsland(
+    JSON.stringify(report)
+  )}</script>`
+)
+
+normalised = normalised.replace(STRIPPED_BUNDLE_REGEX, headContent => {
+  return headContent.replace(
+    /<script>[\s\S]+?<\/script>/,
+    `<script>${BUNDLE_PLACEHOLDER}</script>`
+  )
+})
+
+writeFileSync(file, normalised)

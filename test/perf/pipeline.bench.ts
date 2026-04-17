@@ -29,11 +29,14 @@ describe('pipeline-mutation-apply', () => {
   const classContent = generateApexClass('medium')
   const coveredLines = generateCoveredLines('medium')
   const generator = new MutantGenerator()
-  const mutations = generator.compute(classContent, coveredLines)
+  const { mutations, tokenStream } = generator.compute(
+    classContent,
+    coveredLines
+  )
 
   bench('pipeline-apply-all-mutations', () => {
     for (const mutation of mutations) {
-      generator.mutate(mutation)
+      generator.mutate(mutation, tokenStream)
     }
   })
 })
