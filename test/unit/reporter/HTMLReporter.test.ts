@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { ApexMutationHTMLReporter } from '../../../src/reporter/HTMLReporter.js'
 import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult.js'
 
@@ -11,6 +11,8 @@ beforeEach(() => {
   vi.mocked(readFile).mockResolvedValue('/* MTE stub */')
   vi.mocked(mkdir).mockResolvedValue(undefined)
   vi.mocked(writeFile).mockResolvedValue(undefined)
+  // Default: realpath is identity (no symlinks present). Symlink tests override.
+  vi.mocked(realpath).mockImplementation(async (p: unknown) => String(p))
 })
 
 describe('HTMLReporter', () => {
@@ -183,6 +185,38 @@ describe('HTMLReporter', () => {
       expect(dataBlock).not.toContain('</script>')
       // The neutralised form is <\/ ... matching our transform
       expect(dataBlock).toContain('<\\/script')
+    })
+
+    it('Then rejects a symlinked outputDir that dereferences out of cwd (Sec-LOW-1)', async () => {
+      // Arrange — `reports` inside cwd is present (mkdir succeeds) but realpath
+      // returns an out-of-cwd target, simulating a symlink pointing to /etc
+      const cwd = process.cwd()
+      vi.mocked(realpath).mockImplementation(async (p: unknown) => {
+        const s = String(p)
+        if (s === cwd) return cwd
+        return '/etc/elsewhere'
+      })
+
+      // Act & Assert
+      await expect(sut.generateReport(testResults, 'reports')).rejects.toThrow(
+        /dereferences to '\/etc\/elsewhere', outside/
+      )
+    })
+
+    it('Then accepts a symlink that still points inside cwd', async () => {
+      // Arrange — realpath resolves to a nested dir inside cwd
+      const cwd = process.cwd()
+      vi.mocked(realpath).mockImplementation(async (p: unknown) => {
+        const s = String(p)
+        if (s === cwd) return cwd
+        return `${cwd}/actual-reports`
+      })
+
+      // Act
+      await sut.generateReport(testResults, 'reports')
+
+      // Assert
+      expect(writeFile).toHaveBeenCalled()
     })
 
     it('Then neutralises </script in the vendored mutation-testing-elements bundle', async () => {

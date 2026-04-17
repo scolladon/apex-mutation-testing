@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import * as path from 'path'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
@@ -18,8 +18,11 @@ export class ApexMutationHTMLReporter {
     apexMutationTestResult: ApexMutationTestResult,
     outputDir: string = 'reports'
   ): Promise<void> {
+    // Two-stage path check: the string-level resolve catches ../ traversal;
+    // the post-mkdir realpath catches symlinks that redirect the write out of cwd.
     const resolvedDir = resolveSafeOutputDir(outputDir)
     await mkdir(resolvedDir, { recursive: true })
+    await assertRealPathWithinCwd(resolvedDir, outputDir)
     const reportData = this.transformApexResults(apexMutationTestResult)
     const bundle = await loadMutationTestElements()
     const htmlContent = createReportHtml(reportData, bundle)
@@ -85,6 +88,24 @@ function resolveSafeOutputDir(outputDir: string): string {
     )
   }
   return resolved
+}
+
+/**
+ * Resolve symbolic links in the target directory and verify the dereferenced
+ * path still lives inside cwd. Defeats attacks where a symlink `reports` → `/etc`
+ * is present at cwd and the string-level check in resolveSafeOutputDir is satisfied.
+ */
+async function assertRealPathWithinCwd(
+  resolvedDir: string,
+  originalInput: string
+): Promise<void> {
+  const realDir = await realpath(resolvedDir)
+  const realCwd = await realpath(process.cwd())
+  if (realDir !== realCwd && !realDir.startsWith(realCwd + path.sep)) {
+    throw new Error(
+      `Report directory '${originalInput}' dereferences to '${realDir}', outside the current working directory (${realCwd}). Refusing to follow symlinks out of the project root.`
+    )
+  }
 }
 
 const createReportHtml = (report: unknown, elementsBundle: string): string => {

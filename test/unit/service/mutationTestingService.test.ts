@@ -31,6 +31,20 @@ vi.mock('../../../src/service/typeDiscoverer.js')
 vi.mock('../../../src/service/timeUtils.js')
 vi.mock('../../../src/service/typeMatcher.js')
 
+// Hoisted so both the mock registration (inside beforeEach) and the
+// toHaveBeenCalledWith identity assertions can share the same references.
+// Perf-3 requires MutationTestingService to pass the very same tree/tokenStream
+// produced by analyzeFull into MutantGenerator.compute's preParsed arg — this
+// identity is the test that catches a regression where someone re-parses.
+const mockTypeRegistry = {}
+const mockAnalyzeFullResult = {
+  typeRegistry: mockTypeRegistry,
+  // Inert stubs — the service never calls methods on these; they exist to
+  // satisfy the interface shape when unit tests mock MutantGenerator.compute.
+  tree: {} as never,
+  tokenStream: {} as never,
+}
+
 describe('MutationTestingService', () => {
   let sut: MutationTestingService
   let progress: Progress
@@ -105,12 +119,6 @@ describe('MutationTestingService', () => {
       }
     )
 
-    const mockTypeRegistry = {}
-    const mockAnalyzeFullResult = {
-      typeRegistry: mockTypeRegistry,
-      tree: {},
-      tokenStream: {},
-    }
     vi.mocked(TypeDiscoverer).mockImplementation(
       class {
         withMatcher = vi.fn().mockReturnThis()
@@ -415,6 +423,77 @@ describe('MutationTestingService', () => {
         })
         expect(progress.start).toHaveBeenCalled()
         expect(progress.finish).toHaveBeenCalled()
+      })
+
+      // Rollback-failure variant: each error classification path is also
+      // exercised with a failing rollback so we catch a regression where the
+      // service swallows rollback errors or leaks partial results on throw.
+      // See Test-I1: the happy-path parametric test above allowed call 4+ to
+      // always resolve, which hid this surface.
+      it.each(
+        testCases
+      )('should re-throw rollback failure while still classifying the mutant ($description)', async ({
+        testResult,
+        error,
+        updateError,
+      }) => {
+        // Arrange
+        let updateCallCount = 0
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockImplementation(() => {
+              updateCallCount++
+              if (updateCallCount <= 2) return Promise.resolve({})
+              if (updateCallCount === 3 && updateError)
+                return Promise.reject(updateError)
+              if (updateCallCount === 3) return Promise.resolve({})
+              // Call 4 = rollback — always fails in this variant.
+              return Promise.reject(new Error('rollback network down'))
+            })
+            getApexClassDependencies = vi
+              .fn()
+              .mockResolvedValue([] as MetadataComponentDependency[])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi.fn().mockReturnValue({
+              mutations: [mockMutation],
+              tokenStream: {},
+            })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockImplementation(() => {
+              if (error) return Promise.reject(error)
+              return Promise.resolve(testResult)
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+            })
+          }
+        )
+
+        // Act & Assert — rollback failure must propagate, never silently swallow
+        await expect(sut.process()).rejects.toThrow(
+          /Rollback of 'TestClass' failed/
+        )
+        // rollback was in fact attempted (call 4)
+        expect(updateCallCount).toBe(4)
+        // A warning spinner message precedes the throw
+        expect(spinner.stop).toHaveBeenCalledWith(
+          expect.stringContaining('Rollback FAILED')
+        )
       })
     })
 
@@ -1142,8 +1221,8 @@ describe('MutationTestingService', () => {
           [],
           undefined,
           expect.objectContaining({
-            tree: expect.anything(),
-            tokenStream: expect.anything(),
+            tree: mockAnalyzeFullResult.tree,
+            tokenStream: mockAnalyzeFullResult.tokenStream,
           })
         )
       })
@@ -1215,8 +1294,8 @@ describe('MutationTestingService', () => {
           [],
           undefined,
           expect.objectContaining({
-            tree: expect.anything(),
-            tokenStream: expect.anything(),
+            tree: mockAnalyzeFullResult.tree,
+            tokenStream: mockAnalyzeFullResult.tokenStream,
           })
         )
       })
@@ -1288,8 +1367,8 @@ describe('MutationTestingService', () => {
           [],
           undefined,
           expect.objectContaining({
-            tree: expect.anything(),
-            tokenStream: expect.anything(),
+            tree: mockAnalyzeFullResult.tree,
+            tokenStream: mockAnalyzeFullResult.tokenStream,
           })
         )
       })
@@ -1939,8 +2018,8 @@ describe('MutationTestingService', () => {
           [],
           undefined,
           expect.objectContaining({
-            tree: expect.anything(),
-            tokenStream: expect.anything(),
+            tree: mockAnalyzeFullResult.tree,
+            tokenStream: mockAnalyzeFullResult.tokenStream,
           })
         )
       })
@@ -2900,30 +2979,12 @@ describe('MutationTestingService', () => {
     // that seed sut['lineOffsetIndex'] directly.
 
     describe('When calculateMutationPosition is verified with valid indices', () => {
-      // Helper — construct a LineOffsetIndex for a given source string.
-      // Mirrors the class in src/service/mutationTestingService.ts.
-      const makeIndex = (source: string) => {
-        const lineStarts = [0]
-        for (let i = 0; i < source.length; i++) {
-          if (source.charCodeAt(i) === 10) lineStarts.push(i + 1)
-        }
-        return {
-          positionAt: (absoluteIndex: number) => {
-            let lo = 0
-            let hi = lineStarts.length - 1
-            while (lo < hi) {
-              const mid = (lo + hi + 1) >>> 1
-              if (lineStarts[mid] <= absoluteIndex) lo = mid
-              else hi = mid - 1
-            }
-            return { line: lo + 1, column: absoluteIndex - lineStarts[lo] + 1 }
-          },
-        }
-      }
-
+      // Use the real LineOffsetIndex — keeps the test honest. An inlined
+      // duplicate implementation would pass even if the production logic
+      // drifted from the spec.
       it('Given mutation with valid start/end indices, When calculating position, Then returns correct start and end', () => {
         // Arrange — 'hello world', startIndex=6, stopIndex=10
-        sut['lineOffsetIndex'] = makeIndex('hello world') as unknown as never
+        sut['lineOffsetIndex'] = new LineOffsetIndex('hello world')
         const mutation = {
           mutationName: 'TestMutation',
           replacement: 'foo',
@@ -2946,7 +3007,7 @@ describe('MutationTestingService', () => {
 
       it('Given mutation spanning two lines, When calculating position, Then end is on second line', () => {
         // Arrange — 'line1\nline2', startIndex=0, stopIndex=10
-        sut['lineOffsetIndex'] = makeIndex('line1\nline2') as unknown as never
+        sut['lineOffsetIndex'] = new LineOffsetIndex('line1\nline2')
         const mutation = {
           mutationName: 'TestMutation',
           replacement: 'x',

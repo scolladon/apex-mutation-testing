@@ -35,7 +35,28 @@ export class ApexClassRepository {
   constructor(
     protected readonly connection: Connection,
     private readonly pollOptions: PollOptions = {}
-  ) {}
+  ) {
+    // Validate poll configuration eagerly so misconfiguration fails fast
+    // at construction rather than mid-deploy with non-deterministic behaviour.
+    const { initialIntervalMs, maxIntervalMs, timeoutMs } = pollOptions
+    if (initialIntervalMs !== undefined && initialIntervalMs < 0) {
+      throw new Error(
+        `pollOptions.initialIntervalMs must be >= 0 (got ${initialIntervalMs})`
+      )
+    }
+    if (maxIntervalMs !== undefined && maxIntervalMs < 0) {
+      throw new Error(
+        `pollOptions.maxIntervalMs must be >= 0 (got ${maxIntervalMs})`
+      )
+    }
+    // timeoutMs <= 0 allowed only for test harnesses that want an instant
+    // timeout; reject 0 which is the racy value (deadline == now).
+    if (timeoutMs !== undefined && timeoutMs === 0) {
+      throw new Error(
+        `pollOptions.timeoutMs must be non-zero (0 is racy); use a negative value for immediate timeout or a positive value for a real budget`
+      )
+    }
+  }
 
   public async read(name: string) {
     return (
@@ -103,19 +124,21 @@ export class ApexClassRepository {
 
       return result
     } finally {
-      await this.deleteContainer(containerId)
+      // Fire-and-forget cleanup: awaiting this would add a full Tooling API
+      // round-trip to every deploy (500 extra calls on a 500-mutant run).
+      // If the delete fails, Salesforce reaps the MetadataContainer after 24h.
+      this.deleteContainer(containerId)
     }
   }
 
-  private async deleteContainer(containerId: string): Promise<void> {
-    try {
-      await this.connection.tooling
-        .sobject('MetadataContainer')
-        .delete(containerId)
-    } catch {
-      // Non-fatal: the container will be reaped by Salesforce after 24h if
-      // delete fails here. Swallowing keeps the original error (if any) in flight.
-    }
+  private deleteContainer(containerId: string): void {
+    this.connection.tooling
+      .sobject('MetadataContainer')
+      .delete(containerId)
+      .catch(() => {
+        // Non-fatal: swallow so the unhandled rejection does not surface
+        // and the container gets reaped by Salesforce after 24h.
+      })
   }
 
   private async pollForCompletion(requestId: string) {

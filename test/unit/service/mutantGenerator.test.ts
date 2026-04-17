@@ -1,3 +1,9 @@
+import {
+  ApexLexer,
+  ApexParser,
+  CaseInsensitiveInputStream,
+  CommonTokenStream,
+} from 'apex-parser'
 import RE2 from 're2'
 import { MutantGenerator } from '../../../src/service/mutantGenerator.js'
 
@@ -519,17 +525,16 @@ describe('MutantGenerator', () => {
       expect(typeof tokenStream.getTokens).toBe('function')
     })
 
-    it('Given preParsed input, Then reuses the supplied tokenStream', async () => {
+    it('Given preParsed input, Then reuses the supplied tokenStream', () => {
       // Arrange — build a tree/tokenStream externally, mimicking what
       // TypeDiscoverer.analyzeFull returns so MutantGenerator can skip its own parse.
       const classContent =
         'public class Test { public static void method() { integer i = 0; ++i; } }'
-      const mod = await import('apex-parser')
-      const lexer = new mod.ApexLexer(
-        new mod.CaseInsensitiveInputStream('other', classContent)
+      const lexer = new ApexLexer(
+        new CaseInsensitiveInputStream('other', classContent)
       )
-      const tokenStream = new mod.CommonTokenStream(lexer)
-      const parser = new mod.ApexParser(tokenStream)
+      const tokenStream = new CommonTokenStream(lexer)
+      const parser = new ApexParser(tokenStream)
       const tree = parser.compilationUnit()
 
       // Act

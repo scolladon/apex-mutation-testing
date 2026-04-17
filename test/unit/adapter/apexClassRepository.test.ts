@@ -395,13 +395,16 @@ describe('ApexClassRepository', () => {
     })
 
     describe('given the deployment never reaches a terminal state', () => {
+      // Negative budget = deadline before Date.now() so the first retrieve
+      // inside the loop triggers the timeout branch. 0 is rejected as racy.
+      const IMMEDIATE_TIMEOUT_MS = -1
+
       it('then throws PollTimeoutError with requestId and lastState', async () => {
-        // Arrange — make the poll deadline immediately expired so a single
-        // non-terminal retrieve triggers the timeout path.
+        // Arrange
         sut = new ApexClassRepository(connectionStub, {
           initialIntervalMs: 0,
           maxIntervalMs: 0,
-          timeoutMs: -1,
+          timeoutMs: IMMEDIATE_TIMEOUT_MS,
         })
         const mockApexClass = {
           Id: '123',
@@ -458,6 +461,41 @@ describe('ApexClassRepository', () => {
         // Assert
         expect(result).toEqual({ State: 'Completed', Id: 'request123' })
       })
+    })
+  })
+
+  describe('poll options validation', () => {
+    it('Given timeoutMs of 0 (racy), When constructing, Then throws', () => {
+      // HIGH-1: 0 is ambiguous because deadline == now; reject it.
+      expect(
+        () =>
+          new ApexClassRepository(connectionStub, {
+            timeoutMs: 0,
+          })
+      ).toThrow(/timeoutMs must be non-zero/)
+    })
+
+    it('Given negative initialIntervalMs, When constructing, Then throws', () => {
+      expect(
+        () =>
+          new ApexClassRepository(connectionStub, {
+            initialIntervalMs: -5,
+          })
+      ).toThrow(/initialIntervalMs must be >= 0/)
+    })
+
+    it('Given negative maxIntervalMs, When constructing, Then throws', () => {
+      expect(
+        () =>
+          new ApexClassRepository(connectionStub, {
+            maxIntervalMs: -5,
+          })
+      ).toThrow(/maxIntervalMs must be >= 0/)
+    })
+
+    it('Given no pollOptions, When constructing, Then uses defaults without throwing', () => {
+      // Happy path — defaults must satisfy the guards.
+      expect(() => new ApexClassRepository(connectionStub)).not.toThrow()
     })
   })
 })
