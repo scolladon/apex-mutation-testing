@@ -35,7 +35,7 @@ describe('InlineConstantMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
       const inlineConstantMutator = new InlineConstantMutator()
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
@@ -58,7 +58,7 @@ describe('InlineConstantMutator Integration', () => {
       expect(intMutations.length).toBe(5)
       const zeroMutation = intMutations.find(m => m.replacement === '0')
       expect(zeroMutation).toBeDefined()
-      const result = mutantGenerator.mutate(zeroMutation!)
+      const result = mutantGenerator.mutate(zeroMutation!, tokens)
       expect(result).toContain('return 0;')
       expect(result).not.toContain('return 42;')
     })
@@ -79,7 +79,7 @@ describe('InlineConstantMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
       const inlineConstantMutator = new InlineConstantMutator()
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
@@ -102,7 +102,7 @@ describe('InlineConstantMutator Integration', () => {
       expect(longMutations).toHaveLength(5)
       const zeroMutation = longMutations.find(m => m.replacement === '0L')
       expect(zeroMutation).toBeDefined()
-      const result = mutantGenerator.mutate(zeroMutation!)
+      const result = mutantGenerator.mutate(zeroMutation!, tokens)
       expect(result).toContain('return 0L;')
       expect(result).not.toContain('return 42L;')
     })
@@ -123,7 +123,7 @@ describe('InlineConstantMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
       const inlineConstantMutator = new InlineConstantMutator()
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
@@ -146,7 +146,7 @@ describe('InlineConstantMutator Integration', () => {
       expect(numMutations).toHaveLength(5)
       const zeroMutation = numMutations.find(m => m.replacement === '0.0')
       expect(zeroMutation).toBeDefined()
-      const result = mutantGenerator.mutate(zeroMutation!)
+      const result = mutantGenerator.mutate(zeroMutation!, tokens)
       expect(result).toContain('return 0.0;')
       expect(result).not.toContain('return 3.14;')
     })
@@ -167,7 +167,7 @@ describe('InlineConstantMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
       const typeRegistry = new TypeRegistry(new Map(), new Map(), new Map(), [])
       const inlineConstantMutator = new InlineConstantMutator(typeRegistry)
       const parser = new ApexParser(tokens)
@@ -190,7 +190,7 @@ describe('InlineConstantMutator Integration', () => {
       )
       expect(nullMutations).toHaveLength(1)
       expect(nullMutations[0].replacement).toBe('0')
-      const result = mutantGenerator.mutate(nullMutations[0])
+      const result = mutantGenerator.mutate(nullMutations[0], tokens)
       expect(result).toContain('Integer x = 0;')
       expect(result).not.toContain('Integer x = null;')
     })
@@ -211,7 +211,7 @@ describe('InlineConstantMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
       const inlineConstantMutator = new InlineConstantMutator()
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
@@ -233,7 +233,7 @@ describe('InlineConstantMutator Integration', () => {
       )
       expect(strMutations).toHaveLength(1)
       expect(strMutations[0].replacement).toBe("''")
-      const result = mutantGenerator.mutate(strMutations[0])
+      const result = mutantGenerator.mutate(strMutations[0], tokens)
       expect(result).toContain("return '';")
       expect(result).not.toContain("return 'Hello World';")
     })
@@ -254,7 +254,7 @@ describe('InlineConstantMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
       const inlineConstantMutator = new InlineConstantMutator()
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
@@ -276,7 +276,7 @@ describe('InlineConstantMutator Integration', () => {
       )
       expect(boolMutations).toHaveLength(1)
       expect(boolMutations[0].replacement).toBe('false')
-      const result = mutantGenerator.mutate(boolMutations[0])
+      const result = mutantGenerator.mutate(boolMutations[0], tokens)
       expect(result).toContain('return false;')
       expect(result).not.toContain('return true;')
     })
@@ -299,7 +299,7 @@ describe('InlineConstantMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
       const inlineConstantMutator = new InlineConstantMutator()
       const parser = new ApexParser(tokens)
       const tree = parser.compilationUnit()
@@ -336,7 +336,7 @@ describe('InlineConstantMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
       const typeRegistry = new TypeRegistry(
         new Map([
           [
@@ -374,7 +374,7 @@ describe('InlineConstantMutator Integration', () => {
       )
       expect(nullMutations).toHaveLength(1)
       expect(nullMutations[0].replacement).toBe('0')
-      const result = mutantGenerator.mutate(nullMutations[0])
+      const result = mutantGenerator.mutate(nullMutations[0], tokens)
       expect(result).toContain('return 0;')
       expect(result).not.toContain('return null;')
     })
@@ -395,7 +395,7 @@ describe('InlineConstantMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
       const typeRegistry = new TypeRegistry(new Map(), new Map(), new Map(), [])
       const inlineConstantMutator = new InlineConstantMutator(typeRegistry)
       const parser = new ApexParser(tokens)
@@ -418,7 +418,7 @@ describe('InlineConstantMutator Integration', () => {
       )
       expect(nullMutations).toHaveLength(1)
       expect(nullMutations[0].replacement).toBe('0')
-      const result = mutantGenerator.mutate(nullMutations[0])
+      const result = mutantGenerator.mutate(nullMutations[0], tokens)
       expect(result).toContain('final Integer result = 0;')
       expect(result).not.toContain('final Integer result = null;')
     })
@@ -437,7 +437,7 @@ describe('InlineConstantMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
       const typeRegistry = new TypeRegistry(new Map(), new Map(), new Map(), [])
       const inlineConstantMutator = new InlineConstantMutator(typeRegistry)
       const parser = new ApexParser(tokens)
@@ -460,7 +460,7 @@ describe('InlineConstantMutator Integration', () => {
       )
       expect(nullMutations).toHaveLength(1)
       expect(nullMutations[0].replacement).toBe("''")
-      const result = mutantGenerator.mutate(nullMutations[0])
+      const result = mutantGenerator.mutate(nullMutations[0], tokens)
       expect(result).toContain("private final String name = '';")
       expect(result).not.toContain('private final String name = null;')
     })
@@ -479,7 +479,7 @@ describe('InlineConstantMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
       const typeRegistry = new TypeRegistry(new Map(), new Map(), new Map(), [])
       const inlineConstantMutator = new InlineConstantMutator(typeRegistry)
       const parser = new ApexParser(tokens)
@@ -502,7 +502,7 @@ describe('InlineConstantMutator Integration', () => {
       )
       expect(nullMutations).toHaveLength(1)
       expect(nullMutations[0].replacement).toBe('0')
-      const result = mutantGenerator.mutate(nullMutations[0])
+      const result = mutantGenerator.mutate(nullMutations[0], tokens)
       expect(result).toContain('private static final Integer COUNT = 0;')
       expect(result).not.toContain('private static final Integer COUNT = null;')
     })

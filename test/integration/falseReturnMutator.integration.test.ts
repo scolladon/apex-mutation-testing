@@ -46,7 +46,7 @@ describe('FalseReturnMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
 
       const typeRegistry = await buildTypeRegistry(classContent)
       const falseReturnMutator = new FalseReturnMutator(typeRegistry)
@@ -72,7 +72,7 @@ describe('FalseReturnMutator Integration', () => {
       if (falseReturnMutations.length > 0) {
         expect(falseReturnMutations[0].replacement).toBe('false')
 
-        const result = mutantGenerator.mutate(falseReturnMutations[0])
+        const result = mutantGenerator.mutate(falseReturnMutations[0], tokens)
         expect(result).toContain('return false;')
         expect(result).not.toContain('return true;')
       }
@@ -93,7 +93,7 @@ describe('FalseReturnMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
 
       const typeRegistry = await buildTypeRegistry(classContent)
       const falseReturnMutator = new FalseReturnMutator(typeRegistry)
@@ -119,7 +119,7 @@ describe('FalseReturnMutator Integration', () => {
       if (falseReturnMutations.length > 0) {
         expect(falseReturnMutations[0].replacement).toBe('false')
 
-        const result = mutantGenerator.mutate(falseReturnMutations[0])
+        const result = mutantGenerator.mutate(falseReturnMutations[0], tokens)
         expect(result).toContain('return false;')
         expect(result).not.toContain('return value > 0;')
       }
@@ -140,7 +140,7 @@ describe('FalseReturnMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
 
       const typeRegistry = await buildTypeRegistry(classContent)
       const falseReturnMutator = new FalseReturnMutator(typeRegistry)
@@ -183,7 +183,7 @@ describe('FalseReturnMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
 
       const typeRegistry = await buildTypeRegistry(classContent)
       const falseReturnMutator = new FalseReturnMutator(typeRegistry)
@@ -208,7 +208,7 @@ describe('FalseReturnMutator Integration', () => {
       expect(falseReturnMutations.length).toBe(1)
 
       if (falseReturnMutations.length > 0) {
-        const result = mutantGenerator.mutate(falseReturnMutations[0])
+        const result = mutantGenerator.mutate(falseReturnMutations[0], tokens)
         expect(result).toContain('return false;')
         expect(result).not.toContain('return true;')
       }

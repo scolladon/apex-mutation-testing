@@ -364,7 +364,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
       const lexer = new ApexLexer(new CaseInsensitiveInputStream('test', code))
       const tokenStream = new CommonTokenStream(lexer)
       const mutantGenerator = new MutantGenerator()
-      mutantGenerator['tokenStream'] = tokenStream
+      // tokenStream passed directly to mutate below
 
       const parser = new ApexParser(tokenStream)
       const tree = parser.compilationUnit()
@@ -387,7 +387,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
 
       expect(mutations.length).toBe(1)
 
-      const mutatedCode = mutantGenerator.mutate(mutations[0])
+      const mutatedCode = mutantGenerator.mutate(mutations[0], tokenStream)
       expect(mutatedCode).toContain('Integer x = 0')
       expect(mutatedCode).not.toContain('getValue()')
     })

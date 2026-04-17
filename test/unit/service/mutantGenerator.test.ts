@@ -16,7 +16,7 @@ describe('MutantGenerator', () => {
       const coveredLines = new Set([1]) // Line 1 is covered
 
       // Act
-      const result = sut.compute(classContent, coveredLines)
+      const { mutations: result } = sut.compute(classContent, coveredLines)
 
       // Assert
       const incrementMutations = result.filter(
@@ -33,7 +33,7 @@ describe('MutantGenerator', () => {
       const coveredLines = new Set([1]) // Line 1 is covered
 
       // Act
-      const result = sut.compute(classContent, coveredLines)
+      const { mutations: result } = sut.compute(classContent, coveredLines)
 
       // Assert
       const boundaryMutations = result.filter(
@@ -50,7 +50,7 @@ describe('MutantGenerator', () => {
       const coveredLines = new Set([1])
 
       // Act
-      const result = sut.compute(classContent, coveredLines)
+      const { mutations: result } = sut.compute(classContent, coveredLines)
 
       // Assert
       const inlineConstantMutations = result.filter(
@@ -68,7 +68,7 @@ describe('MutantGenerator', () => {
       const coveredLines = new Set([2]) // Line 1 is not covered
 
       // Act
-      const result = sut.compute(classContent, coveredLines)
+      const { mutations: result } = sut.compute(classContent, coveredLines)
 
       // Assert
       expect(result).toHaveLength(0)
@@ -81,7 +81,7 @@ describe('MutantGenerator', () => {
       const coveredLines = new Set([1])
 
       // Act
-      const result = sut.compute(classContent, coveredLines)
+      const { mutations: result } = sut.compute(classContent, coveredLines)
 
       // Assert - at least 3 mutations: < -> <=, ++ -> --, ++i -> i
       expect(result.length).toBeGreaterThanOrEqual(3)
@@ -115,9 +115,14 @@ describe('MutantGenerator', () => {
       const coveredLines = new Set([1])
 
       // Act
-      const result = sut.compute(classContent, coveredLines, undefined, {
-        include: ['ArithmeticOperator'],
-      })
+      const { mutations: result } = sut.compute(
+        classContent,
+        coveredLines,
+        undefined,
+        {
+          include: ['ArithmeticOperator'],
+        }
+      )
 
       // Assert - + generates 3 mutations: -, *, /
       expect(result).toHaveLength(3)
@@ -133,9 +138,14 @@ describe('MutantGenerator', () => {
       const coveredLines = new Set([1])
 
       // Act
-      const result = sut.compute(classContent, coveredLines, undefined, {
-        exclude: ['Increment'],
-      })
+      const { mutations: result } = sut.compute(
+        classContent,
+        coveredLines,
+        undefined,
+        {
+          exclude: ['Increment'],
+        }
+      )
 
       // Assert
       expect(result.every(m => m.mutationName !== 'IncrementMutator')).toBe(
@@ -153,9 +163,14 @@ describe('MutantGenerator', () => {
         .mockImplementation(() => undefined)
 
       // Act
-      const result = sut.compute(classContent, coveredLines, undefined, {
-        include: ['ArithmeticOperator', 'NonExistentMutator'],
-      })
+      const { mutations: result } = sut.compute(
+        classContent,
+        coveredLines,
+        undefined,
+        {
+          include: ['ArithmeticOperator', 'NonExistentMutator'],
+        }
+      )
 
       // Assert - + generates 3 mutations: -, *, /
       expect(result).toHaveLength(3)
@@ -189,9 +204,14 @@ describe('MutantGenerator', () => {
       const coveredLines = new Set([1])
 
       // Act
-      const result = sut.compute(classContent, coveredLines, undefined, {
-        include: ['arithmeticoperator'],
-      })
+      const { mutations: result } = sut.compute(
+        classContent,
+        coveredLines,
+        undefined,
+        {
+          include: ['arithmeticoperator'],
+        }
+      )
 
       // Assert - + generates 3 mutations: -, *, /
       expect(result).toHaveLength(3)
@@ -207,8 +227,13 @@ describe('MutantGenerator', () => {
       const coveredLines = new Set([1])
 
       // Act
-      const withFilter = sut.compute(classContent, coveredLines, undefined, {})
-      const withoutFilter = new MutantGenerator().compute(
+      const { mutations: withFilter } = sut.compute(
+        classContent,
+        coveredLines,
+        undefined,
+        {}
+      )
+      const { mutations: withoutFilter } = new MutantGenerator().compute(
         classContent,
         coveredLines
       )
@@ -224,7 +249,7 @@ describe('MutantGenerator', () => {
       const coveredLines = new Set([1])
 
       // Act — include with empty array has nameSet.size === 0, so all mutators should run
-      const withEmptyInclude = sut.compute(
+      const { mutations: withEmptyInclude } = sut.compute(
         classContent,
         coveredLines,
         undefined,
@@ -232,7 +257,7 @@ describe('MutantGenerator', () => {
           include: [],
         }
       )
-      const withoutFilter = new MutantGenerator().compute(
+      const { mutations: withoutFilter } = new MutantGenerator().compute(
         classContent,
         coveredLines
       )
@@ -248,7 +273,7 @@ describe('MutantGenerator', () => {
       const coveredLines = new Set([1])
 
       // Act — exclude with empty array has nameSet.size === 0, so all mutators should run
-      const withEmptyExclude = sut.compute(
+      const { mutations: withEmptyExclude } = sut.compute(
         classContent,
         coveredLines,
         undefined,
@@ -256,7 +281,7 @@ describe('MutantGenerator', () => {
           exclude: [],
         }
       )
-      const withoutFilter = new MutantGenerator().compute(
+      const { mutations: withoutFilter } = new MutantGenerator().compute(
         classContent,
         coveredLines
       )
@@ -316,13 +341,13 @@ describe('MutantGenerator', () => {
       const coveredLines = new Set([1])
 
       // Act
-      const resultWithExclude = sut.compute(
+      const { mutations: resultWithExclude } = sut.compute(
         classContent,
         coveredLines,
         undefined,
         { exclude: ['ArithmeticOperator'] }
       )
-      const resultWithAll = new MutantGenerator().compute(
+      const { mutations: resultWithAll } = new MutantGenerator().compute(
         classContent,
         coveredLines
       )
@@ -344,14 +369,18 @@ describe('MutantGenerator', () => {
       const coveredLines = new Set([1])
 
       // Act — no mutatorFilter argument
-      const resultNoFilter = sut.compute(classContent, coveredLines)
-      // explicit undefined is the same code path
-      const resultUndefinedFilter = new MutantGenerator().compute(
+      const { mutations: resultNoFilter } = sut.compute(
         classContent,
-        coveredLines,
-        undefined,
-        undefined
+        coveredLines
       )
+      // explicit undefined is the same code path
+      const { mutations: resultUndefinedFilter } =
+        new MutantGenerator().compute(
+          classContent,
+          coveredLines,
+          undefined,
+          undefined
+        )
 
       // Assert — both must return same result (all mutators)
       expect(resultNoFilter.length).toBe(resultUndefinedFilter.length)
@@ -366,9 +395,14 @@ describe('MutantGenerator', () => {
       const coveredLines = new Set([1])
 
       // Act
-      const result = sut.compute(classContent, coveredLines, undefined, {
-        include: ['BoundaryCondition'],
-      })
+      const { mutations: result } = sut.compute(
+        classContent,
+        coveredLines,
+        undefined,
+        {
+          include: ['BoundaryCondition'],
+        }
+      )
 
       // Assert — BoundaryCondition on "1 + 2" produces 0 mutations (no boundary operators)
       // but the point is ALL mutations must come from BoundaryConditionMutator
@@ -405,9 +439,14 @@ describe('MutantGenerator', () => {
       const coveredLines = new Set([1])
 
       // Act — mixed-case include name (same as registry name before lowercasing)
-      const result = sut.compute(classContent, coveredLines, undefined, {
-        include: ['ArithmeticOperator'],
-      })
+      const { mutations: result } = sut.compute(
+        classContent,
+        coveredLines,
+        undefined,
+        {
+          include: ['ArithmeticOperator'],
+        }
+      )
 
       // Assert — must produce mutations (3 for +: -, *, /)
       expect(result).toHaveLength(3)
@@ -421,9 +460,14 @@ describe('MutantGenerator', () => {
       const coveredLines = new Set([1])
 
       // Act
-      const result = sut.compute(classContent, coveredLines, undefined, {
-        include: ['ARITHMETICOPERATOR'],
-      })
+      const { mutations: result } = sut.compute(
+        classContent,
+        coveredLines,
+        undefined,
+        {
+          include: ['ARITHMETICOPERATOR'],
+        }
+      )
 
       // Assert — must produce mutations; lowercase matching means ARITHMETICOPERATOR = arithmeticoperator
       expect(result).toHaveLength(3)
@@ -440,10 +484,18 @@ describe('MutantGenerator', () => {
       const coveredLines = new Set([1])
 
       // Act — exclude with known name
-      const withExclude = sut.compute(classContent, coveredLines, undefined, {
-        exclude: ['Increment'],
-      })
-      const withAll = new MutantGenerator().compute(classContent, coveredLines)
+      const { mutations: withExclude } = sut.compute(
+        classContent,
+        coveredLines,
+        undefined,
+        {
+          exclude: ['Increment'],
+        }
+      )
+      const { mutations: withAll } = new MutantGenerator().compute(
+        classContent,
+        coveredLines
+      )
 
       // Assert — result must differ (Increment mutations removed)
       expect(withExclude.length).toBeLessThan(withAll.length)
@@ -453,26 +505,47 @@ describe('MutantGenerator', () => {
     })
   })
 
-  describe('getTokenStream', () => {
-    it('Given no compute called, When calling getTokenStream, Then returns undefined', () => {
-      // Arrange & Act
-      const result = sut.getTokenStream()
-
-      // Assert
-      expect(result).toBeUndefined()
-    })
-
-    it('Given compute called, When calling getTokenStream, Then returns token stream', () => {
+  describe('compute result shape', () => {
+    it('Given compute called, Then result includes a CommonTokenStream', () => {
       // Arrange
       const classContent =
         'public class Test { public static void method() { integer i = 0; ++i; } }'
-      sut.compute(classContent, new Set([1]))
 
       // Act
-      const result = sut.getTokenStream()
+      const { tokenStream } = sut.compute(classContent, new Set([1]))
 
       // Assert
-      expect(result).toBeDefined()
+      expect(tokenStream).toBeDefined()
+      expect(typeof tokenStream.getTokens).toBe('function')
+    })
+
+    it('Given preParsed input, Then reuses the supplied tokenStream', async () => {
+      // Arrange — build a tree/tokenStream externally, mimicking what
+      // TypeDiscoverer.analyzeFull returns so MutantGenerator can skip its own parse.
+      const classContent =
+        'public class Test { public static void method() { integer i = 0; ++i; } }'
+      const mod = await import('apex-parser')
+      const lexer = new mod.ApexLexer(
+        new mod.CaseInsensitiveInputStream('other', classContent)
+      )
+      const tokenStream = new mod.CommonTokenStream(lexer)
+      const parser = new mod.ApexParser(tokenStream)
+      const tree = parser.compilationUnit()
+
+      // Act
+      const result = sut.compute(
+        classContent,
+        new Set([1]),
+        undefined,
+        undefined,
+        [],
+        undefined,
+        { tree: tree as never, tokenStream }
+      )
+
+      // Assert — compute returns the same tokenStream we fed in (Perf-3)
+      expect(result.tokenStream).toBe(tokenStream)
+      expect(result.mutations.length).toBeGreaterThan(0)
     })
   })
 
@@ -491,7 +564,7 @@ describe('MutantGenerator', () => {
       const allowedLines = new Set([3])
 
       // Act
-      const result = sut.compute(
+      const { mutations: result } = sut.compute(
         classContent,
         coveredLines,
         undefined,
@@ -523,7 +596,7 @@ describe('MutantGenerator', () => {
       const skipPatterns = [new RE2('System\\.debug')]
 
       // Act
-      const result = sut.compute(
+      const { mutations: result } = sut.compute(
         classContent,
         coveredLines,
         undefined,
@@ -552,7 +625,7 @@ describe('MutantGenerator', () => {
       const skipPatterns = [new RE2('System\\.debug')]
 
       // Act
-      const result = sut.compute(
+      const { mutations: result } = sut.compute(
         classContent,
         coveredLines,
         undefined,
@@ -572,13 +645,13 @@ describe('MutantGenerator', () => {
       const classContent =
         'public class Test { public static void method() { integer i = 0; ++i; } }'
       const coveredLines = new Set([1])
-      const mutations = sut.compute(classContent, coveredLines)
+      const { mutations, tokenStream } = sut.compute(classContent, coveredLines)
       const incrementMutation = mutations.find(
         m => m.mutationName === 'IncrementMutator'
       )!
 
       // Act
-      const result = sut.mutate(incrementMutation)
+      const result = sut.mutate(incrementMutation, tokenStream)
 
       // Assert
       expect(result).toContain('--i;')
@@ -590,13 +663,13 @@ describe('MutantGenerator', () => {
       const classContent =
         'public class Test { public static boolean method() { return 5 < 10; } }'
       const coveredLines = new Set([1])
-      const mutations = sut.compute(classContent, coveredLines)
+      const { mutations, tokenStream } = sut.compute(classContent, coveredLines)
       const boundaryMutation = mutations.find(
         m => m.mutationName === 'BoundaryConditionMutator'
       )!
 
       // Act
-      const result = sut.mutate(boundaryMutation)
+      const result = sut.mutate(boundaryMutation, tokenStream)
 
       // Assert
       expect(result).toContain('5 <= 10')

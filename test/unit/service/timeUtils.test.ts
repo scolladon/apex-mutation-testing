@@ -40,20 +40,20 @@ describe('timeUtils', () => {
     describe('Given an async function with measurable delay', () => {
       describe('When timing its execution', () => {
         it('Then the duration reflects the elapsed time', async () => {
-          // Arrange
+          // Arrange — fake performance so duration is deterministic
           const delayMs = 50
-          const fn = async () => {
-            await new Promise(resolve => setTimeout(resolve, delayMs))
-            return 'delayed'
-          }
+          const performanceSpy = vi.spyOn(performance, 'now')
+          performanceSpy.mockReturnValueOnce(1000)
+          performanceSpy.mockReturnValueOnce(1000 + delayMs)
+          const fn = async () => 'delayed'
 
           // Act
           const sut = await timeExecution(fn)
 
           // Assert
           expect(sut.result).toBe('delayed')
-          expect(sut.durationMs).toBeGreaterThanOrEqual(delayMs - 10)
-          expect(sut.durationMs).toBeLessThan(delayMs * 10)
+          expect(sut.durationMs).toBe(delayMs)
+          performanceSpy.mockRestore()
         })
       })
     })

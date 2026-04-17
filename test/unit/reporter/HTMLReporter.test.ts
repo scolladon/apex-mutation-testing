@@ -1,8 +1,17 @@
-import { writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { ApexMutationHTMLReporter } from '../../../src/reporter/HTMLReporter.js'
 import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult.js'
 
 vi.mock('node:fs/promises')
+
+beforeEach(() => {
+  // Default: readFile returns an empty mutation-test-elements stub so
+  // generateReport can run without a real filesystem; individual tests
+  // override as needed.
+  vi.mocked(readFile).mockResolvedValue('/* MTE stub */')
+  vi.mocked(mkdir).mockResolvedValue(undefined)
+  vi.mocked(writeFile).mockResolvedValue(undefined)
+})
 
 describe('HTMLReporter', () => {
   let sut: ApexMutationHTMLReporter
@@ -95,14 +104,103 @@ describe('HTMLReporter', () => {
 
       // Assert
       const htmlContent = vi.mocked(writeFile).mock.calls[0][1] as string
-      const reportMatch = htmlContent.match(/app\.report = (.+);/)
-      const report = JSON.parse(reportMatch![1].replace(/<"\+"/g, '<'))
+      const reportMatch = htmlContent.match(
+        /<script id="mutation-report-data" type="application\/json">(.+?)<\/script>/s
+      )
+      expect(reportMatch).not.toBeNull()
+      // The data block is escape-hardened; reverse the neutralising transforms
+      const rawJson = reportMatch![1]
+        .replace(/<\\\//g, '</')
+        .replace(/<\\!--/g, '<!--')
+        .replace(/--\\>/g, '-->')
+        .replace(/<\\script/gi, '<script')
+      const report = JSON.parse(rawJson)
       const pendingMutant = report.files['TestClass.cls'].mutants.find(
         (m: { id: string }) => m.id === '5'
       )
       expect(pendingMutant.coveredBy).toBeUndefined()
       expect(pendingMutant.testsCompleted).toBe(0)
       expect(pendingMutant.status).toBe('Pending')
+    })
+
+    it('Then creates the report directory recursively before writing', async () => {
+      // Arrange — default outputDir is 'reports'
+      // Act
+      await sut.generateReport(testResults)
+
+      // Assert — mkdir called with recursive:true
+      expect(mkdir).toHaveBeenCalledWith(expect.any(String), {
+        recursive: true,
+      })
+    })
+
+    it('Then rejects outputDir outside the current working directory', async () => {
+      // Arrange & Act & Assert — Sec-F2: defence against arbitrary file write
+      await expect(sut.generateReport(testResults, '/tmp')).rejects.toThrow(
+        /outside the current working directory/
+      )
+    })
+
+    it('Then accepts outputDir inside cwd', async () => {
+      // Arrange & Act — a subfolder of cwd must pass the sandbox check
+      await sut.generateReport(testResults, 'reports/nested/path')
+
+      // Assert
+      expect(mkdir).toHaveBeenCalled()
+      expect(writeFile).toHaveBeenCalled()
+    })
+
+    it('Then neutralises a </script> sequence embedded in apex source', async () => {
+      // Arrange — mutant source contains a would-be script-terminator
+      const maliciousResults: ApexMutationTestResult = {
+        sourceFile: 'Evil',
+        sourceFileContent:
+          'public class Evil { /* </script><script>alert(1) */ }',
+        testFile: 'EvilTest',
+        mutants: [
+          {
+            id: 'x',
+            mutatorName: 'InlineConstantMutator',
+            status: 'Killed',
+            location: {
+              start: { line: 1, column: 0 },
+              end: { line: 1, column: 1 },
+            },
+            replacement: '</script><script>alert(1)</script>',
+            original: '1',
+          },
+        ],
+      }
+
+      // Act
+      await sut.generateReport(maliciousResults)
+
+      // Assert — the raw '</script>' must NOT appear inside the JSON data block.
+      const html = vi.mocked(writeFile).mock.calls[0][1] as string
+      const dataBlock = html.match(
+        /<script id="mutation-report-data" type="application\/json">(.+?)<\/script>/s
+      )![1]
+      expect(dataBlock).not.toContain('</script>')
+      // The neutralised form is <\/ ... matching our transform
+      expect(dataBlock).toContain('<\\/script')
+    })
+
+    it('Then neutralises </script in the vendored mutation-testing-elements bundle', async () => {
+      // Arrange — the vendored bundle may itself contain the sentinel (e.g. in
+      // a template literal). Stub the readFile mock to include it.
+      vi.mocked(readFile).mockResolvedValue(
+        'var x = "</script><script>stolen</script>"'
+      )
+
+      // Act
+      await sut.generateReport(testResults)
+
+      // Assert
+      const html = vi.mocked(writeFile).mock.calls[0][1] as string
+      // The vendored block must not be able to close the host script
+      const bundleBlock = html.match(/<script>([\s\S]+?)<\/script>/)![1]
+      expect(bundleBlock).not.toContain('</script')
+      expect(bundleBlock).toContain('<\\/script')
     })
   })
 })

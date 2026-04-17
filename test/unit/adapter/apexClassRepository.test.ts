@@ -1,5 +1,8 @@
 import { Connection } from '@salesforce/core'
-import { ApexClassRepository } from '../../../src/adapter/apexClassRepository.js'
+import {
+  ApexClassRepository,
+  PollTimeoutError,
+} from '../../../src/adapter/apexClassRepository.js'
 
 describe('ApexClassRepository', () => {
   let connectionStub: Connection
@@ -7,8 +10,10 @@ describe('ApexClassRepository', () => {
   const findMock = vi.fn()
   const createMock = vi.fn()
   const retrieveMock = vi.fn()
+  const deleteMock = vi.fn()
 
   beforeEach(() => {
+    deleteMock.mockResolvedValue(undefined)
     connectionStub = {
       tooling: {
         sobject: (objectType: string) => {
@@ -19,6 +24,7 @@ describe('ApexClassRepository', () => {
           } else if (objectType === 'MetadataContainer') {
             return {
               create: createMock,
+              delete: deleteMock,
             }
           } else if (objectType === 'ApexClassMember') {
             return {
@@ -293,6 +299,164 @@ describe('ApexClassRepository', () => {
           'Deployment failed:\n[TestClass.cls:5:15] Invalid operator for String'
         )
         expect(retrieveMock).toHaveBeenCalledTimes(2)
+      })
+    })
+
+    describe('given the MetadataContainer creation returns no id', () => {
+      it('then should throw a descriptive error', async () => {
+        // Arrange
+        const mockApexClass = {
+          Id: '123',
+          Body: 'public class TestClass {}',
+        }
+        createMock.mockResolvedValueOnce({}) // no id
+
+        // Act & Assert
+        await expect(sut.update(mockApexClass)).rejects.toThrow(
+          'MetadataContainer did not return an ID'
+        )
+      })
+    })
+
+    describe('given the deployment succeeds', () => {
+      it('then the MetadataContainer is deleted after success', async () => {
+        // Arrange
+        const mockApexClass = {
+          Id: '123',
+          Body: 'public class TestClass {}',
+        }
+        createMock
+          .mockResolvedValueOnce({ id: 'containerABC' })
+          .mockResolvedValueOnce({ id: 'member123' })
+          .mockResolvedValueOnce({ id: 'request123' })
+        retrieveMock.mockResolvedValue({
+          State: 'Completed',
+          Id: 'request123',
+        })
+
+        // Act
+        await sut.update(mockApexClass)
+
+        // Assert
+        expect(deleteMock).toHaveBeenCalledWith('containerABC')
+      })
+    })
+
+    describe('given the deployment fails', () => {
+      it('then the MetadataContainer is still deleted (finally block)', async () => {
+        // Arrange
+        const mockApexClass = {
+          Id: '123',
+          Body: 'public class TestClass {}',
+        }
+        createMock
+          .mockResolvedValueOnce({ id: 'containerXYZ' })
+          .mockResolvedValueOnce({ id: 'member123' })
+          .mockResolvedValueOnce({ id: 'request123' })
+        retrieveMock.mockResolvedValue({
+          State: 'Failed',
+          ErrorMsg: 'boom',
+        })
+
+        // Act
+        await expect(sut.update(mockApexClass)).rejects.toThrow(
+          'Deployment failed'
+        )
+
+        // Assert — cleanup MUST run even on failure
+        expect(deleteMock).toHaveBeenCalledWith('containerXYZ')
+      })
+    })
+
+    describe('given the MetadataContainer delete fails', () => {
+      it('then the failure is swallowed and original result is returned', async () => {
+        // Arrange
+        const mockApexClass = {
+          Id: '123',
+          Body: 'public class TestClass {}',
+        }
+        createMock
+          .mockResolvedValueOnce({ id: 'containerDEF' })
+          .mockResolvedValueOnce({ id: 'member123' })
+          .mockResolvedValueOnce({ id: 'request123' })
+        retrieveMock.mockResolvedValue({
+          State: 'Completed',
+          Id: 'request123',
+        })
+        deleteMock.mockRejectedValueOnce(new Error('delete failed'))
+
+        // Act
+        const result = await sut.update(mockApexClass)
+
+        // Assert — the delete failure is non-fatal
+        expect(result).toEqual({ State: 'Completed', Id: 'request123' })
+        expect(deleteMock).toHaveBeenCalledWith('containerDEF')
+      })
+    })
+
+    describe('given the deployment never reaches a terminal state', () => {
+      it('then throws PollTimeoutError with requestId and lastState', async () => {
+        // Arrange — make the poll deadline immediately expired so a single
+        // non-terminal retrieve triggers the timeout path.
+        sut = new ApexClassRepository(connectionStub, {
+          initialIntervalMs: 0,
+          maxIntervalMs: 0,
+          timeoutMs: -1,
+        })
+        const mockApexClass = {
+          Id: '123',
+          Body: 'public class TestClass {}',
+        }
+        createMock
+          .mockResolvedValueOnce({ id: 'containerSLOW' })
+          .mockResolvedValueOnce({ id: 'member123' })
+          .mockResolvedValueOnce({ id: 'request999' })
+        retrieveMock.mockResolvedValue({ State: 'Queued', Id: 'request999' })
+
+        // Act & Assert
+        let thrown: unknown
+        try {
+          await sut.update(mockApexClass)
+        } catch (error) {
+          thrown = error
+        }
+        expect(thrown).toBeInstanceOf(PollTimeoutError)
+        const pollErr = thrown as PollTimeoutError
+        expect(pollErr.requestId).toBe('request999')
+        expect(pollErr.lastState).toBe('Queued')
+        expect(pollErr.name).toBe('PollTimeoutError')
+        // container still cleaned up on timeout
+        expect(deleteMock).toHaveBeenCalledWith('containerSLOW')
+      })
+    })
+
+    describe('given the deployment eventually reaches a terminal state', () => {
+      it('then backoff is applied between polls and the result is returned', async () => {
+        // Arrange — two Queued polls then Completed. With backoff 1.5x from 1ms,
+        // runtime stays <20ms even on slow CI.
+        sut = new ApexClassRepository(connectionStub, {
+          initialIntervalMs: 1,
+          maxIntervalMs: 2,
+          timeoutMs: 5_000,
+        })
+        const mockApexClass = {
+          Id: '123',
+          Body: 'public class TestClass {}',
+        }
+        createMock
+          .mockResolvedValueOnce({ id: 'containerBO' })
+          .mockResolvedValueOnce({ id: 'member123' })
+          .mockResolvedValueOnce({ id: 'request123' })
+        retrieveMock
+          .mockResolvedValueOnce({ State: 'Queued', Id: 'request123' })
+          .mockResolvedValueOnce({ State: 'InProgress', Id: 'request123' })
+          .mockResolvedValueOnce({ State: 'Completed', Id: 'request123' })
+
+        // Act
+        const result = await sut.update(mockApexClass)
+
+        // Assert
+        expect(result).toEqual({ State: 'Completed', Id: 'request123' })
       })
     })
   })

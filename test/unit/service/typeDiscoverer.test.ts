@@ -1174,4 +1174,53 @@ describe('TypeDiscoverer', () => {
       })
     })
   })
+
+  describe('method overload handling (H2)', () => {
+    it('Given class with two overloads, Then methodTypeTable stores each under name+arity key AND name-only key points at the first overload', async () => {
+      // Arrange — two overloads of `doWork`: arity 0 returns Integer, arity 2 returns String.
+      const code = `
+        public class Overloaded {
+          public Integer doWork() { return 0; }
+          public String doWork(Integer a, String b) { return ''; }
+        }
+      `
+      const typeDiscoverer = new TypeDiscoverer()
+
+      // Act
+      const analysis = await typeDiscoverer.analyzeFull(code)
+
+      // Assert — each overload resolvable under its arity-qualified key
+      const typeRegistry = analysis.typeRegistry as unknown as {
+        methodTypeTable: Map<string, { returnType: string }>
+      }
+      const byName0 = typeRegistry.methodTypeTable.get('doWork/0')
+      const byName2 = typeRegistry.methodTypeTable.get('doWork/2')
+      expect(byName0?.returnType).toBe('Integer')
+      expect(byName2?.returnType).toBe('String')
+
+      // Assert — name-only key returns the first-declared overload (deterministic)
+      const byNameOnly = typeRegistry.methodTypeTable.get('doWork')
+      expect(byNameOnly?.returnType).toBe('Integer')
+    })
+
+    it('Given overload with generic params (depth tracking), Then arity counts top-level commas only', async () => {
+      // Arrange — Map<String,Integer> contains an internal comma that must NOT be
+      // counted. The arity is 2 (the Map param + the second param).
+      const code = `
+        public class Generics {
+          public void process(Map<String,Integer> data, String label) { }
+        }
+      `
+      const typeDiscoverer = new TypeDiscoverer()
+
+      // Act
+      const analysis = await typeDiscoverer.analyzeFull(code)
+
+      // Assert
+      const typeRegistry = analysis.typeRegistry as unknown as {
+        methodTypeTable: Map<string, { returnType: string }>
+      }
+      expect(typeRegistry.methodTypeTable.has('process/2')).toBe(true)
+    })
+  })
 })

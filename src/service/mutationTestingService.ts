@@ -1,6 +1,7 @@
 import { TestResult } from '@salesforce/apex-node'
 import { Connection, Messages } from '@salesforce/core'
 import { Progress, Spinner } from '@salesforce/sf-plugins-core'
+import type { CommonTokenStream } from 'apex-parser'
 import { ApexClassRepository } from '../adapter/apexClassRepository.js'
 import { ApexTestRunner } from '../adapter/apexTestRunner.js'
 import { SObjectDescribeRepository } from '../adapter/sObjectDescribeRepository.js'
@@ -8,12 +9,47 @@ import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
-import { TypeRegistry } from '../type/TypeRegistry.js'
 import { ConfigReader, type RE2Instance } from './configReader.js'
 import { MutantGenerator } from './mutantGenerator.js'
 import { formatDuration, timeExecution } from './timeUtils.js'
-import { TypeDiscoverer } from './typeDiscoverer.js'
+import { type TypeAnalysisResult, TypeDiscoverer } from './typeDiscoverer.js'
 import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
+
+/**
+ * Pre-computed line-start offsets for O(log n) line/column lookup given an
+ * absolute character index. Built once per class; replaces per-mutation
+ * substring+split which was O(n) on the class body.
+ */
+export class LineOffsetIndex {
+  private readonly lineStarts: number[]
+
+  constructor(source: string) {
+    this.lineStarts = [0]
+    for (let i = 0; i < source.length; i++) {
+      if (source.charCodeAt(i) === 10 /* \n */) {
+        this.lineStarts.push(i + 1)
+      }
+    }
+  }
+
+  positionAt(absoluteIndex: number): { line: number; column: number } {
+    // Binary search for the greatest lineStart <= absoluteIndex
+    let lo = 0
+    let hi = this.lineStarts.length - 1
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >>> 1
+      if (this.lineStarts[mid] <= absoluteIndex) {
+        lo = mid
+      } else {
+        hi = mid - 1
+      }
+    }
+    return {
+      line: lo + 1,
+      column: absoluteIndex - this.lineStarts[lo] + 1,
+    }
+  }
+}
 
 interface TokenTargetInfo {
   line: number
@@ -73,6 +109,7 @@ export class MutationTestingService {
   private readonly skipPatterns: RE2Instance[]
   private readonly allowedLines: Set<number> | undefined
   private apexClassContent: string = ''
+  private lineOffsetIndex: LineOffsetIndex = new LineOffsetIndex('')
 
   constructor(
     protected readonly progress: Progress,
@@ -105,7 +142,7 @@ export class MutationTestingService {
   public async process(): Promise<ApexMutationTestResult> {
     const { apexClassRepository, apexTestRunner } = this.createAdapters()
     const apexClass = await this.fetchApexClass(apexClassRepository)
-    const typeRegistry = await this.discoverTypes(
+    const typeAnalysis = await this.discoverTypes(
       apexClass,
       apexClassRepository
     )
@@ -119,10 +156,10 @@ export class MutationTestingService {
     const { testMethodsPerLine, testTime } =
       await this.runBaselineTests(apexTestRunner)
     const coveredLines = this.extractCoveredLines(testMethodsPerLine)
-    const { mutations, mutantGenerator } = this.generateMutations(
+    const { mutations, mutantGenerator, tokenStream } = this.generateMutations(
       apexClass,
       coveredLines,
-      typeRegistry
+      typeAnalysis
     )
 
     this.displayTimeEstimate(deployTime, testTime, mutations.length)
@@ -135,6 +172,7 @@ export class MutationTestingService {
       apexClass,
       mutations,
       mutantGenerator,
+      tokenStream,
       testMethodsPerLine,
       apexTestRunner,
       apexClassRepository
@@ -166,10 +204,7 @@ export class MutationTestingService {
     const mutationStatus: 'Killed' | 'Survived' | 'NoCoverage' =
       testResult.summary.outcome === 'Passed' ? 'Survived' : 'Killed'
 
-    const location = this.calculateMutationPosition(
-      mutation,
-      this.apexClassContent
-    )
+    const location = this.calculateMutationPosition(mutation)
     const originalText = this.extractMutationOriginalText(mutation)
     return {
       id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
@@ -181,10 +216,7 @@ export class MutationTestingService {
     }
   }
 
-  private calculateMutationPosition(
-    mutation: ApexMutation,
-    sourceContent: string
-  ): {
+  private calculateMutationPosition(mutation: ApexMutation): {
     start: { line: number; column: number }
     end: { line: number; column: number }
   } {
@@ -192,34 +224,15 @@ export class MutationTestingService {
     const end = mutation.target.endToken
 
     if (start.startIndex !== undefined && end.stopIndex !== undefined) {
-      const startPos = this.convertAbsoluteIndexToLineColumn(
-        sourceContent,
-        start.startIndex
-      )
-      const endPos = this.convertAbsoluteIndexToLineColumn(
-        sourceContent,
-        end.stopIndex + 1
-      )
-
-      return { start: startPos, end: endPos }
+      return {
+        start: this.lineOffsetIndex.positionAt(start.startIndex),
+        end: this.lineOffsetIndex.positionAt(end.stopIndex + 1),
+      }
     }
 
     throw new Error(
       `Failed to calculate position for mutation: ${mutation.mutationName}`
     )
-  }
-
-  private convertAbsoluteIndexToLineColumn(
-    sourceContent: string,
-    absoluteIndex: number
-  ): { line: number; column: number } {
-    const textBeforeIndex = sourceContent.substring(0, absoluteIndex)
-    const lines = textBeforeIndex.split('\n')
-
-    return {
-      line: lines.length,
-      column: lines[lines.length - 1].length + 1,
-    }
   }
 
   private filterTestMethods(
@@ -270,6 +283,7 @@ export class MutationTestingService {
       this.apexClassName
     )) as unknown as ApexClass
     this.apexClassContent = apexClass.Body
+    this.lineOffsetIndex = new LineOffsetIndex(apexClass.Body)
     this.spinner.stop('Done')
     return apexClass
   }
@@ -277,7 +291,7 @@ export class MutationTestingService {
   private async discoverTypes(
     apexClass: ApexClass,
     apexClassRepository: ApexClassRepository
-  ): Promise<TypeRegistry> {
+  ): Promise<TypeAnalysisResult> {
     this.spinner.start(
       `Analyzing class dependencies for "${this.apexClassName}"`,
       undefined,
@@ -312,9 +326,9 @@ export class MutationTestingService {
       .withMatcher(apexClassMatcher)
       .withMatcher(sObjectMatcher)
 
-    const typeRegistry = await typeDiscoverer.analyze(apexClass.Body)
+    const analysis = await typeDiscoverer.analyzeFull(apexClass.Body)
     this.spinner.stop('Done')
-    return typeRegistry
+    return analysis
   }
 
   private async verifyCompilation(
@@ -430,8 +444,12 @@ export class MutationTestingService {
   private generateMutations(
     apexClass: ApexClass,
     coveredLines: Set<number>,
-    typeRegistry: TypeRegistry
-  ): { mutations: ApexMutation[]; mutantGenerator: MutantGenerator } {
+    typeAnalysis: TypeAnalysisResult
+  ): {
+    mutations: ApexMutation[]
+    mutantGenerator: MutantGenerator
+    tokenStream: CommonTokenStream
+  } {
     this.spinner.start(
       `Generating mutants for "${this.apexClassName}" ApexClass`,
       undefined,
@@ -439,13 +457,14 @@ export class MutationTestingService {
     )
     const mutantGenerator = new MutantGenerator()
     const mutatorFilter = this.buildMutatorFilter()
-    const mutations = mutantGenerator.compute(
+    const { mutations, tokenStream } = mutantGenerator.compute(
       apexClass.Body,
       coveredLines,
-      typeRegistry,
+      typeAnalysis.typeRegistry,
       mutatorFilter,
       this.skipPatterns,
-      this.allowedLines
+      this.allowedLines,
+      { tree: typeAnalysis.tree, tokenStream: typeAnalysis.tokenStream }
     )
 
     if (mutations.length === 0) {
@@ -459,7 +478,7 @@ export class MutationTestingService {
     }
 
     this.spinner.stop(`${mutations.length} mutations generated`)
-    return { mutations, mutantGenerator }
+    return { mutations, mutantGenerator, tokenStream }
   }
 
   private buildMutatorFilter():
@@ -505,7 +524,7 @@ export class MutationTestingService {
         id: `${this.apexClassName}-${mutation.target.startToken.line}-${mutation.target.startToken.charPositionInLine}-${mutation.target.startToken.tokenIndex}-${Date.now()}`,
         mutatorName: mutation.mutationName,
         status: 'Pending' as const,
-        location: this.calculateMutationPosition(mutation, apexClass.Body),
+        location: this.calculateMutationPosition(mutation),
         replacement: mutation.replacement,
         original: this.extractMutationOriginalText(mutation),
       })),
@@ -516,6 +535,7 @@ export class MutationTestingService {
     apexClass: ApexClass,
     mutations: ApexMutation[],
     mutantGenerator: MutantGenerator,
+    tokenStream: CommonTokenStream,
     testMethodsPerLine: Map<number, Set<string>>,
     apexTestRunner: ApexTestRunner,
     apexClassRepository: ApexClassRepository
@@ -561,6 +581,7 @@ export class MutationTestingService {
       const { mutantResult, progressMessage } = await this.evaluateMutation(
         mutation,
         mutantGenerator,
+        tokenStream,
         apexClass,
         testMethodsPerLine,
         apexTestRunner,
@@ -586,6 +607,7 @@ export class MutationTestingService {
   private async evaluateMutation(
     mutation: ApexMutation,
     mutantGenerator: MutantGenerator,
+    tokenStream: CommonTokenStream,
     apexClass: ApexClass,
     testMethodsPerLine: Map<number, Set<string>>,
     apexTestRunner: ApexTestRunner,
@@ -594,7 +616,7 @@ export class MutationTestingService {
     mutantResult: ApexMutationTestResult['mutants'][number]
     progressMessage: string
   }> {
-    const mutatedVersion = mutantGenerator.mutate(mutation)
+    const mutatedVersion = mutantGenerator.mutate(mutation, tokenStream)
     const targetInfo: TokenTargetInfo = {
       line: mutation.target.startToken.line,
       column: mutation.target.startToken.charPositionInLine,
@@ -621,10 +643,7 @@ export class MutationTestingService {
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : String(error)
-      const location = this.calculateMutationPosition(
-        mutation,
-        this.apexClassContent
-      )
+      const location = this.calculateMutationPosition(mutation)
       const originalText = this.extractMutationOriginalText(mutation)
       const strategy = errorStrategies.find(s => s.matches(errorMessage))!
       const classification = strategy.classify(errorMessage, targetInfo)
@@ -662,16 +681,22 @@ export class MutationTestingService {
     apexClass: ApexClass,
     apexClassRepository: ApexClassRepository
   ): Promise<void> {
+    this.spinner.start(
+      `Rolling back "${this.apexClassName}" ApexClass to its original state`,
+      undefined,
+      { stdout: true }
+    )
     try {
-      this.spinner.start(
-        `Rolling back "${this.apexClassName}" ApexClass to its original state`,
-        undefined,
-        { stdout: true }
-      )
       await apexClassRepository.update(apexClass)
       this.spinner.stop('Done')
-    } catch {
-      this.spinner.stop('Class not rolled back, please do it manually')
+    } catch (error: unknown) {
+      this.spinner.stop(
+        `Rollback FAILED — '${this.apexClassName}' remains in a mutated state on the target org. Redeploy the original class manually.`
+      )
+      const cause = error instanceof Error ? error.message : String(error)
+      throw new Error(
+        `Rollback of '${this.apexClassName}' failed. The class on the target org is still in a mutated state. Redeploy manually. Underlying cause: ${cause}`
+      )
     }
   }
 

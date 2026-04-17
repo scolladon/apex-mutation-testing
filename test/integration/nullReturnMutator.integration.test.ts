@@ -49,7 +49,7 @@ describe('NullReturnMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
 
       const typeRegistry = await buildTypeRegistry(classContent)
       const nullReturnMutator = new NullReturnMutator(typeRegistry)
@@ -75,7 +75,7 @@ describe('NullReturnMutator Integration', () => {
       if (nullReturnMutations.length > 0) {
         expect(nullReturnMutations[0].replacement).toBe('null')
 
-        const result = mutantGenerator.mutate(nullReturnMutations[0])
+        const result = mutantGenerator.mutate(nullReturnMutations[0], tokens)
         expect(result).toContain('return null;')
         expect(result).not.toContain("return 'FirstName LastName';")
       }
@@ -96,7 +96,7 @@ describe('NullReturnMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
 
       const typeRegistry = await buildTypeRegistry(classContent, ['Account'])
       const nullReturnMutator = new NullReturnMutator(typeRegistry)
@@ -122,7 +122,7 @@ describe('NullReturnMutator Integration', () => {
       if (nullReturnMutations.length > 0) {
         expect(nullReturnMutations[0].replacement).toBe('null')
 
-        const result = mutantGenerator.mutate(nullReturnMutations[0])
+        const result = mutantGenerator.mutate(nullReturnMutations[0], tokens)
         expect(result).toContain('return null;')
         expect(result).not.toContain('return new Account')
       }
@@ -143,7 +143,7 @@ describe('NullReturnMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
 
       const typeRegistry = await buildTypeRegistry(classContent)
       const nullReturnMutator = new NullReturnMutator(typeRegistry)
@@ -169,7 +169,7 @@ describe('NullReturnMutator Integration', () => {
       if (nullReturnMutations.length > 0) {
         expect(nullReturnMutations[0].replacement).toBe('null')
 
-        const result = mutantGenerator.mutate(nullReturnMutations[0])
+        const result = mutantGenerator.mutate(nullReturnMutations[0], tokens)
         expect(result).toContain('return null;')
         expect(result).not.toContain('return [SELECT')
       }
@@ -192,7 +192,7 @@ describe('NullReturnMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
 
       const typeRegistry = await buildTypeRegistry(classContent)
       const nullReturnMutator = new NullReturnMutator(typeRegistry)
@@ -218,7 +218,7 @@ describe('NullReturnMutator Integration', () => {
       if (nullReturnMutations.length > 0) {
         expect(nullReturnMutations[0].replacement).toBe('null')
 
-        const result = mutantGenerator.mutate(nullReturnMutations[0])
+        const result = mutantGenerator.mutate(nullReturnMutations[0], tokens)
         expect(result).toContain('return null;')
         expect(result).not.toContain('return 10;')
       }
@@ -239,7 +239,7 @@ describe('NullReturnMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
 
       const typeRegistry = await buildTypeRegistry(classContent)
       const nullReturnMutator = new NullReturnMutator(typeRegistry)
@@ -265,7 +265,7 @@ describe('NullReturnMutator Integration', () => {
       if (nullReturnMutations.length > 0) {
         expect(nullReturnMutations[0].replacement).toBe('null')
 
-        const result = mutantGenerator.mutate(nullReturnMutations[0])
+        const result = mutantGenerator.mutate(nullReturnMutations[0], tokens)
         expect(result).toContain('return null;')
         expect(result).not.toContain('return true;')
       }

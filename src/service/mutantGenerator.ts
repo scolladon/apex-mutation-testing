@@ -1,4 +1,4 @@
-import { TokenStreamRewriter } from 'antlr4ts'
+import { ParserRuleContext, TokenStreamRewriter } from 'antlr4ts'
 import {
   ApexLexer,
   ApexParser,
@@ -182,27 +182,39 @@ const MUTATOR_REGISTRY: MutatorRegistryEntry[] = [
   },
 ]
 
+export interface MutantGeneratorComputeResult {
+  mutations: ApexMutation[]
+  tokenStream: CommonTokenStream
+}
+
+export interface PreParsedInput {
+  tree: ParserRuleContext
+  tokenStream: CommonTokenStream
+}
+
 export class MutantGenerator {
-  private tokenStream?: CommonTokenStream
-
-  public getTokenStream() {
-    return this.tokenStream
-  }
-
   public compute(
     classContent: string,
     coveredLines: Set<number>,
     typeRegistry?: TypeRegistry,
     mutatorFilter?: { include?: string[]; exclude?: string[] },
     skipPatterns: RE2Instance[] = [],
-    allowedLines?: Set<number>
-  ) {
-    const lexer = new ApexLexer(
-      new CaseInsensitiveInputStream('other', classContent)
-    )
-    this.tokenStream = new CommonTokenStream(lexer)
-    const parser = new ApexParser(this.tokenStream)
-    const tree = parser.compilationUnit()
+    allowedLines?: Set<number>,
+    preParsed?: PreParsedInput
+  ): MutantGeneratorComputeResult {
+    let tree: ParserRuleContext
+    let tokenStream: CommonTokenStream
+    if (preParsed) {
+      tree = preParsed.tree
+      tokenStream = preParsed.tokenStream
+    } else {
+      const lexer = new ApexLexer(
+        new CaseInsensitiveInputStream('other', classContent)
+      )
+      tokenStream = new CommonTokenStream(lexer)
+      const parser = new ApexParser(tokenStream)
+      tree = parser.compilationUnit() as ParserRuleContext
+    }
 
     const filteredRegistry = this.filterRegistry(mutatorFilter)
 
@@ -219,18 +231,19 @@ export class MutantGenerator {
 
     ParseTreeWalker.DEFAULT.walk(listener as ApexParserListener, tree)
 
-    return listener.getMutations()
+    return { mutations: listener.getMutations(), tokenStream }
   }
 
-  public mutate(mutation: ApexMutation) {
-    const rewriter = new TokenStreamRewriter(this.tokenStream!)
-
+  public mutate(
+    mutation: ApexMutation,
+    tokenStream: CommonTokenStream
+  ): string {
+    const rewriter = new TokenStreamRewriter(tokenStream)
     rewriter.replace(
       mutation.target.startToken.tokenIndex,
       mutation.target.endToken.tokenIndex,
       mutation.replacement
     )
-
     return rewriter.getText()
   }
 
