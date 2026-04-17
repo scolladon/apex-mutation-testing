@@ -336,11 +336,23 @@ new TypeDiscoverer()
 
 The `_mutations` array is shared by reference across all listeners. This is safe because ANTLR tree walking is **synchronous** — no concurrent writes.
 
-`MutationListener` also keeps a per-instance `dispatchCache: Map<propName, BaseListener[]>` memoising which listeners implement each ANTLR hook. The Proxy trap used to rescan all 25 mutators on every AST-node callback to answer "`prop in listener && typeof listener[prop] === 'function'`"; the cache makes subsequent calls `O(K)` where `K` is the subset that actually implements the hook. Cache is scoped to the Proxy instance, which is short-lived (one per `compute()` call), so it cannot go stale.
+`MutationListener` also keeps a per-instance
+`dispatchCache: Map<propName, BaseListener[]>` memoising which listeners
+implement each ANTLR hook. The Proxy trap used to rescan all 25 mutators on
+every AST-node callback to answer
+"`prop in listener && typeof listener[prop] === 'function'`". The cache
+makes subsequent calls `O(K)` where `K` is the subset that actually
+implements the hook. The cache is scoped to the Proxy instance, which is
+short-lived (one per `compute()` call), so it cannot go stale.
 
 ### Line/Column Indexing
 
-`LineOffsetIndex` (in `mutationTestingService.ts`) precomputes the absolute offsets of every line start in the class body — one pass at fetch time. `positionAt(absIndex)` does a binary search in `O(log n)` to map an ANTLR token's `startIndex`/`stopIndex` to a `{ line, column }`. This replaces the previous `substring(0, idx).split('\n')` which was `O(n)` per mutation (quadratic over a mutation batch).
+`LineOffsetIndex` (in `mutationTestingService.ts`) precomputes the absolute
+offsets of every line start in the class body — one pass at fetch time.
+`positionAt(absIndex)` does a binary search in `O(log n)` to map an ANTLR
+token's `startIndex`/`stopIndex` to a `{ line, column }`. This replaces the
+previous `substring(0, idx).split('\n')` which was `O(n)` per mutation
+(quadratic over a mutation batch).
 
 ---
 
