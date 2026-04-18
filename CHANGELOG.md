@@ -2,6 +2,13 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [1.6.1](https://github.com/scolladon/apex-mutation-testing/compare/v1.6.0...v1.6.1) (2026-04-18)
+
+
+### Bug Fixes
+
+* performance, security, test and correctness issues ([#120](https://github.com/scolladon/apex-mutation-testing/issues/120)) ([9f1d304](https://github.com/scolladon/apex-mutation-testing/commit/9f1d304c560755a90a4bbc2bc64ac2f59008e163))
+
 ## [1.6.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.5.2...v1.6.0) (2026-04-02)
 
 
