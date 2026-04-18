@@ -1,4 +1,4 @@
-import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { readFile, realpath, writeFile } from 'node:fs/promises'
 import { ApexMutationHTMLReporter } from '../../../src/reporter/HTMLReporter.js'
 import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult.js'
 
@@ -9,7 +9,6 @@ beforeEach(() => {
   // generateReport can run without a real filesystem; individual tests
   // override as needed.
   vi.mocked(readFile).mockResolvedValue('/* MTE stub */')
-  vi.mocked(mkdir).mockResolvedValue(undefined)
   vi.mocked(writeFile).mockResolvedValue(undefined)
   // Default: realpath is identity (no symlinks present). Symlink tests override.
   vi.mocked(realpath).mockImplementation(async (p: unknown) => String(p))
@@ -125,15 +124,16 @@ describe('HTMLReporter', () => {
       expect(pendingMutant.status).toBe('Pending')
     })
 
-    it('Then creates the report directory recursively before writing', async () => {
-      // Arrange — default outputDir is 'reports'
+    it('Then does NOT create the output directory (caller pre-validates existence)', async () => {
+      // The CLI flag has `exists: true`; HTMLReporter must not create paths
+      // under the plugin's privilege which could exceed the caller's.
       // Act
       await sut.generateReport(testResults)
 
-      // Assert — mkdir called with recursive:true
-      expect(mkdir).toHaveBeenCalledWith(expect.any(String), {
-        recursive: true,
-      })
+      // Assert — only the two read-only filesystem calls plus writeFile
+      expect(writeFile).toHaveBeenCalled()
+      expect(readFile).toHaveBeenCalled()
+      expect(realpath).toHaveBeenCalled()
     })
 
     it('Then rejects outputDir outside the current working directory', async () => {
@@ -148,7 +148,6 @@ describe('HTMLReporter', () => {
       await sut.generateReport(testResults, 'reports/nested/path')
 
       // Assert
-      expect(mkdir).toHaveBeenCalled()
       expect(writeFile).toHaveBeenCalled()
     })
 

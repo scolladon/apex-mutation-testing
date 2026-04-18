@@ -198,9 +198,11 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │
 ├─ 12. REPORT
 │      HTMLReporter →
-│        ├─ ensure outputDir exists + resolve within cwd
-│        │  (path.resolve sandbox + post-mkdir realpath check
-│        │   blocks symlinks that dereference out of cwd)
+│        ├─ path.resolve(outputDir) + realpath(outputDir)
+│        │  both must live inside process.cwd(). The directory
+│        │  itself is pre-validated by the CLI flag
+│        │  (`Flags.directory({ exists: true })`); the reporter
+│        │  never creates it.
 │        ├─ inline mutation-testing-elements bundle
 │        │  (vendored from node_modules, not a CDN dep)
 │        └─ emit Stryker JSON inside a
@@ -726,9 +728,15 @@ The reporter transforms internal results to the [Stryker Mutation Testing Report
 ApexMutationTestResult
     │
     ├─ resolveSafeOutputDir(outputDir)
+    │   ├─ caller (run.ts) has already validated that outputDir
+    │   │  exists via oclif `Flags.directory({ exists: true })`.
+    │   │  The reporter does NOT mkdir: the plugin may be installed
+    │   │  under a more privileged user than the invoker, and
+    │   │  auto-creating paths would let a crafted -r flag write
+    │   │  into places the invoker cannot otherwise reach.
     │   ├─ path.resolve must be inside process.cwd()
-    │   └─ (post-mkdir) realpath(outputDir) must also be
-    │      inside cwd — blocks symlinks that dereference out
+    │   └─ realpath(outputDir) must also be inside cwd — blocks
+    │      symlinks whose target is outside the project root
     │
     ├─ transformApexResults()
     │   ├─ language: 'java' (Apex ≈ Java for highlighting)

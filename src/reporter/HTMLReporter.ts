@@ -1,4 +1,4 @@
-import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { readFile, realpath, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import * as path from 'path'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
@@ -18,10 +18,17 @@ export class ApexMutationHTMLReporter {
     apexMutationTestResult: ApexMutationTestResult,
     outputDir: string = 'reports'
   ): Promise<void> {
-    // Two-stage path check: the string-level resolve catches ../ traversal;
-    // the post-mkdir realpath catches symlinks that redirect the write out of cwd.
+    // The caller (run.ts) validates that `outputDir` exists via the oclif
+    // `Flags.directory({ exists: true })` guard. We deliberately do NOT
+    // create the directory here: the plugin may be installed under a more
+    // privileged user than the one running the command, and auto-creating
+    // paths under that higher privilege would let a crafted `-r` flag write
+    // into locations the invoking user should not be able to touch.
+    //
+    // Two-stage path check:
+    //   1. string-level resolve rejects `../` traversal;
+    //   2. realpath rejects an existing symlink whose target is outside cwd.
     const resolvedDir = resolveSafeOutputDir(outputDir)
-    await mkdir(resolvedDir, { recursive: true })
     await assertRealPathWithinCwd(resolvedDir, outputDir)
     const reportData = this.transformApexResults(apexMutationTestResult)
     const bundle = await loadMutationTestElements()
