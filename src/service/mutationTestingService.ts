@@ -16,39 +16,31 @@ import { type TypeAnalysisResult, TypeDiscoverer } from './typeDiscoverer.js'
 import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
 
 /**
- * Pre-computed line-start offsets for O(log n) line/column lookup given an
- * absolute character index. Built once per class; replaces per-mutation
- * substring+split which was O(n) on the class body.
+ * Advance a 1-indexed (line, column) cursor through `text`, returning the
+ * position immediately AFTER the last character. Handles tokens whose text
+ * spans newlines (multi-line string literals, block comments).
+ *
+ * Used to compute the Stryker `end` position for a mutation: ANTLR tokens
+ * expose `line` and `charPositionInLine` for the START of the token but not
+ * past the end; walking `endToken.text` closes that gap without needing a
+ * separate line-offset index over the whole source.
  */
-export class LineOffsetIndex {
-  private readonly lineStarts: number[]
-
-  constructor(source: string) {
-    this.lineStarts = [0]
-    for (let i = 0; i < source.length; i++) {
-      if (source.charCodeAt(i) === 10 /* \n */) {
-        this.lineStarts.push(i + 1)
-      }
+function advancePosition(
+  text: string,
+  startLine: number,
+  startColumn: number
+): { line: number; column: number } {
+  let line = startLine
+  let column = startColumn
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) === 10 /* \n */) {
+      line++
+      column = 1
+    } else {
+      column++
     }
   }
-
-  positionAt(absoluteIndex: number): { line: number; column: number } {
-    // Binary search for the greatest lineStart <= absoluteIndex
-    let lo = 0
-    let hi = this.lineStarts.length - 1
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >>> 1
-      if (this.lineStarts[mid] <= absoluteIndex) {
-        lo = mid
-      } else {
-        hi = mid - 1
-      }
-    }
-    return {
-      line: lo + 1,
-      column: absoluteIndex - this.lineStarts[lo] + 1,
-    }
-  }
+  return { line, column }
 }
 
 interface TokenTargetInfo {
@@ -109,7 +101,6 @@ export class MutationTestingService {
   private readonly skipPatterns: RE2Instance[]
   private readonly allowedLines: Set<number> | undefined
   private apexClassContent: string = ''
-  private lineOffsetIndex: LineOffsetIndex = new LineOffsetIndex('')
 
   constructor(
     protected readonly progress: Progress,
@@ -223,16 +214,30 @@ export class MutationTestingService {
     const start = mutation.target.startToken
     const end = mutation.target.endToken
 
-    if (start.startIndex !== undefined && end.stopIndex !== undefined) {
-      return {
-        start: this.lineOffsetIndex.positionAt(start.startIndex),
-        end: this.lineOffsetIndex.positionAt(end.stopIndex + 1),
-      }
+    if (
+      start.startIndex === undefined ||
+      end.stopIndex === undefined ||
+      end.text === undefined
+    ) {
+      throw new Error(
+        `Failed to calculate position for mutation: ${mutation.mutationName}`
+      )
     }
 
-    throw new Error(
-      `Failed to calculate position for mutation: ${mutation.mutationName}`
-    )
+    // ANTLR tokens expose the position of the FIRST character directly.
+    // The Stryker `end` position is exclusive (one past the last char), so
+    // we walk endToken.text to advance from the end token's own start.
+    // This correctly handles tokens that span newlines (multi-line string
+    // literals, block comments).
+    return {
+      start: {
+        line: start.line,
+        column: start.charPositionInLine + 1,
+      },
+      // ANTLR tokens always expose `text`; treat an undefined text as a
+      // programmer error rather than silently swallowing with an empty default.
+      end: advancePosition(end.text, end.line, end.charPositionInLine + 1),
+    }
   }
 
   private filterTestMethods(
@@ -283,7 +288,6 @@ export class MutationTestingService {
       this.apexClassName
     )) as unknown as ApexClass
     this.apexClassContent = apexClass.Body
-    this.lineOffsetIndex = new LineOffsetIndex(apexClass.Body)
     this.spinner.stop('Done')
     return apexClass
   }

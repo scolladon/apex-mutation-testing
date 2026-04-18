@@ -5,10 +5,7 @@ import { ApexClassRepository } from '../../../src/adapter/apexClassRepository.js
 import { ApexTestRunner } from '../../../src/adapter/apexTestRunner.js'
 import { SObjectDescribeRepository } from '../../../src/adapter/sObjectDescribeRepository.js'
 import { MutantGenerator } from '../../../src/service/mutantGenerator.js'
-import {
-  LineOffsetIndex,
-  MutationTestingService,
-} from '../../../src/service/mutationTestingService.js'
+import { MutationTestingService } from '../../../src/service/mutationTestingService.js'
 import {
   formatDuration,
   timeExecution,
@@ -68,19 +65,23 @@ describe('MutationTestingService', () => {
     mutationName: 'TestMutation',
     replacement: '0',
     target: {
+      // mockApexClass.Body is single-line; the '42' literal is at offset 60.
+      // ANTLR invariant: for a line-1 token, charPositionInLine == startIndex.
       startToken: {
         line: 1,
-        charPositionInLine: 50,
+        charPositionInLine: 60,
         tokenIndex: 5,
-        startIndex: 60, // Position of "42" in the string
-        stopIndex: 61, // End position of "42" (inclusive)
+        startIndex: 60,
+        stopIndex: 61,
+        text: '42',
       },
       endToken: {
         line: 1,
-        charPositionInLine: 51,
+        charPositionInLine: 60,
         tokenIndex: 5,
-        startIndex: 60, // Position of "42" in the string
-        stopIndex: 61, // End position of "42" (inclusive)
+        startIndex: 60,
+        stopIndex: 61,
+        text: '42',
       },
       text: '42',
     },
@@ -2170,9 +2171,10 @@ describe('MutationTestingService', () => {
       })
     })
 
-    // convertAbsoluteIndexToLineColumn has been replaced with LineOffsetIndex
-    // (Perf-6) which offers O(log n) lookup. Behavior is exercised through
-    // calculateMutationPosition tests below.
+    // Line/column conversion is now driven directly by ANTLR token metadata
+    // (token.line / token.charPositionInLine) plus advancePosition walking
+    // endToken.text. Behaviour is exercised through calculateMutationPosition
+    // tests below.
 
     describe('When formatRemainingTime is called', () => {
       it('Given completedCount is 0, When called, Then returns empty string', () => {
@@ -2975,22 +2977,31 @@ describe('MutationTestingService', () => {
       })
     })
 
-    // Column calculation is now covered by calculateMutationPosition tests
-    // that seed sut['lineOffsetIndex'] directly.
-
     describe('When calculateMutationPosition is verified with valid indices', () => {
-      // Use the real LineOffsetIndex — keeps the test honest. An inlined
-      // duplicate implementation would pass even if the production logic
-      // drifted from the spec.
-      it('Given mutation with valid start/end indices, When calculating position, Then returns correct start and end', () => {
-        // Arrange — 'hello world', startIndex=6, stopIndex=10
-        sut['lineOffsetIndex'] = new LineOffsetIndex('hello world')
+      // Positions come straight from ANTLR token metadata.
+      // start.line / start.charPositionInLine give the first-char position.
+      // end is produced by advancePosition(endToken.text, ...) so tokens
+      // spanning newlines (multi-line strings, block comments) still work.
+      it('Given single-line mutation span, When calculating position, Then reports start + end columns correctly', () => {
+        // Arrange — token 'world' at line 1, col 7 (0-indexed 6)
         const mutation = {
           mutationName: 'TestMutation',
           replacement: 'foo',
           target: {
-            startToken: { startIndex: 6, stopIndex: 10 },
-            endToken: { startIndex: 6, stopIndex: 10 },
+            startToken: {
+              line: 1,
+              charPositionInLine: 6,
+              startIndex: 6,
+              stopIndex: 10,
+              text: 'world',
+            },
+            endToken: {
+              line: 1,
+              charPositionInLine: 6,
+              startIndex: 6,
+              stopIndex: 10,
+              text: 'world',
+            },
             text: 'world',
           },
         }
@@ -3005,15 +3016,26 @@ describe('MutationTestingService', () => {
         expect(result.end).toEqual({ line: 1, column: 12 })
       })
 
-      it('Given mutation spanning two lines, When calculating position, Then end is on second line', () => {
-        // Arrange — 'line1\nline2', startIndex=0, stopIndex=10
-        sut['lineOffsetIndex'] = new LineOffsetIndex('line1\nline2')
+      it('Given endToken.text spanning a newline, When calculating position, Then end is on the next line', () => {
+        // Arrange — token text 'line1\nline2' at line 1, col 1
         const mutation = {
           mutationName: 'TestMutation',
           replacement: 'x',
           target: {
-            startToken: { startIndex: 0, stopIndex: 10 },
-            endToken: { startIndex: 0, stopIndex: 10 },
+            startToken: {
+              line: 1,
+              charPositionInLine: 0,
+              startIndex: 0,
+              stopIndex: 10,
+              text: 'line1\nline2',
+            },
+            endToken: {
+              line: 1,
+              charPositionInLine: 0,
+              startIndex: 0,
+              stopIndex: 10,
+              text: 'line1\nline2',
+            },
             text: 'line1\nline2',
           },
         }
@@ -3026,6 +3048,41 @@ describe('MutationTestingService', () => {
         // Assert
         expect(result.start).toEqual({ line: 1, column: 1 })
         expect(result.end).toEqual({ line: 2, column: 6 })
+      })
+
+      it('Given endToken.text is empty, When calculating position, Then end equals end-token start', () => {
+        // Defensive: ANTLR can emit zero-width tokens; advancePosition
+        // must not shift the cursor for an empty text.
+        const mutation = {
+          mutationName: 'TestMutation',
+          replacement: '',
+          target: {
+            startToken: {
+              line: 3,
+              charPositionInLine: 4,
+              startIndex: 20,
+              stopIndex: 24,
+              text: 'hello',
+            },
+            endToken: {
+              line: 3,
+              charPositionInLine: 9,
+              startIndex: 25,
+              stopIndex: 25,
+              text: '',
+            },
+            text: 'hello',
+          },
+        }
+
+        // Act
+        const result = sut['calculateMutationPosition'](
+          mutation as unknown as ApexMutation
+        )
+
+        // Assert
+        expect(result.start).toEqual({ line: 3, column: 5 })
+        expect(result.end).toEqual({ line: 3, column: 10 })
       })
     })
 
@@ -3124,7 +3181,7 @@ describe('MutationTestingService', () => {
         // Assert — id format: ${apexClassName}-${line}-${column}-${tokenIndex}-${timestamp}
         // mockMutation: line=1, charPositionInLine=50, tokenIndex=5
         const mutantId = result.mutants[0].id
-        expect(mutantId).toMatch(/^TestClass-1-50-5-\d+$/)
+        expect(mutantId).toMatch(/^TestClass-1-60-5-\d+$/)
       })
     })
 
@@ -3240,7 +3297,7 @@ describe('MutationTestingService', () => {
 
         // Assert — id format: ${apexClassName}-${line}-${column}-${tokenIndex}-${timestamp}
         const mutantId = result.mutants[0].id
-        expect(mutantId).toMatch(/^TestClass-1-50-5-\d+$/)
+        expect(mutantId).toMatch(/^TestClass-1-60-5-\d+$/)
       })
     })
 
@@ -3297,7 +3354,7 @@ describe('MutationTestingService', () => {
 
         // Assert — id uses startToken: line=1, charPositionInLine=50, tokenIndex=5
         const mutantId = result.mutants[0].id
-        expect(mutantId).toMatch(/^TestClass-1-50-5-\d+$/)
+        expect(mutantId).toMatch(/^TestClass-1-60-5-\d+$/)
       })
     })
 
@@ -4167,51 +4224,5 @@ describe('MutationTestingService', () => {
         expect(score).toBe(100)
       })
     })
-  })
-})
-
-describe('LineOffsetIndex', () => {
-  it('Given single-line source, When positionAt 0, Then returns line 1 column 1', () => {
-    // Arrange
-    const sut = new LineOffsetIndex('hello')
-
-    // Act
-    const result = sut.positionAt(0)
-
-    // Assert
-    expect(result).toEqual({ line: 1, column: 1 })
-  })
-
-  it('Given multi-line source, When positionAt the start of line 2, Then returns line 2 column 1', () => {
-    // Arrange — 'ab\ncd' => lineStarts=[0,3]; index 3 starts line 2
-    const sut = new LineOffsetIndex('ab\ncd')
-
-    // Act
-    const result = sut.positionAt(3)
-
-    // Assert
-    expect(result).toEqual({ line: 2, column: 1 })
-  })
-
-  it('Given multi-line source, When positionAt a mid-line index, Then returns line N column K', () => {
-    // Arrange — 'line1\nline2\nline3' => lineStarts=[0,6,12]; index 8 is 'n' of 'line2'
-    const sut = new LineOffsetIndex('line1\nline2\nline3')
-
-    // Act
-    const result = sut.positionAt(8)
-
-    // Assert
-    expect(result).toEqual({ line: 2, column: 3 })
-  })
-
-  it('Given source with trailing newline, When positionAt end, Then reports the empty line after the newline', () => {
-    // Arrange — 'ab\n' has lineStarts=[0,3]; index 3 is the start of the synthetic last line
-    const sut = new LineOffsetIndex('ab\n')
-
-    // Act
-    const result = sut.positionAt(3)
-
-    // Assert
-    expect(result).toEqual({ line: 2, column: 1 })
   })
 })
