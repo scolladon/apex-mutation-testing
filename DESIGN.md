@@ -347,14 +347,15 @@ makes subsequent calls `O(K)` where `K` is the subset that actually
 implements the hook. The cache is scoped to the Proxy instance, which is
 short-lived (one per `compute()` call), so it cannot go stale.
 
-### Line/Column Indexing
+### Line/Column Derivation
 
-`LineOffsetIndex` (in `mutationTestingService.ts`) precomputes the absolute
-offsets of every line start in the class body — one pass at fetch time.
-`positionAt(absIndex)` does a binary search in `O(log n)` to map an ANTLR
-token's `startIndex`/`stopIndex` to a `{ line, column }`. This replaces the
-previous `substring(0, idx).split('\n')` which was `O(n)` per mutation
-(quadratic over a mutation batch).
+ANTLR tokens already carry `line` (1-indexed) and `charPositionInLine`
+(0-indexed) for their first character, so the Stryker `start` position is
+read directly from `startToken`. The only computation needed is the `end`
+position, which is exclusive (one past the last char of the `endToken`).
+A small `advancePosition(text, startLine, startColumn)` helper walks
+`endToken.text` and advances the cursor, correctly handling tokens whose
+text spans newlines (multi-line string literals, block comments).
 
 ---
 
