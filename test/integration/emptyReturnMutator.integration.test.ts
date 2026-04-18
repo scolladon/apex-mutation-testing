@@ -66,7 +66,7 @@ describe('EmptyReturnMutator Integration', () => {
         new CaseInsensitiveInputStream('other', classContent)
       )
       const tokens = new CommonTokenStream(lexer)
-      mutantGenerator['tokenStream'] = tokens
+      // tokens passed directly to mutate below
 
       const typeRegistry = await buildTypeRegistry(classContent)
       const emptyReturnMutator = new EmptyReturnMutator(typeRegistry)
@@ -93,7 +93,7 @@ describe('EmptyReturnMutator Integration', () => {
         expect(emptyReturnMutations[0].replacement).toBe('0')
 
         // Test actual mutation
-        const result = mutantGenerator.mutate(emptyReturnMutations[0])
+        const result = mutantGenerator.mutate(emptyReturnMutations[0], tokens)
         expect(result).toContain('return 0;')
         expect(result).not.toContain('return 42;')
       }

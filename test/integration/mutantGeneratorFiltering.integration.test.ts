@@ -19,7 +19,7 @@ describe('MutantGenerator filtering integration', () => {
     const sut = new MutantGenerator()
 
     // Act
-    const result = sut.compute(apexCode, allLines)
+    const { mutations: result } = sut.compute(apexCode, allLines)
 
     // Assert
     const mutatorNames = new Set(result.map(m => m.mutationName))
@@ -33,7 +33,7 @@ describe('MutantGenerator filtering integration', () => {
     const sut = new MutantGenerator()
 
     // Act
-    const result = sut.compute(apexCode, allLines, undefined, {
+    const { mutations: result } = sut.compute(apexCode, allLines, undefined, {
       include: ['BoundaryCondition'],
     })
 
@@ -49,7 +49,7 @@ describe('MutantGenerator filtering integration', () => {
     const sut = new MutantGenerator()
 
     // Act
-    const result = sut.compute(apexCode, allLines, undefined, {
+    const { mutations: result } = sut.compute(apexCode, allLines, undefined, {
       exclude: ['Increment'],
     })
 

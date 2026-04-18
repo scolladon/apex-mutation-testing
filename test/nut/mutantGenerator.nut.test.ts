@@ -21,7 +21,7 @@ public class AuraExceptionExample {
 
       // Act
       const sut = new MutantGenerator()
-      const mutations = sut.compute(code, coveredLines, typeRegistry)
+      const { mutations } = sut.compute(code, coveredLines, typeRegistry)
 
       // Assert
       const uoiMutations = mutations.filter(

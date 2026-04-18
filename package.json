@@ -5,16 +5,17 @@
   "dependencies": {
     "@oclif/core": "^4.10.5",
     "@salesforce/apex-node": "^8.4.21",
-    "@salesforce/core": "^8.28.1",
+    "@salesforce/core": "^8.28.3",
     "@salesforce/sf-plugins-core": "^12.2.6",
     "@stryker-mutator/core": "^9.6.1",
     "antlr4ts": "^0.5.0-alpha.4",
     "apex-parser": "^2.17.0",
     "async": "^3.2.6",
+    "mutation-testing-elements": "^3.7.3",
     "re2": "^1.24.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.11",
+    "@biomejs/biome": "2.4.12",
     "@commitlint/config-conventional": "^20.5.0",
     "@oclif/plugin-help": "^6.2.44",
     "@salesforce/dev-config": "^4.3.3",
@@ -22,11 +23,11 @@
     "@types/async": "^3.2.25",
     "@vitest/coverage-v8": "^4.1.4",
     "husky": "^9.1.7",
-    "knip": "^6.4.0",
+    "knip": "^6.4.1",
     "oclif": "^4.23.0",
     "shx": "^0.4.0",
     "tslib": "^2.8.1",
-    "typescript": "^6.0.2",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.4",
     "wireit": "^0.14.12"
   },

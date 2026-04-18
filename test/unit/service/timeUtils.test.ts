@@ -40,20 +40,33 @@ describe('timeUtils', () => {
     describe('Given an async function with measurable delay', () => {
       describe('When timing its execution', () => {
         it('Then the duration reflects the elapsed time', async () => {
-          // Arrange
+          // Arrange — fake performance so duration is deterministic.
+          // Use a counter-driven stub so adding a third internal call
+          // (e.g. wrapping timeExecution in retry logic) cannot silently
+          // leak the real performance.now() and produce flaky numbers.
           const delayMs = 50
-          const fn = async () => {
-            await new Promise(resolve => setTimeout(resolve, delayMs))
-            return 'delayed'
-          }
+          const times = [1000, 1000 + delayMs]
+          let idx = 0
+          const performanceSpy = vi
+            .spyOn(performance, 'now')
+            .mockImplementation(() => {
+              if (idx >= times.length) {
+                throw new Error(
+                  `timeExecution made ${idx + 1} performance.now() calls; fixture expects ${times.length}`
+                )
+              }
+              return times[idx++]
+            })
+          const fn = async () => 'delayed'
 
           // Act
           const sut = await timeExecution(fn)
 
           // Assert
           expect(sut.result).toBe('delayed')
-          expect(sut.durationMs).toBeGreaterThanOrEqual(delayMs - 10)
-          expect(sut.durationMs).toBeLessThan(delayMs * 10)
+          expect(sut.durationMs).toBe(delayMs)
+          expect(idx).toBe(2) // exactly start + end reads
+          performanceSpy.mockRestore()
         })
       })
     })

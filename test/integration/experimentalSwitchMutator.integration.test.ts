@@ -47,8 +47,10 @@ describe('ExperimentalSwitchMutator Integration', () => {
         }
       `
 
-      // Act - cover the switch statement line
-      const mutations = parseAndMutate(code, new Set([4]))
+      // Act - cover the switch statement and when-clause body lines so the
+      // span-coverage check inside ExperimentalSwitchMutator admits the
+      // atomic swap mutation (lines 5-10 span both when clauses).
+      const mutations = parseAndMutate(code, new Set([4, 5, 6, 7, 8, 9, 10]))
 
       // Assert
       // 1 remove-else + 1 duplicate-first-into-else + 1 atomic swap (swaps both values at once)
@@ -97,8 +99,8 @@ describe('ExperimentalSwitchMutator Integration', () => {
         }
       `
 
-      // Act
-      const mutations = parseAndMutate(code, new Set([4]))
+      // Act — include when-clause lines so span coverage passes
+      const mutations = parseAndMutate(code, new Set([4, 5, 6, 7, 8, 9, 10]))
 
       // Assert - only 1 atomic swap mutation (no remove-else or duplicate)
       expect(mutations.length).toBe(1)
@@ -132,8 +134,8 @@ describe('ExperimentalSwitchMutator Integration', () => {
         }
       `
 
-      // Act
-      const mutations = parseAndMutate(code, new Set([4]))
+      // Act — include when-clause lines so span coverage passes
+      const mutations = parseAndMutate(code, new Set([4, 5, 6, 7, 8, 9, 10]))
 
       // Assert
       // 1 remove-else + 1 duplicate + 1 atomic swap for type cases
@@ -170,8 +172,12 @@ describe('ExperimentalSwitchMutator Integration', () => {
         }
       `
 
-      // Act
-      const mutations = parseAndMutate(code, new Set([4]))
+      // Act — include all when-clause lines so span coverage passes for
+      // both adjacent pairs (1,2) and (2,3)
+      const mutations = parseAndMutate(
+        code,
+        new Set([4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
+      )
 
       // Assert — 2 atomic swaps: (1,2) and (2,3)
       expect(mutations.length).toBe(2)
@@ -193,6 +199,34 @@ describe('ExperimentalSwitchMutator Integration', () => {
           !m.replacement.includes('when1')
       )
       expect(swap23).toBeDefined()
+    })
+  })
+
+  describe('Given Apex code with switch line covered but when-clauses uncovered', () => {
+    it('Then does not generate the atomic swap mutation (span uncovered)', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public void test(Integer value) {
+            switch on value {
+              when 1 {
+                handle1();
+              }
+              when 2 {
+                handle2();
+              }
+            }
+          }
+        }
+      `
+
+      // Act — only the switch line is marked covered; the span of the two
+      // when-clauses (lines 5-10) is entirely uncovered. H1 guard must
+      // reject the atomic swap.
+      const mutations = parseAndMutate(code, new Set([4]))
+
+      // Assert — no mutations emitted because the span has zero coverage
+      expect(mutations).toHaveLength(0)
     })
   })
 

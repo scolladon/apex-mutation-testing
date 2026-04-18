@@ -11,6 +11,16 @@ import type { ApexMethod } from '../type/ApexMethod.js'
 import { classifyApexType, TypeRegistry } from '../type/TypeRegistry.js'
 import { TypeMatcher } from './typeMatcher.js'
 
+/**
+ * Result of a full parse + type analysis. The tree and tokenStream are
+ * reused by MutantGenerator so we parse the class exactly once per run.
+ */
+export interface TypeAnalysisResult {
+  typeRegistry: TypeRegistry
+  tree: ParserRuleContext
+  tokenStream: CommonTokenStream
+}
+
 // Apex catch clause grammar: catch ( ExceptionType varName ) block
 // Indices from start: [0]=catch [1]=( [2]=ExceptionType [3]=varName [4]=) [5]=block
 // Minimum 6 children; ExceptionType and varName are at fixed offsets from the end.
@@ -99,7 +109,44 @@ class TypeDiscoverListener implements ApexParserListener {
       methodInfo.elementType = elementType
     }
 
-    this._methodTypeTable.set(methodName, methodInfo)
+    // Key by name+arity so Apex overloads do not clobber one another.
+    // Apex allows overloaded methods with identical names but different parameter counts;
+    // keying by name alone caused the last-parsed overload to win silently.
+    const arity = this.countFormalParameters(ctx)
+    const key = `${methodName}/${arity}`
+    this._methodTypeTable.set(key, methodInfo)
+
+    // Preserve name-only lookup for callers that have no arity context.
+    // Name-only lookup resolves to the first declared overload (deterministic).
+    if (!this._methodTypeTable.has(methodName)) {
+      this._methodTypeTable.set(methodName, methodInfo)
+    }
+  }
+
+  private countFormalParameters(ctx: ParserRuleContext): number {
+    // Locate formalParameters child (child 3 in `<returnType> <name> ( formalParameters )`)
+    // and count comma-separated entries. Falls back to 0 if the shape is unexpected.
+    /* c8 ignore next -- defensive: parser always populates children on a method decl */
+    const children = ctx.children ?? []
+    for (const child of children) {
+      const text = child.text
+      if (text?.startsWith('(') && text.endsWith(')')) {
+        const inner = text.slice(1, -1).trim()
+        if (inner.length === 0) return 0
+        // crude param count — commas at depth 0 only
+        let depth = 0
+        let count = 1
+        for (let i = 0; i < inner.length; i++) {
+          const ch = inner[i]
+          if (ch === '<' || ch === '(') depth++
+          else if (ch === '>' || ch === ')') depth--
+          else if (ch === ',' && depth === 0) count++
+        }
+        return count
+      }
+    }
+    /* c8 ignore next -- defensive: well-formed method declaration always contains (...) */
+    return 0
   }
 
   exitMethodDeclaration(_ctx: ParserRuleContext): void {
@@ -188,27 +235,30 @@ export class TypeDiscoverer {
   }
 
   async analyze(code: string): Promise<TypeRegistry> {
+    const { typeRegistry } = await this.analyzeFull(code)
+    return typeRegistry
+  }
+
+  async analyzeFull(code: string): Promise<TypeAnalysisResult> {
     const lexer = new ApexLexer(new CaseInsensitiveInputStream('other', code))
     const tokenStream = new CommonTokenStream(lexer)
     const parser = new ApexParser(tokenStream)
-    const tree = parser.compilationUnit()
+    const tree = parser.compilationUnit() as ParserRuleContext
 
     const listener = new TypeDiscoverListener(this.matchers)
-
-    ParseTreeWalker.DEFAULT.walk(
-      listener as ApexParserListener,
-      tree as ParserRuleContext
-    )
+    ParseTreeWalker.DEFAULT.walk(listener as ApexParserListener, tree)
 
     for (const matcher of this.matchers) {
       await matcher.populate?.()
     }
 
-    return new TypeRegistry(
+    const typeRegistry = new TypeRegistry(
       listener.methodTypeTable,
       listener.variableScopes,
       listener.classFields,
       this.matchers
     )
+
+    return { typeRegistry, tree, tokenStream }
   }
 }

@@ -13,6 +13,9 @@ export default {
   ignoreDependencies: [
     '@commitlint/config-conventional',
     '@stryker-mutator/api',
+    // Resolved via createRequire + readFile in src/reporter/HTMLReporter.ts;
+    // knip cannot see the runtime file read.
+    'mutation-testing-elements',
   ],
   ignoreBinaries: ['commitlint', 'npm-check-updates', 'sf'],
   ignoreUnresolved: ['test/e2e'],

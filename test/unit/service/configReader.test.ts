@@ -5,6 +5,10 @@ import { ApexMutationParameter } from '../../../src/type/ApexMutationParameter.j
 
 vi.mock('node:fs/promises')
 
+// Local re2 mock — distinct purpose from test/setup/mutation-setup.ts:
+// this file needs to exercise the throw paths inside compileSkipPatterns,
+// so we stub RE2 to throw on demand. The Stryker-only setup replaces RE2
+// entirely with a RegExp wrapper for a different reason (native-addon + worker_threads).
 let re2Behavior: 'noop' | 'throw-error' | 'throw-string' = 'noop'
 vi.mock('re2', () => ({
   default: function MockRE2() {
@@ -573,6 +577,28 @@ describe('ConfigReader', () => {
 
       // Assert
       expect(sut).toBeUndefined()
+    })
+
+    it('Given a non-numeric range bound, When parsing, Then throws (defensive NaN guard)', () => {
+      // Arrange & Act & Assert — H4 hardening: the static method must reject
+      // NaN inputs itself, not rely on a prior validate() pass.
+      expect(() => ConfigReader.parseLineRanges(['foo-bar'])).toThrow(
+        /Invalid line range 'foo-bar'/
+      )
+    })
+
+    it('Given a non-numeric single value, When parsing, Then throws', () => {
+      // Arrange & Act & Assert
+      expect(() => ConfigReader.parseLineRanges(['abc'])).toThrow(
+        /Invalid line range 'abc'/
+      )
+    })
+
+    it('Given an inverted range (start > end), When parsing, Then throws', () => {
+      // Arrange & Act & Assert
+      expect(() => ConfigReader.parseLineRanges(['10-5'])).toThrow(
+        /Invalid line range '10-5'/
+      )
     })
 
     it('Given overlapping ranges, When parsing, Then returns deduplicated set', () => {

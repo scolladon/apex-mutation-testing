@@ -77,7 +77,11 @@ export class ExperimentalSwitchMutator extends BaseListener {
         const originalText = currentCase.text + nextCase.text
         const swappedText = `when ${nextValue.text} ${currentBlock.text}when ${currentValue.text} ${nextBlock.text}`
 
-        if (currentCase.start && nextCase.stop) {
+        if (
+          currentCase.start &&
+          nextCase.stop &&
+          this.isSpanCovered(currentCase.start.line, nextCase.stop.line)
+        ) {
           this.createMutation(
             currentCase.start,
             nextCase.stop,
@@ -87,5 +91,19 @@ export class ExperimentalSwitchMutator extends BaseListener {
         }
       }
     }
+  }
+
+  /**
+   * Swap-span mutation spans two when-clauses. The MutationListener only
+   * verifies the switch-statement start line is covered; this method asserts
+   * coverage for at least one line inside each when-clause so we never emit
+   * a mutation whose replacement body is wholly uncovered.
+   */
+  private isSpanCovered(startLine: number, endLine: number): boolean {
+    if (!this._coveredLines) return true
+    for (let line = startLine; line <= endLine; line++) {
+      if (this._coveredLines.has(line)) return true
+    }
+    return false
   }
 }

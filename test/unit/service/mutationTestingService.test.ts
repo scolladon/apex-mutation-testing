@@ -28,6 +28,20 @@ vi.mock('../../../src/service/typeDiscoverer.js')
 vi.mock('../../../src/service/timeUtils.js')
 vi.mock('../../../src/service/typeMatcher.js')
 
+// Hoisted so both the mock registration (inside beforeEach) and the
+// toHaveBeenCalledWith identity assertions can share the same references.
+// Perf-3 requires MutationTestingService to pass the very same tree/tokenStream
+// produced by analyzeFull into MutantGenerator.compute's preParsed arg — this
+// identity is the test that catches a regression where someone re-parses.
+const mockTypeRegistry = {}
+const mockAnalyzeFullResult = {
+  typeRegistry: mockTypeRegistry,
+  // Inert stubs — the service never calls methods on these; they exist to
+  // satisfy the interface shape when unit tests mock MutantGenerator.compute.
+  tree: {} as never,
+  tokenStream: {} as never,
+}
+
 describe('MutationTestingService', () => {
   let sut: MutationTestingService
   let progress: Progress
@@ -51,19 +65,23 @@ describe('MutationTestingService', () => {
     mutationName: 'TestMutation',
     replacement: '0',
     target: {
+      // mockApexClass.Body is single-line; the '42' literal is at offset 60.
+      // ANTLR invariant: for a line-1 token, charPositionInLine == startIndex.
       startToken: {
         line: 1,
-        charPositionInLine: 50,
+        charPositionInLine: 60,
         tokenIndex: 5,
-        startIndex: 60, // Position of "42" in the string
-        stopIndex: 61, // End position of "42" (inclusive)
+        startIndex: 60,
+        stopIndex: 61,
+        text: '42',
       },
       endToken: {
         line: 1,
-        charPositionInLine: 51,
+        charPositionInLine: 60,
         tokenIndex: 5,
-        startIndex: 60, // Position of "42" in the string
-        stopIndex: 61, // End position of "42" (inclusive)
+        startIndex: 60,
+        stopIndex: 61,
+        text: '42',
       },
       text: '42',
     },
@@ -102,11 +120,11 @@ describe('MutationTestingService', () => {
       }
     )
 
-    const mockTypeRegistry = {}
     vi.mocked(TypeDiscoverer).mockImplementation(
       class {
         withMatcher = vi.fn().mockReturnThis()
         analyze = vi.fn().mockResolvedValue(mockTypeRegistry)
+        analyzeFull = vi.fn().mockResolvedValue(mockAnalyzeFullResult)
       }
     )
 
@@ -341,8 +359,12 @@ describe('MutationTestingService', () => {
             })
             update = vi.fn().mockImplementation(() => {
               updateCallCount++
+              // Calls 1-2: verify compile passes; call 3: mutation deploy may
+              // fail (updateError); call 4+ (rollback) must succeed so the
+              // rollback-failure propagation isn't what the test is asserting.
               if (updateCallCount <= 2) return Promise.resolve({})
-              if (updateError) return Promise.reject(updateError)
+              if (updateCallCount === 3 && updateError)
+                return Promise.reject(updateError)
               return Promise.resolve({})
             })
             getApexClassDependencies = vi.fn().mockResolvedValue([
@@ -366,7 +388,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -401,6 +425,77 @@ describe('MutationTestingService', () => {
         expect(progress.start).toHaveBeenCalled()
         expect(progress.finish).toHaveBeenCalled()
       })
+
+      // Rollback-failure variant: each error classification path is also
+      // exercised with a failing rollback so we catch a regression where the
+      // service swallows rollback errors or leaks partial results on throw.
+      // See Test-I1: the happy-path parametric test above allowed call 4+ to
+      // always resolve, which hid this surface.
+      it.each(
+        testCases
+      )('should re-throw rollback failure while still classifying the mutant ($description)', async ({
+        testResult,
+        error,
+        updateError,
+      }) => {
+        // Arrange
+        let updateCallCount = 0
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockImplementation(() => {
+              updateCallCount++
+              if (updateCallCount <= 2) return Promise.resolve({})
+              if (updateCallCount === 3 && updateError)
+                return Promise.reject(updateError)
+              if (updateCallCount === 3) return Promise.resolve({})
+              // Call 4 = rollback — always fails in this variant.
+              return Promise.reject(new Error('rollback network down'))
+            })
+            getApexClassDependencies = vi
+              .fn()
+              .mockResolvedValue([] as MetadataComponentDependency[])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi.fn().mockReturnValue({
+              mutations: [mockMutation],
+              tokenStream: {},
+            })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockImplementation(() => {
+              if (error) return Promise.reject(error)
+              return Promise.resolve(testResult)
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+            })
+          }
+        )
+
+        // Act & Assert — rollback failure must propagate, never silently swallow
+        await expect(sut.process()).rejects.toThrow(
+          /Rollback of 'TestClass' failed/
+        )
+        // rollback was in fact attempted (call 4)
+        expect(updateCallCount).toBe(4)
+        // A warning spinner message precedes the throw
+        expect(spinner.stop).toHaveBeenCalledWith(
+          expect.stringContaining('Rollback FAILED')
+        )
+      })
     })
 
     describe('When dry-run is enabled', () => {
@@ -421,7 +516,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn()
           }
         )
@@ -538,7 +635,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([]) // No mutations
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [], tokenStream: {} }) // No mutations
             mutate = vi.fn()
           }
         )
@@ -682,7 +781,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -736,7 +837,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -784,7 +887,10 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation, secondMutation])
+            compute = vi.fn().mockReturnValue({
+              mutations: [mockMutation, secondMutation],
+              tokenStream: {},
+            })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -934,7 +1040,9 @@ describe('MutationTestingService', () => {
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
-        const mockComputeFn = vi.fn().mockReturnValue([mockMutation])
+        const mockComputeFn = vi
+          .fn()
+          .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
         vi.mocked(MutantGenerator).mockImplementation(
           class {
             compute = mockComputeFn
@@ -995,7 +1103,9 @@ describe('MutationTestingService', () => {
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
-        const mockComputeFn = vi.fn().mockReturnValue([mockMutation])
+        const mockComputeFn = vi
+          .fn()
+          .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
         vi.mocked(MutantGenerator).mockImplementation(
           class {
             compute = mockComputeFn
@@ -1056,7 +1166,9 @@ describe('MutationTestingService', () => {
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
-        const mockComputeFn = vi.fn().mockReturnValue([mockMutation])
+        const mockComputeFn = vi
+          .fn()
+          .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
         vi.mocked(MutantGenerator).mockImplementation(
           class {
             compute = mockComputeFn
@@ -1108,7 +1220,11 @@ describe('MutationTestingService', () => {
           expect.anything(),
           undefined,
           [],
-          undefined
+          undefined,
+          expect.objectContaining({
+            tree: mockAnalyzeFullResult.tree,
+            tokenStream: mockAnalyzeFullResult.tokenStream,
+          })
         )
       })
     })
@@ -1126,7 +1242,9 @@ describe('MutationTestingService', () => {
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
-        const mockComputeFn = vi.fn().mockReturnValue([mockMutation])
+        const mockComputeFn = vi
+          .fn()
+          .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
         vi.mocked(MutantGenerator).mockImplementation(
           class {
             compute = mockComputeFn
@@ -1175,7 +1293,11 @@ describe('MutationTestingService', () => {
           expect.anything(),
           { include: ['ArithmeticOperator', 'BoundaryCondition'] },
           [],
-          undefined
+          undefined,
+          expect.objectContaining({
+            tree: mockAnalyzeFullResult.tree,
+            tokenStream: mockAnalyzeFullResult.tokenStream,
+          })
         )
       })
     })
@@ -1193,7 +1315,9 @@ describe('MutationTestingService', () => {
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
-        const mockComputeFn = vi.fn().mockReturnValue([mockMutation])
+        const mockComputeFn = vi
+          .fn()
+          .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
         vi.mocked(MutantGenerator).mockImplementation(
           class {
             compute = mockComputeFn
@@ -1242,7 +1366,11 @@ describe('MutationTestingService', () => {
           expect.anything(),
           { exclude: ['ArithmeticOperator'] },
           [],
-          undefined
+          undefined,
+          expect.objectContaining({
+            tree: mockAnalyzeFullResult.tree,
+            tokenStream: mockAnalyzeFullResult.tokenStream,
+          })
         )
       })
     })
@@ -1359,7 +1487,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -1541,7 +1671,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -1589,7 +1721,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn()
           }
         )
@@ -1671,7 +1805,7 @@ describe('MutationTestingService', () => {
     })
 
     describe('When rollback fails during process', () => {
-      it('Given rollback throws, When processing completes, Then spinner shows rollback failure message', async () => {
+      it('Given rollback throws, When processing completes, Then the rollback error is re-thrown and spinner shows a warning', async () => {
         // Arrange
         let updateCallCount = 0
         vi.mocked(ApexClassRepository).mockImplementation(
@@ -1693,7 +1827,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -1717,12 +1853,67 @@ describe('MutationTestingService', () => {
           }
         )
 
-        // Act
-        await sut.process()
-
-        // Assert — rollback failure message should be shown, not a thrown error
+        // Act & Assert — rollback error must propagate so CI/CLI exits non-zero.
+        // The class is left mutated on the org; the user must redeploy manually,
+        // so silencing the failure would be dangerous.
+        await expect(sut.process()).rejects.toThrow(
+          /Rollback of 'TestClass' failed/
+        )
+        // Spinner shows a warning mentioning mutated state before the throw
         expect(spinner.stop).toHaveBeenCalledWith(
-          'Class not rolled back, please do it manually'
+          expect.stringContaining('Rollback FAILED')
+        )
+      })
+
+      it('Given rollback rejects a non-Error (string) value, Then String(error) is used as cause', async () => {
+        // Arrange — this exercises the `instanceof Error ? error.message : String(error)` branch
+        let updateCallCount = 0
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockImplementation(() => {
+              updateCallCount++
+              if (updateCallCount <= 3) return Promise.resolve({})
+              // rollback path — rejects with a string, not Error
+              return Promise.reject('plain string rollback failure')
+            })
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+            })
+          }
+        )
+
+        // Act & Assert — the string error is coerced to String(error)
+        await expect(sut.process()).rejects.toThrow(
+          /plain string rollback failure/
         )
       })
     })
@@ -1742,7 +1933,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -1785,7 +1978,9 @@ describe('MutationTestingService', () => {
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
-        const mockComputeFn = vi.fn().mockReturnValue([mockMutation])
+        const mockComputeFn = vi
+          .fn()
+          .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
         vi.mocked(MutantGenerator).mockImplementation(
           class {
             compute = mockComputeFn
@@ -1822,7 +2017,11 @@ describe('MutationTestingService', () => {
           expect.anything(),
           undefined,
           [],
-          undefined
+          undefined,
+          expect.objectContaining({
+            tree: mockAnalyzeFullResult.tree,
+            tokenStream: mockAnalyzeFullResult.tokenStream,
+          })
         )
       })
     })
@@ -1847,7 +2046,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -1893,7 +2094,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -1936,7 +2139,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -1966,36 +2171,10 @@ describe('MutationTestingService', () => {
       })
     })
 
-    describe('When convertAbsoluteIndexToLineColumn is called', () => {
-      it('Given content with newlines, When converting index on second line, Then column resets per line', () => {
-        // Arrange
-        const content = 'line1\nline2\nline3'
-        // Index 6 is 'l' of 'line2' => line 2, column 1
-        const result = sut['convertAbsoluteIndexToLineColumn'](content, 6)
-
-        // Assert
-        expect(result).toEqual({ line: 2, column: 1 })
-      })
-
-      it('Given single-line content, When converting index 0, Then line is 1 and column is 1', () => {
-        // Arrange
-        const content = 'hello'
-        const result = sut['convertAbsoluteIndexToLineColumn'](content, 0)
-
-        // Assert
-        expect(result).toEqual({ line: 1, column: 1 })
-      })
-
-      it('Given single-line content, When converting index at end, Then column equals content length plus 1', () => {
-        // Arrange
-        const content = 'hello'
-        // index 5 (after last char) => line 1, column 6
-        const result = sut['convertAbsoluteIndexToLineColumn'](content, 5)
-
-        // Assert
-        expect(result).toEqual({ line: 1, column: 6 })
-      })
-    })
+    // Line/column conversion is now driven directly by ANTLR token metadata
+    // (token.line / token.charPositionInLine) plus advancePosition walking
+    // endToken.text. Behaviour is exercised through calculateMutationPosition
+    // tests below.
 
     describe('When formatRemainingTime is called', () => {
       it('Given completedCount is 0, When called, Then returns empty string', () => {
@@ -2051,7 +2230,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -2231,7 +2412,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -2350,6 +2533,8 @@ describe('MutationTestingService', () => {
             update = vi.fn().mockImplementation(() => {
               updateCallCount++
               if (updateCallCount <= 2) return Promise.resolve({})
+              // rollback (call 4) must succeed; only the mutation deploy (call 3) fails
+              if (updateCallCount >= 4) return Promise.resolve({})
               return Promise.reject(
                 new Error('Deployment failed: Invalid syntax')
               )
@@ -2361,7 +2546,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -2415,7 +2602,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -2469,7 +2658,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -2523,7 +2714,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -2578,7 +2771,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -2648,7 +2843,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -2706,7 +2903,10 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation, secondMutation])
+            compute = vi.fn().mockReturnValue({
+              mutations: [mockMutation, secondMutation],
+              tokenStream: {},
+            })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -2753,7 +2953,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [], tokenStream: {} })
             mutate = vi.fn()
           }
         )
@@ -2775,71 +2977,38 @@ describe('MutationTestingService', () => {
       })
     })
 
-    describe('When convertAbsoluteIndexToLineColumn column calculation is verified', () => {
-      it('Given content with two lines, When converting index at start of second line, Then line is 2 and column is 1', () => {
-        // Arrange — 'ab\ncd', index 3 = 'c' (start of line 2)
-        const content = 'ab\ncd'
-
-        // Act
-        const result = sut['convertAbsoluteIndexToLineColumn'](content, 3)
-
-        // Assert
-        expect(result).toEqual({ line: 2, column: 1 })
-      })
-
-      it('Given content with two lines, When converting index mid-second-line, Then column reflects position within that line', () => {
-        // Arrange — 'ab\ncd', index 4 = 'd' (second char of line 2)
-        const content = 'ab\ncd'
-
-        // Act
-        const result = sut['convertAbsoluteIndexToLineColumn'](content, 4)
-
-        // Assert
-        expect(result).toEqual({ line: 2, column: 2 })
-      })
-
-      it('Given content with three lines, When converting index 0, Then line is 1 and column is 1', () => {
-        // Arrange
-        const content = 'a\nb\nc'
-
-        // Act
-        const result = sut['convertAbsoluteIndexToLineColumn'](content, 0)
-
-        // Assert
-        expect(result).toEqual({ line: 1, column: 1 })
-      })
-
-      it('Given content, When converting mid-first-line index, Then column equals chars before + 1', () => {
-        // Arrange — 'hello', index 2 = 'l'
-        const content = 'hello'
-
-        // Act
-        const result = sut['convertAbsoluteIndexToLineColumn'](content, 2)
-
-        // Assert — substring(0,2) = 'he', split('\n') = ['he'], length=1, last el length=2, +1=3
-        expect(result).toEqual({ line: 1, column: 3 })
-      })
-    })
-
     describe('When calculateMutationPosition is verified with valid indices', () => {
-      it('Given mutation with valid start/end indices, When calculating position, Then returns correct start and end', () => {
-        // Arrange — 'hello world', startIndex=6, stopIndex=10
-        // start: substring(0,6)='hello ', lines=['hello '], line=1, col=7
-        // end: substring(0,11)='hello world', lines=['hello world'], line=1, col=12
+      // Positions come straight from ANTLR token metadata.
+      // start.line / start.charPositionInLine give the first-char position.
+      // end is produced by advancePosition(endToken.text, ...) so tokens
+      // spanning newlines (multi-line strings, block comments) still work.
+      it('Given single-line mutation span, When calculating position, Then reports start + end columns correctly', () => {
+        // Arrange — token 'world' at line 1, col 7 (0-indexed 6)
         const mutation = {
           mutationName: 'TestMutation',
           replacement: 'foo',
           target: {
-            startToken: { startIndex: 6, stopIndex: 10 },
-            endToken: { startIndex: 6, stopIndex: 10 },
+            startToken: {
+              line: 1,
+              charPositionInLine: 6,
+              startIndex: 6,
+              stopIndex: 10,
+              text: 'world',
+            },
+            endToken: {
+              line: 1,
+              charPositionInLine: 6,
+              startIndex: 6,
+              stopIndex: 10,
+              text: 'world',
+            },
             text: 'world',
           },
         }
 
         // Act
         const result = sut['calculateMutationPosition'](
-          mutation as unknown as ApexMutation,
-          'hello world'
+          mutation as unknown as ApexMutation
         )
 
         // Assert
@@ -2847,29 +3016,73 @@ describe('MutationTestingService', () => {
         expect(result.end).toEqual({ line: 1, column: 12 })
       })
 
-      it('Given mutation spanning two lines, When calculating position, Then end is on second line', () => {
-        // Arrange — 'line1\nline2', startIndex=0, stopIndex=10
-        // start: substring(0,0)='', lines=[''], line=1, col=1
-        // end: substring(0,11)='line1\nline2', lines=['line1','line2'], line=2, col=6
+      it('Given endToken.text spanning a newline, When calculating position, Then end is on the next line', () => {
+        // Arrange — token text 'line1\nline2' at line 1, col 1
         const mutation = {
           mutationName: 'TestMutation',
           replacement: 'x',
           target: {
-            startToken: { startIndex: 0, stopIndex: 10 },
-            endToken: { startIndex: 0, stopIndex: 10 },
+            startToken: {
+              line: 1,
+              charPositionInLine: 0,
+              startIndex: 0,
+              stopIndex: 10,
+              text: 'line1\nline2',
+            },
+            endToken: {
+              line: 1,
+              charPositionInLine: 0,
+              startIndex: 0,
+              stopIndex: 10,
+              text: 'line1\nline2',
+            },
             text: 'line1\nline2',
           },
         }
 
         // Act
         const result = sut['calculateMutationPosition'](
-          mutation as unknown as ApexMutation,
-          'line1\nline2'
+          mutation as unknown as ApexMutation
         )
 
         // Assert
         expect(result.start).toEqual({ line: 1, column: 1 })
         expect(result.end).toEqual({ line: 2, column: 6 })
+      })
+
+      it('Given endToken.text is empty, When calculating position, Then end equals end-token start', () => {
+        // Defensive: ANTLR can emit zero-width tokens; advancePosition
+        // must not shift the cursor for an empty text.
+        const mutation = {
+          mutationName: 'TestMutation',
+          replacement: '',
+          target: {
+            startToken: {
+              line: 3,
+              charPositionInLine: 4,
+              startIndex: 20,
+              stopIndex: 24,
+              text: 'hello',
+            },
+            endToken: {
+              line: 3,
+              charPositionInLine: 9,
+              startIndex: 25,
+              stopIndex: 25,
+              text: '',
+            },
+            text: 'hello',
+          },
+        }
+
+        // Act
+        const result = sut['calculateMutationPosition'](
+          mutation as unknown as ApexMutation
+        )
+
+        // Assert
+        expect(result.start).toEqual({ line: 3, column: 5 })
+        expect(result.end).toEqual({ line: 3, column: 10 })
       })
     })
 
@@ -2936,7 +3149,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -2966,7 +3181,7 @@ describe('MutationTestingService', () => {
         // Assert — id format: ${apexClassName}-${line}-${column}-${tokenIndex}-${timestamp}
         // mockMutation: line=1, charPositionInLine=50, tokenIndex=5
         const mutantId = result.mutants[0].id
-        expect(mutantId).toMatch(/^TestClass-1-50-5-\d+$/)
+        expect(mutantId).toMatch(/^TestClass-1-60-5-\d+$/)
       })
     })
 
@@ -2985,7 +3200,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -3043,6 +3260,8 @@ describe('MutationTestingService', () => {
             update = vi.fn().mockImplementation(() => {
               updateCallCount++
               if (updateCallCount <= 2) return Promise.resolve({})
+              // rollback (call 4) must succeed; only the mutation deploy (call 3) fails
+              if (updateCallCount >= 4) return Promise.resolve({})
               return Promise.reject(
                 new Error('Deployment failed: syntax error')
               )
@@ -3054,7 +3273,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -3076,7 +3297,7 @@ describe('MutationTestingService', () => {
 
         // Assert — id format: ${apexClassName}-${line}-${column}-${tokenIndex}-${timestamp}
         const mutantId = result.mutants[0].id
-        expect(mutantId).toMatch(/^TestClass-1-50-5-\d+$/)
+        expect(mutantId).toMatch(/^TestClass-1-60-5-\d+$/)
       })
     })
 
@@ -3097,7 +3318,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn()
           }
         )
@@ -3131,7 +3354,7 @@ describe('MutationTestingService', () => {
 
         // Assert — id uses startToken: line=1, charPositionInLine=50, tokenIndex=5
         const mutantId = result.mutants[0].id
-        expect(mutantId).toMatch(/^TestClass-1-50-5-\d+$/)
+        expect(mutantId).toMatch(/^TestClass-1-60-5-\d+$/)
       })
     })
 
@@ -3221,6 +3444,8 @@ describe('MutationTestingService', () => {
             update = vi.fn().mockImplementation(() => {
               updateCallCount++
               if (updateCallCount <= 2) return Promise.resolve({})
+              // rollback (call 4) must succeed; only the mutation deploy (call 3) fails
+              if (updateCallCount >= 4) return Promise.resolve({})
               return Promise.reject(
                 new Error('Deployment failed: Invalid syntax')
               )
@@ -3232,7 +3457,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -3280,7 +3507,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -3334,7 +3563,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -3387,7 +3618,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -3433,7 +3666,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -3482,7 +3717,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -3536,7 +3773,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -3673,7 +3912,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -3714,6 +3955,8 @@ describe('MutationTestingService', () => {
             update = vi.fn().mockImplementation(() => {
               updateCallCount++
               if (updateCallCount <= 2) return Promise.resolve({})
+              // rollback (call 4) must succeed; only the mutation deploy (call 3) fails
+              if (updateCallCount >= 4) return Promise.resolve({})
               return Promise.reject(
                 new Error('Deployment failed: type mismatch')
               )
@@ -3723,7 +3966,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -3768,7 +4013,9 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(MutantGenerator).mockImplementation(
           class {
-            compute = vi.fn().mockReturnValue([mockMutation])
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
             mutate = vi.fn().mockReturnValue('mutated code')
           }
         )
@@ -3823,7 +4070,9 @@ describe('MutationTestingService', () => {
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
-        const mockComputeFn = vi.fn().mockReturnValue([mockMutation])
+        const mockComputeFn = vi
+          .fn()
+          .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
         vi.mocked(MutantGenerator).mockImplementation(
           class {
             compute = mockComputeFn
@@ -3886,7 +4135,9 @@ describe('MutationTestingService', () => {
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
-        const mockComputeFn = vi.fn().mockReturnValue([mockMutation])
+        const mockComputeFn = vi
+          .fn()
+          .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
         vi.mocked(MutantGenerator).mockImplementation(
           class {
             compute = mockComputeFn

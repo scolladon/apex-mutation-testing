@@ -51,6 +51,11 @@ jobs:
         run: npm run test:perf
 
       - name: Compare against baseline (same runner)
+        # Informational only — regressions must not fail the PR pipeline.
+        # The same-runner comparison has non-trivial variance on public
+        # GitHub runners (~20% on antlr parse benches is routine), and
+        # the comparison is already posted as a PR comment for humans.
+        continue-on-error: true
         if: ${{ !inputs.auto-push }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -80,11 +80,22 @@ export class ConfigReader {
     for (const range of lines) {
       if (range.includes('-')) {
         const [start, end] = range.split('-').map(Number)
+        if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) {
+          throw new Error(
+            `Invalid line range '${range}': must be a number or range (e.g., '10' or '1-10')`
+          )
+        }
         for (let i = start; i <= end; i++) {
           result.add(i)
         }
       } else {
-        result.add(Number(range))
+        const value = Number(range)
+        if (!Number.isFinite(value)) {
+          throw new Error(
+            `Invalid line range '${range}': must be a number or range (e.g., '10' or '1-10')`
+          )
+        }
+        result.add(value)
       }
     }
     return result
