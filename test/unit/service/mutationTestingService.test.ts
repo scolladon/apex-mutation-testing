@@ -4224,5 +4224,278 @@ describe('MutationTestingService', () => {
         expect(score).toBe(100)
       })
     })
+
+    describe('When mutationGrouping is enabled', () => {
+      // Two mutations on different lines, exercised by different test methods.
+      // DSATUR collapses them into one group since their tests don't overlap.
+      const mutationLine1 = {
+        ...mockMutation,
+        mutationName: 'M1',
+        replacement: '0',
+        target: {
+          ...mockMutation.target,
+          startToken: { ...mockMutation.target.startToken, line: 1 },
+          endToken: { ...mockMutation.target.endToken, line: 1 },
+        },
+      }
+      const mutationLine2 = {
+        ...mockMutation,
+        mutationName: 'M2',
+        replacement: '1',
+        target: {
+          ...mockMutation.target,
+          startToken: {
+            ...mockMutation.target.startToken,
+            line: 2,
+            tokenIndex: 9,
+            startIndex: 100,
+            stopIndex: 101,
+          },
+          endToken: {
+            ...mockMutation.target.endToken,
+            line: 2,
+            tokenIndex: 9,
+            startIndex: 100,
+            stopIndex: 101,
+          },
+        },
+      }
+      const groupedTwoMutations = [mutationLine1, mutationLine2]
+      const groupedCoverage = new Map([
+        [1, new Set(['testA'])],
+        [2, new Set(['testB'])],
+      ])
+
+      const buildGroupedSut = (overrides: {
+        update?: (...args: unknown[]) => Promise<unknown>
+        runTestMethods?: (...args: unknown[]) => Promise<unknown>
+        mutateMany?: (mutations: ApexMutation[]) => string
+      }) => {
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update =
+              overrides.update ??
+              vi.fn().mockResolvedValue({} as Record<string, unknown>)
+            getApexClassDependencies = vi
+              .fn()
+              .mockResolvedValue([] as MetadataComponentDependency[])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi.fn().mockReturnValue({
+              mutations: groupedTwoMutations,
+              tokenStream: {},
+            })
+            mutate = vi.fn().mockReturnValue('single mutated code')
+            mutateMany =
+              overrides.mutateMany ??
+              vi.fn().mockReturnValue('grouped mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods =
+              overrides.runTestMethods ??
+              vi.fn().mockResolvedValue({
+                summary: {
+                  outcome: 'Passed',
+                  passing: 2,
+                  failing: 0,
+                  testsRan: 2,
+                },
+                tests: [
+                  { methodName: 'testA', outcome: 'Pass' },
+                  { methodName: 'testB', outcome: 'Pass' },
+                ],
+              } as unknown as TestResult)
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 2,
+              failing: 0,
+              testsRan: 2,
+              testMethodsPerLine: groupedCoverage,
+            })
+          }
+        )
+
+        return new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassName: 'TestClassTest',
+            mutationGrouping: true,
+          } as ApexMutationParameter,
+          messagesMock
+        )
+      }
+
+      it('given two disjoint mutations and all tests pass when running with grouping then both mutants are Survived in input order', async () => {
+        // Arrange
+        const updateMock = vi.fn().mockResolvedValue({})
+        const runMock = vi.fn().mockResolvedValue({
+          summary: { outcome: 'Passed', passing: 2, failing: 0, testsRan: 2 },
+          tests: [
+            { methodName: 'testA', outcome: 'Pass' },
+            { methodName: 'testB', outcome: 'Pass' },
+          ],
+        } as unknown as TestResult)
+        const localSut = buildGroupedSut({
+          update: updateMock,
+          runTestMethods: runMock,
+        })
+
+        // Act
+        const result = await localSut.process()
+
+        // Assert — one batched deploy (plus baseline + rollback) and one batched test run
+        // update calls: baseline verify (1) + test class verify (1) + grouped deploy (1) + rollback (1) = 4
+        expect(updateMock).toHaveBeenCalledTimes(4)
+        expect(runMock).toHaveBeenCalledTimes(1)
+        expect(result.mutants).toHaveLength(2)
+        expect(result.mutants[0]).toEqual(
+          expect.objectContaining({ mutatorName: 'M1', status: 'Survived' })
+        )
+        expect(result.mutants[1]).toEqual(
+          expect.objectContaining({ mutatorName: 'M2', status: 'Survived' })
+        )
+      })
+
+      it('given two disjoint mutations and one test fails when running then the corresponding mutant is Killed', async () => {
+        // Arrange
+        const localSut = buildGroupedSut({
+          runTestMethods: vi.fn().mockResolvedValue({
+            summary: { outcome: 'Failed', passing: 1, failing: 1, testsRan: 2 },
+            tests: [
+              { methodName: 'testA', outcome: 'Pass' },
+              { methodName: 'testB', outcome: 'Fail' },
+            ],
+          } as unknown as TestResult),
+        })
+
+        // Act
+        const result = await localSut.process()
+
+        // Assert
+        expect(result.mutants[0].status).toBe('Survived')
+        expect(result.mutants[1].status).toBe('Killed')
+      })
+
+      it('given a grouped batch deploy that fails when running then falls back to per-mutant evaluation', async () => {
+        // Arrange — the FIRST update call is the baseline verifyCompilation;
+        // the SECOND is the test-class verify; the THIRD is the grouped deploy
+        // which should throw; the next two are per-mutant fallback deploys;
+        // final is rollback.
+        let updateCallCount = 0
+        const updateMock = vi.fn().mockImplementation(() => {
+          ++updateCallCount
+          if (updateCallCount === 3) {
+            return Promise.reject(new Error('Deployment failed: poison batch'))
+          }
+          return Promise.resolve({})
+        })
+        const runMock = vi.fn().mockResolvedValue({
+          summary: { outcome: 'Passed', passing: 1, failing: 0, testsRan: 1 },
+          tests: [{ methodName: 'testA', outcome: 'Pass' }],
+        } as unknown as TestResult)
+        const localSut = buildGroupedSut({
+          update: updateMock,
+          runTestMethods: runMock,
+        })
+
+        // Act
+        const result = await localSut.process()
+
+        // Assert — fallback ran two more deploys (per-mutant) + two test runs
+        // baseline (1) + test class verify (1) + grouped deploy fail (1) + 2 per-mutant deploys + rollback (1) = 6
+        expect(updateMock).toHaveBeenCalledTimes(6)
+        // 2 per-mutant test runs (the grouped run never happened due to deploy failure)
+        expect(runMock).toHaveBeenCalledTimes(2)
+        expect(result.mutants).toHaveLength(2)
+      })
+
+      it('given a grouped run that omits an expected test outcome when running then falls back to per-mutant evaluation', async () => {
+        // Arrange — runTestMethods returns only testA outcome; testB is missing
+        let runCallCount = 0
+        const runMock = vi.fn().mockImplementation(() => {
+          ++runCallCount
+          // First call: grouped run — missing testB outcome
+          if (runCallCount === 1) {
+            return Promise.resolve({
+              summary: {
+                outcome: 'Passed',
+                passing: 1,
+                failing: 0,
+                testsRan: 1,
+              },
+              tests: [{ methodName: 'testA', outcome: 'Pass' }],
+            } as unknown as TestResult)
+          }
+          // Subsequent calls (per-mutant fallback): both pass
+          return Promise.resolve({
+            summary: {
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+            },
+            tests: [{ methodName: 'testA', outcome: 'Pass' }],
+          } as unknown as TestResult)
+        })
+        const localSut = buildGroupedSut({ runTestMethods: runMock })
+
+        // Act
+        const result = await localSut.process()
+
+        // Assert — fallback path triggered: 1 grouped + 2 per-mutant = 3 total runs
+        expect(runMock).toHaveBeenCalledTimes(3)
+        expect(result.mutants).toHaveLength(2)
+      })
+
+      it('given grouping enabled when planning then announces the savings via the spinner', async () => {
+        // Arrange
+        const localSut = buildGroupedSut({})
+
+        // Act
+        await localSut.process()
+
+        // Assert — spinner.start was called with the grouping plan message
+        expect(spinner.start).toHaveBeenCalledWith(
+          expect.stringContaining('Grouping 2 mutations'),
+          undefined,
+          expect.anything()
+        )
+        // spinner.stop emits the resolved info.groupingPlan template
+        expect(messagesMock.getMessage).toHaveBeenCalledWith(
+          'info.groupingPlan',
+          expect.arrayContaining(['2', '1', '50'])
+        )
+      })
+
+      it('given grouping enabled when announcing a multi-mutation group then progress message lists the lines', async () => {
+        // Arrange
+        const localSut = buildGroupedSut({})
+
+        // Act
+        await localSut.process()
+
+        // Assert
+        const updateCalls = vi.mocked(progress.update).mock.calls as Array<
+          [number, { info: string }]
+        >
+        const allInfos = updateCalls.map(call => call[1].info)
+        expect(
+          allInfos.some((info: string) =>
+            info.includes('Evaluating 2 mutations on lines 1, 2')
+          )
+        ).toBe(true)
+      })
+    })
   })
 })
