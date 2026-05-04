@@ -245,24 +245,22 @@ Each method encapsulates one logical concern. `evaluateMutation()` handles the t
 
 ## Core Design Patterns
 
-### Mutation Grouping (Strategy Pattern, opt-in)
+### Mutation Grouping (opt-in)
 
 When `--mutation-grouping` (or `mutationGrouping: true` in config) is enabled, mutations whose covering tests are pairwise disjoint are deployed and tested as a batch — turning N deploys + N test-runs into G deploys + G test-runs (where G = chromatic number of the conflict graph).
 
 ```text
-  src/service/mutationGrouper.ts          (interface + helpers + invariants)
-  src/service/groupers/
-    ├── noOpMutationGrouper.ts            (default — singleton groups, today's behaviour)
-    └── dsaturGrouper.ts                  (DSATUR graph coloring; Brélaz 1979)
+  src/service/mutationGrouper.ts          (groupMutations + invariants)
 ```
 
-`MutationTestingService` constructs a `DSaturGrouper` or `NoOpMutationGrouper` based on the resolved flag. After a grouped batch:
+`MutationTestingService.planGroups` calls `groupMutations(mutations, testMethodsPerLine)` — DSATUR (Brélaz 1979), the strongest polynomial-time graph-coloring heuristic, applied to the conflict graph (edge ⇔ two mutations share at least one covering test). When grouping is disabled, `planGroups` builds singleton groups inline, skipping the conflict graph entirely.
+
+`MutationTestingService.evaluateGroup` is a single uniform method that handles `k ≥ 1`:
 - `MutantGenerator.mutateMany` applies all replacements on a single `TokenStreamRewriter`.
 - `ApexTestRunner.runTestMethods` runs the union of covering test methods.
-- Per-method outcomes from `testResult.tests[]` are reverse-mapped to mutations via `testMethodsPerLine`: a mutation is `Killed` iff at least one of its covering test methods has outcome ≠ `Pass`. The grouping invariant (no test covers two mutations in the same group) makes this attribution unambiguous.
-- On any deploy or runtime error — or if `testResult` omits an expected method — the group falls back to per-mutant evaluation (`fallbackPerMutant`).
-
-The strategy seam is the `MutationGrouper` interface, so future heuristics (DSATUR variants, ILP) can be added without touching the loop.
+- For `k = 1`, status comes from `testResult.summary.outcome` (legacy semantics).
+- For `k > 1`, per-method outcomes from `testResult.tests[]` are reverse-mapped to mutations via `testMethodsPerLine`: a mutation is `Killed` iff at least one of its covering test methods has outcome ≠ `Pass`. The grouping invariant (no test covers two mutations in the same group) makes this attribution unambiguous.
+- On a deploy or runtime error: for `k = 1`, classify the error directly (`CompileError` / `RuntimeError` / `Killed` for governor-limit kills); for `k > 1`, fall back by recursing — each mutation becomes its own `k = 1` singleton group, and the leaf path classifies any error.
 
 ### Proxy-Based Listener Aggregation
 
