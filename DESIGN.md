@@ -245,6 +245,25 @@ Each method encapsulates one logical concern. `evaluateMutation()` handles the t
 
 ## Core Design Patterns
 
+### Mutation Grouping (Strategy Pattern, opt-in)
+
+When `--mutation-grouping` (or `mutationGrouping: true` in config) is enabled, mutations whose covering tests are pairwise disjoint are deployed and tested as a batch — turning N deploys + N test-runs into G deploys + G test-runs (where G = chromatic number of the conflict graph).
+
+```text
+  src/service/mutationGrouper.ts          (interface + helpers + invariants)
+  src/service/groupers/
+    ├── noOpMutationGrouper.ts            (default — singleton groups, today's behaviour)
+    └── dsaturGrouper.ts                  (DSATUR graph coloring; Brélaz 1979)
+```
+
+`MutationTestingService` constructs a `DSaturGrouper` or `NoOpMutationGrouper` based on the resolved flag. After a grouped batch:
+- `MutantGenerator.mutateMany` applies all replacements on a single `TokenStreamRewriter`.
+- `ApexTestRunner.runTestMethods` runs the union of covering test methods.
+- Per-method outcomes from `testResult.tests[]` are reverse-mapped to mutations via `testMethodsPerLine`: a mutation is `Killed` iff at least one of its covering test methods has outcome ≠ `Pass`. The grouping invariant (no test covers two mutations in the same group) makes this attribution unambiguous.
+- On any deploy or runtime error — or if `testResult` omits an expected method — the group falls back to per-mutant evaluation (`fallbackPerMutant`).
+
+The strategy seam is the `MutationGrouper` interface, so future heuristics (DSATUR variants, ILP) can be added without touching the loop.
+
 ### Proxy-Based Listener Aggregation
 
 The central architectural pattern. `MutationListener` uses a JavaScript `Proxy` to dynamically dispatch ANTLR parse tree callbacks to all 25 registered mutators without explicit delegation.
