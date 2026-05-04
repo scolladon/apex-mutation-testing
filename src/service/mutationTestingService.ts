@@ -10,13 +10,11 @@ import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
 import { ConfigReader, type RE2Instance } from './configReader.js'
-import { DSaturGrouper } from './groupers/dsaturGrouper.js'
-import { NoOpMutationGrouper } from './groupers/noOpMutationGrouper.js'
 import { MutantGenerator } from './mutantGenerator.js'
 import {
   assertGroupingInvariants,
+  groupMutations,
   type MutationGroup,
-  type MutationGrouper,
 } from './mutationGrouper.js'
 import { formatDuration, timeExecution } from './timeUtils.js'
 import { type TypeAnalysisResult, TypeDiscoverer } from './typeDiscoverer.js'
@@ -94,7 +92,6 @@ export class MutationTestingService {
   private readonly skipPatterns: RE2Instance[]
   private readonly allowedLines: Set<number> | undefined
   private readonly mutationGroupingEnabled: boolean
-  private readonly grouper: MutationGrouper
   private apexClassContent: string = ''
 
   constructor(
@@ -125,9 +122,6 @@ export class MutationTestingService {
     this.skipPatterns = ConfigReader.compileSkipPatterns(skipPatterns)
     this.allowedLines = ConfigReader.parseLineRanges(lines)
     this.mutationGroupingEnabled = mutationGrouping ?? false
-    this.grouper = this.mutationGroupingEnabled
-      ? new DSaturGrouper()
-      : new NoOpMutationGrouper()
   }
 
   public async process(): Promise<ApexMutationTestResult> {
@@ -190,9 +184,14 @@ export class MutationTestingService {
     testMethodsPerLine: Map<number, Set<string>>
   ): MutationGroup[] {
     if (!this.mutationGroupingEnabled) {
-      const groups = this.grouper.group({ mutations, testMethodsPerLine })
-      assertGroupingInvariants(mutations, groups)
-      return groups
+      // No grouping: one mutation per group. Inlined here rather than going
+      // through groupMutations to avoid building the conflict graph for the
+      // common (default-off) case.
+      return mutations.map(m => ({
+        mutations: [m],
+        // extractCoveredLines guarantees the line is in the map.
+        testMethods: testMethodsPerLine.get(m.target.startToken.line)!,
+      }))
     }
 
     this.spinner.start(
@@ -200,10 +199,10 @@ export class MutationTestingService {
       undefined,
       { stdout: true }
     )
-    const groups = this.grouper.group({ mutations, testMethodsPerLine })
+    const groups = groupMutations(mutations, testMethodsPerLine)
     assertGroupingInvariants(mutations, groups)
-    // Division is safe: generateMutations() at line 532 throws when mutations
-    // is empty, so planGroups is never reached with mutations.length === 0.
+    // Division is safe: generateMutations throws when mutations is empty,
+    // so planGroups is never reached with mutations.length === 0.
     const savingsPct = Math.round((1 - groups.length / mutations.length) * 100)
     this.spinner.stop(
       this.messages.getMessage('info.groupingPlan', [

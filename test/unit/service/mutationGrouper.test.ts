@@ -1,50 +1,237 @@
 import {
   assertGroupingInvariants,
-  conflicts,
-  testsForMutation,
+  groupMutations,
+  type MutationGroup,
 } from '../../../src/service/mutationGrouper.js'
-import { coverage, mutationAt } from './groupers/grouperTestFixtures.js'
+import { ApexMutation } from '../../../src/type/ApexMutation.js'
 
-describe('testsForMutation', () => {
-  it('given a mutation whose line is mapped when looked up then returns the test set', () => {
-    // Arrange
-    const mutation = mutationAt(7)
-    const map = coverage([[7, ['ta', 'tb']]])
+const mutationAt = (line: number, name = `m@${line}`): ApexMutation =>
+  ({
+    mutationName: name,
+    replacement: 'X',
+    target: {
+      // Only `startToken.line` is read by the grouping layer.
+      startToken: { line } as never,
+      endToken: { line } as never,
+      text: 'orig',
+    },
+  }) as ApexMutation
 
-    // Act
-    const result = testsForMutation(mutation, map)
+const coverage = (
+  entries: Array<[number, string[]]>
+): Map<number, Set<string>> =>
+  new Map(entries.map(([line, tests]) => [line, new Set(tests)]))
+
+const everyMutationAppearsExactlyOnce = (
+  groups: MutationGroup[],
+  mutations: ApexMutation[]
+): boolean => {
+  const flat = groups.flatMap(g => g.mutations)
+  return (
+    flat.length === mutations.length &&
+    new Set(flat).size === mutations.length &&
+    flat.every(m => mutations.includes(m))
+  )
+}
+
+const noGroupHasInternalConflict = (
+  groups: MutationGroup[],
+  testMethodsPerLine: Map<number, Set<string>>
+): boolean =>
+  groups.every(g => {
+    const seen = new Set<string>()
+    for (const m of g.mutations) {
+      const tests =
+        testMethodsPerLine.get(m.target.startToken.line) ?? new Set()
+      for (const t of tests) {
+        if (seen.has(t)) return false
+        seen.add(t)
+      }
+    }
+    return true
+  })
+
+describe('groupMutations', () => {
+  it('given empty mutations when grouping then returns no groups', () => {
+    // Arrange & Act
+    const result = groupMutations([], coverage([]))
 
     // Assert
-    expect(result).toEqual(new Set(['ta', 'tb']))
+    expect(result).toEqual([])
   })
 
-  it('given a mutation whose line is missing from coverage when looked up then returns an empty set', () => {
+  it('given a single mutation when grouping then returns one group of size 1', () => {
     // Arrange
-    const mutation = mutationAt(99)
-    const map = coverage([[1, ['ta']]])
+    const mutations = [mutationAt(1)]
+    const testMethodsPerLine = coverage([[1, ['t1']]])
 
     // Act
-    const result = testsForMutation(mutation, map)
+    const result = groupMutations(mutations, testMethodsPerLine)
 
     // Assert
-    expect(result).toEqual(new Set())
-  })
-})
-
-describe('conflicts', () => {
-  it('given two disjoint sets when checked then returns false', () => {
-    // Arrange & Act & Assert
-    expect(conflicts(new Set(['a']), new Set(['b']))).toBe(false)
+    expect(result).toHaveLength(1)
+    expect(result[0].mutations).toEqual(mutations)
+    expect(result[0].testMethods).toEqual(new Set(['t1']))
   })
 
-  it('given a shared element across sets when checked then returns true', () => {
-    // Arrange & Act & Assert
-    expect(conflicts(new Set(['a', 'b']), new Set(['b', 'c']))).toBe(true)
+  it('given two mutations with disjoint tests when grouping then merges into one group', () => {
+    // Arrange
+    const mutations = [mutationAt(1), mutationAt(2)]
+    const testMethodsPerLine = coverage([
+      [1, ['t1']],
+      [2, ['t2']],
+    ])
+
+    // Act
+    const result = groupMutations(mutations, testMethodsPerLine)
+
+    // Assert
+    expect(result).toHaveLength(1)
+    expect(result[0].testMethods).toEqual(new Set(['t1', 't2']))
   })
 
-  it('given the larger set first when checked then still detects a shared element', () => {
-    // Arrange — exercises the size-based ordering branch
-    expect(conflicts(new Set(['a', 'b', 'c']), new Set(['c']))).toBe(true)
+  it('given two mutations sharing a test when grouping then keeps them apart', () => {
+    // Arrange
+    const mutations = [mutationAt(1), mutationAt(2)]
+    const testMethodsPerLine = coverage([
+      [1, ['shared']],
+      [2, ['shared']],
+    ])
+
+    // Act
+    const result = groupMutations(mutations, testMethodsPerLine)
+
+    // Assert
+    expect(result).toHaveLength(2)
+  })
+
+  it('given a triangle of conflicts when grouping then returns three singleton groups', () => {
+    // Arrange — every pair shares a test
+    const mutations = [mutationAt(1), mutationAt(2), mutationAt(3)]
+    const testMethodsPerLine = coverage([
+      [1, ['t12', 't13']],
+      [2, ['t12', 't23']],
+      [3, ['t13', 't23']],
+    ])
+
+    // Act
+    const result = groupMutations(mutations, testMethodsPerLine)
+
+    // Assert
+    expect(result).toHaveLength(3)
+  })
+
+  it('given fully disjoint coverage when grouping then collapses to a single group', () => {
+    // Arrange
+    const mutations = [
+      mutationAt(1),
+      mutationAt(2),
+      mutationAt(3),
+      mutationAt(4),
+    ]
+    const testMethodsPerLine = coverage([
+      [1, ['ta']],
+      [2, ['tb']],
+      [3, ['tc']],
+      [4, ['td']],
+    ])
+
+    // Act
+    const result = groupMutations(mutations, testMethodsPerLine)
+
+    // Assert
+    expect(result).toHaveLength(1)
+  })
+
+  it('given a hub-and-spokes graph when grouping then yields the optimal 2 groups', () => {
+    // Arrange — hub conflicts with each spoke; spokes mutually disjoint.
+    const mutations = [
+      mutationAt(1, 'hub'),
+      mutationAt(2),
+      mutationAt(3),
+      mutationAt(4),
+      mutationAt(5),
+    ]
+    const testMethodsPerLine = coverage([
+      [1, ['t12', 't13', 't14', 't15']],
+      [2, ['t12', 't2']],
+      [3, ['t13', 't3']],
+      [4, ['t14', 't4']],
+      [5, ['t15', 't5']],
+    ])
+
+    // Act
+    const result = groupMutations(mutations, testMethodsPerLine)
+
+    // Assert
+    expect(result).toHaveLength(2)
+    expect(noGroupHasInternalConflict(result, testMethodsPerLine)).toBe(true)
+  })
+
+  it('given a complete bipartite graph K(3,3) when grouping then returns the optimal 2 groups', () => {
+    // Arrange
+    const mutations = [
+      mutationAt(1, 'a1'),
+      mutationAt(2, 'a2'),
+      mutationAt(3, 'a3'),
+      mutationAt(4, 'b1'),
+      mutationAt(5, 'b2'),
+      mutationAt(6, 'b3'),
+    ]
+    const testMethodsPerLine = coverage([
+      [1, ['ta1', 'x14', 'x15', 'x16']],
+      [2, ['ta2', 'x24', 'x25', 'x26']],
+      [3, ['ta3', 'x34', 'x35', 'x36']],
+      [4, ['tb1', 'x14', 'x24', 'x34']],
+      [5, ['tb2', 'x15', 'x25', 'x35']],
+      [6, ['tb3', 'x16', 'x26', 'x36']],
+    ])
+
+    // Act
+    const result = groupMutations(mutations, testMethodsPerLine)
+
+    // Assert — DSATUR is provably optimal on bipartite graphs (χ = 2)
+    expect(result).toHaveLength(2)
+    expect(result.every(g => g.mutations.length === 3)).toBe(true)
+    expect(noGroupHasInternalConflict(result, testMethodsPerLine)).toBe(true)
+  })
+
+  it('given a randomly-ordered mix when grouping then result is always a conflict-free partition', () => {
+    // Arrange
+    const mutations = [
+      mutationAt(10, 'a'),
+      mutationAt(20, 'b'),
+      mutationAt(30, 'c'),
+      mutationAt(40, 'd'),
+      mutationAt(50, 'e'),
+    ]
+    const testMethodsPerLine = coverage([
+      [10, ['t1', 't2']],
+      [20, ['t3']],
+      [30, ['t2', 't4']],
+      [40, ['t5']],
+      [50, ['t1', 't5']],
+    ])
+
+    // Act
+    const result = groupMutations(mutations, testMethodsPerLine)
+
+    // Assert
+    expect(everyMutationAppearsExactlyOnce(result, mutations)).toBe(true)
+    expect(noGroupHasInternalConflict(result, testMethodsPerLine)).toBe(true)
+  })
+
+  it('given mutations with no covering tests when grouping then they all merge into one group', () => {
+    // Arrange — empty test sets never conflict with anything
+    const mutations = [mutationAt(1), mutationAt(2), mutationAt(3)]
+    const testMethodsPerLine = coverage([])
+
+    // Act
+    const result = groupMutations(mutations, testMethodsPerLine)
+
+    // Assert
+    expect(result).toHaveLength(1)
+    expect(result[0].mutations).toHaveLength(3)
   })
 })
 
