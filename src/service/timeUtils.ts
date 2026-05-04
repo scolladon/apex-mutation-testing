@@ -22,3 +22,15 @@ export const formatDuration = (ms: number): string => {
   }
   return `~${seconds}s`
 }
+
+export const formatRemainingTime = (
+  loopStartTime: number,
+  completedCount: number,
+  totalCount: number
+): string => {
+  if (completedCount === 0) return ''
+  const elapsed = performance.now() - loopStartTime
+  const avgPerMutant = elapsed / completedCount
+  const remainingMs = avgPerMutant * (totalCount - completedCount)
+  return `Remaining: ${formatDuration(remainingMs)} | `
+}

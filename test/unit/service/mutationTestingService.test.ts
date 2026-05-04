@@ -8,6 +8,7 @@ import { MutantGenerator } from '../../../src/service/mutantGenerator.js'
 import { MutationTestingService } from '../../../src/service/mutationTestingService.js'
 import {
   formatDuration,
+  formatRemainingTime,
   timeExecution,
 } from '../../../src/service/timeUtils.js'
 import { TypeDiscoverer } from '../../../src/service/typeDiscoverer.js'
@@ -135,6 +136,7 @@ describe('MutationTestingService', () => {
       }
     )
     vi.mocked(formatDuration).mockReturnValue('~5s')
+    vi.mocked(formatRemainingTime).mockReturnValue('Remaining: ~5s | ')
 
     sut = new MutationTestingService(
       progress,
@@ -939,94 +941,6 @@ describe('MutationTestingService', () => {
       })
     })
 
-    describe('When calculating mutation position with undefined indices', () => {
-      it('Then should throw an error for undefined startIndex', () => {
-        // Arrange
-        const mutation = {
-          mutationName: 'TestMutation',
-          replacement: '0',
-          target: {
-            startToken: { startIndex: undefined },
-            endToken: { stopIndex: 10 },
-            text: '42',
-          },
-        }
-
-        // Act & Assert
-        expect(() =>
-          sut['calculateMutationPosition'](
-            mutation as unknown as ApexMutation,
-            'source code'
-          )
-        ).toThrow('Failed to calculate position for mutation: TestMutation')
-      })
-
-      it('Then should throw an error for undefined stopIndex', () => {
-        // Arrange
-        const mutation = {
-          mutationName: 'TestMutation',
-          replacement: '0',
-          target: {
-            startToken: { startIndex: 0 },
-            endToken: { stopIndex: undefined },
-            text: '42',
-          },
-        }
-
-        // Act & Assert
-        expect(() =>
-          sut['calculateMutationPosition'](
-            mutation as unknown as ApexMutation,
-            'source code'
-          )
-        ).toThrow('Failed to calculate position for mutation: TestMutation')
-      })
-    })
-
-    describe('When extracting mutation original text with undefined indices', () => {
-      it('Then should throw an error for undefined startIndex', () => {
-        // Arrange
-        sut['apexClassContent'] = 'class TestClass {}'
-        const mutation = {
-          mutationName: 'TestMutation',
-          replacement: '0',
-          target: {
-            startToken: { startIndex: undefined },
-            endToken: { stopIndex: 10 },
-            text: '42',
-          },
-        }
-
-        // Act & Assert
-        expect(() =>
-          sut['extractMutationOriginalText'](
-            mutation as unknown as ApexMutation
-          )
-        ).toThrow('Failed to extract original text for mutation: TestMutation')
-      })
-
-      it('Then should throw an error for undefined stopIndex', () => {
-        // Arrange
-        sut['apexClassContent'] = 'class TestClass {}'
-        const mutation = {
-          mutationName: 'TestMutation',
-          replacement: '0',
-          target: {
-            startToken: { startIndex: 0 },
-            endToken: { stopIndex: undefined },
-            text: '42',
-          },
-        }
-
-        // Act & Assert
-        expect(() =>
-          sut['extractMutationOriginalText'](
-            mutation as unknown as ApexMutation
-          )
-        ).toThrow('Failed to extract original text for mutation: TestMutation')
-      })
-    })
-
     describe('Given includeTestMethods with testMethodA, When processing, Then only testMethodA is used in testMethodsPerLine', () => {
       it('should only keep testMethodA in testMethodsPerLine', async () => {
         // Arrange
@@ -1759,51 +1673,6 @@ describe('MutationTestingService', () => {
       })
     })
 
-    describe('When extractMutationOriginalText is called with empty apexClassContent', () => {
-      it('Given empty apexClassContent, When called, Then it throws an error', () => {
-        // Arrange
-        sut['apexClassContent'] = ''
-        const mutation = {
-          mutationName: 'TestMutation',
-          replacement: '0',
-          target: {
-            startToken: { startIndex: 0 },
-            endToken: { stopIndex: 5 },
-            text: 'hello',
-          },
-        }
-
-        // Act & Assert
-        expect(() =>
-          sut['extractMutationOriginalText'](
-            mutation as unknown as ApexMutation
-          )
-        ).toThrow('Failed to extract original text for mutation: TestMutation')
-      })
-
-      it('Given valid indices and non-empty apexClassContent, When called, Then it returns the substring', () => {
-        // Arrange
-        sut['apexClassContent'] = 'hello world'
-        const mutation = {
-          mutationName: 'TestMutation',
-          replacement: '0',
-          target: {
-            startToken: { startIndex: 6 },
-            endToken: { stopIndex: 10 },
-            text: 'world',
-          },
-        }
-
-        // Act
-        const result = sut['extractMutationOriginalText'](
-          mutation as unknown as ApexMutation
-        )
-
-        // Assert
-        expect(result).toBe('world')
-      })
-    })
-
     describe('When rollback fails during process', () => {
       it('Given rollback throws, When processing completes, Then the rollback error is re-thrown and spinner shows a warning', async () => {
         // Arrange
@@ -2175,44 +2044,6 @@ describe('MutationTestingService', () => {
     // (token.line / token.charPositionInLine) plus advancePosition walking
     // endToken.text. Behaviour is exercised through calculateMutationPosition
     // tests below.
-
-    describe('When formatRemainingTime is called', () => {
-      it('Given completedCount is 0, When called, Then returns empty string', () => {
-        // Arrange
-        const loopStartTime = performance.now()
-
-        // Act
-        const result = sut['formatRemainingTime'](loopStartTime, 0, 10)
-
-        // Assert
-        expect(result).toBe('')
-      })
-
-      it('Given completedCount greater than 0, When called, Then returns non-empty remaining time string', () => {
-        // Arrange
-        // Use a past start time to ensure elapsed > 0
-        const loopStartTime = performance.now() - 1000
-
-        // Act
-        const result = sut['formatRemainingTime'](loopStartTime, 1, 10)
-
-        // Assert
-        expect(result).not.toBe('')
-        expect(result).toContain('Remaining:')
-      })
-
-      it('Given completedCount equals totalCount, When called, Then returns remaining time with zero remaining', () => {
-        // Arrange
-        const loopStartTime = performance.now() - 1000
-
-        // Act
-        const result = sut['formatRemainingTime'](loopStartTime, 5, 5)
-
-        // Assert
-        expect(result).toContain('Remaining:')
-        expect(result).toContain('|')
-      })
-    })
 
     describe('When spinner start/stop messages are verified', () => {
       const buildStandardMocks = () => {
@@ -2977,161 +2808,6 @@ describe('MutationTestingService', () => {
       })
     })
 
-    describe('When calculateMutationPosition is verified with valid indices', () => {
-      // Positions come straight from ANTLR token metadata.
-      // start.line / start.charPositionInLine give the first-char position.
-      // end is produced by advancePosition(endToken.text, ...) so tokens
-      // spanning newlines (multi-line strings, block comments) still work.
-      it('Given single-line mutation span, When calculating position, Then reports start + end columns correctly', () => {
-        // Arrange — token 'world' at line 1, col 7 (0-indexed 6)
-        const mutation = {
-          mutationName: 'TestMutation',
-          replacement: 'foo',
-          target: {
-            startToken: {
-              line: 1,
-              charPositionInLine: 6,
-              startIndex: 6,
-              stopIndex: 10,
-              text: 'world',
-            },
-            endToken: {
-              line: 1,
-              charPositionInLine: 6,
-              startIndex: 6,
-              stopIndex: 10,
-              text: 'world',
-            },
-            text: 'world',
-          },
-        }
-
-        // Act
-        const result = sut['calculateMutationPosition'](
-          mutation as unknown as ApexMutation
-        )
-
-        // Assert
-        expect(result.start).toEqual({ line: 1, column: 7 })
-        expect(result.end).toEqual({ line: 1, column: 12 })
-      })
-
-      it('Given endToken.text spanning a newline, When calculating position, Then end is on the next line', () => {
-        // Arrange — token text 'line1\nline2' at line 1, col 1
-        const mutation = {
-          mutationName: 'TestMutation',
-          replacement: 'x',
-          target: {
-            startToken: {
-              line: 1,
-              charPositionInLine: 0,
-              startIndex: 0,
-              stopIndex: 10,
-              text: 'line1\nline2',
-            },
-            endToken: {
-              line: 1,
-              charPositionInLine: 0,
-              startIndex: 0,
-              stopIndex: 10,
-              text: 'line1\nline2',
-            },
-            text: 'line1\nline2',
-          },
-        }
-
-        // Act
-        const result = sut['calculateMutationPosition'](
-          mutation as unknown as ApexMutation
-        )
-
-        // Assert
-        expect(result.start).toEqual({ line: 1, column: 1 })
-        expect(result.end).toEqual({ line: 2, column: 6 })
-      })
-
-      it('Given endToken.text is empty, When calculating position, Then end equals end-token start', () => {
-        // Defensive: ANTLR can emit zero-width tokens; advancePosition
-        // must not shift the cursor for an empty text.
-        const mutation = {
-          mutationName: 'TestMutation',
-          replacement: '',
-          target: {
-            startToken: {
-              line: 3,
-              charPositionInLine: 4,
-              startIndex: 20,
-              stopIndex: 24,
-              text: 'hello',
-            },
-            endToken: {
-              line: 3,
-              charPositionInLine: 9,
-              startIndex: 25,
-              stopIndex: 25,
-              text: '',
-            },
-            text: 'hello',
-          },
-        }
-
-        // Act
-        const result = sut['calculateMutationPosition'](
-          mutation as unknown as ApexMutation
-        )
-
-        // Assert
-        expect(result.start).toEqual({ line: 3, column: 5 })
-        expect(result.end).toEqual({ line: 3, column: 10 })
-      })
-    })
-
-    describe('When extractMutationOriginalText stopIndex + 1 is verified', () => {
-      it('Given apexClassContent and valid indices, When extracting, Then uses stopIndex + 1 as exclusive end', () => {
-        // Arrange — 'hello world', startIndex=0, stopIndex=4 => 'hello' (indices 0..4 inclusive)
-        sut['apexClassContent'] = 'hello world'
-        const mutation = {
-          mutationName: 'TestMutation',
-          replacement: '0',
-          target: {
-            startToken: { startIndex: 0 },
-            endToken: { stopIndex: 4 },
-            text: 'hello',
-          },
-        }
-
-        // Act
-        const result = sut['extractMutationOriginalText'](
-          mutation as unknown as ApexMutation
-        )
-
-        // Assert — substring(0, 4+1) = substring(0, 5) = 'hello'
-        expect(result).toBe('hello')
-      })
-
-      it('Given apexClassContent and indices at the very end, When extracting, Then extracts last character correctly', () => {
-        // Arrange
-        sut['apexClassContent'] = 'abc'
-        const mutation = {
-          mutationName: 'TestMutation',
-          replacement: '0',
-          target: {
-            startToken: { startIndex: 2 },
-            endToken: { stopIndex: 2 },
-            text: 'c',
-          },
-        }
-
-        // Act
-        const result = sut['extractMutationOriginalText'](
-          mutation as unknown as ApexMutation
-        )
-
-        // Assert — substring(2, 3) = 'c'
-        expect(result).toBe('c')
-      })
-    })
-
     describe('When buildMutantResult id format is verified', () => {
       it('Given a mutation, When building mutant result, Then id contains all expected parts in order', async () => {
         // Arrange — Use process flow to capture the result with known mutation token values
@@ -3813,86 +3489,6 @@ describe('MutationTestingService', () => {
         expect(allInfos.some((info: string) => info.includes('zombie'))).toBe(
           false
         )
-      })
-    })
-
-    describe('When formatRemainingTime arithmetic is verified', () => {
-      it('Given completedCount 2 and totalCount 10, When called, Then formatDuration receives correct remaining time proportional to elapsed', () => {
-        // Arrange — kills arithmetic operator mutants: elapsed/completedCount → *; avgPerMutant*(total-completed) → other
-        // With completedCount=2, totalCount=10: avgPerMutant = elapsed/2; remaining = (elapsed/2) * 8 = elapsed*4
-        // If / → *: avgPerMutant = elapsed*2; remaining = elapsed*2*8 = elapsed*16 (different)
-        // If * → /: remaining = (elapsed/2) / 8 = elapsed/16 (different)
-        // We verify formatDuration is called with a specific computed value.
-        // loopStartTime is passed as argument; performance.now() is called once inside the function.
-        const mockFormatDuration = vi.mocked(formatDuration)
-        mockFormatDuration.mockReturnValue('~8s')
-
-        // Mock performance.now() to return loopStartTime + 100 (elapsed = 100ms)
-        const loopStartTime = 10000
-        const fakeNow = vi.spyOn(performance, 'now')
-        fakeNow.mockReturnValue(loopStartTime + 100) // elapsed = 100
-
-        // Act
-        const result = sut['formatRemainingTime'](loopStartTime, 2, 10)
-
-        // Assert — elapsed=100, avgPerMutant=100/2=50, remainingMs=50*(10-2)=400
-        expect(mockFormatDuration).toHaveBeenCalledWith(400)
-        expect(result).toContain('Remaining:')
-        expect(result).toContain('~8s')
-        expect(result).toContain(' | ')
-
-        fakeNow.mockRestore()
-      })
-
-      it('Given completedCount equals totalCount, When called, Then formatDuration receives 0 as remainingMs', () => {
-        // Arrange — kills arithmetic mutant: totalCount - completedCount → +
-        // When all mutations processed, remainingMs = avgPerMutant * (10 - 10) = 0
-        // If - → +, remainingMs = avgPerMutant * (10 + 10) = avgPerMutant * 20 ≠ 0
-        const mockFormatDuration = vi.mocked(formatDuration)
-        mockFormatDuration.mockReturnValue('~0s')
-
-        const loopStartTime = 5000
-        const fakeNow = vi.spyOn(performance, 'now')
-        fakeNow.mockReturnValue(loopStartTime + 200) // elapsed = 200
-
-        // Act
-        const result = sut['formatRemainingTime'](loopStartTime, 10, 10)
-
-        // Assert — remaining = (200/10) * (10-10) = 20 * 0 = 0
-        expect(mockFormatDuration).toHaveBeenCalledWith(0)
-        expect(result).toContain(' | ')
-
-        fakeNow.mockRestore()
-      })
-    })
-
-    describe('When formatRemainingTime return value format is verified', () => {
-      it('Given completedCount > 0, When called, Then returns string ending with " | "', () => {
-        // Arrange — kills StringLiteral mutant that removes " | " suffix from the return template
-        const loopStartTime = 1000
-        const fakeNow = vi.spyOn(performance, 'now')
-        fakeNow.mockReturnValue(loopStartTime + 500) // elapsed = 500
-
-        // Act
-        const result = sut['formatRemainingTime'](loopStartTime, 1, 5)
-
-        // Assert — suffix " | " must be present (not just "Remaining:")
-        expect(result).toMatch(/\| $/)
-
-        fakeNow.mockRestore()
-      })
-
-      it('Given completedCount is 0, When called, Then returns exactly empty string (not " | ")', () => {
-        // Arrange — kills StringLiteral mutant that changes '' return to "Stryker was here" or similar
-        // Also kills EqualityOperator === 0 → !== 0 (which would return '' for non-zero instead)
-        const loopStartTime = performance.now()
-
-        // Act
-        const result = sut['formatRemainingTime'](loopStartTime, 0, 10)
-
-        // Assert — must be exactly '' not " | " or any other string
-        expect(result).toBe('')
-        expect(result).not.toContain('|')
       })
     })
 
