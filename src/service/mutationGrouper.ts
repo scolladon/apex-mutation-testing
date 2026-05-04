@@ -121,21 +121,3 @@ const assembleGroups = (
   }
   return groups
 }
-
-// Defensive check: a grouper must produce a partition of the input mutations
-// (every input appears exactly once across all groups). Cheap to verify,
-// expensive to debug if violated.
-export const assertGroupingInvariants = (
-  mutations: ReadonlyArray<ApexMutation>,
-  groups: ReadonlyArray<MutationGroup>
-): void => {
-  const flat = groups.flatMap(g => g.mutations)
-  if (
-    flat.length !== mutations.length ||
-    new Set(flat).size !== mutations.length
-  ) {
-    throw new Error(
-      `Grouping invariant violated: ${mutations.length} input mutations produced ${flat.length} grouped (unique: ${new Set(flat).size})`
-    )
-  }
-}

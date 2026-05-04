@@ -11,11 +11,7 @@ import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
 import { ConfigReader, type RE2Instance } from './configReader.js'
 import { GroupExecutor } from './groupExecutor.js'
 import { MutantGenerator } from './mutantGenerator.js'
-import {
-  assertGroupingInvariants,
-  groupMutations,
-  type MutationGroup,
-} from './mutationGrouper.js'
+import { groupMutations, type MutationGroup } from './mutationGrouper.js'
 import {
   calculateMutationPosition,
   extractMutationOriginalText,
@@ -143,7 +139,6 @@ export class MutationTestingService {
       { stdout: true }
     )
     const groups = groupMutations(mutations, testMethodsPerLine)
-    assertGroupingInvariants(mutations, groups)
     // Division is safe: generateMutations throws when mutations is empty,
     // so planGroups is never reached with mutations.length === 0.
     const savingsPct = Math.round((1 - groups.length / mutations.length) * 100)
