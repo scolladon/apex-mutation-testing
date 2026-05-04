@@ -63,6 +63,22 @@ interface ErrorClassification {
   progressMessage: string
 }
 
+interface GroupEvalContext {
+  group: MutationGroup
+  mutantGenerator: MutantGenerator
+  tokenStream: CommonTokenStream
+  apexClass: ApexClass
+  testMethodsPerLine: Map<number, Set<string>>
+  apexTestRunner: ApexTestRunner
+  apexClassRepository: ApexClassRepository
+  completedSoFar: number
+}
+
+interface GroupEvalResult {
+  mutantResults: ApexMutationTestResult['mutants']
+  progressMessage: string
+}
+
 interface ErrorClassificationStrategy {
   matches(errorMessage: string): boolean
   classify(
@@ -628,7 +644,7 @@ export class MutationTestingService {
       )
       this.announceGroup(group, remainingText, completed, testMethodsPerLine)
 
-      const { mutantResults, progressMessage } = await this.evaluateGroup(
+      const { mutantResults, progressMessage } = await this.evaluateGroup({
         group,
         mutantGenerator,
         tokenStream,
@@ -636,8 +652,8 @@ export class MutationTestingService {
         testMethodsPerLine,
         apexTestRunner,
         apexClassRepository,
-        completed
-      )
+        completedSoFar: completed,
+      })
       for (let i = 0; i < group.mutations.length; ++i) {
         const idx = indexByMutation.get(group.mutations[i])!
         orderedResults[idx] = mutantResults[i]
@@ -693,19 +709,17 @@ export class MutationTestingService {
     })
   }
 
-  private async evaluateGroup(
-    group: MutationGroup,
-    mutantGenerator: MutantGenerator,
-    tokenStream: CommonTokenStream,
-    apexClass: ApexClass,
-    testMethodsPerLine: Map<number, Set<string>>,
-    apexTestRunner: ApexTestRunner,
-    apexClassRepository: ApexClassRepository,
-    completedSoFar: number
-  ): Promise<{
-    mutantResults: ApexMutationTestResult['mutants']
-    progressMessage: string
-  }> {
+  private async evaluateGroup(ctx: GroupEvalContext): Promise<GroupEvalResult> {
+    const {
+      group,
+      mutantGenerator,
+      tokenStream,
+      apexClass,
+      testMethodsPerLine,
+      apexTestRunner,
+      apexClassRepository,
+    } = ctx
+
     if (group.mutations.length === 1) {
       const { mutantResult, progressMessage } = await this.evaluateMutation(
         group.mutations[0],
@@ -731,16 +745,7 @@ export class MutationTestingService {
         group.testMethods
       )
     } catch {
-      return this.fallbackPerMutant(
-        group,
-        mutantGenerator,
-        tokenStream,
-        apexClass,
-        testMethodsPerLine,
-        apexTestRunner,
-        apexClassRepository,
-        completedSoFar
-      )
+      return this.fallbackPerMutant(ctx)
     }
 
     const outcomeByMethod = new Map<string, string>(
@@ -748,16 +753,7 @@ export class MutationTestingService {
     )
     for (const expectedMethod of group.testMethods) {
       if (!outcomeByMethod.has(expectedMethod)) {
-        return this.fallbackPerMutant(
-          group,
-          mutantGenerator,
-          tokenStream,
-          apexClass,
-          testMethodsPerLine,
-          apexTestRunner,
-          apexClassRepository,
-          completedSoFar
-        )
+        return this.fallbackPerMutant(ctx)
       }
     }
 
@@ -777,18 +773,18 @@ export class MutationTestingService {
   }
 
   private async fallbackPerMutant(
-    group: MutationGroup,
-    mutantGenerator: MutantGenerator,
-    tokenStream: CommonTokenStream,
-    apexClass: ApexClass,
-    testMethodsPerLine: Map<number, Set<string>>,
-    apexTestRunner: ApexTestRunner,
-    apexClassRepository: ApexClassRepository,
-    completedSoFar: number
-  ): Promise<{
-    mutantResults: ApexMutationTestResult['mutants']
-    progressMessage: string
-  }> {
+    ctx: GroupEvalContext
+  ): Promise<GroupEvalResult> {
+    const {
+      group,
+      mutantGenerator,
+      tokenStream,
+      apexClass,
+      testMethodsPerLine,
+      apexTestRunner,
+      apexClassRepository,
+      completedSoFar,
+    } = ctx
     this.progress.update(completedSoFar, {
       info: this.messages.getMessage('info.groupingFallback', [
         String(group.mutations.length),
