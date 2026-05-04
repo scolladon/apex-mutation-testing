@@ -50,68 +50,38 @@ function advancePosition(
   return { line, column }
 }
 
-interface TokenTargetInfo {
-  line: number
-  column: number
-  tokenIndex: number
-  text: string
-}
-
-interface ErrorClassification {
+// Classify a deploy/test-run error into a per-mutant outcome plus a progress
+// message. The three branches match Salesforce-side failure modes: a compile
+// error from the Tooling API deploy, a governor-limit kill (which is a real
+// kill, not a runtime error), and any other thrown error.
+const classifyError = (
+  error: unknown,
+  mutation: ApexMutation
+): {
   status: 'CompileError' | 'Killed' | 'RuntimeError'
   statusReason?: string
   progressMessage: string
-}
-
-interface GroupEvalContext {
-  group: MutationGroup
-  mutantGenerator: MutantGenerator
-  tokenStream: CommonTokenStream
-  apexClass: ApexClass
-  testMethodsPerLine: Map<number, Set<string>>
-  apexTestRunner: ApexTestRunner
-  apexClassRepository: ApexClassRepository
-  completedSoFar: number
-}
-
-interface GroupEvalResult {
-  mutantResults: ApexMutationTestResult['mutants']
-  progressMessage: string
-}
-
-interface ErrorClassificationStrategy {
-  matches(errorMessage: string): boolean
-  classify(
-    errorMessage: string,
-    targetInfo: TokenTargetInfo
-  ): ErrorClassification
-}
-
-const errorStrategies: ErrorClassificationStrategy[] = [
-  {
-    matches: msg => msg.startsWith('Deployment failed:'),
-    classify: (msg, targetInfo) => ({
+} => {
+  const message = error instanceof Error ? error.message : String(error)
+  if (message.startsWith('Deployment failed:')) {
+    return {
       status: 'CompileError',
-      statusReason: msg,
-      progressMessage: `Mutation result: compile error at line ${targetInfo.line}`,
-    }),
-  },
-  {
-    matches: msg => msg.includes('LIMIT_USAGE_FOR_NS'),
-    classify: msg => ({
+      statusReason: message,
+      progressMessage: `Mutation result: compile error at line ${mutation.target.startToken.line}`,
+    }
+  }
+  if (message.includes('LIMIT_USAGE_FOR_NS')) {
+    return {
       status: 'Killed',
-      progressMessage: `Mutation result: mutant killed (${msg})`,
-    }),
-  },
-  {
-    matches: () => true,
-    classify: msg => ({
-      status: 'RuntimeError',
-      statusReason: msg,
-      progressMessage: `Mutation result: runtime error (${msg})`,
-    }),
-  },
-]
+      progressMessage: `Mutation result: mutant killed (${message})`,
+    }
+  }
+  return {
+    status: 'RuntimeError',
+    statusReason: message,
+    progressMessage: `Mutation result: runtime error (${message})`,
+  }
+}
 
 export class MutationTestingService {
   protected readonly apexClassName: string
@@ -262,21 +232,18 @@ export class MutationTestingService {
 
   private buildMutantResult(
     mutation: ApexMutation,
-    testResult: TestResult,
-    targetInfo: TokenTargetInfo
-  ) {
-    const mutationStatus: 'Killed' | 'Survived' | 'NoCoverage' =
-      testResult.summary.outcome === 'Passed' ? 'Survived' : 'Killed'
-
-    const location = this.calculateMutationPosition(mutation)
-    const originalText = this.extractMutationOriginalText(mutation)
+    status: 'Killed' | 'Survived' | 'CompileError' | 'RuntimeError',
+    statusReason?: string
+  ): ApexMutationTestResult['mutants'][number] {
+    const start = mutation.target.startToken
     return {
-      id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
+      id: `${this.apexClassName}-${start.line}-${start.charPositionInLine}-${start.tokenIndex}-${Date.now()}`,
       mutatorName: mutation.mutationName,
-      status: mutationStatus,
-      location,
+      status,
+      ...(statusReason && { statusReason }),
+      location: this.calculateMutationPosition(mutation),
       replacement: mutation.replacement,
-      original: originalText,
+      original: this.extractMutationOriginalText(mutation),
     }
   }
 
@@ -644,16 +611,16 @@ export class MutationTestingService {
       )
       this.announceGroup(group, remainingText, completed, testMethodsPerLine)
 
-      const { mutantResults, progressMessage } = await this.evaluateGroup({
+      const { mutantResults, progressMessage } = await this.evaluateGroup(
         group,
+        completed,
         mutantGenerator,
         tokenStream,
         apexClass,
         testMethodsPerLine,
         apexTestRunner,
-        apexClassRepository,
-        completedSoFar: completed,
-      })
+        apexClassRepository
+      )
       for (let i = 0; i < group.mutations.length; ++i) {
         const idx = indexByMutation.get(group.mutations[i])!
         orderedResults[idx] = mutantResults[i]
@@ -709,32 +676,26 @@ export class MutationTestingService {
     })
   }
 
-  private async evaluateGroup(ctx: GroupEvalContext): Promise<GroupEvalResult> {
-    const {
-      group,
-      mutantGenerator,
-      tokenStream,
-      apexClass,
-      testMethodsPerLine,
-      apexTestRunner,
-      apexClassRepository,
-    } = ctx
-
-    if (group.mutations.length === 1) {
-      const { mutantResult, progressMessage } = await this.evaluateMutation(
-        group.mutations[0],
-        mutantGenerator,
-        tokenStream,
-        apexClass,
-        testMethodsPerLine,
-        apexTestRunner,
-        apexClassRepository
-      )
-      return { mutantResults: [mutantResult], progressMessage }
-    }
-
+  // Unified per-iteration evaluation. A singleton group is just k=1 of this
+  // method; multi-mutation groups go through the same code, with per-method
+  // outcome attribution for the success path and recursion-into-singletons
+  // for the fallback path.
+  private async evaluateGroup(
+    group: MutationGroup,
+    completedSoFar: number,
+    mutantGenerator: MutantGenerator,
+    tokenStream: CommonTokenStream,
+    apexClass: ApexClass,
+    testMethodsPerLine: Map<number, Set<string>>,
+    apexTestRunner: ApexTestRunner,
+    apexClassRepository: ApexClassRepository
+  ): Promise<{
+    mutantResults: ApexMutationTestResult['mutants']
+    progressMessage: string
+  }> {
     const mutated = mutantGenerator.mutateMany(group.mutations, tokenStream)
-    let testResult: TestResult
+    let testResult: TestResult | undefined
+    let batchError: unknown
     try {
       await apexClassRepository.update({
         Id: apexClass.Id as string,
@@ -744,163 +705,110 @@ export class MutationTestingService {
         this.apexTestClassName,
         group.testMethods
       )
-    } catch {
-      return this.fallbackPerMutant(ctx)
+    } catch (error: unknown) {
+      batchError = error
     }
 
-    const outcomeByMethod = new Map<string, string>(
-      testResult.tests.map(t => [t.methodName, t.outcome])
-    )
-    for (const expectedMethod of group.testMethods) {
-      if (!outcomeByMethod.has(expectedMethod)) {
-        return this.fallbackPerMutant(ctx)
+    // For k>1, a batch error or a coverage gap (test runner did not report
+    // every expected method) makes attribution ambiguous. Recurse with each
+    // mutation as its own singleton group; each child call hits the leaf and
+    // either succeeds or classifies its error directly.
+    if (
+      group.mutations.length > 1 &&
+      (batchError !== undefined ||
+        this.hasCoverageGap(testResult!, group.testMethods))
+    ) {
+      this.progress.update(completedSoFar, {
+        info: this.messages.getMessage('info.groupingFallback', [
+          String(group.mutations.length),
+        ]),
+      })
+      const fallbackResults: ApexMutationTestResult['mutants'] = []
+      for (const m of group.mutations) {
+        const singleton: MutationGroup = {
+          mutations: [m],
+          // extractCoveredLines guarantees the line is in the map.
+          testMethods: testMethodsPerLine.get(m.target.startToken.line)!,
+        }
+        const { mutantResults } = await this.evaluateGroup(
+          singleton,
+          completedSoFar,
+          mutantGenerator,
+          tokenStream,
+          apexClass,
+          testMethodsPerLine,
+          apexTestRunner,
+          apexClassRepository
+        )
+        fallbackResults.push(...mutantResults)
+      }
+      return {
+        mutantResults: fallbackResults,
+        progressMessage: `Fallback for group of ${group.mutations.length} complete`,
       }
     }
 
-    const mutantResults = group.mutations.map(mutation =>
-      this.buildGroupedMutantResult(
-        mutation,
-        outcomeByMethod,
-        testMethodsPerLine
-      )
+    // Leaf for k=1 with caught error: classify the error directly. (k>1 with
+    // an error was handled above by recursing into singletons.)
+    if (batchError !== undefined) {
+      const mutation = group.mutations[0]
+      const c = classifyError(batchError, mutation)
+      return {
+        mutantResults: [
+          this.buildMutantResult(mutation, c.status, c.statusReason),
+        ],
+        progressMessage: c.progressMessage,
+      }
+    }
+
+    // Success path. Per-method outcomes when present (required for k>1
+    // attribution); fall back to summary-derived outcome when the test
+    // runner did not report per-method data (legacy behaviour for k=1).
+    const outcomeByMethod = new Map<string, string>(
+      (testResult!.tests ?? []).map(t => [t.methodName, t.outcome])
     )
-    const killed = mutantResults.filter(r => r.status === 'Killed').length
-    const survived = mutantResults.length - killed
+    const summaryFallback =
+      testResult!.summary.outcome === 'Passed' ? 'Pass' : 'Fail'
+    const mutantResults = group.mutations.map(m => {
+      const myMethods =
+        testMethodsPerLine.get(m.target.startToken.line) ?? new Set<string>()
+      // No covering tests (only possible in mocked or uncovered-line scenarios)
+      // → fall back to the summary outcome so behaviour matches the legacy
+      // evaluateMutation path.
+      const killed =
+        myMethods.size === 0
+          ? summaryFallback !== 'Pass'
+          : [...myMethods].some(
+              name => (outcomeByMethod.get(name) ?? summaryFallback) !== 'Pass'
+            )
+      return this.buildMutantResult(m, killed ? 'Killed' : 'Survived')
+    })
+
     return {
       mutantResults,
-      progressMessage: `Group of ${group.mutations.length} evaluated: ${killed} killed, ${survived} survived`,
+      progressMessage: this.buildGroupProgressMessage(mutantResults),
     }
   }
 
-  private async fallbackPerMutant(
-    ctx: GroupEvalContext
-  ): Promise<GroupEvalResult> {
-    const {
-      group,
-      mutantGenerator,
-      tokenStream,
-      apexClass,
-      testMethodsPerLine,
-      apexTestRunner,
-      apexClassRepository,
-      completedSoFar,
-    } = ctx
-    this.progress.update(completedSoFar, {
-      info: this.messages.getMessage('info.groupingFallback', [
-        String(group.mutations.length),
-      ]),
-    })
-    const results: ApexMutationTestResult['mutants'] = []
-    for (const m of group.mutations) {
-      const { mutantResult } = await this.evaluateMutation(
-        m,
-        mutantGenerator,
-        tokenStream,
-        apexClass,
-        testMethodsPerLine,
-        apexTestRunner,
-        apexClassRepository
-      )
-      results.push(mutantResult)
+  private hasCoverageGap(
+    testResult: TestResult,
+    expectedMethods: Set<string>
+  ): boolean {
+    const reported = new Set(testResult.tests.map(t => t.methodName))
+    for (const name of expectedMethods) {
+      if (!reported.has(name)) return true
     }
-    return {
-      mutantResults: results,
-      progressMessage: `Fallback for group of ${group.mutations.length} complete`,
-    }
+    return false
   }
 
-  private buildGroupedMutantResult(
-    mutation: ApexMutation,
-    outcomeByMethod: Map<string, string>,
-    testMethodsPerLine: Map<number, Set<string>>
-  ): ApexMutationTestResult['mutants'][number] {
-    // outcome strings come from `@salesforce/apex-node`'s ApexTestResultOutcome
-    // const enum (Pass | Fail | CompileFail | Skip). Compare against the
-    // string literal 'Pass' rather than importing the enum — const enums
-    // cross module boundaries poorly under strict ESM.
-    // Non-null assertion mirrors evaluateMutation's pattern: extractCoveredLines
-    // guarantees every mutation's line is in the coverage map.
-    const myMethods = testMethodsPerLine.get(mutation.target.startToken.line)!
-    const killed = [...myMethods].some(name => {
-      const outcome = outcomeByMethod.get(name)
-      return outcome !== undefined && outcome !== 'Pass'
-    })
-    const status: 'Killed' | 'Survived' = killed ? 'Killed' : 'Survived'
-    const targetInfo: TokenTargetInfo = {
-      line: mutation.target.startToken.line,
-      column: mutation.target.startToken.charPositionInLine,
-      tokenIndex: mutation.target.startToken.tokenIndex,
-      text: mutation.target.text,
+  private buildGroupProgressMessage(
+    mutantResults: ApexMutationTestResult['mutants']
+  ): string {
+    if (mutantResults.length === 1) {
+      return `Mutation result: ${mutantResults[0].status === 'Survived' ? 'zombie' : 'mutant killed'}`
     }
-    return {
-      id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
-      mutatorName: mutation.mutationName,
-      status,
-      location: this.calculateMutationPosition(mutation),
-      replacement: mutation.replacement,
-      original: this.extractMutationOriginalText(mutation),
-    }
-  }
-
-  private async evaluateMutation(
-    mutation: ApexMutation,
-    mutantGenerator: MutantGenerator,
-    tokenStream: CommonTokenStream,
-    apexClass: ApexClass,
-    testMethodsPerLine: Map<number, Set<string>>,
-    apexTestRunner: ApexTestRunner,
-    apexClassRepository: ApexClassRepository
-  ): Promise<{
-    mutantResult: ApexMutationTestResult['mutants'][number]
-    progressMessage: string
-  }> {
-    const mutatedVersion = mutantGenerator.mutate(mutation, tokenStream)
-    const targetInfo: TokenTargetInfo = {
-      line: mutation.target.startToken.line,
-      column: mutation.target.startToken.charPositionInLine,
-      tokenIndex: mutation.target.startToken.tokenIndex,
-      text: mutation.target.text,
-    }
-
-    try {
-      await apexClassRepository.update({
-        Id: apexClass.Id as string,
-        Body: mutatedVersion,
-      })
-
-      const testMethods = testMethodsPerLine.get(targetInfo.line)!
-      const testResult: TestResult = await apexTestRunner.runTestMethods(
-        this.apexTestClassName,
-        testMethods
-      )
-
-      return {
-        mutantResult: this.buildMutantResult(mutation, testResult, targetInfo),
-        progressMessage: `Mutation result: ${testResult.summary.outcome === 'Passed' ? 'zombie' : 'mutant killed'}`,
-      }
-    } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error)
-      const location = this.calculateMutationPosition(mutation)
-      const originalText = this.extractMutationOriginalText(mutation)
-      const strategy = errorStrategies.find(s => s.matches(errorMessage))!
-      const classification = strategy.classify(errorMessage, targetInfo)
-
-      return {
-        mutantResult: {
-          id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
-          mutatorName: mutation.mutationName,
-          status: classification.status,
-          ...(classification.statusReason && {
-            statusReason: classification.statusReason,
-          }),
-          location,
-          replacement: mutation.replacement,
-          original: originalText,
-        },
-        progressMessage: classification.progressMessage,
-      }
-    }
+    const killed = mutantResults.filter(r => r.status === 'Killed').length
+    return `Group of ${mutantResults.length} evaluated: ${killed} killed, ${mutantResults.length - killed} survived`
   }
 
   private formatRemainingTime(
