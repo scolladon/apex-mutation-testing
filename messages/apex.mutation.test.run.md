@@ -78,7 +78,7 @@ Estimated time: %s
 
 # info.timeEstimateBreakdown
 
-Deploy: %s/mutant | Test: %s/mutant | Mutants: %s
+Deploy: %s/iteration | Test: %s/iteration | Mutants: %s | Groups: %s
 
 # flags.include-mutators.summary
 
