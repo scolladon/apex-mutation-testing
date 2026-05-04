@@ -20,6 +20,7 @@ interface MutationTestingConfig {
   threshold?: number
   skipPatterns?: string[]
   lines?: string[]
+  mutationGrouping?: boolean
 }
 
 export class ConfigReader {
@@ -42,6 +43,8 @@ export class ConfigReader {
       threshold: parameter.threshold ?? fileConfig?.threshold,
       skipPatterns: parameter.skipPatterns ?? fileConfig?.skipPatterns,
       lines: parameter.lines ?? fileConfig?.lines,
+      mutationGrouping:
+        parameter.mutationGrouping ?? fileConfig?.mutationGrouping,
     }
 
     this.validate(resolved)

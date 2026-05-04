@@ -89,6 +89,49 @@ describe('ConfigReader', () => {
     expect(result.threshold).toBe(80)
   })
 
+  it('Given valid config file with mutationGrouping=true, When resolving config, Then returns mutationGrouping=true from file', async () => {
+    // Arrange
+    const config = { mutationGrouping: true }
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
+    const parameter = { ...baseParameter }
+
+    // Act
+    const result = await sut.resolve(parameter)
+
+    // Assert
+    expect(result.mutationGrouping).toBe(true)
+  })
+
+  it('Given CLI flag mutationGrouping=true and no config file, When resolving config, Then resolves to true', async () => {
+    // Arrange
+    const parameter: ApexMutationParameter = {
+      ...baseParameter,
+      mutationGrouping: true,
+    }
+
+    // Act
+    const result = await sut.resolve(parameter)
+
+    // Assert
+    expect(result.mutationGrouping).toBe(true)
+  })
+
+  it('Given CLI flag mutationGrouping=true and config file mutationGrouping=false, When resolving config, Then CLI flag wins', async () => {
+    // Arrange — exercises precedence: CLI value (truthy) overrides config value
+    const config = { mutationGrouping: false }
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
+    const parameter: ApexMutationParameter = {
+      ...baseParameter,
+      mutationGrouping: true,
+    }
+
+    // Act
+    const result = await sut.resolve(parameter)
+
+    // Assert
+    expect(result.mutationGrouping).toBe(true)
+  })
+
   it('Given invalid JSON in config file, When resolving config, Then throws parse error', async () => {
     // Arrange
     vi.mocked(readFile).mockResolvedValue('{ invalid json }')

@@ -112,6 +112,18 @@ RE2 regex patterns to skip lines from mutation (e.g., System\.debug)
 
 Line ranges to mutate (e.g., 1-10, 42). Only these lines are eligible for mutation.
 
+# flags.mutation-grouping.summary
+
+Group mutations whose covering tests are disjoint into a single deploy + test run. Reduces deployments and async test-run kickoffs at the cost of larger blast radius on compile errors. Off by default.
+
+# info.groupingPlan
+
+Mutation grouping enabled — packed %s mutations into %s group(s) (%s%% fewer deployments)
+
+# info.groupingFallback
+
+Group of %s mutations failed batch deploy — re-evaluating individually
+
 # error.thresholdNotMet
 
 Mutation score %s% is below the required threshold of %s%

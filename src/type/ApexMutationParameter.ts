@@ -11,4 +11,5 @@ export interface ApexMutationParameter {
   configFile?: string
   skipPatterns?: string[]
   lines?: string[]
+  mutationGrouping?: boolean
 }
