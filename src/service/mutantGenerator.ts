@@ -238,13 +238,48 @@ export class MutantGenerator {
     mutation: ApexMutation,
     tokenStream: CommonTokenStream
   ): string {
+    return this.mutateMany([mutation], tokenStream)
+  }
+
+  // Apply N non-overlapping mutations on a single rewriter, producing one
+  // mutated source. Used by the grouping path to deploy a batch of independent
+  // mutations in one Tooling-API class update.
+  //
+  // Caller guarantees mutations have non-overlapping token ranges (groupers
+  // enforce this naturally — same-line mutations always share covering tests
+  // and therefore conflict in the conflict graph). Defensively asserted.
+  public mutateMany(
+    mutations: ReadonlyArray<ApexMutation>,
+    tokenStream: CommonTokenStream
+  ): string {
+    this.assertNonOverlappingRanges(mutations)
     const rewriter = new TokenStreamRewriter(tokenStream)
-    rewriter.replace(
-      mutation.target.startToken.tokenIndex,
-      mutation.target.endToken.tokenIndex,
-      mutation.replacement
-    )
+    for (const mutation of mutations) {
+      rewriter.replace(
+        mutation.target.startToken.tokenIndex,
+        mutation.target.endToken.tokenIndex,
+        mutation.replacement
+      )
+    }
     return rewriter.getText()
+  }
+
+  private assertNonOverlappingRanges(
+    mutations: ReadonlyArray<ApexMutation>
+  ): void {
+    if (mutations.length < 2) return
+    const sorted = [...mutations].sort(
+      (a, b) => a.target.startToken.tokenIndex - b.target.startToken.tokenIndex
+    )
+    for (let i = 1; i < sorted.length; ++i) {
+      const prevEnd = sorted[i - 1].target.endToken.tokenIndex
+      const currStart = sorted[i].target.startToken.tokenIndex
+      if (currStart <= prevEnd) {
+        throw new Error(
+          `mutateMany: overlapping token ranges (token ${currStart} ≤ ${prevEnd})`
+        )
+      }
+    }
   }
 
   private filterRegistry(mutatorFilter?: {
