@@ -1,4 +1,3 @@
-import { TestResult } from '@salesforce/apex-node'
 import { Connection, Messages } from '@salesforce/core'
 import { Progress, Spinner } from '@salesforce/sf-plugins-core'
 import type { CommonTokenStream } from 'apex-parser'
@@ -10,85 +9,21 @@ import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
 import { ConfigReader, type RE2Instance } from './configReader.js'
+import { decideExactOutcome, solveColoring } from './exactColoring.js'
+import { GroupExecutor } from './groupExecutor.js'
 import { MutantGenerator } from './mutantGenerator.js'
+import {
+  assembleGroups,
+  groupMutationsWithInternals,
+  type MutationGroup,
+} from './mutationGrouper.js'
+import {
+  calculateMutationPosition,
+  extractMutationOriginalText,
+} from './mutationLocation.js'
 import { formatDuration, timeExecution } from './timeUtils.js'
 import { type TypeAnalysisResult, TypeDiscoverer } from './typeDiscoverer.js'
 import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
-
-/**
- * Advance a 1-indexed (line, column) cursor through `text`, returning the
- * position immediately AFTER the last character. Handles tokens whose text
- * spans newlines (multi-line string literals, block comments).
- *
- * Used to compute the Stryker `end` position for a mutation: ANTLR tokens
- * expose `line` and `charPositionInLine` for the START of the token but not
- * past the end; walking `endToken.text` closes that gap without needing a
- * separate line-offset index over the whole source.
- */
-function advancePosition(
-  text: string,
-  startLine: number,
-  startColumn: number
-): { line: number; column: number } {
-  let line = startLine
-  let column = startColumn
-  for (let i = 0; i < text.length; i++) {
-    if (text.charCodeAt(i) === 10 /* \n */) {
-      line++
-      column = 1
-    } else {
-      column++
-    }
-  }
-  return { line, column }
-}
-
-interface TokenTargetInfo {
-  line: number
-  column: number
-  tokenIndex: number
-  text: string
-}
-
-interface ErrorClassification {
-  status: 'CompileError' | 'Killed' | 'RuntimeError'
-  statusReason?: string
-  progressMessage: string
-}
-
-interface ErrorClassificationStrategy {
-  matches(errorMessage: string): boolean
-  classify(
-    errorMessage: string,
-    targetInfo: TokenTargetInfo
-  ): ErrorClassification
-}
-
-const errorStrategies: ErrorClassificationStrategy[] = [
-  {
-    matches: msg => msg.startsWith('Deployment failed:'),
-    classify: (msg, targetInfo) => ({
-      status: 'CompileError',
-      statusReason: msg,
-      progressMessage: `Mutation result: compile error at line ${targetInfo.line}`,
-    }),
-  },
-  {
-    matches: msg => msg.includes('LIMIT_USAGE_FOR_NS'),
-    classify: msg => ({
-      status: 'Killed',
-      progressMessage: `Mutation result: mutant killed (${msg})`,
-    }),
-  },
-  {
-    matches: () => true,
-    classify: msg => ({
-      status: 'RuntimeError',
-      statusReason: msg,
-      progressMessage: `Mutation result: runtime error (${msg})`,
-    }),
-  },
-]
 
 export class MutationTestingService {
   protected readonly apexClassName: string
@@ -100,6 +35,7 @@ export class MutationTestingService {
   protected readonly excludeTestMethods: string[] | undefined
   private readonly skipPatterns: RE2Instance[]
   private readonly allowedLines: Set<number> | undefined
+  private readonly mutationGroupingEnabled: boolean
   private apexClassContent: string = ''
 
   constructor(
@@ -116,6 +52,7 @@ export class MutationTestingService {
       excludeTestMethods,
       skipPatterns,
       lines,
+      mutationGrouping,
     }: ApexMutationParameter,
     protected readonly messages: Messages<string>
   ) {
@@ -128,6 +65,7 @@ export class MutationTestingService {
     this.excludeTestMethods = excludeTestMethods
     this.skipPatterns = ConfigReader.compileSkipPatterns(skipPatterns)
     this.allowedLines = ConfigReader.parseLineRanges(lines)
+    this.mutationGroupingEnabled = mutationGrouping ?? false
   }
 
   public async process(): Promise<ApexMutationTestResult> {
@@ -153,15 +91,28 @@ export class MutationTestingService {
       typeAnalysis
     )
 
-    this.displayTimeEstimate(deployTime, testTime, mutations.length)
-
     if (this.dryRun) {
+      this.displayTimeEstimate(
+        deployTime,
+        testTime,
+        mutations.length,
+        mutations.length
+      )
       return this.buildDryRunResult(apexClass, mutations)
     }
+
+    const groups = await this.planGroups(mutations, testMethodsPerLine)
+    this.displayTimeEstimate(
+      deployTime,
+      testTime,
+      mutations.length,
+      groups.length
+    )
 
     const result = await this.executeMutationLoop(
       apexClass,
       mutations,
+      groups,
       mutantGenerator,
       tokenStream,
       testMethodsPerLine,
@@ -170,6 +121,62 @@ export class MutationTestingService {
     )
     await this.rollback(apexClass, apexClassRepository)
     return result
+  }
+
+  private async planGroups(
+    mutations: ApexMutation[],
+    testMethodsPerLine: Map<number, Set<string>>
+  ): Promise<MutationGroup[]> {
+    if (!this.mutationGroupingEnabled) {
+      // No grouping: one mutation per group. Inlined here rather than going
+      // through groupMutations to avoid building the conflict graph for the
+      // common (default-off) case.
+      return mutations.map(m => ({
+        mutations: [m],
+        // extractCoveredLines guarantees the line is in the map.
+        testMethods: testMethodsPerLine.get(m.target.startToken.line)!,
+      }))
+    }
+
+    this.spinner.start(
+      `Grouping ${mutations.length} mutations to minimize deployments`,
+      undefined,
+      { stdout: true }
+    )
+    const {
+      groups: dsaturGroups,
+      lowerBound,
+      internals,
+    } = groupMutationsWithInternals(mutations, testMethodsPerLine)
+
+    let groups = dsaturGroups
+    const exact = solveColoring({
+      adjacency: internals.adjacency,
+      n: mutations.length,
+      lowerBound,
+      dsaturColors: dsaturGroups.length,
+      witness: internals.witness,
+      dsaturColoring: internals.coloring,
+    })
+    const decision = decideExactOutcome(exact, dsaturGroups.length)
+    const exactSuffix = decision.suffix
+    if (decision.useGroups === 'exact') {
+      groups = assembleGroups(mutations, internals.tests, exact.coloring)
+    }
+
+    // Division is safe: generateMutations throws when mutations is empty,
+    // so planGroups is never reached with mutations.length === 0.
+    const savingsPct = Math.round((1 - groups.length / mutations.length) * 100)
+    this.spinner.stop(
+      this.messages.getMessage('info.groupingPlan', [
+        String(mutations.length),
+        String(groups.length),
+        String(savingsPct),
+        String(lowerBound),
+        exactSuffix,
+      ])
+    )
+    return groups
   }
 
   public calculateScore(mutationResult: ApexMutationTestResult) {
@@ -185,59 +192,6 @@ export class MutationTestingService {
         validMutants.length) *
       100
     )
-  }
-
-  private buildMutantResult(
-    mutation: ApexMutation,
-    testResult: TestResult,
-    targetInfo: TokenTargetInfo
-  ) {
-    const mutationStatus: 'Killed' | 'Survived' | 'NoCoverage' =
-      testResult.summary.outcome === 'Passed' ? 'Survived' : 'Killed'
-
-    const location = this.calculateMutationPosition(mutation)
-    const originalText = this.extractMutationOriginalText(mutation)
-    return {
-      id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
-      mutatorName: mutation.mutationName,
-      status: mutationStatus,
-      location,
-      replacement: mutation.replacement,
-      original: originalText,
-    }
-  }
-
-  private calculateMutationPosition(mutation: ApexMutation): {
-    start: { line: number; column: number }
-    end: { line: number; column: number }
-  } {
-    const start = mutation.target.startToken
-    const end = mutation.target.endToken
-
-    if (
-      start.startIndex === undefined ||
-      end.stopIndex === undefined ||
-      end.text === undefined
-    ) {
-      throw new Error(
-        `Failed to calculate position for mutation: ${mutation.mutationName}`
-      )
-    }
-
-    // ANTLR tokens expose the position of the FIRST character directly.
-    // The Stryker `end` position is exclusive (one past the last char), so
-    // we walk endToken.text to advance from the end token's own start.
-    // This correctly handles tokens that span newlines (multi-line string
-    // literals, block comments).
-    return {
-      start: {
-        line: start.line,
-        column: start.charPositionInLine + 1,
-      },
-      // ANTLR tokens always expose `text`; treat an undefined text as a
-      // programmer error rather than silently swallowing with an empty default.
-      end: advancePosition(end.text, end.line, end.charPositionInLine + 1),
-    }
   }
 
   private filterTestMethods(
@@ -497,9 +451,10 @@ export class MutationTestingService {
   private displayTimeEstimate(
     deployTime: number,
     testTime: number,
-    mutationCount: number
+    mutationCount: number,
+    groupCount: number
   ): void {
-    const totalEstimateMs = (deployTime + testTime) * mutationCount
+    const totalEstimateMs = (deployTime + testTime) * groupCount
     this.spinner.start(
       this.messages.getMessage('info.timeEstimate', [
         formatDuration(totalEstimateMs),
@@ -512,6 +467,7 @@ export class MutationTestingService {
         formatDuration(deployTime),
         formatDuration(testTime),
         String(mutationCount),
+        String(groupCount),
       ])
     )
   }
@@ -528,9 +484,9 @@ export class MutationTestingService {
         id: `${this.apexClassName}-${mutation.target.startToken.line}-${mutation.target.startToken.charPositionInLine}-${mutation.target.startToken.tokenIndex}-${Date.now()}`,
         mutatorName: mutation.mutationName,
         status: 'Pending' as const,
-        location: this.calculateMutationPosition(mutation),
+        location: calculateMutationPosition(mutation),
         replacement: mutation.replacement,
-        original: this.extractMutationOriginalText(mutation),
+        original: extractMutationOriginalText(mutation, this.apexClassContent),
       })),
     }
   }
@@ -538,19 +494,13 @@ export class MutationTestingService {
   private async executeMutationLoop(
     apexClass: ApexClass,
     mutations: ApexMutation[],
+    groups: MutationGroup[],
     mutantGenerator: MutantGenerator,
     tokenStream: CommonTokenStream,
     testMethodsPerLine: Map<number, Set<string>>,
     apexTestRunner: ApexTestRunner,
     apexClassRepository: ApexClassRepository
   ): Promise<ApexMutationTestResult> {
-    const mutationResults: ApexMutationTestResult = {
-      sourceFile: this.apexClassName,
-      sourceFileContent: apexClass.Body,
-      testFile: this.apexTestClassName,
-      mutants: [],
-    }
-
     this.progress.start(
       mutations.length,
       { info: 'Starting mutation testing' },
@@ -560,125 +510,50 @@ export class MutationTestingService {
       }
     )
 
-    let mutationCount = 0
+    const executor = new GroupExecutor(
+      apexClass,
+      this.apexClassName,
+      this.apexTestClassName,
+      this.apexClassContent,
+      tokenStream,
+      testMethodsPerLine,
+      mutantGenerator,
+      apexTestRunner,
+      apexClassRepository,
+      this.progress,
+      this.messages
+    )
+
+    const indexByMutation = new Map(mutations.map((m, i) => [m, i]))
+    const orderedResults: Array<
+      ApexMutationTestResult['mutants'][number] | null
+    > = new Array(mutations.length).fill(null)
+    let completed = 0
     const loopStartTime = performance.now()
-    for (const mutation of mutations) {
-      const remainingText = this.formatRemainingTime(
+
+    for (const group of groups) {
+      const mutantResults = await executor.evaluate(
+        group,
+        completed,
         loopStartTime,
-        mutationCount,
         mutations.length
       )
-
-      this.progress.update(mutationCount, {
-        info: `${remainingText}Deploying "${mutation.replacement}" mutation at line ${mutation.target.startToken.line}`,
-      })
-
-      const testMethods = testMethodsPerLine.get(
-        mutation.target.startToken.line
-      )
-      if (testMethods) {
-        this.progress.update(mutationCount, {
-          info: `${remainingText}Running ${testMethods.size} tests methods for "${mutation.replacement}" mutation at line ${mutation.target.startToken.line}`,
-        })
+      for (let i = 0; i < group.mutations.length; ++i) {
+        const idx = indexByMutation.get(group.mutations[i])!
+        orderedResults[idx] = mutantResults[i]
       }
-
-      const { mutantResult, progressMessage } = await this.evaluateMutation(
-        mutation,
-        mutantGenerator,
-        tokenStream,
-        apexClass,
-        testMethodsPerLine,
-        apexTestRunner,
-        apexClassRepository
-      )
-      mutationResults.mutants.push(mutantResult)
-
-      ++mutationCount
-      const updatedRemainingText = this.formatRemainingTime(
-        loopStartTime,
-        mutationCount,
-        mutations.length
-      )
-      this.progress.update(mutationCount, {
-        info: `${updatedRemainingText}${progressMessage}`,
-      })
+      completed += group.mutations.length
     }
 
     this.progress.finish({ info: 'All mutations evaluated' })
-    return mutationResults
-  }
-
-  private async evaluateMutation(
-    mutation: ApexMutation,
-    mutantGenerator: MutantGenerator,
-    tokenStream: CommonTokenStream,
-    apexClass: ApexClass,
-    testMethodsPerLine: Map<number, Set<string>>,
-    apexTestRunner: ApexTestRunner,
-    apexClassRepository: ApexClassRepository
-  ): Promise<{
-    mutantResult: ApexMutationTestResult['mutants'][number]
-    progressMessage: string
-  }> {
-    const mutatedVersion = mutantGenerator.mutate(mutation, tokenStream)
-    const targetInfo: TokenTargetInfo = {
-      line: mutation.target.startToken.line,
-      column: mutation.target.startToken.charPositionInLine,
-      tokenIndex: mutation.target.startToken.tokenIndex,
-      text: mutation.target.text,
+    return {
+      sourceFile: this.apexClassName,
+      sourceFileContent: apexClass.Body,
+      testFile: this.apexTestClassName,
+      mutants: orderedResults.filter(
+        (r): r is ApexMutationTestResult['mutants'][number] => r !== null
+      ),
     }
-
-    try {
-      await apexClassRepository.update({
-        Id: apexClass.Id as string,
-        Body: mutatedVersion,
-      })
-
-      const testMethods = testMethodsPerLine.get(targetInfo.line)!
-      const testResult: TestResult = await apexTestRunner.runTestMethods(
-        this.apexTestClassName,
-        testMethods
-      )
-
-      return {
-        mutantResult: this.buildMutantResult(mutation, testResult, targetInfo),
-        progressMessage: `Mutation result: ${testResult.summary.outcome === 'Passed' ? 'zombie' : 'mutant killed'}`,
-      }
-    } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error)
-      const location = this.calculateMutationPosition(mutation)
-      const originalText = this.extractMutationOriginalText(mutation)
-      const strategy = errorStrategies.find(s => s.matches(errorMessage))!
-      const classification = strategy.classify(errorMessage, targetInfo)
-
-      return {
-        mutantResult: {
-          id: `${this.apexClassName}-${targetInfo.line}-${targetInfo.column}-${targetInfo.tokenIndex}-${Date.now()}`,
-          mutatorName: mutation.mutationName,
-          status: classification.status,
-          ...(classification.statusReason && {
-            statusReason: classification.statusReason,
-          }),
-          location,
-          replacement: mutation.replacement,
-          original: originalText,
-        },
-        progressMessage: classification.progressMessage,
-      }
-    }
-  }
-
-  private formatRemainingTime(
-    loopStartTime: number,
-    completedCount: number,
-    totalCount: number
-  ): string {
-    if (completedCount === 0) return ''
-    const elapsed = performance.now() - loopStartTime
-    const avgPerMutant = elapsed / completedCount
-    const remainingMs = avgPerMutant * (totalCount - completedCount)
-    return `Remaining: ${formatDuration(remainingMs)} | `
   }
 
   private async rollback(
@@ -702,25 +577,5 @@ export class MutationTestingService {
         `Rollback of '${this.apexClassName}' failed. The class on the target org is still in a mutated state. Redeploy manually. Underlying cause: ${cause}`
       )
     }
-  }
-
-  private extractMutationOriginalText(mutation: ApexMutation): string {
-    const start = mutation.target.startToken
-    const end = mutation.target.endToken
-
-    if (
-      start.startIndex !== undefined &&
-      end.stopIndex !== undefined &&
-      this.apexClassContent
-    ) {
-      return this.apexClassContent.substring(
-        start.startIndex,
-        end.stopIndex + 1
-      )
-    }
-
-    throw new Error(
-      `Failed to extract original text for mutation: ${mutation.mutationName}`
-    )
   }
 }

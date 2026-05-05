@@ -681,4 +681,56 @@ describe('MutantGenerator', () => {
       expect(result).not.toContain('5 < 10')
     })
   })
+
+  describe('when mutating many code points at once', () => {
+    it('given two non-overlapping mutations on different lines when applied together then both replacements appear in the source', () => {
+      // Arrange — two distinct increment mutations on different lines
+      const classContent = [
+        'public class Test {',
+        '  public static integer m1() { integer i = 0; ++i; return i; }',
+        '  public static integer m2() { integer j = 0; ++j; return j; }',
+        '}',
+      ].join('\n')
+      const coveredLines = new Set([2, 3])
+      const { mutations, tokenStream } = sut.compute(classContent, coveredLines)
+      const incrementMutations = mutations.filter(
+        m => m.mutationName === 'IncrementMutator'
+      )
+      expect(incrementMutations.length).toBeGreaterThanOrEqual(2)
+
+      // Act
+      const result = sut.mutateMany(
+        [incrementMutations[0], incrementMutations[1]],
+        tokenStream
+      )
+
+      // Assert — both `++` were rewritten to `--`; no `++` remains
+      expect((result.match(/--/g) ?? []).length).toBeGreaterThanOrEqual(2)
+      expect(result).not.toContain('++')
+    })
+
+    it('given an empty mutation list when applied then returns the original source unchanged', () => {
+      // Arrange
+      const classContent =
+        'public class Test { public static void method() { integer i = 0; } }'
+      const { tokenStream } = sut.compute(classContent, new Set([1]))
+
+      // Act
+      const result = sut.mutateMany([], tokenStream)
+
+      // Assert
+      expect(result).toBe(classContent)
+    })
+
+    it('given two mutations whose token ranges overlap when applied together then throws an explicit error', () => {
+      // Arrange — same mutation passed twice ⇒ identical (overlapping) token ranges
+      const classContent =
+        'public class Test { public static void method() { integer i = 0; ++i; } }'
+      const { mutations, tokenStream } = sut.compute(classContent, new Set([1]))
+      const m = mutations.find(x => x.mutationName === 'IncrementMutator')!
+
+      // Act & Assert
+      expect(() => sut.mutateMany([m, m], tokenStream)).toThrow(/overlap/i)
+    })
+  })
 })

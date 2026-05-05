@@ -245,6 +245,32 @@ Each method encapsulates one logical concern. `evaluateMutation()` handles the t
 
 ## Core Design Patterns
 
+### Mutation Grouping (opt-in)
+
+When `--mutation-grouping` (or `mutationGrouping: true` in config) is enabled, mutations whose covering tests are pairwise disjoint are deployed and tested as a batch — turning N deploys + N test-runs into G deploys + G test-runs (where G = chromatic number of the conflict graph).
+
+The feature is split across three small modules:
+
+```text
+  src/service/mutationGrouper.ts     (groupMutations function)
+  src/service/groupExecutor.ts       (GroupExecutor class)
+  src/service/mutationLocation.ts    (calculateMutationPosition, extractMutationOriginalText)
+```
+
+**Planning.** `MutationTestingService.planGroups` calls `groupMutations(mutations, testMethodsPerLine)` — DSATUR (Brélaz 1979), the strongest polynomial-time graph-coloring heuristic, applied to the conflict graph (edge ⇔ two mutations share at least one covering test). The conflict graph is the intersection graph of per-mutation test sets, so the largest test-induced clique is a free lower bound on the chromatic number; `groupMutations` returns this `lowerBound` alongside the partition and pre-colors the witness clique to seed DSATUR with a maximally-constrained start. The grouping telemetry line surfaces the lower bound, so users see when `groups.length === lowerBound` certifies the partition as provably optimal. When grouping is disabled, `planGroups` builds singleton groups inline, skipping the conflict graph entirely.
+
+**Execution.** `MutationTestingService.executeMutationLoop` constructs one `GroupExecutor` per session (with all session-scoped collaborators: apex class, token stream, coverage map, repo, test runner, generator, progress, messages) and iterates `executor.evaluate(group, completedSoFar, loopStartTime, totalMutations)` for each group. The executor owns all per-iteration concerns:
+
+- `MutantGenerator.mutateMany` applies all replacements on a single `TokenStreamRewriter`.
+- `ApexTestRunner.runTestMethods` runs the union of covering test methods.
+- For `k = 1`, status comes from `testResult.summary.outcome` (legacy semantics).
+- For `k > 1`, per-method outcomes from `testResult.tests[]` are reverse-mapped to mutations via `testMethodsPerLine`: a mutation is `Killed` iff at least one of its covering test methods has outcome ≠ `Pass`. The grouping invariant (no test covers two mutations in the same group) makes this attribution unambiguous.
+- On a deploy or runtime error: for `k = 1`, classify the error directly (`CompileError` / `RuntimeError` / `Killed` for governor-limit kills); for `k > 1`, fall back by recursing — each mutation becomes its own `k = 1` singleton group, and the leaf path classifies any error.
+
+**Splitting the responsibilities** keeps `MutationTestingService` as a lifecycle orchestrator (~560 lines: setup, baseline, plan, loop, rollback) while per-iteration evaluation (~270 lines: deploy, run, classify, build mutant result) lives in its own collaborator. Pure position/text utilities are shared between the executor's runtime path and the service's dry-run path via `mutationLocation.ts`.
+
+**Exact coloring.** With `--mutation-grouping`, the planner unconditionally runs an exact graph-coloring step *after* DSATUR — `solveColoring` in `src/service/exactColoring.ts` binary-searches `k` between the lower bound and DSATUR's color count, calling `tryKColoring` (DSATUR-style backtracking) at each step. The witness clique surfaced by D2 is pre-colored at the most-constrained vertices, so the search converges fast at our scale (`n ≤ 200`, χ typically single-digit). The result is **never worse than DSATUR alone**: when DSATUR is already at the lower bound, the binary search short-circuits and the DSATUR coloring is returned with a "confirmed optimal" certificate; when DSATUR overshoots, the search returns a strictly smaller coloring. The chosen path is reported through the existing `info.groupingPlan` line via a trailing `exact: …` suffix (`confirmed optimal` or `improved by N deploy(s)`). No external SAT solver, no runtime dependency.
+
 ### Proxy-Based Listener Aggregation
 
 The central architectural pattern. `MutationListener` uses a JavaScript `Proxy` to dynamically dispatch ANTLR parse tree callbacks to all 25 registered mutators without explicit delegation.

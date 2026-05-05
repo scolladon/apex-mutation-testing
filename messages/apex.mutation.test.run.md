@@ -78,7 +78,7 @@ Estimated time: %s
 
 # info.timeEstimateBreakdown
 
-Deploy: %s/mutant | Test: %s/mutant | Mutants: %s
+Deploy: %s/iteration | Test: %s/iteration | Mutants: %s | Groups: %s
 
 # flags.include-mutators.summary
 
@@ -111,6 +111,18 @@ RE2 regex patterns to skip lines from mutation (e.g., System\.debug)
 # flags.lines.summary
 
 Line ranges to mutate (e.g., 1-10, 42). Only these lines are eligible for mutation.
+
+# flags.mutation-grouping.summary
+
+Group mutations whose covering tests are disjoint into a single deploy + test run. Reduces deployments and async test-run kickoffs at the cost of larger blast radius on compile errors. Runs the full pipeline: test-induced clique lower bound → DSATUR heuristic → exact backtracking coloring. Off by default.
+
+# info.groupingPlan
+
+Mutation grouping enabled — packed %s mutations into %s group(s) (%s%% fewer deployments, lower bound %s)%s
+
+# info.groupingFallback
+
+Group of %s mutations failed batch deploy — re-evaluating individually
 
 # error.thresholdNotMet
 

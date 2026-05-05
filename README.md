@@ -113,7 +113,8 @@ The config file supports the following attributes:
   },
   "threshold": 80,
   "skipPatterns": ["System\\.debug", "Logger\\."],
-  "lines": ["1-10", "25-30", "42"]
+  "lines": ["1-10", "25-30", "42"],
+  "mutationGrouping": true
 }
 ```
 
@@ -126,6 +127,7 @@ The config file supports the following attributes:
 | `threshold`           | `number`   | Minimum mutation score (0–100) required for the command to succeed                                                |
 | `skipPatterns`        | `string[]` | RE2 regex patterns to skip lines from mutation (e.g., `System\\.debug`)                                           |
 | `lines`               | `string[]` | Line ranges to restrict mutation to (e.g., `1-10`, `42`)                                                          |
+| `mutationGrouping`    | `boolean`  | Pack mutations whose covering tests are disjoint into a single deploy + test run; runs the full pipeline (test-induced clique lower bound → DSATUR → exact backtracking coloring). Off by default.                |
 
 **Mutual exclusivity:** You cannot specify both `include` and `exclude` within the same group.
 For example, setting both `mutators.include` and `mutators.exclude` will result in an error.
@@ -216,6 +218,31 @@ Config file equivalent:
   "lines": ["1-10", "25-30", "42"]
 }
 ```
+
+#### Mutation Grouping
+
+Run multiple independent mutations in a single deployment + test run by passing `--mutation-grouping`. The flag turns on a three-stage pipeline:
+
+1. **Lower-bound clique** — for every test method, gather the mutations it covers; the largest such set is a clique in the conflict graph and a free lower bound on the chromatic number.
+2. **DSATUR** — pre-color the witness clique, then partition the remaining mutations with the strongest polynomial-time graph-coloring heuristic (Brélaz 1979). Two mutations share a group iff their covering tests are pairwise disjoint.
+3. **Exact backtracking coloring** — binary-search for the chromatic number using DSATUR-style backtracking, seeded by the witness clique. Confirms DSATUR was already optimal or finds a strictly smaller partition. No external solver, no runtime dependency — pure TypeScript.
+
+Each group is then deployed once and its union of covering tests run once; per-method test outcomes are reverse-mapped back to individual mutations. This reduces the number of Tooling-API class updates and async test-run kickoffs (the network-bound dominant cost) without changing test execution time. Off by default.
+
+```sh
+# Enable mutation grouping
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest --mutation-grouping
+```
+
+Config file equivalent:
+
+```json
+{
+  "mutationGrouping": true
+}
+```
+
+If a batched deploy or test run fails, the affected group automatically falls back to per-mutant evaluation — so worst case is identical to today's behavior plus one wasted batch attempt.
 
 ##### Diff-Based Mutation Testing with Git
 
@@ -337,7 +364,7 @@ USAGE
   $ sf apex mutation test run -c <value> -t <value> -o <value> [--json] [--flags-dir <value>] [-r <value>] [-d]
     [--include-mutators <value>... | --exclude-mutators <value>...] [--include-test-methods <value>... |
     --exclude-test-methods <value>...] [--threshold <value>] [-s <value>...] [-l <value>...] [--config-file <value>]
-    [--api-version <value>]
+    [--mutation-grouping] [--api-version <value>]
 
 FLAGS
   -c, --apex-class=<value>               (required) Apex class name to mutate
@@ -356,6 +383,10 @@ FLAGS
       --exclude-test-methods=<value>...  Test method names to exclude
       --include-mutators=<value>...      Mutator names to include (e.g. ArithmeticOperator, BoundaryCondition)
       --include-test-methods=<value>...  Test method names to include
+      --mutation-grouping                Group mutations whose covering tests are disjoint into a single deploy + test
+                                         run. Reduces deployments and async test-run kickoffs at the cost of larger
+                                         blast radius on compile errors. Runs the full pipeline: test-induced clique
+                                         lower bound → DSATUR heuristic → exact backtracking coloring. Off by default.
       --threshold=<value>                Minimum mutation score (0-100) required for the command to succeed
 
 GLOBAL FLAGS

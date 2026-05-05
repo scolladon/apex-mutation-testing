@@ -83,6 +83,9 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       summary: messages.getMessage('flags.config-file.summary'),
       exists: true,
     }),
+    'mutation-grouping': Flags.boolean({
+      summary: messages.getMessage('flags.mutation-grouping.summary'),
+    }),
     'target-org': Flags.requiredOrg(),
     'api-version': Flags.orgApiVersion(),
   }
@@ -104,6 +107,7 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       skipPatterns: flags['skip-patterns'],
       lines: flags['lines'],
       configFile: flags['config-file'],
+      mutationGrouping: flags['mutation-grouping'],
     }
 
     const configReader = new ConfigReader()

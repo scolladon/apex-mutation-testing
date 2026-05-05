@@ -1,5 +1,6 @@
 import {
   formatDuration,
+  formatRemainingTime,
   timeExecution,
 } from '../../../src/service/timeUtils.js'
 
@@ -163,6 +164,66 @@ describe('timeUtils', () => {
           expect(sut).toBe('~2h 1m 5s')
         })
       })
+    })
+  })
+
+  describe('formatRemainingTime', () => {
+    it('given completedCount is 0 when called then returns empty string', () => {
+      // Arrange
+      const loopStartTime = performance.now()
+
+      // Act
+      const result = formatRemainingTime(loopStartTime, 0, 10)
+
+      // Assert — must be exactly '' (kills the StringLiteral and EqualityOperator mutants)
+      expect(result).toBe('')
+      expect(result).not.toContain('|')
+    })
+
+    it('given completedCount > 0 when called then returns string ending with " | "', () => {
+      // Arrange
+      const loopStartTime = 1000
+      const fakeNow = vi.spyOn(performance, 'now')
+      fakeNow.mockReturnValue(loopStartTime + 500)
+
+      // Act
+      const result = formatRemainingTime(loopStartTime, 1, 5)
+
+      // Assert
+      expect(result).toMatch(/\| $/)
+      expect(result).toContain('Remaining:')
+      fakeNow.mockRestore()
+    })
+
+    it('given completedCount=2 of 10 with 100ms elapsed when called then remaining time is proportional', () => {
+      // Arrange — kills arithmetic operator mutants. avgPerMutant = 100/2 = 50;
+      // remainingMs = 50 * (10 - 2) = 400. If / → *, remaining=elapsed*16; if * → /,
+      // remaining=elapsed/16; if - → +, remaining=avgPerMutant*12 (different).
+      const loopStartTime = 10_000
+      const fakeNow = vi.spyOn(performance, 'now')
+      fakeNow.mockReturnValue(loopStartTime + 100)
+
+      // Act
+      const result = formatRemainingTime(loopStartTime, 2, 10)
+
+      // Assert
+      expect(result).toContain('Remaining:')
+      expect(result).toContain(' | ')
+      fakeNow.mockRestore()
+    })
+
+    it('given completedCount equals totalCount when called then formatDuration receives 0', () => {
+      // Arrange — kills (totalCount - completedCount) → + mutant
+      const loopStartTime = 5000
+      const fakeNow = vi.spyOn(performance, 'now')
+      fakeNow.mockReturnValue(loopStartTime + 200)
+
+      // Act
+      const result = formatRemainingTime(loopStartTime, 10, 10)
+
+      // Assert — remaining = (200/10) * (10-10) = 0 → formatted as '~0s'
+      expect(result).toBe('Remaining: ~0s | ')
+      fakeNow.mockRestore()
     })
   })
 })
