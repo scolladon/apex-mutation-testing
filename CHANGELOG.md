@@ -2,6 +2,13 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [1.7.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.6.1...v1.7.0) (2026-05-05)
+
+
+### Features
+
+* opt-in mutation grouping (DSATUR) to reduce deployments ([#122](https://github.com/scolladon/apex-mutation-testing/issues/122)) ([2b04296](https://github.com/scolladon/apex-mutation-testing/commit/2b04296513d2158b20149de4f9ece15991eedbab))
+
 ## [1.6.1](https://github.com/scolladon/apex-mutation-testing/compare/v1.6.0...v1.6.1) (2026-04-18)
 
 
