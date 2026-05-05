@@ -257,7 +257,7 @@ The feature is split across three small modules:
   src/service/mutationLocation.ts    (calculateMutationPosition, extractMutationOriginalText)
 ```
 
-**Planning.** `MutationTestingService.planGroups` calls `groupMutations(mutations, testMethodsPerLine)` — DSATUR (Brélaz 1979), the strongest polynomial-time graph-coloring heuristic, applied to the conflict graph (edge ⇔ two mutations share at least one covering test). When grouping is disabled, `planGroups` builds singleton groups inline, skipping the conflict graph entirely.
+**Planning.** `MutationTestingService.planGroups` calls `groupMutations(mutations, testMethodsPerLine)` — DSATUR (Brélaz 1979), the strongest polynomial-time graph-coloring heuristic, applied to the conflict graph (edge ⇔ two mutations share at least one covering test). The conflict graph is the intersection graph of per-mutation test sets, so the largest test-induced clique is a free lower bound on the chromatic number; `groupMutations` returns this `lowerBound` alongside the partition and pre-colors the witness clique to seed DSATUR with a maximally-constrained start. The grouping telemetry line surfaces the lower bound, so users see when `groups.length === lowerBound` certifies the partition as provably optimal. When grouping is disabled, `planGroups` builds singleton groups inline, skipping the conflict graph entirely.
 
 **Execution.** `MutationTestingService.executeMutationLoop` constructs one `GroupExecutor` per session (with all session-scoped collaborators: apex class, token stream, coverage map, repo, test runner, generator, progress, messages) and iterates `executor.evaluate(group, completedSoFar, loopStartTime, totalMutations)` for each group. The executor owns all per-iteration concerns:
 

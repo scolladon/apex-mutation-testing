@@ -138,7 +138,7 @@ export class MutationTestingService {
       undefined,
       { stdout: true }
     )
-    const groups = groupMutations(mutations, testMethodsPerLine)
+    const { groups, lowerBound } = groupMutations(mutations, testMethodsPerLine)
     // Division is safe: generateMutations throws when mutations is empty,
     // so planGroups is never reached with mutations.length === 0.
     const savingsPct = Math.round((1 - groups.length / mutations.length) * 100)
@@ -147,6 +147,8 @@ export class MutationTestingService {
         String(mutations.length),
         String(groups.length),
         String(savingsPct),
+        String(lowerBound),
+        '',
       ])
     )
     return groups

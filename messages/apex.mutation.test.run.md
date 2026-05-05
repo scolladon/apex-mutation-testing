@@ -118,7 +118,7 @@ Group mutations whose covering tests are disjoint into a single deploy + test ru
 
 # info.groupingPlan
 
-Mutation grouping enabled — packed %s mutations into %s group(s) (%s%% fewer deployments)
+Mutation grouping enabled — packed %s mutations into %s group(s) (%s%% fewer deployments, lower bound %s)%s
 
 # info.groupingFallback
 
