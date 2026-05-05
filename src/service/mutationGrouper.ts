@@ -1,4 +1,5 @@
 import { ApexMutation } from '../type/ApexMutation.js'
+import { buildAdjacency } from './exactColoring.js'
 
 export interface MutationGroup {
   mutations: ApexMutation[]
@@ -10,12 +11,15 @@ export interface GroupingResult {
   lowerBound: number
 }
 
-const conflicts = (a: Set<string>, b: Set<string>): boolean => {
-  const [small, large] = a.size <= b.size ? [a, b] : [b, a]
-  for (const t of small) {
-    if (large.has(t)) return true
-  }
-  return false
+interface GroupingInternals {
+  adjacency: number[][]
+  witness: number[]
+  coloring: number[]
+  tests: ReadonlyArray<Set<string>>
+}
+
+type GroupingResultWithInternals = GroupingResult & {
+  internals: GroupingInternals
 }
 
 // Partition mutations into the smallest number of conflict-free groups using
@@ -39,8 +43,29 @@ export const groupMutations = (
   mutations: ReadonlyArray<ApexMutation>,
   testMethodsPerLine: Map<number, Set<string>>
 ): GroupingResult => {
+  const { groups, lowerBound } = groupMutationsWithInternals(
+    mutations,
+    testMethodsPerLine
+  )
+  return { groups, lowerBound }
+}
+
+// Like `groupMutations` but additionally exposes the conflict graph, witness
+// clique, DSATUR coloring, and per-mutation test sets. Used by the optional
+// SAT-based exact-coloring path so it can re-use the work without rebuilding
+// the graph.
+export const groupMutationsWithInternals = (
+  mutations: ReadonlyArray<ApexMutation>,
+  testMethodsPerLine: Map<number, Set<string>>
+): GroupingResultWithInternals => {
   const n = mutations.length
-  if (n === 0) return { groups: [], lowerBound: 0 }
+  if (n === 0) {
+    return {
+      groups: [],
+      lowerBound: 0,
+      internals: { adjacency: [], witness: [], coloring: [], tests: [] },
+    }
+  }
 
   const tests = mutations.map(
     m => testMethodsPerLine.get(m.target.startToken.line) ?? new Set<string>()
@@ -72,6 +97,7 @@ export const groupMutations = (
   return {
     groups: assembleGroups(mutations, tests, color),
     lowerBound: witness.length,
+    internals: { adjacency, witness, coloring: color, tests },
   }
 }
 
@@ -117,20 +143,6 @@ const propagate = (
   }
 }
 
-const buildAdjacency = (tests: ReadonlyArray<Set<string>>): number[][] => {
-  const n = tests.length
-  const adjacency: number[][] = Array.from({ length: n }, () => [])
-  for (let i = 0; i < n; ++i) {
-    for (let j = i + 1; j < n; ++j) {
-      if (conflicts(tests[i], tests[j])) {
-        adjacency[i].push(j)
-        adjacency[j].push(i)
-      }
-    }
-  }
-  return adjacency
-}
-
 // Strict `>` comparisons mean equal-key candidates retain the first-encountered
 // pick — which is the lowest unprocessed index. Switching to `>=` would
 // silently invert determinism on every tied pair; keep the contract.
@@ -163,7 +175,7 @@ const pickSmallestAvailableColor = (
   return candidate
 }
 
-const assembleGroups = (
+export const assembleGroups = (
   mutations: ReadonlyArray<ApexMutation>,
   tests: ReadonlyArray<Set<string>>,
   color: ReadonlyArray<number>

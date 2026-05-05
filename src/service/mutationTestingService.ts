@@ -9,9 +9,14 @@ import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
 import { ConfigReader, type RE2Instance } from './configReader.js'
+import { decideExactOutcome, solveColoring } from './exactColoring.js'
 import { GroupExecutor } from './groupExecutor.js'
 import { MutantGenerator } from './mutantGenerator.js'
-import { groupMutations, type MutationGroup } from './mutationGrouper.js'
+import {
+  assembleGroups,
+  groupMutationsWithInternals,
+  type MutationGroup,
+} from './mutationGrouper.js'
 import {
   calculateMutationPosition,
   extractMutationOriginalText,
@@ -96,7 +101,7 @@ export class MutationTestingService {
       return this.buildDryRunResult(apexClass, mutations)
     }
 
-    const groups = this.planGroups(mutations, testMethodsPerLine)
+    const groups = await this.planGroups(mutations, testMethodsPerLine)
     this.displayTimeEstimate(
       deployTime,
       testTime,
@@ -118,10 +123,10 @@ export class MutationTestingService {
     return result
   }
 
-  private planGroups(
+  private async planGroups(
     mutations: ApexMutation[],
     testMethodsPerLine: Map<number, Set<string>>
-  ): MutationGroup[] {
+  ): Promise<MutationGroup[]> {
     if (!this.mutationGroupingEnabled) {
       // No grouping: one mutation per group. Inlined here rather than going
       // through groupMutations to avoid building the conflict graph for the
@@ -138,7 +143,27 @@ export class MutationTestingService {
       undefined,
       { stdout: true }
     )
-    const { groups, lowerBound } = groupMutations(mutations, testMethodsPerLine)
+    const {
+      groups: dsaturGroups,
+      lowerBound,
+      internals,
+    } = groupMutationsWithInternals(mutations, testMethodsPerLine)
+
+    let groups = dsaturGroups
+    const exact = solveColoring({
+      adjacency: internals.adjacency,
+      n: mutations.length,
+      lowerBound,
+      dsaturColors: dsaturGroups.length,
+      witness: internals.witness,
+      dsaturColoring: internals.coloring,
+    })
+    const decision = decideExactOutcome(exact, dsaturGroups.length)
+    const exactSuffix = decision.suffix
+    if (decision.useGroups === 'exact') {
+      groups = assembleGroups(mutations, internals.tests, exact.coloring)
+    }
+
     // Division is safe: generateMutations throws when mutations is empty,
     // so planGroups is never reached with mutations.length === 0.
     const savingsPct = Math.round((1 - groups.length / mutations.length) * 100)
@@ -148,7 +173,7 @@ export class MutationTestingService {
         String(groups.length),
         String(savingsPct),
         String(lowerBound),
-        '',
+        exactSuffix,
       ])
     )
     return groups

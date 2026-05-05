@@ -114,7 +114,7 @@ Line ranges to mutate (e.g., 1-10, 42). Only these lines are eligible for mutati
 
 # flags.mutation-grouping.summary
 
-Group mutations whose covering tests are disjoint into a single deploy + test run. Reduces deployments and async test-run kickoffs at the cost of larger blast radius on compile errors. Off by default.
+Group mutations whose covering tests are disjoint into a single deploy + test run. Reduces deployments and async test-run kickoffs at the cost of larger blast radius on compile errors. Runs the full pipeline: test-induced clique lower bound → DSATUR heuristic → exact backtracking coloring. Off by default.
 
 # info.groupingPlan
 

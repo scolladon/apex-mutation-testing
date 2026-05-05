@@ -269,6 +269,8 @@ The feature is split across three small modules:
 
 **Splitting the responsibilities** keeps `MutationTestingService` as a lifecycle orchestrator (~560 lines: setup, baseline, plan, loop, rollback) while per-iteration evaluation (~270 lines: deploy, run, classify, build mutant result) lives in its own collaborator. Pure position/text utilities are shared between the executor's runtime path and the service's dry-run path via `mutationLocation.ts`.
 
+**Exact coloring.** With `--mutation-grouping`, the planner unconditionally runs an exact graph-coloring step *after* DSATUR — `solveColoring` in `src/service/exactColoring.ts` binary-searches `k` between the lower bound and DSATUR's color count, calling `tryKColoring` (DSATUR-style backtracking) at each step. The witness clique surfaced by D2 is pre-colored at the most-constrained vertices, so the search converges fast at our scale (`n ≤ 200`, χ typically single-digit). The result is **never worse than DSATUR alone**: when DSATUR is already at the lower bound, the binary search short-circuits and the DSATUR coloring is returned with a "confirmed optimal" certificate; when DSATUR overshoots, the search returns a strictly smaller coloring. The chosen path is reported through the existing `info.groupingPlan` line via a trailing `exact: …` suffix (`confirmed optimal` or `improved by N deploy(s)`). No external SAT solver, no runtime dependency.
+
 ### Proxy-Based Listener Aggregation
 
 The central architectural pattern. `MutationListener` uses a JavaScript `Proxy` to dynamically dispatch ANTLR parse tree callbacks to all 25 registered mutators without explicit delegation.

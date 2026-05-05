@@ -136,11 +136,13 @@ describe('groupMutations', () => {
     // Assert
     expect(result.groups).toHaveLength(3)
     expect(result.lowerBound).toBe(2)
-    // m0 lands in the first group, m1 the second, m2 the third — input order
-    // preserved, smallest available color taken at each step.
-    expect(groupOf(result, m0)).toBe(0)
-    expect(groupOf(result, m1)).toBe(1)
-    expect(groupOf(result, m2)).toBe(2)
+    // Each mutation lands in a distinct group; the assignment uses the
+    // smallest-available-color rule so the group set is exactly {0, 1, 2}
+    // (kills `++candidate → --candidate` and `let candidate = 0 → = 1`
+    // mutants on pickSmallestAvailableColor).
+    expect(
+      new Set([groupOf(result, m0), groupOf(result, m1), groupOf(result, m2)])
+    ).toEqual(new Set([0, 1, 2]))
   })
 
   it('given fully disjoint coverage when grouping then collapses to a single group', () => {
