@@ -27,11 +27,12 @@ const createPrimaryExpression = (
   const { withTokens = true, primaryProto = IdPrimaryContext.prototype } =
     options ?? {}
 
-  const primary = Object.assign(Object.create(primaryProto), {
-    text,
-    childCount: 0,
-    children: [],
+  const primary = Object.create(primaryProto)
+  Object.defineProperty(primary, 'text', {
+    get: () => text,
+    configurable: true,
   })
+  primary.children = []
 
   return {
     childCount: 1,
