@@ -2,6 +2,13 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [1.7.1](https://github.com/scolladon/apex-mutation-testing/compare/v1.7.0...v1.7.1) (2026-06-01)
+
+
+### Bug Fixes
+
+* restrict UOI mutations to identifier primaries only ([#127](https://github.com/scolladon/apex-mutation-testing/issues/127)) ([a6fb2b7](https://github.com/scolladon/apex-mutation-testing/commit/a6fb2b78e865c19a5cf06917a32477b13423f907))
+
 ## [1.7.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.6.1...v1.7.0) (2026-05-05)
 
 
