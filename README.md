@@ -22,7 +22,7 @@ sf apex mutation test run --apex-class MyClass --test-class MyClassTest
 
 ## What is it mutation testing ?
 
-Mutation testing is a software testing technique that evaluates the quality of your test suite by introducing small changes (mutations) to your code and checking if your tests can detect these changes. It helps identify weaknesses in your test coverage by measuring how effectively your tests can catch intentional bugs. cf [wikipedia](https://en.wikipedia.org/wiki/Mutation_testing)
+Mutation testing is a software testing technique that evaluates the quality of your test suite by introducing small changes (mutations) to your code and checking if your tests can detect these changes. It helps identify weaknesses in your test coverage by measuring how effectively your tests can catch intentional bugs. cf [wikipedia](https://en.wikipedia.org/wiki/Mutation_testing) 
 
 The apex-mutation-testing plugin implements this technique for Salesforce Apex code by:
 
