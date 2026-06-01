@@ -12,11 +12,11 @@
     "apex-parser": "^2.17.0",
     "async": "^3.2.6",
     "mutation-testing-elements": "^3.7.3",
-    "re2": "^1.24.0"
+    "re2": "^1.24.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.14",
-    "@commitlint/config-conventional": "^20.5.3",
+    "@biomejs/biome": "^2.4.16",
+    "@commitlint/config-conventional": "^21.0.2",
     "@oclif/plugin-help": "^6.2.46",
     "@salesforce/dev-config": "^4.3.3",
     "@stryker-mutator/vitest-runner": "^9.6.1",
