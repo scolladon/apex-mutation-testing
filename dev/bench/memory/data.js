@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1777993873895,
+  "lastUpdate": 1780318271224,
   "repoUrl": "https://github.com/scolladon/apex-mutation-testing",
   "entries": {
     "Memory Benchmark": [
@@ -511,6 +511,108 @@ window.BENCHMARK_DATA = {
             "name": "pipeline-apply-all-mutations",
             "value": 343.2571,
             "range": "±0.56%",
+            "unit": "ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "saman.attar@outlook.com",
+            "name": "Saman Attar",
+            "username": "SamanAttar"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a6fb2b78e865c19a5cf06917a32477b13423f907",
+          "message": "fix: restrict UOI mutations to identifier primaries only (#127)\n\nCo-authored-by: Sébastien Colladon <colladonsebastien@gmail.com>",
+          "timestamp": "2026-06-01T14:48:25+02:00",
+          "tree_id": "bee60ced4d5a1213d7c72c7c924ed39ae7a5e993",
+          "url": "https://github.com/scolladon/apex-mutation-testing/commit/a6fb2b78e865c19a5cf06917a32477b13423f907"
+        },
+        "date": 1780318271195,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "antlr-lex-small",
+            "value": 0.1549,
+            "range": "±0.78%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-parse-small",
+            "value": 8.1199,
+            "range": "±4.29%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-lex-medium",
+            "value": 0.7224,
+            "range": "±0.96%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-parse-medium",
+            "value": 38.2028,
+            "range": "±1.37%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-lex-large",
+            "value": 2.2961,
+            "range": "±1.35%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-parse-large",
+            "value": 109.4993,
+            "range": "±2.60%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-small-compute-mutations",
+            "value": 8.8962,
+            "range": "±4.66%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-small-type-discovery",
+            "value": 5.9884,
+            "range": "±4.27%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-medium-compute-mutations",
+            "value": 36.3833,
+            "range": "±3.88%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-medium-type-discovery",
+            "value": 28.3041,
+            "range": "±2.63%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-large-compute-mutations",
+            "value": 102.1714,
+            "range": "±1.35%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-large-type-discovery",
+            "value": 86.2907,
+            "range": "±5.38%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-apply-all-mutations",
+            "value": 312.5352,
+            "range": "±0.42%",
             "unit": "ms"
           }
         ]
