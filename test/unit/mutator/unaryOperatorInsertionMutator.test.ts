@@ -1,5 +1,6 @@
 import { ParserRuleContext } from 'antlr4ts'
 import {
+  ArrayExpressionContext,
   DotExpressionContext,
   IdPrimaryContext,
   LiteralPrimaryContext,
@@ -341,6 +342,49 @@ describe('UnaryOperatorInsertionMutator', () => {
 
         // Assert
         expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a primary expression that is the receiver of an ArrayExpression', () => {
+    describe('When entering the expression', () => {
+      it('Then should not create any mutations (receiver of `[]` is not assignable: arr++[i] is invalid)', () => {
+        // Arrange
+        const ctx = createPrimaryExpression('arr')
+        const arrayCtx = Object.create(ArrayExpressionContext.prototype)
+        arrayCtx.expression = (index: number) => (index === 0 ? ctx : null)
+        TestUtil.setParent(ctx, arrayCtx)
+
+        // Act
+        sut.enterPrimaryExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      })
+    })
+  })
+
+  describe('Given a primary expression that is the index of an ArrayExpression', () => {
+    describe('When entering the expression', () => {
+      it('Then should create 4 mutations (index position is assignable: arr[i++] is valid)', () => {
+        // Arrange
+        const receiver = createPrimaryExpression('arr')
+        const ctx = createPrimaryExpression('i')
+        const arrayCtx = Object.create(ArrayExpressionContext.prototype)
+        arrayCtx.expression = (index: number) => (index === 0 ? receiver : ctx)
+        TestUtil.setParent(ctx, arrayCtx)
+
+        // Act
+        sut.enterPrimaryExpression(ctx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(4)
+        expect(sut._mutations.map(mutation => mutation.replacement)).toEqual([
+          'i++',
+          '++i',
+          'i--',
+          '--i',
+        ])
       })
     })
   })
