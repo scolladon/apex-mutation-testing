@@ -158,6 +158,52 @@ describe('UnaryOperatorInsertionMutator Integration', () => {
     })
   })
 
+  describe('Given Apex code with a static method call on a type-name namespace (e.g., String.isBlank)', () => {
+    it('Then should NOT generate UOI mutations on the type-name receiver', async () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public Boolean test(String searchTerm) {
+            return String.isBlank(searchTerm);
+          }
+        }
+      `
+      const typeRegistry = await buildTypeRegistry(code)
+
+      // Act
+      const mutations = parseAndMutate(code, new Set([4]), typeRegistry)
+
+      // Assert
+      const uoiMutations = mutations.filter(
+        m => m.mutationName === 'UnaryOperatorInsertionMutator'
+      )
+      expect(uoiMutations.length).toBe(0)
+    })
+  })
+
+  describe('Given Apex code that returns a SOQL literal', () => {
+    it('Then should NOT generate UOI mutations on the SOQL primary', async () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public List<Contact> q(String searchPattern) {
+            return [SELECT Id, Name FROM Contact WHERE Name LIKE :searchPattern LIMIT 25];
+          }
+        }
+      `
+      const typeRegistry = await buildTypeRegistry(code)
+
+      // Act
+      const mutations = parseAndMutate(code, new Set([4]), typeRegistry)
+
+      // Assert
+      const uoiMutations = mutations.filter(
+        m => m.mutationName === 'UnaryOperatorInsertionMutator'
+      )
+      expect(uoiMutations.length).toBe(0)
+    })
+  })
+
   describe('Given Apex code with throw statement containing method call', () => {
     it('Then should NOT generate UOI mutations', async () => {
       // Arrange
