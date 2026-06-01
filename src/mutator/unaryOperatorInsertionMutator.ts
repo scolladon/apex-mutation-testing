@@ -1,4 +1,9 @@
 import { ParserRuleContext } from 'antlr4ts'
+import {
+  ArrayExpressionContext,
+  DotExpressionContext,
+  IdPrimaryContext,
+} from 'apex-parser'
 import { TypeRegistry } from '../type/TypeRegistry.js'
 import { BaseListener } from './baseListener.js'
 
@@ -8,24 +13,20 @@ export class UnaryOperatorInsertionMutator extends BaseListener {
   }
 
   enterPrimaryExpression(ctx: ParserRuleContext): void {
+    if (this.isNonAssignableReceiver(ctx)) {
+      return
+    }
+
     if (ctx.childCount !== 1) {
       return
     }
 
     const primary = ctx.getChild(0)
-    if (!(primary instanceof ParserRuleContext)) {
+    if (!(primary instanceof IdPrimaryContext)) {
       return
     }
 
     const text = primary.text
-
-    if (this.isLiteral(text)) {
-      return
-    }
-
-    if (text === 'this' || text === 'super') {
-      return
-    }
 
     if (this.typeRegistry) {
       const methodName = this.getEnclosingMethodName(ctx)
@@ -49,11 +50,14 @@ export class UnaryOperatorInsertionMutator extends BaseListener {
     }
   }
 
-  private isLiteral(text: string): boolean {
-    if (/^\d/.test(text)) return true
-    if (text.startsWith("'")) return true
-    const lower = text.toLowerCase()
-    if (lower === 'true' || lower === 'false' || lower === 'null') return true
-    return false
+  // The receiver of a dot (`a.b`) or array (`a[i]`) access is not an assignable
+  // target: `a++.b` / `a++[i]` are invalid. The index of `a[i]` is assignable, so
+  // only the receiver (first child) of an ArrayExpression is rejected.
+  private isNonAssignableReceiver(ctx: ParserRuleContext): boolean {
+    const parent = ctx.parent
+    return (
+      parent instanceof DotExpressionContext ||
+      (parent instanceof ArrayExpressionContext && parent.expression(0) === ctx)
+    )
   }
 }

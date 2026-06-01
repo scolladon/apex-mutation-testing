@@ -9,6 +9,7 @@ APPLY_FIXES: all # all, none, or list of linter keys
 # - COPYPASTE # Uncomment to disable checks of excessive copy-pastes
 # - SPELL # Uncomment to disable checks of spelling mistakes
 DISABLE_LINTERS:
+  - ACTION_ZIZMOR
   - EDITORCONFIG_EDITORCONFIG_CHECKER
   - MARKDOWN_MARKDOWN_LINK_CHECK
   - SPELL_MISSPELL

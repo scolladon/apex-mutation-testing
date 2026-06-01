@@ -1,13 +1,7 @@
-import { defineConfig } from 'vitest/config'
+import { defineSuite } from './vitest.config.base'
 
-export default defineConfig({
-  resolve: {
-    alias: [{ find: /^(.+)\.js$/, replacement: '$1' }],
-  },
+export default defineSuite({
   test: {
-    globals: true,
-    environment: 'node',
     include: ['**/test/nut/**/*.test.ts'],
-    clearMocks: true,
   },
 })

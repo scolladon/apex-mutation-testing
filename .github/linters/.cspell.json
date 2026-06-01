@@ -65,6 +65,7 @@
     "tsconfig",
     "wagoid",
     "wireit",
-    "worktrees"
+    "worktrees",
+    "zizmor"
   ]
 }

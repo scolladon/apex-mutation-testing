@@ -22,7 +22,7 @@ sf apex mutation test run --apex-class MyClass --test-class MyClassTest
 
 ## What is it mutation testing ?
 
-Mutation testing is a software testing technique that evaluates the quality of your test suite by introducing small changes (mutations) to your code and checking if your tests can detect these changes. It helps identify weaknesses in your test coverage by measuring how effectively your tests can catch intentional bugs. cf [wikipedia](https://en.wikipedia.org/wiki/Mutation_testing)
+Mutation testing is a software testing technique that evaluates the quality of your test suite by introducing small changes (mutations) to your code and checking if your tests can detect these changes. It helps identify weaknesses in your test coverage by measuring how effectively your tests can catch intentional bugs. cf [wikipedia](https://en.wikipedia.org/wiki/Mutation_testing) 
 
 The apex-mutation-testing plugin implements this technique for Salesforce Apex code by:
 
@@ -127,7 +127,7 @@ The config file supports the following attributes:
 | `threshold`           | `number`   | Minimum mutation score (0–100) required for the command to succeed                                                |
 | `skipPatterns`        | `string[]` | RE2 regex patterns to skip lines from mutation (e.g., `System\\.debug`)                                           |
 | `lines`               | `string[]` | Line ranges to restrict mutation to (e.g., `1-10`, `42`)                                                          |
-| `mutationGrouping`    | `boolean`  | Pack mutations whose covering tests are disjoint into a single deploy + test run; runs the full pipeline (test-induced clique lower bound → DSATUR → exact backtracking coloring). Off by default.                |
+| `mutationGrouping`    | `boolean`  | Pack mutations with disjoint tests into one deploy + run (clique → DSATUR → exact coloring). Off by default.      |
 
 **Mutual exclusivity:** You cannot specify both `include` and `exclude` within the same group.
 For example, setting both `mutators.include` and `mutators.exclude` will result in an error.

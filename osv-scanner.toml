@@ -1,0 +1,6 @@
+# OSV-Scanner suppressions
+# See https://google.github.io/osv-scanner/configuration/
+
+[[IgnoredVulns]]
+id = "GHSA-f886-m6hf-6m8v"
+reason = "brace-expansion ReDoS reachable only via brace-pattern input to wireit's glob. wireit is a dev-only build tool (not in the published `files`), pins brace-expansion ^4.0.0, and is incompatible with the patched 5.x (ESM, no default export). Not reachable at runtime by the published plugin."
