@@ -158,6 +158,32 @@ describe('UnaryOperatorInsertionMutator Integration', () => {
     })
   })
 
+  describe('Given Apex code with an array access', () => {
+    it('Then should NOT mutate the receiver but SHOULD mutate the index (arr[i++] is valid, arr++[i] is not)', () => {
+      // Arrange
+      const code = `
+        public class TestClass {
+          public void test(List<Integer> nums, Integer i) {
+            Integer x = nums[i];
+          }
+        }
+      `
+
+      // Act — no TypeRegistry: isolates the receiver guard from the numeric-type guard
+      const mutations = parseAndMutate(code, new Set([4]))
+
+      // Assert — receiver `nums` is skipped (not assignable); index `i` yields all 4 mutations
+      const uoiMutations = mutations.filter(
+        m => m.mutationName === 'UnaryOperatorInsertionMutator'
+      )
+      expect(uoiMutations.length).toBe(4)
+      expect(uoiMutations.map(m => m.replacement)).toEqual(
+        expect.arrayContaining(['i++', '++i', 'i--', '--i'])
+      )
+      expect(uoiMutations.every(m => m.target.text === 'i')).toBe(true)
+    })
+  })
+
   describe('Given Apex code with a static method call on a type-name namespace (e.g., String.isBlank)', () => {
     it('Then should NOT generate UOI mutations on the type-name receiver', async () => {
       // Arrange

@@ -1,5 +1,9 @@
 import { ParserRuleContext } from 'antlr4ts'
-import { DotExpressionContext, IdPrimaryContext } from 'apex-parser'
+import {
+  ArrayExpressionContext,
+  DotExpressionContext,
+  IdPrimaryContext,
+} from 'apex-parser'
 import { TypeRegistry } from '../type/TypeRegistry.js'
 import { BaseListener } from './baseListener.js'
 
@@ -9,7 +13,7 @@ export class UnaryOperatorInsertionMutator extends BaseListener {
   }
 
   enterPrimaryExpression(ctx: ParserRuleContext): void {
-    if (ctx.parent instanceof DotExpressionContext) {
+    if (this.isNonAssignableReceiver(ctx)) {
       return
     }
 
@@ -44,5 +48,16 @@ export class UnaryOperatorInsertionMutator extends BaseListener {
       }
       this.createMutation(ctx.start, ctx.stop, text, `--${text}`)
     }
+  }
+
+  // The receiver of a dot (`a.b`) or array (`a[i]`) access is not an assignable
+  // target: `a++.b` / `a++[i]` are invalid. The index of `a[i]` is assignable, so
+  // only the receiver (first child) of an ArrayExpression is rejected.
+  private isNonAssignableReceiver(ctx: ParserRuleContext): boolean {
+    const parent = ctx.parent
+    return (
+      parent instanceof DotExpressionContext ||
+      (parent instanceof ArrayExpressionContext && parent.expression(0) === ctx)
+    )
   }
 }
