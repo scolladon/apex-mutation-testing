@@ -356,9 +356,18 @@ export class MutationTestingService {
 
     const { result: baselineResult, durationMs: testTime } =
       await timeExecution(() =>
-        apexTestRunner.getTestMethodsPerLines(this.apexTestClassName)
+        apexTestRunner.getTestMethodsPerLines(
+          this.apexTestClassName,
+          this.apexClassName
+        )
       )
-    const { outcome, testsRan, failing, testMethodsPerLine } = baselineResult
+    const {
+      outcome,
+      testsRan,
+      failing,
+      testMethodsPerLine,
+      aggregatedCoverageOnly,
+    } = baselineResult
 
     if (outcome !== 'Passed') {
       this.spinner.stop()
@@ -379,7 +388,11 @@ export class MutationTestingService {
       )
     }
 
-    this.spinner.stop('Original tests passed')
+    this.spinner.stop(
+      aggregatedCoverageOnly
+        ? `Original tests passed (${this.messages.getMessage('info.aggregatedCoverageOnly')})`
+        : 'Original tests passed'
+    )
     this.filterTestMethods(testMethodsPerLine)
     return { testMethodsPerLine, testTime }
   }

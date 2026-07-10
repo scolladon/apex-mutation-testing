@@ -60,6 +60,10 @@ Become a sponsor: https://github.com/sponsors/scolladon 💙
 
 No test coverage found for '%s'. Ensure '%s' tests exercise the code you want to mutation test.
 
+# info.aggregatedCoverageOnly
+
+Per-test coverage unavailable on this org due to "Store Only Aggregated Code Coverage" setting, using aggregate coverage instead - all tests will run per mutant
+
 # error.noMutations
 
 No mutations could be generated for '%s'. %s line(s) covered but no mutable patterns found.
