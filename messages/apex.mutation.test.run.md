@@ -62,7 +62,7 @@ No test coverage found for '%s'. Ensure '%s' tests exercise the code you want to
 
 # info.aggregatedCoverageOnly
 
-Per-test coverage unavailable on this org due to "Store Only Aggregated Code Coverage" setting, using aggregate coverage instead - all tests will run per mutant
+Per-test coverage unavailable on this org due to "Store Only Aggregated Code Coverage" setting, using aggregate coverage instead - all tests will run per mutant (slower), and the mutation score may be understated because ApexCodeCoverageAggregate is a cumulative org-wide rollup, so lines covered only by other test classes produce mutants this test class can never kill
 
 # error.noMutations
 
