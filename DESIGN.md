@@ -48,6 +48,10 @@ sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --config-
 │  │ApexClassRepository│ │ApexTestRunner│ │SObjectDescribe│ │
 │  │  (Tooling API)    │ │ (apex-node) │ │  Repository   │ │
 │  └───────────────────┘ └─────────────┘ └──────────────┘ │
+│  ┌──────────────────────┐                                │
+│  │ApexSettingsRepository│                                │
+│  │  (Tooling API)       │                                │
+│  └──────────────────────┘                                │
 ├──────────────────────────────────────────────────────────┤
 │                    Reporting Layer                        │
 │  ┌───────────────────────────────────────────────────────┐│
@@ -113,10 +117,17 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │       CompileError → misleading 100% score.
 │
 ├─ 7. BASELINE TEST RUN
-│     ApexTestRunner.getTestMethodsPerLines(MyClassTest)
+│     selectCoverageStrategy(apexSettingsRepository)
+│       → ApexSettingsRepository.isAggregateCoverageOnly()
+│         (Tooling API: ApexSettings.IsAggregateCodeCoverageOnlyEnabled)
+│       → knowledge, not inference: picks PerTestCoverageStrategy
+│         or AggregateCoverageStrategy up front (see Strategy
+│         Pattern — Coverage Fidelity)
+│     ApexTestRunner.getTestMethodsPerLines(MyClassTest, coverageStrategy)
 │       → wrapped in timeExecution() → testTime
 │       → runTestAsynchronous (with code coverage)
 │       → testMethodsPerLine: Map<line, Set<testMethodName>>
+│         (shaped by the injected coverageStrategy)
 │       ✓ All tests must pass (green baseline)
 │
 ├─ 7b. FILTER TEST METHODS (if configured)
@@ -329,6 +340,35 @@ errorStrategies = [
 
 The first strategy whose `matches()` returns `true` wins (`Array.find`). This makes adding new error categories a single-line change.
 
+### Strategy Pattern — Coverage Fidelity
+
+Most orgs record per-test code coverage, but an org with **"Store Only Aggregated Code Coverage"** enabled (Setup → Apex Test Execution → Options) never populates it — only the cumulative, org-wide `ApexCodeCoverageAggregate` rollup is available. `src/service/coverageStrategy.ts` models the two coverage shapes as a `CoverageStrategy` interface with two implementations:
+
+```typescript
+interface CoverageStrategy {
+  readonly fidelity: 'per-test' | 'aggregate'
+  getTestMethodsPerLine(testResult: TestResult): Map<number, Set<string>>
+}
+
+class PerTestCoverageStrategy implements CoverageStrategy   // fidelity: 'per-test'
+class AggregateCoverageStrategy implements CoverageStrategy // fidelity: 'aggregate'
+```
+
+- `PerTestCoverageStrategy` filters each test's `perClassCoverage` down to the target class and maps each covered line to the set of test methods that actually covered it.
+- `AggregateCoverageStrategy` reads the target class's entry from `testResult.codecoverage` and assigns **every** covered line the full set of executed test method names — an over-approximation, since the aggregate rollup does not distinguish which test covered which line. This is the accepted "every test method runs per mutant" degradation.
+- Both strategies lower-case the target class name once in their constructor for case-insensitive matching.
+
+**Selection is knowledge, not inference.** `MutationTestingService.selectCoverageStrategy` queries `ApexSettingsRepository.isAggregateCoverageOnly()` (a Tooling API read of `ApexSettings.IsAggregateCodeCoverageOnlyEnabled`) up front in `process()`, before the baseline test run, and picks the strategy accordingly:
+
+```typescript
+const aggregateOnly = await apexSettingsRepository.isAggregateCoverageOnly()
+const coverageStrategy = aggregateOnly
+  ? new AggregateCoverageStrategy(this.apexClassName)
+  : new PerTestCoverageStrategy(this.apexClassName)
+```
+
+The chosen strategy is injected into `ApexTestRunner.getTestMethodsPerLines(testClassName, coverageStrategy)`, which delegates all coverage shaping to it. The adapter no longer guesses from the shape of an empty map — it is simply told which fidelity to use.
+
 ### Template Method — BaseListener
 
 `BaseListener` provides the mutation-creation infrastructure; subclasses override ANTLR `enter*` hooks to define **when** and **what** to mutate:
@@ -356,6 +396,7 @@ All Salesforce org interactions are isolated behind repository interfaces:
 | `ApexClassRepository` | Tooling API | CRUD on ApexClass, MetadataContainer deployment |
 | `ApexTestRunner` | @salesforce/apex-node | Test execution with/without coverage |
 | `SObjectDescribeRepository` | Metadata API describe | SObject field type resolution |
+| `ApexSettingsRepository` | Tooling API | Reads `IsAggregateCodeCoverageOnlyEnabled` to select the coverage strategy |
 
 ### Builder/Fluent API — TypeDiscoverer
 

@@ -71,6 +71,17 @@ Before running mutation testing:
 
 Remember, mutation testing complements but doesn't replace good test coverage. It helps identify weaknesses in your existing tests, but only for the code they already cover.
 
+#### Aggregated Code Coverage Orgs
+
+Some orgs enable **"Store Only Aggregated Code Coverage"** (Setup → Apex Test Execution → Options). With this setting on, Salesforce discards per-test coverage and only retains an org-wide, cumulative coverage rollup.
+
+The plugin detects this automatically by querying `ApexSettings.IsAggregateCodeCoverageOnlyEnabled` via the Tooling API, and switches to aggregate coverage without requiring any flag. Two caveats apply when this mode is active:
+
+- **Slower**: without per-test coverage, every test method runs for every mutant, instead of only the tests that cover the mutated line.
+- **Score may be understated**: the aggregate coverage is a cumulative org-wide rollup, so lines covered only by other test classes still count as "covered" but their mutants can never be killed by this test class alone, surfacing as unkillable surviving mutants.
+
+**Tip**: use "Clear test data" in Apex Test Execution before running mutation testing to reset the aggregate coverage rollup and get a truer score.
+
 ### Dry Run
 
 Before running the full mutation testing process, you can preview the mutations that would be generated using the `--dry-run` flag:
