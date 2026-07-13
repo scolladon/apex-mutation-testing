@@ -280,7 +280,7 @@ describe('AggregateCoverageStrategy', () => {
         // Arrange
         const mockTestResult = {
           tests: [{ methodName: 'testMethodA' }],
-          codecoverage: [{ name: 'SomeOtherClass', coveredLines: [] }],
+          codecoverage: [{ name: 'SomeOtherClass', coveredLines: [7, 8] }],
         } as unknown as TestResult
 
         // Act
@@ -288,6 +288,25 @@ describe('AggregateCoverageStrategy', () => {
 
         // Assert
         expect(result).toEqual(new Map())
+      })
+    })
+
+    describe('given codecoverage entries for several classes', () => {
+      it('then should use only the target class covered lines', () => {
+        // Arrange
+        const mockTestResult = {
+          tests: [{ methodName: 'testMethodA' }],
+          codecoverage: [
+            { name: 'SomeOtherClass', coveredLines: [7, 8] },
+            { name: 'ApexClass', coveredLines: [10] },
+          ],
+        } as unknown as TestResult
+
+        // Act
+        const result = sut.getTestMethodsPerLine(mockTestResult)
+
+        // Assert
+        expect(result).toEqual(new Map([[10, new Set(['testMethodA'])]]))
       })
     })
 
