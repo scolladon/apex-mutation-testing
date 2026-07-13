@@ -3,6 +3,7 @@
     "reporters": ["html", "markdown"],
     "ignore": [
       "**/node_modules/**",
+      "**/package-lock.json",
       "**/.git/**",
       "**/*cache*/**",
       "**/.github/**",
