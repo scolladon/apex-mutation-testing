@@ -2196,6 +2196,39 @@ describe('MutationTestingService', () => {
         expect(spinner.stop).toHaveBeenCalledWith('Original tests passed')
       })
 
+      it('Given baseline tests pass with aggregated coverage only, When processing, Then spinner shows the aggregated coverage notice', async () => {
+        // Arrange
+        buildStandardMocks()
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              aggregatedCoverageOnly: true,
+            })
+          }
+        )
+
+        // Act
+        await sut.process()
+
+        // Assert
+        expect(spinner.stop).toHaveBeenCalledWith(
+          'Original tests passed (info.aggregatedCoverageOnly)'
+        )
+      })
+
       it('Given mutations generated, When processing, Then spinner shows mutation generation message', async () => {
         // Arrange
         buildStandardMocks()
