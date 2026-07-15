@@ -12,6 +12,8 @@ sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --skip-pa
 sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --config-file .mutation-testing.json
 ```
 
+**Runtime:** requires Node 22, 24, or 26 (`engines.node` = `^22.22 || ^24.15 || >=26`).
+
 ---
 
 ## Architecture Layers
