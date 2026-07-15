@@ -23,7 +23,7 @@
     "@types/async": "^3.2.25",
     "@vitest/coverage-v8": "^4.1.10",
     "husky": "^9.1.7",
-    "knip": "^6.26.0",
+    "knip": "^6.27.0",
     "ls-engines": "^0.10.1",
     "oclif": "^4.23.27",
     "shx": "^0.4.0",
