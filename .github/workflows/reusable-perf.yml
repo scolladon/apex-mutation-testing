@@ -23,7 +23,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: latest
 
       - uses: google/wireit@setup-github-actions-caching/v2
 
