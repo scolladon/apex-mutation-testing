@@ -27,6 +27,9 @@ jobs:
       - name: Install cli
         run: npm install -g @salesforce/cli
 
+      - name: Authorize re2 install script
+        run: npm config set allow-scripts=re2 --location=user
+
       - name: Install new plugin version
         run: echo y | sf plugins install ${{ inputs.channel }}
 

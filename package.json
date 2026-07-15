@@ -35,6 +35,9 @@
   "overrides": {
     "qs": "^6.15.2"
   },
+  "allowScripts": {
+    "re2": true
+  },
   "engines": {
     "node": "^22.22 || ^24.15 || >=26"
   },

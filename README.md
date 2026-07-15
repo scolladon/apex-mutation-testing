@@ -20,6 +20,15 @@ sf plugins install apex-mutation-testing
 sf apex mutation test run --apex-class MyClass --test-class MyClassTest
 ```
 
+**Note**: this plugin depends on [`re2`](https://github.com/google/re2), which builds a native
+binary via an npm install script. On npm 12+, install scripts for dependencies are blocked by
+default, so installing this plugin (`sf plugins install`) may fail to build `re2` and the command
+will error with `MODULE_NOT_FOUND`. If that happens, authorize it before installing:
+
+```sh
+npm config set allow-scripts=re2 --location=user
+```
+
 ## What is it mutation testing ?
 
 Mutation testing is a software testing technique that evaluates the quality of your test suite by introducing small changes (mutations) to your code and checking if your tests can detect these changes. It helps identify weaknesses in your test coverage by measuring how effectively your tests can catch intentional bugs. cf [wikipedia](https://en.wikipedia.org/wiki/Mutation_testing) 
