@@ -2,6 +2,13 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [1.7.2](https://github.com/scolladon/apex-mutation-testing/compare/v1.7.1...v1.7.2) (2026-07-15)
+
+
+### Bug Fixes
+
+* added handling for aggregated coverage when per-test data is una… ([#129](https://github.com/scolladon/apex-mutation-testing/issues/129)) ([d904f59](https://github.com/scolladon/apex-mutation-testing/commit/d904f59d763fc77f1a86ab3af273649f4ba39c14))
+
 ## [1.7.1](https://github.com/scolladon/apex-mutation-testing/compare/v1.7.0...v1.7.1) (2026-06-01)
 
 
