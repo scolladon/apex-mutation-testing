@@ -2,6 +2,13 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [1.7.4](https://github.com/scolladon/apex-mutation-testing/compare/v1.7.3...v1.7.4) (2026-07-15)
+
+
+### Bug Fixes
+
+* replace re2 with re2js to eliminate npm 12 install-script friction ([#135](https://github.com/scolladon/apex-mutation-testing/issues/135)) ([fadb73c](https://github.com/scolladon/apex-mutation-testing/commit/fadb73c394a9b17d8b5c44535de8595ab3f354d7))
+
 ## [1.7.3](https://github.com/scolladon/apex-mutation-testing/compare/v1.7.2...v1.7.3) (2026-07-15)
 
 

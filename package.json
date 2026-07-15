@@ -1,7 +1,7 @@
 {
   "name": "apex-mutation-testing",
   "description": "Apex mutation testing plugin",
-  "version": "1.7.3",
+  "version": "1.7.4",
   "dependencies": {
     "@oclif/core": "^4.11.14",
     "@salesforce/apex-node": "^8.4.35",
