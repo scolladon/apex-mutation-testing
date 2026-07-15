@@ -5,21 +5,25 @@ import { ApexMutationParameter } from '../../../src/type/ApexMutationParameter.j
 
 vi.mock('node:fs/promises')
 
-// Local re2 mock — distinct purpose from test/setup/mutation-setup.ts:
+// Local skipPattern mock — distinct purpose from test/setup/mutation-setup.ts:
 // this file needs to exercise the throw paths inside compileSkipPatterns,
-// so we stub RE2 to throw on demand. The Stryker-only setup replaces RE2
-// entirely with a RegExp wrapper for a different reason (native-addon + worker_threads).
-let re2Behavior: 'noop' | 'throw-error' | 'throw-string' = 'noop'
-vi.mock('re2', () => ({
-  default: function MockRE2() {
-    if (re2Behavior === 'throw-error') {
-      throw new Error('invalid regex')
-    }
-    if (re2Behavior === 'throw-string') {
-      throw 'string thrown'
-    }
-  },
-}))
+// so we stub compileSkipPattern to throw a non-Error value on demand. The
+// Error-throw path is exercised through the real re2js engine (an invalid
+// pattern naturally throws), so only the non-Error branch needs a mock.
+let skipPatternThrows: false | 'string' = false
+vi.mock('../../../src/service/skipPattern.js', async importOriginal => {
+  const actual =
+    await importOriginal<typeof import('../../../src/service/skipPattern.js')>()
+  return {
+    ...actual,
+    compileSkipPattern: (pattern: string) => {
+      if (skipPatternThrows === 'string') {
+        throw 'string thrown'
+      }
+      return actual.compileSkipPattern(pattern)
+    },
+  }
+})
 
 describe('ConfigReader', () => {
   let sut: ConfigReader
@@ -31,7 +35,7 @@ describe('ConfigReader', () => {
 
   beforeEach(() => {
     sut = new ConfigReader()
-    re2Behavior = 'noop'
+    skipPatternThrows = false
     vi.mocked(readFile).mockRejectedValue({ code: 'ENOENT' })
   })
 
@@ -562,18 +566,15 @@ describe('ConfigReader', () => {
   })
 
   it('Given skip patterns with invalid regex, When compiling, Then throws error', () => {
-    // Arrange
-    re2Behavior = 'throw-error'
-
     // Act & Assert
     expect(() => ConfigReader.compileSkipPatterns(['([unclosed'])).toThrow(
-      /Invalid skip pattern '\(\[unclosed': invalid regex/
+      /Invalid skip pattern '\(\[unclosed': error parsing regexp/
     )
   })
 
   it('Given skip patterns with non-Error throw, When compiling, Then wraps it in error message', () => {
     // Arrange
-    re2Behavior = 'throw-string'
+    skipPatternThrows = 'string'
 
     // Act & Assert
     expect(() => ConfigReader.compileSkipPatterns(['some-pattern'])).toThrow(
@@ -698,7 +699,7 @@ describe('ConfigReader', () => {
       expect(sut).toEqual([])
     })
 
-    it('Given patterns, When compiling, Then returns RE2 instances', () => {
+    it('Given patterns, When compiling, Then returns SkipPattern instances', () => {
       // Arrange & Act
       const sut = ConfigReader.compileSkipPatterns([
         'System\\.debug',
@@ -707,6 +708,7 @@ describe('ConfigReader', () => {
 
       // Assert
       expect(sut).toHaveLength(2)
+      expect(sut[0].test('System.debug(x)')).toBe(true)
     })
   })
 })

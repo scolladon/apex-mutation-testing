@@ -4,8 +4,8 @@ import {
   CaseInsensitiveInputStream,
   CommonTokenStream,
 } from 'apex-parser'
-import RE2 from 're2'
 import { MutantGenerator } from '../../../src/service/mutantGenerator.js'
+import { compileSkipPattern } from '../../../src/service/skipPattern.js'
 
 describe('MutantGenerator', () => {
   let sut: MutantGenerator
@@ -598,7 +598,7 @@ describe('MutantGenerator', () => {
         '}',
       ].join('\n')
       const coveredLines = new Set([3, 4])
-      const skipPatterns = [new RE2('System\\.debug')]
+      const skipPatterns = [compileSkipPattern('System\\.debug')]
 
       // Act
       const { mutations: result } = sut.compute(
@@ -627,7 +627,7 @@ describe('MutantGenerator', () => {
         '}',
       ].join('\n')
       const coveredLines = new Set([3, 4])
-      const skipPatterns = [new RE2('System\\.debug')]
+      const skipPatterns = [compileSkipPattern('System\\.debug')]
 
       // Act
       const { mutations: result } = sut.compute(

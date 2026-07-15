@@ -1,8 +1,8 @@
 import { MethodCallContext } from 'apex-parser'
-import RE2 from 're2'
 import type { Mocked } from 'vitest'
 import { BaseListener } from '../../../src/mutator/baseListener.js'
 import { MutationListener } from '../../../src/mutator/mutationListener.js'
+import { compileSkipPattern } from '../../../src/service/skipPattern.js'
 
 describe('MutationListener', () => {
   // Arrange
@@ -119,7 +119,7 @@ describe('MutationListener', () => {
   it('Given line matching skip pattern, When entering rule, Then does not propagate to listeners', () => {
     // Arrange
     const sourceLines = ['System.debug("hello")', 'Integer x = 5']
-    const skipPatterns = [new RE2('System\\.debug')]
+    const skipPatterns = [compileSkipPattern('System\\.debug')]
     sut = new MutationListener(
       [mockListener1, mockListener2],
       new Set([1, 2]),
@@ -142,7 +142,7 @@ describe('MutationListener', () => {
   it('Given line not matching skip pattern, When entering rule, Then propagates to listeners', () => {
     // Arrange
     const sourceLines = ['System.debug("hello")', 'Integer x = 5']
-    const skipPatterns = [new RE2('System\\.debug')]
+    const skipPatterns = [compileSkipPattern('System\\.debug')]
     sut = new MutationListener(
       [mockListener1, mockListener2],
       new Set([2]),
@@ -227,7 +227,7 @@ describe('MutationListener', () => {
   it('Given skip patterns but source lines shorter than line number, When entering rule, Then propagates to listeners', () => {
     // Arrange
     const sourceLines = ['line1']
-    const skipPatterns = [new RE2('System\\.debug')]
+    const skipPatterns = [compileSkipPattern('System\\.debug')]
     sut = new MutationListener(
       [mockListener1, mockListener2],
       new Set([10]),
@@ -249,7 +249,7 @@ describe('MutationListener', () => {
   it('Given skip pattern matching last source line (line === sourceLines.length), When entering rule, Then does not propagate to listeners', () => {
     // Arrange — line 2 equals sourceLines.length (2), so >= condition is satisfied
     const sourceLines = ['normal line', 'System.debug("last")']
-    const skipPatterns = [new RE2('System\\.debug')]
+    const skipPatterns = [compileSkipPattern('System\\.debug')]
     sut = new MutationListener(
       [mockListener1, mockListener2],
       new Set([2]),
@@ -292,7 +292,7 @@ describe('MutationListener', () => {
   it('Given line covered and in range but matching skip pattern, When entering rule, Then does not propagate', () => {
     // Arrange
     const sourceLines = ['System.debug("hello")']
-    const skipPatterns = [new RE2('System\\.debug')]
+    const skipPatterns = [compileSkipPattern('System\\.debug')]
     const allowedLines = new Set([1])
     sut = new MutationListener(
       [mockListener1, mockListener2],
@@ -357,8 +357,8 @@ describe('MutationListener', () => {
     // Arrange — kills .some() → .every() mutant
     // Only patternA matches the line; with 'every', both would need to match (line would pass through)
     const sourceLines = ['System.debug("hello")']
-    const patternA = new RE2('System\\.debug')
-    const patternB = new RE2('NonMatching')
+    const patternA = compileSkipPattern('System\\.debug')
+    const patternB = compileSkipPattern('NonMatching')
     sut = new MutationListener(
       [mockListener1, mockListener2],
       new Set([1]),
@@ -415,7 +415,7 @@ describe('MutationListener', () => {
     // To truly kill this, the pattern must match undefined or the behavior must differ
     // We verify that a line BEYOND sourceLines is still eligible (not skipped)
     const sourceLines = ['System.debug("hello")'] // length 1
-    const skipPatterns = [new RE2('System\\.debug')]
+    const skipPatterns = [compileSkipPattern('System\\.debug')]
     sut = new MutationListener(
       [mockListener1],
       new Set([5]), // line 5 is beyond sourceLines.length (1)
@@ -440,7 +440,7 @@ describe('MutationListener', () => {
     // sourceLines.length = 2, line = 2: >= is true (applies check), > is false (skips check)
     // The existing boundary test covers length === line. This tests length === line - 1.
     const sourceLines = ['first line', 'second line'] // length 2
-    const skipPatterns = [new RE2('System\\.debug')]
+    const skipPatterns = [compileSkipPattern('System\\.debug')]
     sut = new MutationListener(
       [mockListener1],
       new Set([3]), // line 3, sourceLines.length = 2 < 3
@@ -524,7 +524,7 @@ describe('MutationListener', () => {
     // to ["Stryker was here"]. With the mutant default, sourceLines.length (1) >= line (1) is true,
     // so the skip pattern IS applied to "Stryker was here". If the pattern matches, propagation is blocked.
     // With real default ([]), sourceLines.length (0) >= line (1) is false, so no check runs.
-    const skipPatterns = [new RE2('Stryker was here')]
+    const skipPatterns = [compileSkipPattern('Stryker was here')]
     sut = new MutationListener(
       [mockListener1],
       new Set([1]),
@@ -640,8 +640,8 @@ describe('MutationListener', () => {
     // For DISTINGUISHING some vs every: need a case where SOME patterns match but not ALL.
     // This is already covered at line 356. This test verifies the "no patterns match at all" case.
     const sourceLines = ['Integer x = 5;']
-    const patternA = new RE2('System\\.debug')
-    const patternB = new RE2('Database\\.query')
+    const patternA = compileSkipPattern('System\\.debug')
+    const patternB = compileSkipPattern('Database\\.query')
     sut = new MutationListener(
       [mockListener1],
       new Set([1]),
@@ -782,7 +782,7 @@ describe('MutationListener', () => {
     // Arrange — kills ArithmeticOperator mutant: sourceLines[line - 1] → sourceLines[line]
     // line=1 → index=0 accesses 'System.debug(...)' (matches); with +1: index=1 accesses 'safe line' (no match)
     const sourceLines = ['System.debug("test")', 'safe line']
-    const skipPatterns = [new RE2('System\\.debug')]
+    const skipPatterns = [compileSkipPattern('System\\.debug')]
     sut = new MutationListener(
       [mockListener1],
       new Set([1]),
@@ -807,7 +807,7 @@ describe('MutationListener', () => {
     // sourceLines.length=1, line=1: 1 >= 1 = true → checks skip pattern
     // With > instead: 1 > 1 = false → skips check → would propagate → test fails → kills mutant
     const sourceLines = ['System.debug("boundary")']
-    const skipPatterns = [new RE2('System\\.debug')]
+    const skipPatterns = [compileSkipPattern('System\\.debug')]
     sut = new MutationListener(
       [mockListener1],
       new Set([1]),

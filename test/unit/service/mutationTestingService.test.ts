@@ -3744,7 +3744,7 @@ describe('MutationTestingService', () => {
         // Act
         await serviceWithPatterns.process()
 
-        // Assert — compute must receive the compiled RE2 instances (non-empty array), not []
+        // Assert — compute must receive the compiled SkipPattern instances (non-empty array), not []
         const computeCall = mockComputeFn.mock.calls[0]
         const passedSkipPatterns = computeCall[4]
         expect(passedSkipPatterns).toHaveLength(1)

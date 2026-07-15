@@ -1,10 +1,7 @@
 import { readFile } from 'node:fs/promises'
 
-import RE2 from 're2'
-
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
-
-export type RE2Instance = InstanceType<typeof RE2>
+import { compileSkipPattern, type SkipPattern } from './skipPattern.js'
 
 const DEFAULT_CONFIG_FILE = '.mutation-testing.json'
 
@@ -106,13 +103,13 @@ export class ConfigReader {
 
   public static compileSkipPatterns(
     patterns: string[] | undefined
-  ): RE2Instance[] {
+  ): SkipPattern[] {
     if (!patterns) {
       return []
     }
     return patterns.map(pattern => {
       try {
-        return new RE2(pattern)
+        return compileSkipPattern(pattern)
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error)
         throw new Error(`Invalid skip pattern '${pattern}': ${message}`)
