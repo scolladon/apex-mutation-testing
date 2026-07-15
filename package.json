@@ -24,6 +24,7 @@
     "@vitest/coverage-v8": "^4.1.10",
     "husky": "^9.1.7",
     "knip": "^6.26.0",
+    "ls-engines": "^0.10.1",
     "oclif": "^4.23.27",
     "shx": "^0.4.0",
     "tslib": "^2.8.1",
@@ -35,7 +36,7 @@
     "qs": "^6.15.2"
   },
   "engines": {
-    "node": ">=20"
+    "node": "^22.22 || ^24.15 || >=26"
   },
   "files": [
     "/lib",
@@ -80,6 +81,7 @@
     "devops:move-tag": "./tooling/devops-movetag.sh",
     "lint": "wireit",
     "lint:dependencies": "wireit",
+    "lint:engine": "ls-engines",
     "lint:fix": "wireit",
     "lint:staged": "wireit",
     "postpack": "shx rm -f oclif.manifest.json && shx sed -i 'blob/v[^/]*/' 'blob/main/' README.md",
