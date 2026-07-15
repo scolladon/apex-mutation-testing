@@ -2,6 +2,13 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [1.7.3](https://github.com/scolladon/apex-mutation-testing/compare/v1.7.2...v1.7.3) (2026-07-15)
+
+
+### Bug Fixes
+
+* allowlist re2 install script for npm 12 ([#133](https://github.com/scolladon/apex-mutation-testing/issues/133)) ([99947d4](https://github.com/scolladon/apex-mutation-testing/commit/99947d47ee86c40d2e9dc25fa256f278dbcc8e44))
+
 ## [1.7.2](https://github.com/scolladon/apex-mutation-testing/compare/v1.7.1...v1.7.2) (2026-07-15)
 
 
