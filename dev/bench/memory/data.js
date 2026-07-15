@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784122225343,
+  "lastUpdate": 1784130381787,
   "repoUrl": "https://github.com/scolladon/apex-mutation-testing",
   "entries": {
     "Memory Benchmark": [
@@ -919,6 +919,108 @@ window.BENCHMARK_DATA = {
             "name": "pipeline-apply-all-mutations",
             "value": 336.6452,
             "range": "±0.20%",
+            "unit": "ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "colladonsebastien@gmail.com",
+            "name": "Sebastien",
+            "username": "scolladon"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fadb73c394a9b17d8b5c44535de8595ab3f354d7",
+          "message": "fix: replace re2 with re2js to eliminate npm 12 install-script friction (#135)",
+          "timestamp": "2026-07-15T17:44:15+02:00",
+          "tree_id": "5b18f8b07034216f23046fad20e56cbb59c90f95",
+          "url": "https://github.com/scolladon/apex-mutation-testing/commit/fadb73c394a9b17d8b5c44535de8595ab3f354d7"
+        },
+        "date": 1784130381761,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "antlr-lex-small",
+            "value": 0.1336,
+            "range": "±0.39%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-parse-small",
+            "value": 8.1185,
+            "range": "±5.07%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-lex-medium",
+            "value": 0.6174,
+            "range": "±0.35%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-parse-medium",
+            "value": 37.1168,
+            "range": "±1.94%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-lex-large",
+            "value": 2.0198,
+            "range": "±2.01%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-parse-large",
+            "value": 103.248,
+            "range": "±2.02%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-small-compute-mutations",
+            "value": 8.2708,
+            "range": "±5.49%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-small-type-discovery",
+            "value": 5.6368,
+            "range": "±4.42%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-medium-compute-mutations",
+            "value": 33.1215,
+            "range": "±2.72%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-medium-type-discovery",
+            "value": 25.9673,
+            "range": "±1.34%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-large-compute-mutations",
+            "value": 94.4595,
+            "range": "±3.04%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-large-type-discovery",
+            "value": 100.7403,
+            "range": "±11.74%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-apply-all-mutations",
+            "value": 349.7547,
+            "range": "±0.67%",
             "unit": "ms"
           }
         ]
