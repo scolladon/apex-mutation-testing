@@ -5,10 +5,9 @@ import { ApexMutationParameter } from '../../../src/type/ApexMutationParameter.j
 
 vi.mock('node:fs/promises')
 
-// Local skipPattern mock — distinct purpose from test/setup/mutation-setup.ts:
-// this file needs to exercise the throw paths inside compileSkipPatterns,
-// so we stub compileSkipPattern to throw a non-Error value on demand. The
-// Error-throw path is exercised through the real re2js engine (an invalid
+// Stub compileSkipPattern to throw a non-Error value on demand so the
+// String(error) branch inside compileSkipPatterns is covered. The
+// Error-throw path is exercised through the real engine (an invalid
 // pattern naturally throws), so only the non-Error branch needs a mock.
 let skipPatternThrows: false | 'string' = false
 vi.mock('../../../src/service/skipPattern.js', async importOriginal => {

@@ -1,9 +1,10 @@
 import { ConfigReader } from '../../../src/service/configReader.js'
 
-// Golden master over the CURRENT re2-backed ConfigReader.compileSkipPatterns.
-// No mock of `re2` here — this exercises the real native engine so Part 2's
-// re2js swap can be checked against these engine-agnostic pins unchanged.
-describe('ConfigReader.compileSkipPatterns (golden master — current re2 engine)', () => {
+// Golden master pinning the user-facing skip-pattern contract through the
+// ConfigReader public API — substring matching, anchors, case sensitivity,
+// the error-message prefix and RE2 construct rejection — engine-agnostic,
+// so it must stay green unchanged across any regex-engine swap.
+describe('ConfigReader.compileSkipPatterns (skip-pattern behaviour contract)', () => {
   it('Given a substring pattern, When the line contains a match anywhere, Then test returns true', () => {
     // Arrange
     const sut = ConfigReader.compileSkipPatterns(['System\\.debug'])[0]
@@ -65,6 +66,17 @@ describe('ConfigReader.compileSkipPatterns (golden master — current re2 engine
 
     // Act
     const result = sut.test('Integer x = 42;')
+
+    // Assert
+    expect(result).toBe(true)
+  })
+
+  it('Given a unicode literal pattern, When the line contains the unicode text, Then test returns true', () => {
+    // Arrange
+    const sut = ConfigReader.compileSkipPatterns(['café'])[0]
+
+    // Act
+    const result = sut.test('un café ici')
 
     // Assert
     expect(result).toBe(true)

@@ -72,9 +72,33 @@ describe('compileSkipPattern', () => {
     expect(() => compileSkipPattern('(a)\\1')).toThrow(/error parsing regexp/)
   })
 
+  it('Given a lookbehind pattern, When compiling, Then throws per the RE2 no-lookaround guarantee', () => {
+    // Arrange & Act & Assert
+    expect(() => compileSkipPattern('(?<=foo)bar')).toThrow(
+      /error parsing regexp/
+    )
+  })
+
+  it('Given a catastrophic-backtracking pattern, When matched against an adversarial input, Then it completes fast per the linear-time guarantee', () => {
+    // Arrange
+    const sut = compileSkipPattern('(a+)+$')
+    const adversarialLine = `${'a'.repeat(40)}!`
+
+    // Act
+    const start = performance.now()
+    const result = sut.test(adversarialLine)
+    const elapsedMs = performance.now() - start
+
+    // Assert — a backtracking engine would take minutes here; linear-time
+    // matching finishes in well under the generous budget.
+    expect(result).toBe(false)
+    expect(elapsedMs).toBeLessThan(100)
+  })
+
   it('Given several patterns compiled once, When matched over a large synthetic class, Then compile+match completes well within budget', () => {
-    // Arrange — generous, non-flaking budget: ~1000x the empirically pinned
-    // ~1ms cost, so this only guards against a catastrophic regression.
+    // Arrange — generous, non-flaking budget: the whole compile+match loop
+    // runs in ~15ms locally, so the 1000ms ceiling only guards against a
+    // catastrophic regression.
     const patterns = [
       'System\\.debug',
       '^\\s*//',
