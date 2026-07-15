@@ -30,7 +30,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: latest
 
       - name: Setup dependencies, cache and install
         uses: ./.github/actions/install
@@ -58,7 +58,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: latest
 
       - name: Setup dependencies, cache and install
         uses: ./.github/actions/install
@@ -71,6 +71,9 @@ jobs:
 
       - name: Audit dependencies
         run: npm audit --audit-level=high
+
+      - name: Check engines
+        run: npm run lint:engine
 
   megalinter:
     runs-on: ubuntu-latest

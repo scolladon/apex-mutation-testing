@@ -171,36 +171,34 @@ describe('NonVoidMethodCallMutator', () => {
           { typeName: 'CustomClass', expected: 'null' },
         ]
 
-        it.each(
-          testCases
-        )('Given $typeName variable declaration with method call, When entering statement, Then should replace with $expected', ({
-          typeName,
-          expected,
-        }) => {
-          // Arrange
-          const typeRegistry = createTypeRegistryWithVars(
-            'testMethod',
-            new Map()
-          )
-          const sut = new NonVoidMethodCallMutator(typeRegistry)
-          sut._mutations = []
-          const methodCall = createMethodCallExpression('getValue()')
-          const ctx = createVariableDeclarationStatement(
-            typeName,
-            'x',
-            methodCall
-          )
+        it.each(testCases)(
+          'Given $typeName variable declaration with method call, When entering statement, Then should replace with $expected',
+          ({ typeName, expected }) => {
+            // Arrange
+            const typeRegistry = createTypeRegistryWithVars(
+              'testMethod',
+              new Map()
+            )
+            const sut = new NonVoidMethodCallMutator(typeRegistry)
+            sut._mutations = []
+            const methodCall = createMethodCallExpression('getValue()')
+            const ctx = createVariableDeclarationStatement(
+              typeName,
+              'x',
+              methodCall
+            )
 
-          // Act
-          sut.enterLocalVariableDeclarationStatement(ctx)
+            // Act
+            sut.enterLocalVariableDeclarationStatement(ctx)
 
-          // Assert
-          expect(sut._mutations).toHaveLength(1)
-          expect(sut._mutations[0].replacement).toBe(expected)
-          expect(sut._mutations[0].mutationName).toBe(
-            'NonVoidMethodCallMutator'
-          )
-        })
+            // Assert
+            expect(sut._mutations).toHaveLength(1)
+            expect(sut._mutations[0].replacement).toBe(expected)
+            expect(sut._mutations[0].mutationName).toBe(
+              'NonVoidMethodCallMutator'
+            )
+          }
+        )
       })
 
       it('Given dot expression method call, When entering statement, Then should mutate', () => {
@@ -613,43 +611,40 @@ describe('NonVoidMethodCallMutator', () => {
           { apexType: APEX_TYPE.DATE, fieldName: 'created', expected: 'null' },
         ]
 
-        it.each(
-          apexTypeTestCases
-        )('Given SObject field of ApexType $apexType, When assigning method call, Then should return $expected', ({
-          apexType,
-          fieldName,
-          expected,
-        }) => {
-          // Arrange
-          const fieldMap = new Map([
-            ['account', new Map([[fieldName.toLowerCase(), apexType]])],
-          ])
-          const matcher = createSObjectFieldMatcher(
-            new Set(['account']),
-            fieldMap
-          )
-          const typeRegistry = createTypeRegistryWithVars(
-            'testMethod',
-            new Map([['acc', 'account']]),
-            new Map(),
-            [matcher]
-          )
-          const sut = new NonVoidMethodCallMutator(typeRegistry)
-          sut._mutations = []
-          const methodCall = createMethodCallExpression('getValue()')
-          const assignCtx = createAssignExpression(
-            `acc.${fieldName}`,
-            methodCall
-          )
-          setEnclosingMethod(assignCtx, 'testMethod')
+        it.each(apexTypeTestCases)(
+          'Given SObject field of ApexType $apexType, When assigning method call, Then should return $expected',
+          ({ apexType, fieldName, expected }) => {
+            // Arrange
+            const fieldMap = new Map([
+              ['account', new Map([[fieldName.toLowerCase(), apexType]])],
+            ])
+            const matcher = createSObjectFieldMatcher(
+              new Set(['account']),
+              fieldMap
+            )
+            const typeRegistry = createTypeRegistryWithVars(
+              'testMethod',
+              new Map([['acc', 'account']]),
+              new Map(),
+              [matcher]
+            )
+            const sut = new NonVoidMethodCallMutator(typeRegistry)
+            sut._mutations = []
+            const methodCall = createMethodCallExpression('getValue()')
+            const assignCtx = createAssignExpression(
+              `acc.${fieldName}`,
+              methodCall
+            )
+            setEnclosingMethod(assignCtx, 'testMethod')
 
-          // Act
-          sut.enterAssignExpression(assignCtx)
+            // Act
+            sut.enterAssignExpression(assignCtx)
 
-          // Assert
-          expect(sut._mutations).toHaveLength(1)
-          expect(sut._mutations[0].replacement).toBe(expected)
-        })
+            // Assert
+            expect(sut._mutations).toHaveLength(1)
+            expect(sut._mutations[0].replacement).toBe(expected)
+          }
+        )
       })
     })
 

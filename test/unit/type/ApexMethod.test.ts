@@ -15,16 +15,16 @@ describe('getDefaultValueForApexType', () => {
       { apexType: APEX_TYPE.DECIMAL, expected: '0.0' },
       { apexType: APEX_TYPE.BOOLEAN, expected: 'false' },
       { apexType: APEX_TYPE.BLOB, expected: "Blob.valueOf('')" },
-    ])('Given $apexType type, When getting default value, Then returns $expected', ({
-      apexType,
-      expected,
-    }) => {
-      // Arrange & Act
-      const result = getDefaultValueForApexType(apexType)
+    ])(
+      'Given $apexType type, When getting default value, Then returns $expected',
+      ({ apexType, expected }) => {
+        // Arrange & Act
+        const result = getDefaultValueForApexType(apexType)
 
-      // Assert
-      expect(result).toBe(expected)
-    })
+        // Assert
+        expect(result).toBe(expected)
+      }
+    )
   })
 
   describe('collection types with typeName', () => {
@@ -44,17 +44,16 @@ describe('getDefaultValueForApexType', () => {
         typeName: 'Map<String, Integer>',
         expected: 'new Map<String, Integer>()',
       },
-    ])('Given $apexType type with typeName, When getting default value, Then returns new instance', ({
-      apexType,
-      typeName,
-      expected,
-    }) => {
-      // Arrange & Act
-      const result = getDefaultValueForApexType(apexType, typeName)
+    ])(
+      'Given $apexType type with typeName, When getting default value, Then returns new instance',
+      ({ apexType, typeName, expected }) => {
+        // Arrange & Act
+        const result = getDefaultValueForApexType(apexType, typeName)
 
-      // Assert
-      expect(result).toBe(expected)
-    })
+        // Assert
+        expect(result).toBe(expected)
+      }
+    )
   })
 
   it('Given SOBJECT type with typeName, When getting default value, Then returns new instance', () => {
@@ -113,14 +112,15 @@ describe('getDefaultValueForApexType', () => {
       { apexType: APEX_TYPE.TIME, label: 'TIME' },
       { apexType: APEX_TYPE.OBJECT, label: 'OBJECT' },
       { apexType: APEX_TYPE.APEX_CLASS, label: 'APEX_CLASS' },
-    ])('Given $label type, When getting default value, Then returns null', ({
-      apexType,
-    }) => {
-      // Arrange & Act
-      const result = getDefaultValueForApexType(apexType)
+    ])(
+      'Given $label type, When getting default value, Then returns null',
+      ({ apexType }) => {
+        // Arrange & Act
+        const result = getDefaultValueForApexType(apexType)
 
-      // Assert — these types have no default literal value and fall through to return null
-      expect(result).toBeNull()
-    })
+        // Assert — these types have no default literal value and fall through to return null
+        expect(result).toBeNull()
+      }
+    )
   })
 })

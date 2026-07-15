@@ -17,7 +17,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: latest
 
       - name: Set environment variables
         run: |

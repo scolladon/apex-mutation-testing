@@ -9,7 +9,7 @@ We encourage the developer community to contribute to this repository. This guid
 
 ## Requirements
 
-- [Node](https://nodejs.org/) >= 18.6.0
+- [Node](https://nodejs.org/) >= 22.22 (supported: 22, 24, 26)
 - [npm](https://www.npmjs.com/) >= 10.9.0
 
 ## Installation
@@ -106,6 +106,11 @@ You can use an interactive command line to help you create supported commit mess
 ```bash
 npm run commit
 ```
+
+### Engine linting
+
+This repository uses [ls-engines](https://github.com/ljharb/ls-engines) to verify the running Node version is within the supported range and that `engines.node` stays consistent with the dependency graph.
+It runs as a blocking pre-push git hook and as a pull request check.
 
 ### PR linting
 

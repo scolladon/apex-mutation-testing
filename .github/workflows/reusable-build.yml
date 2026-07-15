@@ -6,6 +6,10 @@ on:
 jobs:
   source:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24, 26]
     steps:
       - name: Checkout sources
         uses: actions/checkout@v6
@@ -13,9 +17,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: 24
-
-      - uses: google/wireit@setup-github-actions-caching/v2
+          node-version: ${{ matrix.node }}
 
       - name: Setup dependencies, cache and install
         uses: ./.github/actions/install
@@ -34,5 +36,5 @@ jobs:
 
       - uses: actions/upload-artifact@v6
         with:
-          name: coverage-test-report
+          name: coverage-test-report-${{ matrix.node }}
           path: reports/coverage

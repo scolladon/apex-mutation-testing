@@ -103,32 +103,35 @@ describe('EmptyReturnMutator', () => {
       },
     ]
 
-    it.each(
-      testTypes
-    )('Given $returnType return type, When entering return statement, Then creates empty mutation with $expected', testCase => {
-      // Arrange
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: testCase.returnType,
-        startLine: 1,
-        endLine: 5,
-        type: testCase.type,
-        ...(testCase.elementType ? { elementType: testCase.elementType } : {}),
-      })
-      const typeRegistry = createTypeRegistry(typeTable)
-      const sut = new EmptyReturnMutator(typeRegistry)
-      const returnCtx = createReturnCtxInMethod(
-        testCase.expression,
-        'testMethod'
-      )
+    it.each(testTypes)(
+      'Given $returnType return type, When entering return statement, Then creates empty mutation with $expected',
+      testCase => {
+        // Arrange
+        const typeTable = new Map<string, ApexMethod>()
+        typeTable.set('testMethod', {
+          returnType: testCase.returnType,
+          startLine: 1,
+          endLine: 5,
+          type: testCase.type,
+          ...(testCase.elementType
+            ? { elementType: testCase.elementType }
+            : {}),
+        })
+        const typeRegistry = createTypeRegistry(typeTable)
+        const sut = new EmptyReturnMutator(typeRegistry)
+        const returnCtx = createReturnCtxInMethod(
+          testCase.expression,
+          'testMethod'
+        )
 
-      // Act
-      sut.enterReturnStatement(returnCtx)
+        // Act
+        sut.enterReturnStatement(returnCtx)
 
-      // Assert
-      expect(sut._mutations).toHaveLength(1)
-      expect(sut._mutations[0].replacement).toBe(testCase.expected)
-    })
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe(testCase.expected)
+      }
+    )
 
     const excludedTypes = [
       { type: APEX_TYPE.VOID, name: 'void' },
@@ -141,27 +144,28 @@ describe('EmptyReturnMutator', () => {
       { type: APEX_TYPE.TIME, name: 'Time' },
     ]
 
-    it.each(
-      excludedTypes
-    )('Given $name return type, When entering return statement, Then no mutation created', excluded => {
-      // Arrange
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: excluded.name,
-        startLine: 1,
-        endLine: 5,
-        type: excluded.type,
-      })
-      const typeRegistry = createTypeRegistry(typeTable)
-      const sut = new EmptyReturnMutator(typeRegistry)
-      const returnCtx = createReturnCtxInMethod('something', 'testMethod')
+    it.each(excludedTypes)(
+      'Given $name return type, When entering return statement, Then no mutation created',
+      excluded => {
+        // Arrange
+        const typeTable = new Map<string, ApexMethod>()
+        typeTable.set('testMethod', {
+          returnType: excluded.name,
+          startLine: 1,
+          endLine: 5,
+          type: excluded.type,
+        })
+        const typeRegistry = createTypeRegistry(typeTable)
+        const sut = new EmptyReturnMutator(typeRegistry)
+        const returnCtx = createReturnCtxInMethod('something', 'testMethod')
 
-      // Act
-      sut.enterReturnStatement(returnCtx)
+        // Act
+        sut.enterReturnStatement(returnCtx)
 
-      // Assert
-      expect(sut._mutations).toHaveLength(0)
-    })
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      }
+    )
   })
 
   describe('empty value detection', () => {
@@ -196,18 +200,19 @@ describe('EmptyReturnMutator', () => {
       },
     ]
 
-    it.each(
-      emptyValueCases
-    )('Given $type type with value $value, When checking isEmpty, Then returns $expected', testCase => {
-      // Arrange
-      const sut = new EmptyReturnMutator()
+    it.each(emptyValueCases)(
+      'Given $type type with value $value, When checking isEmpty, Then returns $expected',
+      testCase => {
+        // Arrange
+        const sut = new EmptyReturnMutator()
 
-      // Act
-      const result = sut.isEmptyValue(testCase.type, testCase.value)
+        // Act
+        const result = sut.isEmptyValue(testCase.type, testCase.value)
 
-      // Assert
-      expect(result).toBe(testCase.expected)
-    })
+        // Assert
+        expect(result).toBe(testCase.expected)
+      }
+    )
 
     describe('Double and Decimal zero value edge cases', () => {
       it.each([
@@ -219,16 +224,19 @@ describe('EmptyReturnMutator', () => {
         { type: 'Decimal', value: '0.000', expected: true },
         { type: 'Double', value: '1.0', expected: false },
         { type: 'Decimal', value: '1.0', expected: false },
-      ])('Given $type type with value $value, When checking isEmpty, Then returns $expected', testCase => {
-        // Arrange
-        const sut = new EmptyReturnMutator()
+      ])(
+        'Given $type type with value $value, When checking isEmpty, Then returns $expected',
+        testCase => {
+          // Arrange
+          const sut = new EmptyReturnMutator()
 
-        // Act
-        const result = sut.isEmptyValue(testCase.type, testCase.value)
+          // Act
+          const result = sut.isEmptyValue(testCase.type, testCase.value)
 
-        // Assert
-        expect(result).toBe(testCase.expected)
-      })
+          // Assert
+          expect(result).toBe(testCase.expected)
+        }
+      )
 
       it('Given Double type with 00.0 (not anchored at start), When checking isEmpty, Then returns false', () => {
         // Arrange

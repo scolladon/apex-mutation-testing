@@ -5,7 +5,7 @@
   "dependencies": {
     "@oclif/core": "^4.11.14",
     "@salesforce/apex-node": "^8.4.35",
-    "@salesforce/core": "^8.32.2",
+    "@salesforce/core": "^8.32.3",
     "@salesforce/sf-plugins-core": "^12.2.26",
     "@stryker-mutator/core": "^9.6.1",
     "antlr4ts": "^0.5.0-alpha.4",
@@ -15,7 +15,7 @@
     "re2": "^1.26.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.3",
+    "@biomejs/biome": "^2.5.4",
     "@commitlint/config-conventional": "^21.2.0",
     "@oclif/plugin-help": "^6.2.53",
     "@salesforce/dev-config": "^4.3.3",
@@ -24,6 +24,7 @@
     "@vitest/coverage-v8": "^4.1.10",
     "husky": "^9.1.7",
     "knip": "^6.26.0",
+    "ls-engines": "^0.10.1",
     "oclif": "^4.23.27",
     "shx": "^0.4.0",
     "tslib": "^2.8.1",
@@ -35,7 +36,7 @@
     "qs": "^6.15.2"
   },
   "engines": {
-    "node": ">=20"
+    "node": "^22.22 || ^24.15 || >=26"
   },
   "files": [
     "/lib",
@@ -80,12 +81,13 @@
     "devops:move-tag": "./tooling/devops-movetag.sh",
     "lint": "wireit",
     "lint:dependencies": "wireit",
+    "lint:engine": "ls-engines",
     "lint:fix": "wireit",
     "lint:staged": "wireit",
     "postpack": "shx rm -f oclif.manifest.json && shx sed -i 'blob/v[^/]*/' 'blob/main/' README.md",
     "prepack": "wireit",
     "prepare": "husky",
-    "prepublishOnly": "npm shrinkwrap",
+    "prepublishOnly": "shx cp package-lock.json npm-shrinkwrap.json",
     "test:build": "wireit",
     "test:mutation": "stryker run",
     "test:nut": "wireit",

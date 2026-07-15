@@ -44,31 +44,32 @@ describe('FalseReturnMutator', () => {
       },
     ]
 
-    it.each(
-      testCases
-    )('Given $name return value, When entering return statement, Then creates false mutation', testCase => {
-      // Arrange
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: 'Boolean',
-        startLine: 1,
-        endLine: 5,
-        type: APEX_TYPE.BOOLEAN,
-      })
-      const typeRegistry = createTypeRegistry(typeTable)
-      const sut = new FalseReturnMutator(typeRegistry)
-      const returnCtx = createReturnCtxInMethod(
-        testCase.expression,
-        'testMethod'
-      )
+    it.each(testCases)(
+      'Given $name return value, When entering return statement, Then creates false mutation',
+      testCase => {
+        // Arrange
+        const typeTable = new Map<string, ApexMethod>()
+        typeTable.set('testMethod', {
+          returnType: 'Boolean',
+          startLine: 1,
+          endLine: 5,
+          type: APEX_TYPE.BOOLEAN,
+        })
+        const typeRegistry = createTypeRegistry(typeTable)
+        const sut = new FalseReturnMutator(typeRegistry)
+        const returnCtx = createReturnCtxInMethod(
+          testCase.expression,
+          'testMethod'
+        )
 
-      // Act
-      sut.enterReturnStatement(returnCtx)
+        // Act
+        sut.enterReturnStatement(returnCtx)
 
-      // Assert
-      expect(sut._mutations).toHaveLength(1)
-      expect(sut._mutations[0].replacement).toBe(testCase.expected)
-    })
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe(testCase.expected)
+      }
+    )
   })
 
   describe('already false values', () => {
@@ -117,30 +118,31 @@ describe('FalseReturnMutator', () => {
       },
     ]
 
-    it.each(
-      testCases
-    )('Given $typeName return type, When entering return statement, Then no mutation created', testCase => {
-      // Arrange
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: testCase.typeName,
-        startLine: 1,
-        endLine: 5,
-        type: testCase.type,
-      })
-      const typeRegistry = createTypeRegistry(typeTable)
-      const sut = new FalseReturnMutator(typeRegistry)
-      const returnCtx = createReturnCtxInMethod(
-        testCase.expression,
-        'testMethod'
-      )
+    it.each(testCases)(
+      'Given $typeName return type, When entering return statement, Then no mutation created',
+      testCase => {
+        // Arrange
+        const typeTable = new Map<string, ApexMethod>()
+        typeTable.set('testMethod', {
+          returnType: testCase.typeName,
+          startLine: 1,
+          endLine: 5,
+          type: testCase.type,
+        })
+        const typeRegistry = createTypeRegistry(typeTable)
+        const sut = new FalseReturnMutator(typeRegistry)
+        const returnCtx = createReturnCtxInMethod(
+          testCase.expression,
+          'testMethod'
+        )
 
-      // Act
-      sut.enterReturnStatement(returnCtx)
+        // Act
+        sut.enterReturnStatement(returnCtx)
 
-      // Assert
-      expect(sut._mutations).toHaveLength(0)
-    })
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      }
+    )
   })
 
   describe('validation and edge cases', () => {
