@@ -7,7 +7,6 @@ export default {
     'vitest.config.perf.ts',
     '.github/**/*.yml',
     'vitest.config.mutation.ts',
-    'test/setup/mutation-setup.ts',
   ],
   project: ['**/*.{ts,js,json,yml}'],
   ignoreDependencies: [

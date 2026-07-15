@@ -37,7 +37,7 @@ import { UnaryOperatorInsertionMutator } from '../mutator/unaryOperatorInsertion
 import { VoidMethodCallMutator } from '../mutator/voidMethodCallMutator.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { TypeRegistry } from '../type/TypeRegistry.js'
-import type { RE2Instance } from './configReader.js'
+import type { SkipPattern } from './skipPattern.js'
 
 const MUTATOR_NAME = {
   ARGUMENT_PROPAGATION: 'ArgumentPropagation',
@@ -198,7 +198,7 @@ export class MutantGenerator {
     coveredLines: Set<number>,
     typeRegistry?: TypeRegistry,
     mutatorFilter?: { include?: string[]; exclude?: string[] },
-    skipPatterns: RE2Instance[] = [],
+    skipPatterns: SkipPattern[] = [],
     allowedLines?: Set<number>,
     preParsed?: PreParsedInput
   ): MutantGeneratorComputeResult {

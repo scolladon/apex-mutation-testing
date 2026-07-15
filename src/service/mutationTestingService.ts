@@ -9,7 +9,7 @@ import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
-import { ConfigReader, type RE2Instance } from './configReader.js'
+import { ConfigReader } from './configReader.js'
 import {
   AggregateCoverageStrategy,
   type CoverageStrategy,
@@ -27,6 +27,7 @@ import {
   calculateMutationPosition,
   extractMutationOriginalText,
 } from './mutationLocation.js'
+import type { SkipPattern } from './skipPattern.js'
 import { formatDuration, timeExecution } from './timeUtils.js'
 import { type TypeAnalysisResult, TypeDiscoverer } from './typeDiscoverer.js'
 import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
@@ -39,7 +40,7 @@ export class MutationTestingService {
   protected readonly excludeMutators: string[] | undefined
   protected readonly includeTestMethods: string[] | undefined
   protected readonly excludeTestMethods: string[] | undefined
-  private readonly skipPatterns: RE2Instance[]
+  private readonly skipPatterns: SkipPattern[]
   private readonly allowedLines: Set<number> | undefined
   private readonly mutationGroupingEnabled: boolean
   private apexClassContent: string = ''

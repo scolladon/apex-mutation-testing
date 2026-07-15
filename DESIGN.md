@@ -957,18 +957,8 @@ The HTML report is written to `reports/mutation/index.html`.
 | --- | --- |
 | `stryker.config.mjs` | Stryker configuration — runner, scope, reporters, thresholds |
 | `vitest.config.mutation.ts` | Vitest config for mutation runs — includes both unit and integration tests |
-| `test/setup/mutation-setup.ts` | Mock setup executed before each Stryker worker |
 
 `coverageAnalysis: 'perTest'` enables per-test mutation filtering — only tests that cover a mutated line are run for that mutant, dramatically reducing execution time.
-
-### re2 Native Addon Workaround
-
-Stryker's vitest-runner forces `pool: 'threads'` (Node.js worker_threads). The `re2` native addon crashes during module registration inside worker threads because native addons cannot be loaded in a worker context.
-
-`test/setup/mutation-setup.ts` mocks `re2` with a `RegExp` wrapper before any test module loads.
-This is safe in the mutation testing context: the mock is only active during Stryker runs, not during normal `npm run test:unit` or `npm run test:nut` runs.
-The substitution is semantically equivalent for the `.test()` and `.exec()` call sites used by production code.
-RE2's linear-time guarantee is not relevant during test execution.
 
 ### Score Baseline
 
@@ -1115,9 +1105,21 @@ isLineEligible(line)
 
 When `--lines` is not provided, `allowedLines` is `undefined` (no range filter). When `--skip-patterns` is not provided, `skipPatterns` is an empty array (no pattern filter). This means the default behavior (no flags) is identical to the previous `coveredLines.has()` check.
 
-### RE2 for Regex Safety
+### re2js for Regex Safety
 
-Skip patterns use [RE2](https://github.com/google/re2) (via the `re2` npm package) instead of JavaScript's built-in `RegExp`. RE2 guarantees **linear-time** matching, preventing ReDoS (Regular Expression Denial of Service) attacks from malicious or poorly written patterns. Pattern compilation is validated at configuration time — invalid RE2 patterns fail fast with a descriptive error.
+Skip patterns use [re2js](https://github.com/le0pard/re2js) — a pure-JS port of Google's RE2/J — instead of JavaScript's built-in `RegExp`. re2js accepts RE2 syntax and guarantees **linear-time** matching, preventing ReDoS (Regular Expression Denial of Service) attacks from malicious or poorly written patterns, with zero native code and zero install scripts. Pattern compilation is validated at configuration time — invalid patterns fail fast with a descriptive error.
+
+`src/service/skipPattern.ts` defines the port the rest of the codebase depends on, so the regex engine stays out of `mutationListener.ts`, `mutantGenerator.ts`, and `mutationTestingService.ts`:
+
+```typescript
+interface SkipPattern {
+  test(line: string): boolean
+}
+
+compileSkipPattern(pattern: string): SkipPattern
+```
+
+`compileSkipPattern` is the re2js-backed adapter: it compiles the pattern and returns a `SkipPattern` whose `test()` matches via RE2JS's unanchored substring `test()` on the DFA path. Compilation throws the raw engine error — the port stays domain-agnostic and leaves user-facing wrapping to the caller. `ConfigReader.compileSkipPatterns` catches that error and wraps it as `Invalid skip pattern '<p>': <reason>`.
 
 ### Data Flow
 
@@ -1131,7 +1133,7 @@ ConfigReader.resolve()
     ▼
 MutationTestingService constructor
     ├─ ConfigReader.compileSkipPatterns(skipPatterns)
-    │     → string[] → RE2Instance[] (validates RE2 compilation)
+    │     → string[] → SkipPattern[] (validates RE2 compilation)
     └─ ConfigReader.parseLineRanges(lines)
     │     → string[] (e.g. ["10-50","100-120"]) → Set<number> (expanded)
     │
