@@ -1,5 +1,6 @@
 import { TestLevel, TestResult, TestService } from '@salesforce/apex-node'
 import { Connection } from '@salesforce/core'
+import type { CoverageStrategy } from '../service/coverageStrategy.js'
 
 export class ApexTestRunner {
   protected readonly testService: TestService
@@ -7,29 +8,19 @@ export class ApexTestRunner {
     this.testService = new TestService(connection)
   }
 
-  public async getTestMethodsPerLines(className: string) {
-    const testResult = await this.runTestAsynchronous({ className }, false)
-
-    const testMethodsPerLine = new Map<number, Set<string>>()
-
-    testResult.tests?.forEach(test => {
-      test.perClassCoverage?.forEach(testMethodExecutionResult => {
-        testMethodExecutionResult.coverage?.coveredLines?.forEach(line => {
-          if (!testMethodsPerLine.has(line)) {
-            testMethodsPerLine.set(line, new Set<string>())
-          }
-          testMethodsPerLine
-            .get(line)!
-            .add(testMethodExecutionResult.apexTestMethodName)
-        })
-      })
-    })
-
+  public async getTestMethodsPerLines(
+    apexTestClassName: string,
+    coverageStrategy: CoverageStrategy
+  ) {
+    const testResult = await this.runTestAsynchronous(
+      { className: apexTestClassName },
+      false
+    )
     return {
       outcome: testResult.summary.outcome,
       testsRan: testResult.summary.testsRan,
       failing: testResult.summary.failing,
-      testMethodsPerLine,
+      testMethodsPerLine: coverageStrategy.getTestMethodsPerLine(testResult),
     }
   }
 

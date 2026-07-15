@@ -2,6 +2,7 @@ import { Connection, Messages } from '@salesforce/core'
 import { Progress, Spinner } from '@salesforce/sf-plugins-core'
 import type { CommonTokenStream } from 'apex-parser'
 import { ApexClassRepository } from '../adapter/apexClassRepository.js'
+import { ApexSettingsRepository } from '../adapter/apexSettingsRepository.js'
 import { ApexTestRunner } from '../adapter/apexTestRunner.js'
 import { SObjectDescribeRepository } from '../adapter/sObjectDescribeRepository.js'
 import { ApexClass } from '../type/ApexClass.js'
@@ -9,6 +10,11 @@ import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
 import { ConfigReader, type RE2Instance } from './configReader.js'
+import {
+  AggregateCoverageStrategy,
+  type CoverageStrategy,
+  PerTestCoverageStrategy,
+} from './coverageStrategy.js'
 import { decideExactOutcome, solveColoring } from './exactColoring.js'
 import { GroupExecutor } from './groupExecutor.js'
 import { MutantGenerator } from './mutantGenerator.js'
@@ -69,7 +75,8 @@ export class MutationTestingService {
   }
 
   public async process(): Promise<ApexMutationTestResult> {
-    const { apexClassRepository, apexTestRunner } = this.createAdapters()
+    const { apexClassRepository, apexTestRunner, apexSettingsRepository } =
+      this.createAdapters()
     const apexClass = await this.fetchApexClass(apexClassRepository)
     const typeAnalysis = await this.discoverTypes(
       apexClass,
@@ -82,8 +89,13 @@ export class MutationTestingService {
     )
     await this.verifyTestClassCompilation(apexClassRepository)
 
-    const { testMethodsPerLine, testTime } =
-      await this.runBaselineTests(apexTestRunner)
+    const coverageStrategy = await this.selectCoverageStrategy(
+      apexSettingsRepository
+    )
+    const { testMethodsPerLine, testTime } = await this.runBaselineTests(
+      apexTestRunner,
+      coverageStrategy
+    )
     const coveredLines = this.extractCoveredLines(testMethodsPerLine)
     const { mutations, mutantGenerator, tokenStream } = this.generateMutations(
       apexClass,
@@ -227,7 +239,17 @@ export class MutationTestingService {
     return {
       apexClassRepository: new ApexClassRepository(this.connection),
       apexTestRunner: new ApexTestRunner(this.connection),
+      apexSettingsRepository: new ApexSettingsRepository(this.connection),
     }
+  }
+
+  private async selectCoverageStrategy(
+    apexSettingsRepository: ApexSettingsRepository
+  ): Promise<CoverageStrategy> {
+    const aggregateOnly = await apexSettingsRepository.isAggregateCoverageOnly()
+    return aggregateOnly
+      ? new AggregateCoverageStrategy(this.apexClassName)
+      : new PerTestCoverageStrategy(this.apexClassName)
   }
 
   private async fetchApexClass(
@@ -344,7 +366,10 @@ export class MutationTestingService {
     }
   }
 
-  private async runBaselineTests(apexTestRunner: ApexTestRunner): Promise<{
+  private async runBaselineTests(
+    apexTestRunner: ApexTestRunner,
+    coverageStrategy: CoverageStrategy
+  ): Promise<{
     testMethodsPerLine: Map<number, Set<string>>
     testTime: number
   }> {
@@ -356,7 +381,10 @@ export class MutationTestingService {
 
     const { result: baselineResult, durationMs: testTime } =
       await timeExecution(() =>
-        apexTestRunner.getTestMethodsPerLines(this.apexTestClassName)
+        apexTestRunner.getTestMethodsPerLines(
+          this.apexTestClassName,
+          coverageStrategy
+        )
       )
     const { outcome, testsRan, failing, testMethodsPerLine } = baselineResult
 
@@ -379,7 +407,11 @@ export class MutationTestingService {
       )
     }
 
-    this.spinner.stop('Original tests passed')
+    this.spinner.stop(
+      coverageStrategy.fidelity === 'aggregate'
+        ? `Original tests passed (${this.messages.getMessage('info.aggregatedCoverageOnly')})`
+        : 'Original tests passed'
+    )
     this.filterTestMethods(testMethodsPerLine)
     return { testMethodsPerLine, testTime }
   }

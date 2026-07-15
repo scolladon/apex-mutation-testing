@@ -2,6 +2,7 @@ import { TestResult } from '@salesforce/apex-node'
 import { Connection, Messages } from '@salesforce/core'
 import { Progress, Spinner } from '@salesforce/sf-plugins-core'
 import { ApexClassRepository } from '../../../src/adapter/apexClassRepository.js'
+import { ApexSettingsRepository } from '../../../src/adapter/apexSettingsRepository.js'
 import { ApexTestRunner } from '../../../src/adapter/apexTestRunner.js'
 import { SObjectDescribeRepository } from '../../../src/adapter/sObjectDescribeRepository.js'
 import { MutantGenerator } from '../../../src/service/mutantGenerator.js'
@@ -22,6 +23,7 @@ import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult
 import { MetadataComponentDependency } from '../../../src/type/MetadataComponentDependency.js'
 
 vi.mock('../../../src/adapter/apexClassRepository.js')
+vi.mock('../../../src/adapter/apexSettingsRepository.js')
 vi.mock('../../../src/adapter/apexTestRunner.js')
 vi.mock('../../../src/adapter/sObjectDescribeRepository.js')
 vi.mock('../../../src/service/mutantGenerator.js')
@@ -121,6 +123,8 @@ describe('MutationTestingService', () => {
           'error.compilabilityCheckFailed': `The Apex class '${args?.[0]}' does not compile on the target org. Fix compilation errors before running mutation testing.\nError: ${args?.[1]}`,
           'info.timeEstimate': `Estimated time: ${args?.[0]}`,
           'info.timeEstimateBreakdown': `Deploy: ${args?.[0]}/mutant | Test: ${args?.[1]}/mutant | Mutants: ${args?.[2]}`,
+          'info.aggregatedCoverageOnly':
+            'aggregate coverage mode — all tests run per mutant and score may be understated',
         }
         return templates[key] || key
       }),
@@ -148,6 +152,12 @@ describe('MutationTestingService', () => {
     )
     vi.mocked(formatDuration).mockReturnValue('~5s')
     vi.mocked(formatRemainingTime).mockReturnValue('Remaining: ~5s | ')
+
+    vi.mocked(ApexSettingsRepository).mockImplementation(
+      class {
+        isAggregateCoverageOnly = vi.fn().mockResolvedValue(false)
+      }
+    )
 
     sut = new MutationTestingService(
       progress,
@@ -2194,6 +2204,24 @@ describe('MutationTestingService', () => {
 
         // Assert
         expect(spinner.stop).toHaveBeenCalledWith('Original tests passed')
+      })
+
+      it('Given baseline tests pass with aggregate coverage strategy selected, When processing, Then spinner shows the aggregated coverage notice', async () => {
+        // Arrange
+        buildStandardMocks()
+        vi.mocked(ApexSettingsRepository).mockImplementation(
+          class {
+            isAggregateCoverageOnly = vi.fn().mockResolvedValue(true)
+          }
+        )
+
+        // Act
+        await sut.process()
+
+        // Assert
+        expect(spinner.stop).toHaveBeenCalledWith(
+          'Original tests passed (aggregate coverage mode — all tests run per mutant and score may be understated)'
+        )
       })
 
       it('Given mutations generated, When processing, Then spinner shows mutation generation message', async () => {
