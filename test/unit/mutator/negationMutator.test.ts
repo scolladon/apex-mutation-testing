@@ -89,31 +89,29 @@ describe('NegationMutator', () => {
       { type: APEX_TYPE.DECIMAL, typeName: 'Decimal' },
     ]
 
-    it.each(
-      numericTypes
-    )('Given $typeName return type, When entering return statement, Then creates negation mutation', ({
-      type,
-      typeName,
-    }) => {
-      // Arrange
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: typeName,
-        startLine: 1,
-        endLine: 5,
-        type,
-      })
-      const typeRegistry = createTypeRegistry(typeTable)
-      const sut = new NegationMutator(typeRegistry)
-      const returnCtx = createReturnCtxInMethod('value', 'testMethod')
+    it.each(numericTypes)(
+      'Given $typeName return type, When entering return statement, Then creates negation mutation',
+      ({ type, typeName }) => {
+        // Arrange
+        const typeTable = new Map<string, ApexMethod>()
+        typeTable.set('testMethod', {
+          returnType: typeName,
+          startLine: 1,
+          endLine: 5,
+          type,
+        })
+        const typeRegistry = createTypeRegistry(typeTable)
+        const sut = new NegationMutator(typeRegistry)
+        const returnCtx = createReturnCtxInMethod('value', 'testMethod')
 
-      // Act
-      sut.enterReturnStatement(returnCtx)
+        // Act
+        sut.enterReturnStatement(returnCtx)
 
-      // Assert
-      expect(sut._mutations).toHaveLength(1)
-      expect(sut._mutations[0].replacement).toBe('-value')
-    })
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('-value')
+      }
+    )
   })
 
   describe('non-numeric type mutations', () => {
@@ -130,30 +128,28 @@ describe('NegationMutator', () => {
       { type: APEX_TYPE.VOID, typeName: 'void' },
     ]
 
-    it.each(
-      nonNumericTypes
-    )('Given $typeName return type, When entering return statement, Then no mutation created', ({
-      type,
-      typeName,
-    }) => {
-      // Arrange
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: typeName,
-        startLine: 1,
-        endLine: 5,
-        type,
-      })
-      const typeRegistry = createTypeRegistry(typeTable)
-      const sut = new NegationMutator(typeRegistry)
-      const returnCtx = createReturnCtxInMethod('value', 'testMethod')
+    it.each(nonNumericTypes)(
+      'Given $typeName return type, When entering return statement, Then no mutation created',
+      ({ type, typeName }) => {
+        // Arrange
+        const typeTable = new Map<string, ApexMethod>()
+        typeTable.set('testMethod', {
+          returnType: typeName,
+          startLine: 1,
+          endLine: 5,
+          type,
+        })
+        const typeRegistry = createTypeRegistry(typeTable)
+        const sut = new NegationMutator(typeRegistry)
+        const returnCtx = createReturnCtxInMethod('value', 'testMethod')
 
-      // Act
-      sut.enterReturnStatement(returnCtx)
+        // Act
+        sut.enterReturnStatement(returnCtx)
 
-      // Assert
-      expect(sut._mutations).toHaveLength(0)
-    })
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      }
+    )
   })
 
   describe('simple value negation', () => {
@@ -340,27 +336,28 @@ describe('NegationMutator', () => {
       { value: '0.0', description: 'float zero' },
       { value: '0.00', description: 'multi-decimal zero' },
       { value: '0.0d', description: 'float zero with double suffix' },
-    ])('Given Integer method returning $description ($value), When entering return statement, Then no mutation created', ({
-      value,
-    }) => {
-      // Arrange
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: 'Integer',
-        startLine: 1,
-        endLine: 5,
-        type: APEX_TYPE.INTEGER,
-      })
-      const typeRegistry = createTypeRegistry(typeTable)
-      const sut = new NegationMutator(typeRegistry)
-      const returnCtx = createReturnCtxInMethod(value, 'testMethod')
+    ])(
+      'Given Integer method returning $description ($value), When entering return statement, Then no mutation created',
+      ({ value }) => {
+        // Arrange
+        const typeTable = new Map<string, ApexMethod>()
+        typeTable.set('testMethod', {
+          returnType: 'Integer',
+          startLine: 1,
+          endLine: 5,
+          type: APEX_TYPE.INTEGER,
+        })
+        const typeRegistry = createTypeRegistry(typeTable)
+        const sut = new NegationMutator(typeRegistry)
+        const returnCtx = createReturnCtxInMethod(value, 'testMethod')
 
-      // Act
-      sut.enterReturnStatement(returnCtx)
+        // Act
+        sut.enterReturnStatement(returnCtx)
 
-      // Assert
-      expect(sut._mutations).toHaveLength(0)
-    })
+        // Assert
+        expect(sut._mutations).toHaveLength(0)
+      }
+    )
 
     it.each([
       { value: '1', description: 'integer one' },
@@ -371,27 +368,28 @@ describe('NegationMutator', () => {
         value: '0.0f',
         description: 'float zero with f suffix (not in regex charset)',
       },
-    ])('Given Integer method returning non-zero $description ($value), When entering return statement, Then mutation is created', ({
-      value,
-    }) => {
-      // Arrange
-      const typeTable = new Map<string, ApexMethod>()
-      typeTable.set('testMethod', {
-        returnType: 'Integer',
-        startLine: 1,
-        endLine: 5,
-        type: APEX_TYPE.INTEGER,
-      })
-      const typeRegistry = createTypeRegistry(typeTable)
-      const sut = new NegationMutator(typeRegistry)
-      const returnCtx = createReturnCtxInMethod(value, 'testMethod')
+    ])(
+      'Given Integer method returning non-zero $description ($value), When entering return statement, Then mutation is created',
+      ({ value }) => {
+        // Arrange
+        const typeTable = new Map<string, ApexMethod>()
+        typeTable.set('testMethod', {
+          returnType: 'Integer',
+          startLine: 1,
+          endLine: 5,
+          type: APEX_TYPE.INTEGER,
+        })
+        const typeRegistry = createTypeRegistry(typeTable)
+        const sut = new NegationMutator(typeRegistry)
+        const returnCtx = createReturnCtxInMethod(value, 'testMethod')
 
-      // Act
-      sut.enterReturnStatement(returnCtx)
+        // Act
+        sut.enterReturnStatement(returnCtx)
 
-      // Assert
-      expect(sut._mutations).toHaveLength(1)
-    })
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+      }
+    )
   })
 
   describe('zero literal prevention', () => {

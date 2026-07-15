@@ -366,159 +366,154 @@ describe('MutationTestingService', () => {
         },
       ]
 
-      it.each(testCases)('should handle $description', async ({
-        testResult,
-        expectedMutants,
-        error,
-        updateError,
-      }) => {
-        // Arrange
-        let updateCallCount = 0
-        vi.mocked(ApexClassRepository).mockImplementation(
-          class {
-            read = vi.fn().mockImplementation((name: string) => {
-              if (name === 'TestClass') return Promise.resolve(mockApexClass)
-              return Promise.resolve(mockTestClass)
-            })
-            update = vi.fn().mockImplementation(() => {
-              updateCallCount++
-              // Calls 1-2: verify compile passes; call 3: mutation deploy may
-              // fail (updateError); call 4+ (rollback) must succeed so the
-              // rollback-failure propagation isn't what the test is asserting.
-              if (updateCallCount <= 2) return Promise.resolve({})
-              if (updateCallCount === 3 && updateError)
-                return Promise.reject(updateError)
-              return Promise.resolve({})
-            })
-            getApexClassDependencies = vi.fn().mockResolvedValue([
-              {
-                Id: 'dep1',
-                RefMetadataComponentType: 'ApexClass',
-                RefMetadataComponentName: 'TestDep',
-              },
-              {
-                Id: 'dep2',
-                RefMetadataComponentType: 'StandardEntity',
-                RefMetadataComponentName: 'Account',
-              },
-              {
-                Id: 'dep3',
-                RefMetadataComponentType: 'CustomObject',
-                RefMetadataComponentName: 'Custom__c',
-              },
-            ] as MetadataComponentDependency[])
-          }
-        )
-        vi.mocked(MutantGenerator).mockImplementation(
-          class {
-            compute = vi
-              .fn()
-              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
-            mutate = vi.fn().mockReturnValue('mutated code')
-          }
-        )
-        vi.mocked(ApexTestRunner).mockImplementation(
-          class {
-            runTestMethods = vi.fn().mockImplementation(() => {
-              if (error) {
-                return Promise.reject(error)
-              }
-              return Promise.resolve(testResult)
-            })
-            getTestMethodsPerLines = vi.fn().mockResolvedValue({
-              outcome: 'Passed',
-              passing: 1,
-              failing: 0,
-              testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
-            })
-          }
-        )
+      it.each(testCases)(
+        'should handle $description',
+        async ({ testResult, expectedMutants, error, updateError }) => {
+          // Arrange
+          let updateCallCount = 0
+          vi.mocked(ApexClassRepository).mockImplementation(
+            class {
+              read = vi.fn().mockImplementation((name: string) => {
+                if (name === 'TestClass') return Promise.resolve(mockApexClass)
+                return Promise.resolve(mockTestClass)
+              })
+              update = vi.fn().mockImplementation(() => {
+                updateCallCount++
+                // Calls 1-2: verify compile passes; call 3: mutation deploy may
+                // fail (updateError); call 4+ (rollback) must succeed so the
+                // rollback-failure propagation isn't what the test is asserting.
+                if (updateCallCount <= 2) return Promise.resolve({})
+                if (updateCallCount === 3 && updateError)
+                  return Promise.reject(updateError)
+                return Promise.resolve({})
+              })
+              getApexClassDependencies = vi.fn().mockResolvedValue([
+                {
+                  Id: 'dep1',
+                  RefMetadataComponentType: 'ApexClass',
+                  RefMetadataComponentName: 'TestDep',
+                },
+                {
+                  Id: 'dep2',
+                  RefMetadataComponentType: 'StandardEntity',
+                  RefMetadataComponentName: 'Account',
+                },
+                {
+                  Id: 'dep3',
+                  RefMetadataComponentType: 'CustomObject',
+                  RefMetadataComponentName: 'Custom__c',
+                },
+              ] as MetadataComponentDependency[])
+            }
+          )
+          vi.mocked(MutantGenerator).mockImplementation(
+            class {
+              compute = vi
+                .fn()
+                .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+              mutate = vi.fn().mockReturnValue('mutated code')
+            }
+          )
+          vi.mocked(ApexTestRunner).mockImplementation(
+            class {
+              runTestMethods = vi.fn().mockImplementation(() => {
+                if (error) {
+                  return Promise.reject(error)
+                }
+                return Promise.resolve(testResult)
+              })
+              getTestMethodsPerLines = vi.fn().mockResolvedValue({
+                outcome: 'Passed',
+                passing: 1,
+                failing: 0,
+                testsRan: 1,
+                testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              })
+            }
+          )
 
-        // Act
-        const result = await sut.process()
+          // Act
+          const result = await sut.process()
 
-        // Assert
-        expect(result).toEqual({
-          sourceFile: 'TestClass',
-          sourceFileContent: mockApexClass.Body,
-          testFile: 'TestClassTest',
-          mutants: expectedMutants,
-        })
-        expect(progress.start).toHaveBeenCalled()
-        expect(progress.finish).toHaveBeenCalled()
-      })
+          // Assert
+          expect(result).toEqual({
+            sourceFile: 'TestClass',
+            sourceFileContent: mockApexClass.Body,
+            testFile: 'TestClassTest',
+            mutants: expectedMutants,
+          })
+          expect(progress.start).toHaveBeenCalled()
+          expect(progress.finish).toHaveBeenCalled()
+        }
+      )
 
       // Rollback-failure variant: each error classification path is also
       // exercised with a failing rollback so we catch a regression where the
       // service swallows rollback errors or leaks partial results on throw.
       // See Test-I1: the happy-path parametric test above allowed call 4+ to
       // always resolve, which hid this surface.
-      it.each(
-        testCases
-      )('should re-throw rollback failure while still classifying the mutant ($description)', async ({
-        testResult,
-        error,
-        updateError,
-      }) => {
-        // Arrange
-        let updateCallCount = 0
-        vi.mocked(ApexClassRepository).mockImplementation(
-          class {
-            read = vi.fn().mockImplementation((name: string) => {
-              if (name === 'TestClass') return Promise.resolve(mockApexClass)
-              return Promise.resolve(mockTestClass)
-            })
-            update = vi.fn().mockImplementation(() => {
-              updateCallCount++
-              if (updateCallCount <= 2) return Promise.resolve({})
-              if (updateCallCount === 3 && updateError)
-                return Promise.reject(updateError)
-              if (updateCallCount === 3) return Promise.resolve({})
-              // Call 4 = rollback — always fails in this variant.
-              return Promise.reject(new Error('rollback network down'))
-            })
-            getApexClassDependencies = vi
-              .fn()
-              .mockResolvedValue([] as MetadataComponentDependency[])
-          }
-        )
-        vi.mocked(MutantGenerator).mockImplementation(
-          class {
-            compute = vi.fn().mockReturnValue({
-              mutations: [mockMutation],
-              tokenStream: {},
-            })
-            mutate = vi.fn().mockReturnValue('mutated code')
-          }
-        )
-        vi.mocked(ApexTestRunner).mockImplementation(
-          class {
-            runTestMethods = vi.fn().mockImplementation(() => {
-              if (error) return Promise.reject(error)
-              return Promise.resolve(testResult)
-            })
-            getTestMethodsPerLines = vi.fn().mockResolvedValue({
-              outcome: 'Passed',
-              passing: 1,
-              failing: 0,
-              testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
-            })
-          }
-        )
+      it.each(testCases)(
+        'should re-throw rollback failure while still classifying the mutant ($description)',
+        async ({ testResult, error, updateError }) => {
+          // Arrange
+          let updateCallCount = 0
+          vi.mocked(ApexClassRepository).mockImplementation(
+            class {
+              read = vi.fn().mockImplementation((name: string) => {
+                if (name === 'TestClass') return Promise.resolve(mockApexClass)
+                return Promise.resolve(mockTestClass)
+              })
+              update = vi.fn().mockImplementation(() => {
+                updateCallCount++
+                if (updateCallCount <= 2) return Promise.resolve({})
+                if (updateCallCount === 3 && updateError)
+                  return Promise.reject(updateError)
+                if (updateCallCount === 3) return Promise.resolve({})
+                // Call 4 = rollback — always fails in this variant.
+                return Promise.reject(new Error('rollback network down'))
+              })
+              getApexClassDependencies = vi
+                .fn()
+                .mockResolvedValue([] as MetadataComponentDependency[])
+            }
+          )
+          vi.mocked(MutantGenerator).mockImplementation(
+            class {
+              compute = vi.fn().mockReturnValue({
+                mutations: [mockMutation],
+                tokenStream: {},
+              })
+              mutate = vi.fn().mockReturnValue('mutated code')
+            }
+          )
+          vi.mocked(ApexTestRunner).mockImplementation(
+            class {
+              runTestMethods = vi.fn().mockImplementation(() => {
+                if (error) return Promise.reject(error)
+                return Promise.resolve(testResult)
+              })
+              getTestMethodsPerLines = vi.fn().mockResolvedValue({
+                outcome: 'Passed',
+                passing: 1,
+                failing: 0,
+                testsRan: 1,
+                testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              })
+            }
+          )
 
-        // Act & Assert — rollback failure must propagate, never silently swallow
-        await expect(sut.process()).rejects.toThrow(
-          /Rollback of 'TestClass' failed/
-        )
-        // rollback was in fact attempted (call 4)
-        expect(updateCallCount).toBe(4)
-        // A warning spinner message precedes the throw
-        expect(spinner.stop).toHaveBeenCalledWith(
-          expect.stringContaining('Rollback FAILED')
-        )
-      })
+          // Act & Assert — rollback failure must propagate, never silently swallow
+          await expect(sut.process()).rejects.toThrow(
+            /Rollback of 'TestClass' failed/
+          )
+          // rollback was in fact attempted (call 4)
+          expect(updateCallCount).toBe(4)
+          // A warning spinner message precedes the throw
+          expect(spinner.stop).toHaveBeenCalledWith(
+            expect.stringContaining('Rollback FAILED')
+          )
+        }
+      )
     })
 
     describe('When dry-run is enabled', () => {
@@ -1386,24 +1381,24 @@ describe('MutationTestingService', () => {
         },
       ]
 
-      it.each(scoreTestCases)('should calculate correct score $description', ({
-        mutants,
-        expectedScore,
-      }) => {
-        // Arrange
-        const mockResult = {
-          sourceFile: 'TestClass',
-          sourceFileContent: 'content',
-          testFile: 'TestClassTest',
-          mutants,
-        } as ApexMutationTestResult
+      it.each(scoreTestCases)(
+        'should calculate correct score $description',
+        ({ mutants, expectedScore }) => {
+          // Arrange
+          const mockResult = {
+            sourceFile: 'TestClass',
+            sourceFileContent: 'content',
+            testFile: 'TestClassTest',
+            mutants,
+          } as ApexMutationTestResult
 
-        // Act
-        const score = sut.calculateScore(mockResult)
+          // Act
+          const score = sut.calculateScore(mockResult)
 
-        // Assert
-        expect(score).toBe(expectedScore)
-      })
+          // Assert
+          expect(score).toBe(expectedScore)
+        }
+      )
     })
 
     describe('When discoverTypes is called', () => {

@@ -5,7 +5,7 @@
   "dependencies": {
     "@oclif/core": "^4.11.14",
     "@salesforce/apex-node": "^8.4.35",
-    "@salesforce/core": "^8.32.2",
+    "@salesforce/core": "^8.32.3",
     "@salesforce/sf-plugins-core": "^12.2.26",
     "@stryker-mutator/core": "^9.6.1",
     "antlr4ts": "^0.5.0-alpha.4",
@@ -15,7 +15,7 @@
     "re2": "^1.26.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.3",
+    "@biomejs/biome": "^2.5.4",
     "@commitlint/config-conventional": "^21.2.0",
     "@oclif/plugin-help": "^6.2.53",
     "@salesforce/dev-config": "^4.3.3",

@@ -478,43 +478,37 @@ describe('TypeRegistry', () => {
   })
 
   describe('isNumericOperand', () => {
-    it.each([
-      'Integer',
-      'Long',
-      'Double',
-      'Decimal',
-    ])('Given variable of numeric type %s, When isNumericOperand, Then returns true', (typeName: string) => {
-      // Arrange
-      const registry = new TypeRegistry(
-        new Map(),
-        new Map([['myMethod', new Map([['n', typeName]])]]),
-        new Map(),
-        []
-      )
+    it.each(['Integer', 'Long', 'Double', 'Decimal'])(
+      'Given variable of numeric type %s, When isNumericOperand, Then returns true',
+      (typeName: string) => {
+        // Arrange
+        const registry = new TypeRegistry(
+          new Map(),
+          new Map([['myMethod', new Map([['n', typeName]])]]),
+          new Map(),
+          []
+        )
 
-      // Act & Assert
-      expect(registry.isNumericOperand('myMethod', 'n')).toBe(true)
-    })
+        // Act & Assert
+        expect(registry.isNumericOperand('myMethod', 'n')).toBe(true)
+      }
+    )
 
-    it.each([
-      'String',
-      'Boolean',
-      'Date',
-      'DateTime',
-      'Blob',
-      'Id',
-    ])('Given variable of non-numeric type %s, When isNumericOperand, Then returns false', (typeName: string) => {
-      // Arrange
-      const registry = new TypeRegistry(
-        new Map(),
-        new Map([['myMethod', new Map([['x', typeName]])]]),
-        new Map(),
-        []
-      )
+    it.each(['String', 'Boolean', 'Date', 'DateTime', 'Blob', 'Id'])(
+      'Given variable of non-numeric type %s, When isNumericOperand, Then returns false',
+      (typeName: string) => {
+        // Arrange
+        const registry = new TypeRegistry(
+          new Map(),
+          new Map([['myMethod', new Map([['x', typeName]])]]),
+          new Map(),
+          []
+        )
 
-      // Act & Assert
-      expect(registry.isNumericOperand('myMethod', 'x')).toBe(false)
-    })
+        // Act & Assert
+        expect(registry.isNumericOperand('myMethod', 'x')).toBe(false)
+      }
+    )
 
     it('Given string literal expression, When isNumericOperand, Then returns false', () => {
       // Arrange
@@ -544,45 +538,51 @@ describe('TypeRegistry', () => {
       ['Long', APEX_TYPE.LONG],
       ['Double', APEX_TYPE.DOUBLE],
       ['Decimal', APEX_TYPE.DECIMAL],
-    ])('Given method returning %s, When isNumericReturn, Then returns true', (returnType: string, apexType: ApexType) => {
-      // Arrange
-      const registry = new TypeRegistry(
-        new Map([
-          [
-            'myMethod',
-            { returnType, startLine: 1, endLine: 5, type: apexType },
-          ],
-        ]),
-        new Map(),
-        new Map(),
-        []
-      )
+    ])(
+      'Given method returning %s, When isNumericReturn, Then returns true',
+      (returnType: string, apexType: ApexType) => {
+        // Arrange
+        const registry = new TypeRegistry(
+          new Map([
+            [
+              'myMethod',
+              { returnType, startLine: 1, endLine: 5, type: apexType },
+            ],
+          ]),
+          new Map(),
+          new Map(),
+          []
+        )
 
-      // Act & Assert
-      expect(registry.isNumericReturn('myMethod')).toBe(true)
-    })
+        // Act & Assert
+        expect(registry.isNumericReturn('myMethod')).toBe(true)
+      }
+    )
 
     it.each([
       ['String', APEX_TYPE.STRING],
       ['Boolean', APEX_TYPE.BOOLEAN],
       ['void', APEX_TYPE.VOID],
-    ])('Given method returning non-numeric type %s, When isNumericReturn, Then returns false', (returnType: string, apexType: ApexType) => {
-      // Arrange
-      const registry = new TypeRegistry(
-        new Map([
-          [
-            'myMethod',
-            { returnType, startLine: 1, endLine: 5, type: apexType },
-          ],
-        ]),
-        new Map(),
-        new Map(),
-        []
-      )
+    ])(
+      'Given method returning non-numeric type %s, When isNumericReturn, Then returns false',
+      (returnType: string, apexType: ApexType) => {
+        // Arrange
+        const registry = new TypeRegistry(
+          new Map([
+            [
+              'myMethod',
+              { returnType, startLine: 1, endLine: 5, type: apexType },
+            ],
+          ]),
+          new Map(),
+          new Map(),
+          []
+        )
 
-      // Act & Assert
-      expect(registry.isNumericReturn('myMethod')).toBe(false)
-    })
+        // Act & Assert
+        expect(registry.isNumericReturn('myMethod')).toBe(false)
+      }
+    )
 
     it('Given unknown method, When isNumericReturn, Then returns false', () => {
       // Arrange
@@ -609,19 +609,22 @@ describe('TypeRegistry', () => {
       ['time', APEX_TYPE.TIME],
       ['sobject', APEX_TYPE.SOBJECT],
       ['object', APEX_TYPE.OBJECT],
-    ])('Given %s primitive type name, When classifyApexType, Then returns %s (not the VOID fallback)', (typeName: string, expectedType: ApexType) => {
-      // Arrange — use isNumericOperand: when type resolves to a known non-STRING type it returns a specific value.
-      // We drive via resolveType with a variable whose type is the primitive name.
-      const variableScopes = new Map([['m', new Map([['x', typeName]])]])
-      const sut = new TypeRegistry(new Map(), variableScopes, new Map(), [])
+    ])(
+      'Given %s primitive type name, When classifyApexType, Then returns %s (not the VOID fallback)',
+      (typeName: string, expectedType: ApexType) => {
+        // Arrange — use isNumericOperand: when type resolves to a known non-STRING type it returns a specific value.
+        // We drive via resolveType with a variable whose type is the primitive name.
+        const variableScopes = new Map([['m', new Map([['x', typeName]])]])
+        const sut = new TypeRegistry(new Map(), variableScopes, new Map(), [])
 
-      // Act
-      const result = sut.resolveType('m', 'x')
+        // Act
+        const result = sut.resolveType('m', 'x')
 
-      // Assert — result must not be null and the apexType must come from the map, not the VOID fallback
-      expect(result).not.toBeNull()
-      expect(result!.apexType).toBe(expectedType)
-    })
+        // Assert — result must not be null and the apexType must come from the map, not the VOID fallback
+        expect(result).not.toBeNull()
+        expect(result!.apexType).toBe(expectedType)
+      }
+    )
 
     it('Given void type name with a matcher that would match anything, When classifyApexType, Then primitive map takes precedence and returns VOID not OBJECT', () => {
       // Arrange — a matcher that matches 'void' would return OBJECT if the primitive map entry is missing.
@@ -665,27 +668,30 @@ describe('TypeRegistry', () => {
       [APEX_TYPE.SET, 'Set'],
       [APEX_TYPE.MAP, 'Map'],
       [APEX_TYPE.APEX_CLASS, 'Object'],
-    ])('Given field of ApexType %s, When resolveDottedExpression returns that type, Then typeName is %s', (fieldApexType: ApexType, expectedTypeName: string) => {
-      // Arrange
-      const matcher: TypeMatcher = {
-        matches: vi.fn().mockReturnValue(true),
-        collect: vi.fn(),
-        collectedTypes: new Set(),
-        getFieldType: vi.fn().mockReturnValue(fieldApexType),
+    ])(
+      'Given field of ApexType %s, When resolveDottedExpression returns that type, Then typeName is %s',
+      (fieldApexType: ApexType, expectedTypeName: string) => {
+        // Arrange
+        const matcher: TypeMatcher = {
+          matches: vi.fn().mockReturnValue(true),
+          collect: vi.fn(),
+          collectedTypes: new Set(),
+          getFieldType: vi.fn().mockReturnValue(fieldApexType),
+        }
+        const variableScopes = new Map([['m', new Map([['obj', 'SomeType']])]])
+        const sut = new TypeRegistry(new Map(), variableScopes, new Map(), [
+          matcher,
+        ])
+
+        // Act
+        const result = sut.resolveType('m', 'obj.someField')
+
+        // Assert
+        expect(result).not.toBeNull()
+        expect(result!.apexType).toBe(fieldApexType)
+        expect(result!.typeName).toBe(expectedTypeName)
       }
-      const variableScopes = new Map([['m', new Map([['obj', 'SomeType']])]])
-      const sut = new TypeRegistry(new Map(), variableScopes, new Map(), [
-        matcher,
-      ])
-
-      // Act
-      const result = sut.resolveType('m', 'obj.someField')
-
-      // Assert
-      expect(result).not.toBeNull()
-      expect(result!.apexType).toBe(fieldApexType)
-      expect(result!.typeName).toBe(expectedTypeName)
-    })
+    )
   })
 
   describe('resolveDottedExpression — rootType guard', () => {
@@ -733,34 +739,39 @@ describe('TypeRegistry', () => {
       ['String[]', APEX_TYPE.LIST],
       ['Set<Integer>', APEX_TYPE.SET],
       ['Map<String,Integer>', APEX_TYPE.MAP],
-    ])('Given variable of type %s, When resolveType, Then classifies as %s', (typeName: string, expectedType: ApexType) => {
-      // Arrange
-      const variableScopes = new Map([['myMethod', new Map([['x', typeName]])]])
-      const registry = new TypeRegistry(
-        new Map([
-          [
-            'myMethod',
-            {
-              returnType: 'void',
-              startLine: 1,
-              endLine: 5,
-              type: APEX_TYPE.VOID,
-            },
-          ],
-        ]),
-        variableScopes,
-        new Map(),
-        []
-      )
+    ])(
+      'Given variable of type %s, When resolveType, Then classifies as %s',
+      (typeName: string, expectedType: ApexType) => {
+        // Arrange
+        const variableScopes = new Map([
+          ['myMethod', new Map([['x', typeName]])],
+        ])
+        const registry = new TypeRegistry(
+          new Map([
+            [
+              'myMethod',
+              {
+                returnType: 'void',
+                startLine: 1,
+                endLine: 5,
+                type: APEX_TYPE.VOID,
+              },
+            ],
+          ]),
+          variableScopes,
+          new Map(),
+          []
+        )
 
-      // Act
-      const result = registry.resolveType('myMethod', 'x')
+        // Act
+        const result = registry.resolveType('myMethod', 'x')
 
-      // Assert
-      expect(result).not.toBeNull()
-      expect(result!.apexType).toBe(expectedType)
-      expect(result!.typeName).toBe(typeName)
-    })
+        // Assert
+        expect(result).not.toBeNull()
+        expect(result!.apexType).toBe(expectedType)
+        expect(result!.typeName).toBe(typeName)
+      }
+    )
 
     it('Given variable type matching a matcher, When resolveType, Then classifies as OBJECT', () => {
       // Arrange

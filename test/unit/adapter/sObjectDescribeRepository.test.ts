@@ -90,20 +90,23 @@ describe('SObjectDescribeRepository', () => {
       ['email', APEX_TYPE.STRING],
       ['multipicklist', APEX_TYPE.STRING],
       ['encryptedstring', APEX_TYPE.STRING],
-    ])('Then should map describe type "%s" to %s', async (describeType, expectedApexType) => {
-      // Arrange
-      describeMock.mockResolvedValue({
-        fields: [{ name: 'TestField', type: describeType }],
-      })
+    ])(
+      'Then should map describe type "%s" to %s',
+      async (describeType, expectedApexType) => {
+        // Arrange
+        describeMock.mockResolvedValue({
+          fields: [{ name: 'TestField', type: describeType }],
+        })
 
-      // Act
-      await sut.describe(['Account'])
+        // Act
+        await sut.describe(['Account'])
 
-      // Assert
-      expect(sut.resolveFieldType('account', 'testfield')).toBe(
-        expectedApexType
-      )
-    })
+        // Assert
+        expect(sut.resolveFieldType('account', 'testfield')).toBe(
+          expectedApexType
+        )
+      }
+    )
   })
 
   describe('Given a describe call fails for one sObject', () => {

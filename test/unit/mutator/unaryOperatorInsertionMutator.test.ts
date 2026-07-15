@@ -251,28 +251,26 @@ describe('UnaryOperatorInsertionMutator', () => {
 
   describe('Given a primary expression with a numeric type and TypeRegistry', () => {
     describe('When entering the expression', () => {
-      it.each([
-        'integer',
-        'long',
-        'double',
-        'decimal',
-      ])('Then should create 4 mutations for %s variable', typeName => {
-        // Arrange
-        const typeRegistry = TestUtil.createTypeRegistry(
-          new Map(),
-          new Map([['testMethod', new Map([['x', typeName]])]])
-        )
-        const sut = new UnaryOperatorInsertionMutator(typeRegistry)
-        const ctx = createPrimaryExpression('x')
-        const methodCtx = createMethodParent('testMethod')
-        TestUtil.setParent(ctx, methodCtx)
+      it.each(['integer', 'long', 'double', 'decimal'])(
+        'Then should create 4 mutations for %s variable',
+        typeName => {
+          // Arrange
+          const typeRegistry = TestUtil.createTypeRegistry(
+            new Map(),
+            new Map([['testMethod', new Map([['x', typeName]])]])
+          )
+          const sut = new UnaryOperatorInsertionMutator(typeRegistry)
+          const ctx = createPrimaryExpression('x')
+          const methodCtx = createMethodParent('testMethod')
+          TestUtil.setParent(ctx, methodCtx)
 
-        // Act
-        sut.enterPrimaryExpression(ctx)
+          // Act
+          sut.enterPrimaryExpression(ctx)
 
-        // Assert
-        expect(sut._mutations).toHaveLength(4)
-      })
+          // Assert
+          expect(sut._mutations).toHaveLength(4)
+        }
+      )
     })
   })
 
