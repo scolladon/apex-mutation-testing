@@ -11,6 +11,8 @@ export interface SkipPattern {
 export const compileSkipPattern = (pattern: string): SkipPattern => {
   const compiled = RE2JS.compile(pattern)
   return {
-    test: (line: string) => compiled.matcher(line).find(),
+    // RE2JS.test() is unanchored substring matching on the DFA path,
+    // without the per-call Matcher allocation of matcher(line).find().
+    test: (line: string) => compiled.test(line),
   }
 }
