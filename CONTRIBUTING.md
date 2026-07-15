@@ -107,6 +107,11 @@ You can use an interactive command line to help you create supported commit mess
 npm run commit
 ```
 
+### Engine linting
+
+This repository uses [ls-engines](https://github.com/ljharb/ls-engines) to verify the running Node version is within the supported range and that `engines.node` stays consistent with the dependency graph.
+It runs as a blocking pre-push git hook and as a pull request check.
+
 ### PR linting
 
 When a PR is ready for merge we use the PR name to create the squash and merge commit message.
