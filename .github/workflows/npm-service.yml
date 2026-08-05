@@ -64,7 +64,7 @@ jobs:
 
       - name: Publish preview
         id: publish
-        run: npm exec -- pkg-pr-new publish --previewVersion --comment=off --json pkg-pr-new.json
+        run: npm run preview:publish
 
       - name: Record the preview for the comment workflow
         env:
