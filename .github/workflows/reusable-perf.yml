@@ -11,9 +11,6 @@ on:
 jobs:
   perf:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
       - name: Checkout sources
         uses: actions/checkout@v7
