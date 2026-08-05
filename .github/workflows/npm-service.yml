@@ -50,7 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       channel: ${{ steps.publish.outputs.urls }}
-      sha: ${{ steps.publish.outputs.sha }}
+      preview-version: ${{ steps.record.outputs.preview-version }}
     permissions:
       contents: read
     steps:
@@ -66,9 +66,15 @@ jobs:
         id: publish
         run: npm run preview:publish
 
+      # The artifact deliberately carries ONLY the pull request number. The comment
+      # workflow reconstructs the preview URL from trusted context instead of trusting
+      # this job's output, because on a fork pull request this job runs from the fork's
+      # own workflow file and everything it writes is contributor-controlled.
       - name: Record the preview for the comment workflow
+        id: record
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           URLS: ${{ steps.publish.outputs.urls }}
         run: |
           if [ -z "${URLS// }" ]; then
@@ -81,9 +87,11 @@ jobs:
               exit 1
               ;;
           esac
+          # --previewVersion always builds the version from the 7-char abbreviation,
+          # regardless of whether the published URL is compact or long form.
+          echo "preview-version=0.0.0-preview-${HEAD_SHA:0:7}" >> "$GITHUB_OUTPUT"
           mkdir -p preview
           printf '%s\n' "$PR_NUMBER" > preview/pr-number
-          printf '%s\n' "$URLS" > preview/url
 
       - uses: actions/upload-artifact@v7
         with:
@@ -96,5 +104,6 @@ jobs:
     uses: ./.github/workflows/run-e2e-tests.yml
     with:
       channel: ${{ needs.publish.outputs.channel || needs.preview.outputs.channel }}
-      expected-version: ${{ github.event.release.tag_name || format('0.0.0-preview-{0}', needs.preview.outputs.sha) }}
+      expected-version: ${{ github.event.release.tag_name || needs.preview.outputs.preview-version }}
+      require-org: ${{ github.event_name == 'release' }}
     secrets: inherit

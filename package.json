@@ -90,7 +90,7 @@
     "test:perf": "wireit",
     "test:unit": "wireit",
     "test": "wireit",
-    "preview:publish": "pkg-pr-new publish --previewVersion --comment=off --json pkg-pr-new.json"
+    "preview:publish": "pkg-pr-new publish --previewVersion --comment=off"
   },
   "publishConfig": {
     "access": "public"

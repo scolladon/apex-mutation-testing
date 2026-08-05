@@ -1,4 +1,15 @@
 ---
+# Trusted-context workflow. It runs from the default branch with a write-scoped token
+# while the run it reacts to may come from a fork.
+#
+# Two invariants keep that safe. Do not break either one:
+#   1. It MUST NEVER check out pull-request code, and `allow-unsafe-pr-checkout` must
+#      never be set here. Checking out the head commit would make this the equivalent of
+#      `pull_request_target` with write scope.
+#   2. Everything reaching it from the triggering run is UNTRUSTED - on a fork pull
+#      request that run executed the fork's own copy of the workflow file. Only the
+#      `workflow_run` payload itself is trusted. The preview URL is therefore rebuilt
+#      here from trusted values rather than read from the artifact.
 name: Preview Comment
 
 on:
@@ -52,9 +63,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          MARKER: "<!-- pkg-pr-new-preview -->"
         run: |
           PR_NUMBER=$(tr -d '\r\n' < preview/pr-number)
-          URL=$(tr -d '\r\n' < preview/url)
 
           case "$PR_NUMBER" in
             ''|*[!0-9]*)
@@ -62,19 +74,46 @@ jobs:
               exit 1
               ;;
           esac
-          case "$URL" in
-            https://pkg.pr.new/*) ;;
-            *)
-              echo "::error::untrusted preview url in the preview artifact"
-              exit 1
-              ;;
-          esac
 
-          ACTUAL_SHA=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq .headRefOid)
+          # Bind the claimed pull request to the run that produced the artifact. A stale
+          # head (a newer push landed while this was queued) is benign, so accept any
+          # commit belonging to the pull request and reject only a sha it never had.
+          ACTUAL_SHA=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq .head.sha)
           if [ "$ACTUAL_SHA" != "$HEAD_SHA" ]; then
-            echo "::error::the preview artifact does not belong to pull request $PR_NUMBER"
-            exit 1
+            if gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/commits" --jq '.[].sha' \
+              | grep -qx "$HEAD_SHA"; then
+              echo "::notice::pull request $PR_NUMBER has moved on to $ACTUAL_SHA - commenting for the superseded commit $HEAD_SHA"
+            else
+              echo "::error::the preview artifact does not belong to pull request $PR_NUMBER"
+              exit 1
+            fi
           fi
 
-          BODY=$(printf 'Preview build for this pull request.\n\n```sh\nsf plugins install %s\n```\n' "$URL")
-          gh pr comment "$PR_NUMBER" --repo "$REPO" --edit-last --create-if-none --body "$BODY"
+          # Rebuilt from trusted context, never read from the artifact: the fork controls
+          # the job that writes it and could otherwise have this bot attest an install
+          # command pointing at a tarball unrelated to the reviewed diff.
+          URL="https://pkg.pr.new/${REPO}/apex-mutation-testing@${HEAD_SHA:0:7}"
+
+          {
+            printf '%s\n\n' "$MARKER"
+            printf 'Preview build for this pull request.\n\n'
+            printf '```sh\nsf plugins install %s\n```\n' "$URL"
+            if [ "$HEAD_REPO" != "$REPO" ]; then
+              printf '\n> [!WARNING]\n'
+              printf '> This build comes from a fork (`%s`) and has not been reviewed.\n' "$HEAD_REPO"
+              printf '> Installing it executes arbitrary code with your Salesforce org\n'
+              printf '> credentials in reach. Install it only in a disposable environment.\n'
+            fi
+            printf '\nPreviews are removed after a month without a download.\n'
+          } > body.md
+
+          # Scope the update to our own marker. `--edit-last` is author-scoped, and the
+          # perf comparison comment shares this bot identity, so it would be overwritten.
+          EXISTING=$(gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --jq "[.[] | select(.body | startswith(\"$MARKER\"))] | .[0].id // empty")
+
+          if [ -n "$EXISTING" ]; then
+            gh api --method PATCH "repos/$REPO/issues/comments/$EXISTING" -F body=@body.md
+          else
+            gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" -F body=@body.md
+          fi

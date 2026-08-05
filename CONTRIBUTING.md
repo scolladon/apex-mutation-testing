@@ -249,7 +249,7 @@ to [pkg.pr.new](https://pkg.pr.new). A bot comment on the pull request carries t
 command:
 
 ```sh
-sf plugins install https://pkg.pr.new/apex-mutation-testing@<commit>
+sf plugins install https://pkg.pr.new/scolladon/apex-mutation-testing/apex-mutation-testing@<commit>
 ```
 
 The preview is versioned `0.0.0-preview-<commit>`, so `sf plugins inspect apex-mutation-testing`
@@ -257,9 +257,16 @@ tells you which build you are running. Preview builds are removed once they have
 without a download, and after six months in any case — reinstall from a fresh comment if an old
 link stops resolving.
 
+A preview from a fork is unreviewed contributor code, and installing a plugin executes arbitrary
+code with your Salesforce org credentials in reach. The bot comment marks fork builds explicitly;
+install those only in a disposable environment.
+
+Previews publish only once the [pkg-pr-new GitHub App](https://github.com/apps/pkg-pr-new) is
+installed on the repository. Without it the preview job fails with a self-describing 404.
+
 To go back to the released plugin:
 
 ```sh
 sf plugins uninstall apex-mutation-testing
-sf plugins install apex-mutation-testing
+sf plugins install apex-mutation-testing@latest-rc
 ```
