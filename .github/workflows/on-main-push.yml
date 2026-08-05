@@ -35,6 +35,10 @@ jobs:
     needs: [prepare-release]
     if: ${{ needs.prepare-release.outputs.release_created != 'true' }}
     uses: ./.github/workflows/reusable-perf.yml
+    permissions:
+      # auto-push writes the benchmark history to gh-pages. No pull-requests scope:
+      # comment-on-alert is off and the comparison comment only runs on the PR path.
+      contents: write
     secrets: inherit
     with:
       auto-push: true

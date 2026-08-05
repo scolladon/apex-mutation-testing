@@ -258,6 +258,7 @@
       "files": [
         "src/**/*.ts",
         "test/**/*.ts",
+        "tooling/**/*.mjs",
         "messages/**",
         "**/tsconfig.json"
       ],

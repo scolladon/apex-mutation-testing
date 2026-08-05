@@ -107,10 +107,13 @@ jobs:
             printf '\nPreviews are removed after a month without a download.\n'
           } > body.md
 
-          # Scope the update to our own marker. `--edit-last` is author-scoped, and the
-          # perf comparison comment shares this bot identity, so it would be overwritten.
+          # Scope the update to our own marker AND our own authorship. `--edit-last` is
+          # author-scoped only, and the perf comparison comment shares this bot identity,
+          # so it would be overwritten. The marker alone is not enough either: it is public,
+          # so anyone could post a comment carrying it and have this job adopt and keep
+          # rewriting a comment they can also edit.
           EXISTING=$(gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments" \
-            --jq "[.[] | select(.body | startswith(\"$MARKER\"))] | .[0].id // empty")
+            --jq "[.[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$MARKER\")))] | .[0].id // empty")
 
           if [ -n "$EXISTING" ]; then
             gh api --method PATCH "repos/$REPO/issues/comments/$EXISTING" -F body=@body.md

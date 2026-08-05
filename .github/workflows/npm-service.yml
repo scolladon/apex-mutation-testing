@@ -87,6 +87,19 @@ jobs:
               exit 1
               ;;
           esac
+          # The comment workflow rebuilds this URL from trusted context rather than
+          # trusting the artifact, so the published URL must actually carry the
+          # abbreviated sha it will rebuild. pkg-pr-new downgrades to the full 40-char
+          # form if it cannot resolve the package on the registry, which would leave the
+          # comment pointing at a 404 with nothing else to catch it. Fail here instead.
+          case "$URLS" in
+            *"@${HEAD_SHA:0:7}") ;;
+            *)
+              echo "::error::published preview URL $URLS does not end with @${HEAD_SHA:0:7} - the comment workflow would rebuild a URL that does not resolve"
+              exit 1
+              ;;
+          esac
+
           # --previewVersion always builds the version from the 7-char abbreviation,
           # regardless of whether the published URL is compact or long form.
           echo "preview-version=0.0.0-preview-${HEAD_SHA:0:7}" >> "$GITHUB_OUTPUT"

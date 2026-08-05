@@ -147,6 +147,7 @@ jobs:
           [ "$ACTUAL" = "$EXPECTED" ]
 
       - name: Authenticate to E2E test org
+        id: auth
         env:
           SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
         run: echo "$SFDX_AUTH_URL" | sf org login sfdx-url --alias e2e-test-org --set-default --sfdx-url-stdin
@@ -160,8 +161,11 @@ jobs:
       - name: Validate - Check snapshot
         run: npm run test:e2e:validate
 
+      # Only meaningful once the org is authenticated. Without the guard, a build that
+      # fails the identity assertion would deploy against an org it never logged into,
+      # burying the real failure under a second misleading one.
       - name: Teardown - Reset test classes
-        if: always()
+        if: always() && steps.auth.conclusion == 'success'
         run: npm run test:e2e:teardown
 
       - uses: actions/upload-artifact@v7
