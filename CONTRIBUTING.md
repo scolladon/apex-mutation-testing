@@ -244,8 +244,22 @@ The plugins uses [sf cli parameters convention](https://github.com/salesforcecli
 
 ## Testing the plugin from a pull request
 
-To test SGD as a Salesforce CLI plugin from a pending pull request:
+Every pull request — including one opened from a fork — publishes a preview build of the plugin
+to [pkg.pr.new](https://pkg.pr.new). A bot comment on the pull request carries the exact install
+command:
 
-1. locate the comment with the beta version published in the pull request
-2. install the beta version `sf plugins install apex-mutation-testing@<beta-channel>`
-3. test the plugin!
+```sh
+sf plugins install https://pkg.pr.new/apex-mutation-testing@<commit>
+```
+
+The preview is versioned `0.0.0-preview-<commit>`, so `sf plugins inspect apex-mutation-testing`
+tells you which build you are running. Preview builds are removed once they have gone a month
+without a download, and after six months in any case — reinstall from a fresh comment if an old
+link stops resolving.
+
+To go back to the released plugin:
+
+```sh
+sf plugins uninstall apex-mutation-testing
+sf plugins install apex-mutation-testing
+```
