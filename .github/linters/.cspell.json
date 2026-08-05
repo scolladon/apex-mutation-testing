@@ -67,6 +67,8 @@
     "wagoid",
     "wireit",
     "worktrees",
-    "zizmor"
+    "zizmor",
+    "startswith",
+    "unreviewed"
   ]
 }
