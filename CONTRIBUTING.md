@@ -112,6 +112,13 @@ npm run commit
 This repository uses [ls-engines](https://github.com/ljharb/ls-engines) to verify the running Node version is within the supported range and that `engines.node` stays consistent with the dependency graph.
 It runs as a blocking pre-push git hook and as a pull request check.
 
+### Dependency pinning
+
+Runtime `dependencies` are pinned to exact versions so that consumers installing the plugin
+with `sf plugins install` resolve the same tree the project tested. `npm run lint:deps-pinned`
+fails when a `dependencies` entry carries a range. It runs as a blocking pre-push git hook and
+as a pull request check. `devDependencies` keep their ranges.
+
 ### PR linting
 
 When a PR is ready for merge we use the PR name to create the squash and merge commit message.

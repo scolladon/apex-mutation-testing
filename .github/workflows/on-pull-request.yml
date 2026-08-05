@@ -75,6 +75,9 @@ jobs:
       - name: Check engines
         run: npm run lint:engine
 
+      - name: Check dependency pinning
+        run: npm run lint:deps-pinned
+
   megalinter:
     runs-on: ubuntu-latest
     steps:
