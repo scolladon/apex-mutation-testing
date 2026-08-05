@@ -4,9 +4,9 @@
   "version": "1.7.4",
   "dependencies": {
     "@oclif/core": "^4.13.3",
-    "@salesforce/apex-node": "^8.4.35",
-    "@salesforce/core": "^8.32.3",
-    "@salesforce/sf-plugins-core": "^12.2.26",
+    "@salesforce/apex-node": "^9.0.2",
+    "@salesforce/core": "^9.1.0",
+    "@salesforce/sf-plugins-core": "^13.0.0",
     "@stryker-mutator/core": "^9.6.1",
     "antlr4ts": "^0.5.0-alpha.4",
     "apex-parser": "^2.17.0",
