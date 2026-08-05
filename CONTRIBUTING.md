@@ -249,20 +249,3 @@ To test SGD as a Salesforce CLI plugin from a pending pull request:
 1. locate the comment with the beta version published in the pull request
 2. install the beta version `sf plugins install apex-mutation-testing@<beta-channel>`
 3. test the plugin!
-
-## How to modify npm tags
-
-Execute the npm script `npm run devops:move-tag -- <version> <tag>`
-Ex: `npm run devops:move-tag -- 1.0.0 stable`
-
-Use it to move tags to a version, for example to move `stable` and `latest` tags to a new version.
-Or to downgrade `latest-rc` tag to a previous version.
-
-## How to cleanup dev tags
-
-Execute the npm script `npm run devops:cleanup:dev-tag -- <dev-tag> <otp>` to clean up a single dev tag.
-Ex: `npm run devops:cleanup:dev-tag -- dev-101 123456`
-
-To clean up **all** dev tags at once: `npm run devops:cleanup:dev-tag:all -- <otp>`
-
-Both will deprecate all versions related to the dev tag(s) and remove the dist-tag(s) from the npm registry.
