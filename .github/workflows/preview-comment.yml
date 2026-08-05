@@ -97,18 +97,30 @@ jobs:
           # link checkers extract one from the shell source and fail on the unexpanded vars.
           URL="${PREVIEW_HOST}/${REPO}/apex-mutation-testing@${HEAD_SHA:0:7}"
 
-          {
-            printf '%s\n\n' "$MARKER"
-            printf 'Preview build for this pull request.\n\n'
-            printf '```sh\nsf plugins install %s\n```\n' "$URL"
-            if [ "$HEAD_REPO" != "$REPO" ]; then
-              printf '\n> [!WARNING]\n'
-              printf '> This build comes from a fork (`%s`) and has not been reviewed.\n' "$HEAD_REPO"
-              printf '> Installing it executes arbitrary code with your Salesforce org\n'
-              printf '> credentials in reach. Install it only in a disposable environment.\n'
-            fi
-            printf '\nPreviews are removed after a month without a download.\n'
-          } > body.md
+          cat > body.md <<EOF
+          $MARKER
+
+          Preview build for this pull request.
+
+          \`\`\`sh
+          sf plugins install $URL
+          \`\`\`
+          EOF
+
+          if [ "$HEAD_REPO" != "$REPO" ]; then
+            cat >> body.md <<EOF
+
+          > [!WARNING]
+          > This build comes from a fork ($HEAD_REPO) and has not been reviewed.
+          > Installing it executes arbitrary code with your Salesforce org
+          > credentials in reach. Install it only in a disposable environment.
+          EOF
+          fi
+
+          cat >> body.md <<EOF
+
+          Previews are removed after a month without a download.
+          EOF
 
           # Scope the update to our own marker AND our own authorship. `--edit-last` is
           # author-scoped only, and the perf comparison comment shares this bot identity,
