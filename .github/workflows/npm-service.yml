@@ -6,13 +6,12 @@ on:
     types: [published]
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, closed]
+    types: [opened, synchronize, reopened]
     paths-ignore:
       - "**.md"
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: ${{ github.ref }}-${{ github.workflow }}
@@ -44,92 +43,58 @@ jobs:
           npm publish --provenance --access public --tag "latest-rc"
           echo "channel=apex-mutation-testing@$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
-  dev-release:
+  preview:
     if: >-
       github.event_name == 'pull_request' &&
-      github.event.action != 'closed' &&
-      github.actor != 'dependabot[bot]' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     outputs:
-      channel: ${{ steps.release.outputs.channel }}
+      channel: ${{ steps.publish.outputs.urls }}
+      sha: ${{ steps.publish.outputs.sha }}
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: latest
       - uses: ./.github/actions/install
 
-      - name: Build and pack
-        id: pack
+      - run: npm run build
+
+      - name: Publish preview
+        id: publish
+        run: npm exec -- pkg-pr-new publish --previewVersion --comment=off --json pkg-pr-new.json
+
+      - name: Record the preview for the comment workflow
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          URLS: ${{ steps.publish.outputs.urls }}
         run: |
-          npm run build
-          TARBALL=$(npm pack 2>/dev/null | tail -1)
-          FIXED_NAME="apex-mutation-testing-dev-pr-${PR_NUMBER}.tgz"
-          mv "$TARBALL" "$FIXED_NAME"
-          echo "tarball=$FIXED_NAME" >> "$GITHUB_OUTPUT"
-
-      - name: Upsert prerelease
-        id: release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          TARBALL: ${{ steps.pack.outputs.tarball }}
-        run: |
-          DEV_TAG="dev-pr-${PR_NUMBER}"
-
-          # Try uploading to existing release, create if it doesn't exist
-          if gh release view "$DEV_TAG" > /dev/null 2>&1; then
-            gh release upload "$DEV_TAG" "$TARBALL" --clobber
-          else
-            gh release create "$DEV_TAG" "$TARBALL" \
-              --title "Dev build for PR #${PR_NUMBER}" \
-              --notes "Automated dev build — not a real release." \
-              --prerelease
+          if [ -z "${URLS// }" ]; then
+            echo "::error::pkg-pr-new produced no preview URL"
+            exit 1
           fi
+          case "$URLS" in
+            *[[:space:]]*)
+              echo "::error::expected exactly one preview URL, got: $URLS"
+              exit 1
+              ;;
+          esac
+          mkdir -p preview
+          printf '%s\n' "$PR_NUMBER" > preview/pr-number
+          printf '%s\n' "$URLS" > preview/url
 
-          ASSET_URL=$(gh release view "$DEV_TAG" --json assets --jq ".assets[] | select(.name == \"$TARBALL\") | .url")
-          echo "channel=$ASSET_URL" >> "$GITHUB_OUTPUT"
-
-      - name: Comment PR
-        uses: thollander/actions-comment-pull-request@v3
+      - uses: actions/upload-artifact@v7
         with:
-          message: |
-            Published under `dev-pr-${{ github.event.pull_request.number }}` draft release.
-            ```sh
-            sf plugins install ${{ steps.release.outputs.channel }}
-            ```
-          comment-tag: dev-publish
-          mode: recreate
+          name: preview
+          path: preview/
 
   e2e-tests:
-    needs: [publish, dev-release]
-    if: "!cancelled() && (needs.publish.result == 'success' || needs.dev-release.result == 'success')"
+    needs: [publish, preview]
+    if: "!cancelled() && (needs.publish.result == 'success' || needs.preview.result == 'success')"
     uses: ./.github/workflows/run-e2e-tests.yml
     with:
-      channel: ${{ needs.publish.outputs.channel || needs.dev-release.outputs.channel }}
+      channel: ${{ needs.publish.outputs.channel || needs.preview.outputs.channel }}
+      expected-version: ${{ github.event.release.tag_name || format('0.0.0-preview-{0}', needs.preview.outputs.sha) }}
     secrets: inherit
-
-  cleanup:
-    if: >-
-      github.event.action == 'closed' &&
-      github.actor != 'dependabot[bot]'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Delete dev prerelease
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          DEV_TAG="dev-pr-${PR_NUMBER}"
-          gh release delete "$DEV_TAG" \
-            --repo "${{ github.repository }}" \
-            --yes \
-            --cleanup-tag 2>/dev/null || echo "No release to clean up"

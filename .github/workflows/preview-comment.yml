@@ -1,0 +1,80 @@
+---
+name: Preview Comment
+
+on:
+  workflow_run:
+    workflows: ["NPM Service"]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: >-
+    ${{ github.workflow }}-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+jobs:
+  comment:
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      pull-requests: write
+    steps:
+      - name: Locate the preview record
+        id: locate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          COUNT=$(gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
+            --jq '[.artifacts[] | select(.name == "preview")] | length')
+          echo "found=$COUNT" >> "$GITHUB_OUTPUT"
+          if [ "$COUNT" = "0" ]; then
+            echo "No preview artifact on run $RUN_ID - nothing to comment."
+          fi
+
+      - name: Download the preview record
+        if: steps.locate.outputs.found != '0'
+        uses: actions/download-artifact@v7
+        with:
+          name: preview
+          path: preview
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Comment the install command
+        if: steps.locate.outputs.found != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          PR_NUMBER=$(tr -d '\r\n' < preview/pr-number)
+          URL=$(tr -d '\r\n' < preview/url)
+
+          case "$PR_NUMBER" in
+            ''|*[!0-9]*)
+              echo "::error::untrusted pull request number in the preview artifact"
+              exit 1
+              ;;
+          esac
+          case "$URL" in
+            https://pkg.pr.new/*) ;;
+            *)
+              echo "::error::untrusted preview url in the preview artifact"
+              exit 1
+              ;;
+          esac
+
+          ACTUAL_SHA=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq .headRefOid)
+          if [ "$ACTUAL_SHA" != "$HEAD_SHA" ]; then
+            echo "::error::the preview artifact does not belong to pull request $PR_NUMBER"
+            exit 1
+          fi
+
+          BODY=$(printf 'Preview build for this pull request.\n\n```sh\nsf plugins install %s\n```\n' "$URL")
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --edit-last --create-if-none --body "$BODY"

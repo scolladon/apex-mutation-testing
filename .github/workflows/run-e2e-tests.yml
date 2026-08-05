@@ -5,11 +5,92 @@ on:
     inputs:
       channel:
         type: string
-        default: latest-rc
+        required: true
+      expected-version:
+        type: string
+        required: true
 
 jobs:
-  e2e-test:
+  preflight:
     runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      has-org: ${{ steps.detect.outputs.has-org }}
+    steps:
+      - name: Assert a channel was provided
+        env:
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          if [ -z "${CHANNEL// }" ]; then
+            echo "::error::channel input is empty - refusing to run e2e against an unknown build"
+            exit 1
+          fi
+
+      - name: Assert an expected version was provided
+        env:
+          EXPECTED: ${{ inputs.expected-version }}
+        run: |
+          if [ -z "${EXPECTED// }" ]; then
+            echo "::error::expected-version input is empty - refusing to run e2e against an unidentified build"
+            exit 1
+          fi
+
+      - name: Detect org credentials
+        id: detect
+        env:
+          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
+        run: |
+          if [ -n "$SFDX_AUTH_URL" ]; then
+            echo "has-org=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has-org=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  smoke:
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    permissions: {}
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24, 26]
+    steps:
+      - name: Setup node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Set environment variables
+        run: |
+          echo "SF_DISABLE_AUTOUPDATE=true" >> "$GITHUB_ENV"
+          echo "SF_DISABLE_TELEMETRY=true" >> "$GITHUB_ENV"
+
+      - name: Install cli
+        run: npm install -g @salesforce/cli
+
+      - name: Install new plugin version
+        env:
+          CHANNEL: ${{ inputs.channel }}
+        run: echo y | sf plugins install "$CHANNEL"
+
+      - name: Assert the installed plugin is the intended build
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected-version }}
+        run: |
+          EXPECTED="${EXPECTED_VERSION#v}"
+          ACTUAL=$(sf plugins inspect apex-mutation-testing --json | jq -r '.[0].version')
+          echo "installed=$ACTUAL expected=$EXPECTED"
+          [ "$ACTUAL" = "$EXPECTED" ]
+
+      - name: Test new plugin version installation
+        run: sf apex mutation test run --help
+
+  org-e2e:
+    needs: [preflight, smoke]
+    if: needs.preflight.outputs.has-org == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout sources
         uses: actions/checkout@v7
@@ -28,10 +109,18 @@ jobs:
         run: npm install -g @salesforce/cli
 
       - name: Install new plugin version
-        run: echo y | sf plugins install ${{ inputs.channel }}
+        env:
+          CHANNEL: ${{ inputs.channel }}
+        run: echo y | sf plugins install "$CHANNEL"
 
-      - name: Test new plugin version installation
-        run: sf apex mutation test run --help
+      - name: Assert the installed plugin is the intended build
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected-version }}
+        run: |
+          EXPECTED="${EXPECTED_VERSION#v}"
+          ACTUAL=$(sf plugins inspect apex-mutation-testing --json | jq -r '.[0].version')
+          echo "installed=$ACTUAL expected=$EXPECTED"
+          [ "$ACTUAL" = "$EXPECTED" ]
 
       - name: Authenticate to E2E test org
         env:
