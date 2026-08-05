@@ -65,6 +65,7 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
           MARKER: "<!-- pkg-pr-new-preview -->"
+          PREVIEW_HOST: "https://pkg.pr.new"
         run: |
           PR_NUMBER=$(tr -d '\r\n' < preview/pr-number)
 
@@ -92,7 +93,9 @@ jobs:
           # Rebuilt from trusted context, never read from the artifact: the fork controls
           # the job that writes it and could otherwise have this bot attest an install
           # command pointing at a tarball unrelated to the reviewed diff.
-          URL="https://pkg.pr.new/${REPO}/apex-mutation-testing@${HEAD_SHA:0:7}"
+          # The host is kept in its own variable so no complete URL literal appears here -
+          # link checkers extract one from the shell source and fail on the unexpanded vars.
+          URL="${PREVIEW_HOST}/${REPO}/apex-mutation-testing@${HEAD_SHA:0:7}"
 
           {
             printf '%s\n\n' "$MARKER"
