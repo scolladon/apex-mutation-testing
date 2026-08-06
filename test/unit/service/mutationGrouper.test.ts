@@ -386,6 +386,27 @@ describe('groupMutations', () => {
     expect(groupOf(result, m0)).not.toBe(groupOf(result, m1))
   })
 
+  it('given two mutations covered by same-named methods declared on different test classes when grouping then they are not a conflict and share a group', () => {
+    // Arrange — the grouper treats each token as opaque: 'FooTest.a' and
+    // 'BarTest.a' are distinct strings, so they never intersect. Under bare
+    // method names both would collapse to the single token 'a' and force
+    // these mutations apart (R10) — this pins that qualified ids don't.
+    const mutations = [mutationAt(1), mutationAt(2)]
+    const testMethodsPerLine = coverage([
+      [1, ['FooTest.a']],
+      [2, ['BarTest.a']],
+    ])
+
+    // Act
+    const result = groupMutations(mutations, testMethodsPerLine)
+
+    // Assert
+    expect(result.groups).toHaveLength(1)
+    expect(result.groups[0].testMethods).toEqual(
+      new Set(['FooTest.a', 'BarTest.a'])
+    )
+  })
+
   it('given the same input twice when grouping then both runs produce identical results', () => {
     // Arrange
     const mutations = [

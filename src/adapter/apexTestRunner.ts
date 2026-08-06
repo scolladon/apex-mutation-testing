@@ -1,6 +1,7 @@
 import { TestLevel, TestResult, TestService } from '@salesforce/apex-node'
 import { Connection } from '@salesforce/core'
 import type { CoverageStrategy } from '../service/coverageStrategy.js'
+import { type TestMethodId, toTestItems } from '../type/TestMethodId.js'
 
 export class ApexTestRunner {
   protected readonly testService: TestService
@@ -24,16 +25,8 @@ export class ApexTestRunner {
     }
   }
 
-  public async runTestMethods(
-    classNames: string[],
-    testMethods: Set<string> = new Set<string>()
-  ) {
-    return this.runTestAsynchronous(
-      classNames.map(className => ({
-        className,
-        testMethods: Array.from(testMethods),
-      }))
-    )
+  public async runTestMethods(testMethods: Set<TestMethodId>) {
+    return this.runTestAsynchronous(toTestItems(testMethods))
   }
 
   private async runTestAsynchronous(

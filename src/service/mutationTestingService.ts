@@ -9,6 +9,7 @@ import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
+import type { TestMethodId } from '../type/TestMethodId.js'
 import { ConfigReader } from './configReader.js'
 import {
   AggregateCoverageStrategy,
@@ -144,7 +145,7 @@ export class MutationTestingService {
 
   private async planGroups(
     mutations: ApexMutation[],
-    testMethodsPerLine: Map<number, Set<string>>
+    testMethodsPerLine: Map<number, Set<TestMethodId>>
   ): Promise<MutationGroup[]> {
     if (!this.mutationGroupingEnabled) {
       // No grouping: one mutation per group. Inlined here rather than going
@@ -214,7 +215,7 @@ export class MutationTestingService {
   }
 
   private filterTestMethods(
-    testMethodsPerLine: Map<number, Set<string>>
+    testMethodsPerLine: Map<number, Set<TestMethodId>>
   ): void {
     const filterSet = this.includeTestMethods
       ? new Set(this.includeTestMethods)
@@ -379,7 +380,7 @@ export class MutationTestingService {
     apexTestRunner: ApexTestRunner,
     coverageStrategy: CoverageStrategy
   ): Promise<{
-    testMethodsPerLine: Map<number, Set<string>>
+    testMethodsPerLine: Map<number, Set<TestMethodId>>
     testTime: number
   }> {
     this.spinner.start(
@@ -426,7 +427,7 @@ export class MutationTestingService {
   }
 
   private extractCoveredLines(
-    testMethodsPerLine: Map<number, Set<string>>
+    testMethodsPerLine: Map<number, Set<TestMethodId>>
   ): Set<number> {
     const coveredLines = new Set(testMethodsPerLine.keys())
     if (coveredLines.size === 0) {
@@ -538,7 +539,7 @@ export class MutationTestingService {
     groups: MutationGroup[],
     mutantGenerator: MutantGenerator,
     tokenStream: CommonTokenStream,
-    testMethodsPerLine: Map<number, Set<string>>,
+    testMethodsPerLine: Map<number, Set<TestMethodId>>,
     apexTestRunner: ApexTestRunner,
     apexClassRepository: ApexClassRepository
   ): Promise<ApexMutationTestResult> {
@@ -554,7 +555,6 @@ export class MutationTestingService {
     const executor = new GroupExecutor(
       apexClass,
       this.apexClassName,
-      this.apexTestClassNames,
       this.apexClassContent,
       tokenStream,
       testMethodsPerLine,

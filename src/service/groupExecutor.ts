@@ -7,6 +7,7 @@ import { ApexTestRunner } from '../adapter/apexTestRunner.js'
 import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
+import { qualifyTestMethod, type TestMethodId } from '../type/TestMethodId.js'
 import { MutantGenerator } from './mutantGenerator.js'
 import { MutationGroup } from './mutationGrouper.js'
 import {
@@ -58,10 +59,9 @@ export class GroupExecutor {
   constructor(
     private readonly apexClass: ApexClass,
     private readonly apexClassName: string,
-    private readonly apexTestClassNames: string[],
     private readonly apexClassContent: string,
     private readonly tokenStream: CommonTokenStream,
-    private readonly testMethodsPerLine: Map<number, Set<string>>,
+    private readonly testMethodsPerLine: Map<number, Set<TestMethodId>>,
     private readonly mutantGenerator: MutantGenerator,
     private readonly apexTestRunner: ApexTestRunner,
     private readonly apexClassRepository: ApexClassRepository,
@@ -144,10 +144,7 @@ export class GroupExecutor {
         Id: this.apexClass.Id as string,
         Body: mutated,
       })
-      testResult = await this.apexTestRunner.runTestMethods(
-        this.apexTestClassNames,
-        group.testMethods
-      )
+      testResult = await this.apexTestRunner.runTestMethods(group.testMethods)
     } catch (error: unknown) {
       batchError = error
     }
@@ -201,15 +198,18 @@ export class GroupExecutor {
     // Success path. Per-method outcomes when present (required for k>1
     // attribution); fall back to summary-derived outcome when the test
     // runner did not report per-method data (legacy behaviour for k=1).
-    const outcomeByMethod = new Map<string, string>(
-      (testResult!.tests ?? []).map(t => [t.methodName, t.outcome])
+    const outcomeByMethod = new Map<TestMethodId, string>(
+      (testResult!.tests ?? []).map(t => [
+        qualifyTestMethod(t.apexClass.fullName, t.methodName),
+        t.outcome,
+      ])
     )
     const summaryFallback =
       testResult!.summary.outcome === 'Passed' ? 'Pass' : 'Fail'
     const mutantResults = group.mutations.map(m => {
       const myMethods =
         this.testMethodsPerLine.get(m.target.startToken.line) ??
-        new Set<string>()
+        new Set<TestMethodId>()
       // No covering tests (only possible in mocked or uncovered-line scenarios)
       // → fall back to the summary outcome so behaviour matches the legacy
       // evaluateMutation path.
@@ -230,9 +230,13 @@ export class GroupExecutor {
 
   private hasCoverageGap(
     testResult: TestResult,
-    expectedMethods: Set<string>
+    expectedMethods: Set<TestMethodId>
   ): boolean {
-    const reported = new Set(testResult.tests.map(t => t.methodName))
+    const reported = new Set(
+      testResult.tests.map(t =>
+        qualifyTestMethod(t.apexClass.fullName, t.methodName)
+      )
+    )
     for (const name of expectedMethods) {
       if (!reported.has(name)) return true
     }

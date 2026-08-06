@@ -1,10 +1,11 @@
 import type { TestResult } from '@salesforce/apex-node'
+import { qualifyTestMethod, type TestMethodId } from '../type/TestMethodId.js'
 
 type CoverageFidelity = 'per-test' | 'aggregate'
 
 export interface CoverageStrategy {
   readonly fidelity: CoverageFidelity
-  getTestMethodsPerLine(testResult: TestResult): Map<number, Set<string>>
+  getTestMethodsPerLine(testResult: TestResult): Map<number, Set<TestMethodId>>
 }
 
 export class PerTestCoverageStrategy implements CoverageStrategy {
@@ -15,8 +16,8 @@ export class PerTestCoverageStrategy implements CoverageStrategy {
   }
   public getTestMethodsPerLine(
     testResult: TestResult
-  ): Map<number, Set<string>> {
-    const testMethodsPerLine = new Map<number, Set<string>>()
+  ): Map<number, Set<TestMethodId>> {
+    const testMethodsPerLine = new Map<number, Set<TestMethodId>>()
     testResult.tests?.forEach(test => {
       test.perClassCoverage
         ?.filter(
@@ -27,8 +28,13 @@ export class PerTestCoverageStrategy implements CoverageStrategy {
         .forEach(coverage => {
           coverage.coverage?.coveredLines?.forEach(line => {
             const testMethods =
-              testMethodsPerLine.get(line) ?? new Set<string>()
-            testMethods.add(coverage.apexTestMethodName)
+              testMethodsPerLine.get(line) ?? new Set<TestMethodId>()
+            testMethods.add(
+              qualifyTestMethod(
+                test.apexClass.fullName,
+                coverage.apexTestMethodName
+              )
+            )
             testMethodsPerLine.set(line, testMethods)
           })
         })
@@ -45,14 +51,16 @@ export class AggregateCoverageStrategy implements CoverageStrategy {
   }
   public getTestMethodsPerLine(
     testResult: TestResult
-  ): Map<number, Set<string>> {
+  ): Map<number, Set<TestMethodId>> {
     const testMethodNames = new Set(
-      testResult.tests?.map(test => test.methodName) ?? []
+      testResult.tests?.map(test =>
+        qualifyTestMethod(test.apexClass.fullName, test.methodName)
+      ) ?? []
     )
     const aggregateCoverage = testResult.codecoverage?.find(
       coverage => coverage.name.toLowerCase() === this.targetClassNameLower
     )
-    const testMethodsPerLine = new Map<number, Set<string>>()
+    const testMethodsPerLine = new Map<number, Set<TestMethodId>>()
     aggregateCoverage?.coveredLines?.forEach(line =>
       testMethodsPerLine.set(line, new Set(testMethodNames))
     )
