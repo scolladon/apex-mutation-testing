@@ -652,7 +652,7 @@ describe('ConfigReader', () => {
     })
 
     it('Given a single test class name, When resolving config, Then the perimeter passes through unchanged', async () => {
-      // Arrange — R16: single-element perimeter is byte-identical to input
+      // Arrange — single-element perimeter is byte-identical to input
       const parameter: ApexMutationParameter = {
         ...baseParameter,
         apexTestClassNames: ['MyClassTest'],
@@ -666,7 +666,7 @@ describe('ConfigReader', () => {
     })
 
     it('Given a config file carrying a testClass-ish key, When resolving config, Then the file key has no effect on the perimeter', async () => {
-      // Arrange — ADR 030: MutationTestingConfig declares no test-class key
+      // Arrange — MutationTestingConfig declares no test-class key
       const config = { testClass: 'FromFileShouldBeIgnored' }
       vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
       const parameter: ApexMutationParameter = {

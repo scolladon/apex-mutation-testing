@@ -52,7 +52,9 @@ vi.mock('@salesforce/sf-plugins-core', () => {
   return {
     SfCommand: FakeSfCommand,
     Flags: {
-      string: vi.fn().mockReturnValue({}),
+      // Echo the options back so the declaration itself is assertable; `parse`
+      // is stubbed, so oclif never consumes these objects.
+      string: vi.fn(options => options),
       boolean: vi.fn().mockReturnValue({}),
       directory: vi.fn().mockReturnValue({}),
       integer: vi.fn().mockReturnValue({}),
@@ -224,6 +226,20 @@ describe('apex mutation test run NUT', () => {
           apexTestClassNames: ['MyClassTest'],
         })
       )
+    })
+  })
+
+  // runCommand stubs `parse`, so the two cases below exercise the plumbing
+  // downstream of parsing rather than oclif itself. This pins the flag
+  // declaration that makes the repeated and comma-delimited forms parse at all —
+  // without it, removing multiple/delimiter would leave the whole suite green.
+  describe('Given the test-class flag declaration', () => {
+    it('When inspected, Then it accepts repeated and comma-delimited values', () => {
+      // Act
+      const result = ApexMutationTest.flags['test-class']
+
+      // Assert
+      expect(result).toMatchObject({ multiple: true, delimiter: ',' })
     })
   })
 

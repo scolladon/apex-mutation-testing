@@ -147,7 +147,7 @@ describe('ApexTestRunner', () => {
         )
 
         // Assert — a single-class id set reproduces the byte-identical
-        // single-element payload (R16)
+        // single-element payload
         expect(result).toEqual(mockTestResult)
         expect(runTestAsynchronousMock).toHaveBeenCalledWith(
           {

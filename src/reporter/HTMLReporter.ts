@@ -98,7 +98,7 @@ export class ApexMutationHTMLReporter {
 
 // observed = union of every mutant's attribution.coveredBy. Empty ⇒ no run
 // data anywhere in this result (dry run, or every mutant a CompileError) ⇒
-// omit testFiles entirely so the app renders no test view (P6.4).
+// omit testFiles entirely so the app renders no test view.
 function buildTestFilesSection(
   perimeter: string[],
   mutants: ApexMutationTestResult['mutants']

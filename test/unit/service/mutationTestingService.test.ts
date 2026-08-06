@@ -701,6 +701,48 @@ describe('MutationTestingService', () => {
         )
       })
 
+      // Without this, a service that ran only the first perimeter entry would
+      // still satisfy every other assertion in this file — classes 2..N would
+      // silently never run, never contribute coverage, never reach a verdict.
+      it('When the baseline runs, Then every perimeter class is handed to the test runner', async () => {
+        // Arrange
+        const getTestMethodsPerLinesMock = vi.fn().mockResolvedValue({
+          outcome: 'Passed',
+          passing: 1,
+          failing: 0,
+          testsRan: 1,
+          testMethodsPerLine: new Map(),
+        })
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            updateMany = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi
+              .fn()
+              .mockResolvedValue([] as MetadataComponentDependency[])
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            getTestMethodsPerLines = getTestMethodsPerLinesMock
+          }
+        )
+        const multiSut = buildMultiClassSut()
+
+        // Act
+        await expect(multiSut.process()).rejects.toThrow()
+
+        // Assert
+        expect(getTestMethodsPerLinesMock).toHaveBeenCalledWith(
+          ['A', 'B'],
+          expect.anything()
+        )
+      })
+
       it('When baseline tests fail, Then the spinner text names the joined perimeter', async () => {
         // Arrange
         vi.mocked(ApexClassRepository).mockImplementation(

@@ -99,7 +99,7 @@ describe('TestMethodId', () => {
     })
   })
 
-  describe('structural return shape (ADR 033)', () => {
+  describe('structural return shape (no apex-node types)', () => {
     it('Given qualified ids, When toTestItems, Then returns plain structural objects with no org-SDK type involved', () => {
       // Arrange
       const ids = [qualifyTestMethod('FooTest', 'testA')]

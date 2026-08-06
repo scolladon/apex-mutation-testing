@@ -196,6 +196,39 @@ describe('HTMLReporter', () => {
       expect(new Set(allIds).size).toBe(allIds.length)
     })
 
+    // The committed e2e snapshot is validated by byte comparison, so this
+    // ordering is load-bearing: without the sort it follows the org's per-test
+    // coverage response order and the snapshot churns on every run.
+    it('Then sorts each test file entry lexicographically, not by observed order', async () => {
+      // Arrange
+      const reversed = {
+        ...testResults,
+        testFiles: ['ZedTest'],
+        mutants: [
+          {
+            ...testResults.mutants[0],
+            attribution: {
+              coveredBy: ['ZedTest.zeta', 'ZedTest.alpha'],
+              killedBy: [],
+              testsCompleted: 2,
+            },
+          },
+        ],
+      }
+
+      // Act
+      await sut.generateReport(reversed)
+
+      // Assert
+      const report = extractReport(
+        vi.mocked(writeFile).mock.calls[0][1] as string
+      )
+      expect(report.testFiles!.ZedTest.tests.map(t => t.id)).toEqual([
+        'ZedTest.alpha',
+        'ZedTest.zeta',
+      ])
+    })
+
     it('Then emits per-mutant coveredBy, killedBy and testsCompleted from attribution', async () => {
       // Act
       await sut.generateReport(testResults)

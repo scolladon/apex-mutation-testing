@@ -390,7 +390,7 @@ describe('groupMutations', () => {
     // Arrange — the grouper treats each token as opaque: 'FooTest.a' and
     // 'BarTest.a' are distinct strings, so they never intersect. Under bare
     // method names both would collapse to the single token 'a' and force
-    // these mutations apart (R10) — this pins that qualified ids don't.
+    // these mutations apart — this pins that qualified ids don't.
     const mutations = [mutationAt(1), mutationAt(2)]
     const testMethodsPerLine = coverage([
       [1, ['FooTest.a']],
