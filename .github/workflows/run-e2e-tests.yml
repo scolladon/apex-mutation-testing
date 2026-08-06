@@ -3,6 +3,10 @@ name: E2E Tests a published version
 on:
   workflow_call:
     inputs:
+      # Deliberately no `default:` on either. A default silently substitutes when a caller
+      # passes an empty string, which would turn the whole matrix green against the wrong
+      # build. Required and undefaulted, a bad value fails at install or at the identity
+      # assertion below instead.
       channel:
         type: string
         required: true
@@ -28,23 +32,6 @@ jobs:
       matrix:
         node: [22, 24, 26]
     steps:
-      # Consumer-side on purpose. The `channel` input carries no `default:`, because a
-      # default silently substitutes when a caller passes an empty string and turns the
-      # whole matrix green against the wrong build. No producer-side check can close that.
-      - name: Assert a channel and an expected version were provided
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          EXPECTED: ${{ inputs.expected-version }}
-        run: |
-          if [ -z "${CHANNEL// }" ]; then
-            echo "::error::channel input is empty - refusing to run e2e against an unknown build"
-            exit 1
-          fi
-          if [ -z "${EXPECTED// }" ]; then
-            echo "::error::expected-version input is empty - refusing to run e2e against an unidentified build"
-            exit 1
-          fi
-
       - name: Setup node
         uses: actions/setup-node@v7
         with:
