@@ -71,11 +71,15 @@ const BUNDLE_PLACEHOLDER =
 
 const STRIPPED_BUNDLE_REGEX = /<head>([\s\S]+?)<\/head>/
 
+// Replacer FUNCTION, not a string: a `$&`/`$1`/`$$` occurring anywhere in the
+// report JSON would otherwise be interpreted as a substitution pattern and
+// silently corrupt the snapshot.
 let normalised = content.replace(
   dataIslandRegex,
-  `<script id="mutation-report-data" type="application/json">${escapeJsonIsland(
-    JSON.stringify(report)
-  )}</script>`
+  () =>
+    `<script id="mutation-report-data" type="application/json">${escapeJsonIsland(
+      JSON.stringify(report)
+    )}</script>`
 )
 
 normalised = normalised.replace(STRIPPED_BUNDLE_REGEX, headContent => {

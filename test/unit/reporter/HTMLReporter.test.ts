@@ -465,7 +465,7 @@ describe('HTMLReporter', () => {
       )
     })
 
-    it('Then rejects a symlinked outputDir that dereferences out of cwd (Sec-LOW-1)', async () => {
+    it('Then rejects a symlinked outputDir that dereferences out of cwd', async () => {
       // Arrange — `reports` inside cwd is present (mkdir succeeds) but realpath
       // returns an out-of-cwd target, simulating a symlink pointing to /etc
       const cwd = process.cwd()
