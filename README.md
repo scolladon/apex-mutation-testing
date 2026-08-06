@@ -97,7 +97,11 @@ In both normal and dry-run modes, the plugin displays a time estimate before sta
 
 ### Compilability Verification
 
-Before running mutation tests, the plugin deploys the target class, then deploys every test class in the perimeter together in a single batched deployment, to verify everything compiles correctly. This step is necessary because Salesforce only validates compilation of the element being deployed, not its dependents. A class can exist on the org in a broken state if one of its dependencies was modified after it was last deployed.
+Before running mutation tests, the plugin deploys the target class, then deploys every test
+class in the perimeter together in a single batched deployment, to verify everything compiles
+correctly. This step is necessary because Salesforce only validates compilation of the element
+being deployed, not its dependents. A class can exist on the org in a broken state if one of
+its dependencies was modified after it was last deployed.
 
 Without this check, all mutants would result in `CompileError`, producing a misleading 100% mutation score. If the target class or any test class fails to compile, the process stops early with a clear error message naming each failing class and its compilation details. The batched deployment costs a single deploy cycle no matter how many test classes are in the perimeter.
 

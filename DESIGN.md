@@ -382,7 +382,7 @@ class AggregateCoverageStrategy implements CoverageStrategy // fidelity: 'aggreg
 
 `TestMethodId` (`src/type/TestMethodId.ts`) is a `ClassName.methodName` string, minted by `qualifyTestMethod(test.apexClass.fullName, methodName)`. Both strategies qualify at this boundary — the one place a test method's declaring class is known — so a method name that exists in more than one perimeter class never collides downstream.
 
-- `PerTestCoverageStrategy` filters each test's `perClassCoverage` down to the target class and maps each covered line to the set of qualified test-method ids that actually covered it, unioned across every class in the perimeter.
+- `PerTestCoverageStrategy` filters each test's `perClassCoverage` down to the target class and maps each covered line to the set of qualified test-method ids that actually covered it, combining the contributions of every class in the perimeter.
 - `AggregateCoverageStrategy` reads the target class's entry from `testResult.codecoverage` and assigns **every** covered line the full set of qualified ids of every executed test method across the perimeter — an over-approximation, since the aggregate rollup does not distinguish which test covered which line. This is the accepted "every test method runs per mutant" degradation.
 - Both strategies lower-case the target class name once in their constructor for case-insensitive matching.
 
@@ -798,7 +798,7 @@ A higher score means the test suite is better at detecting mutations. `RuntimeEr
 
 ## Targeted Test Execution
 
-A key performance optimization: only the test methods that **cover the mutated line** are executed per mutation — across every class in the `-t` perimeter, unioned.
+A key performance optimization: only the test methods that **cover the mutated line** are executed per mutation, taking the union across every class in the `-t` perimeter.
 
 ```text
 Baseline Test Run (one async run covering the whole perimeter)
@@ -986,7 +986,13 @@ by line/column/mutatorName/replacement, replace volatile timestamps), then valid
 `git diff` against a committed HTML snapshot. The validate step displays the diff before
 failing for CI debugging. Teardown (class redeployment) always executes even on failure.
 
-**Test fixtures** (`test/classes/Mutation.cls`, `MutationTest.cls` and `MutationBulkTest.cls`) are shared across NUT and E2E tiers. `Mutation.cls` contains constructs triggering all 25 mutators. `MutationTest.cls` provides 100% line coverage. `MutationBulkTest.cls` is the second perimeter class the E2E run exercises `-t MutationTest,MutationBulkTest` against: it declares one method, `testNum`, deliberately colliding with `MutationTest.testNum` while covering only `Mutation.num`, so the collision is observable without doubling every mutant's attribution or the run's async-test consumption.
+**Test fixtures** (`test/classes/Mutation.cls`, `MutationTest.cls` and `MutationBulkTest.cls`)
+are shared across NUT and E2E tiers. `Mutation.cls` contains constructs triggering all 25
+mutators. `MutationTest.cls` provides 100% line coverage. `MutationBulkTest.cls` is the second
+perimeter class the E2E run exercises `-t MutationTest,MutationBulkTest` against: it declares
+one method, `testNum`, deliberately colliding with `MutationTest.testNum` while covering only
+`Mutation.num`, so the collision is observable without doubling every mutant's attribution or
+the run's async-test consumption.
 
 ---
 
@@ -1156,7 +1162,12 @@ When `--lines` is not provided, `allowedLines` is `undefined` (no range filter).
 
 ### re2js for Regex Safety
 
-Skip patterns use [re2js](https://github.com/le0pard/re2js) — a pure-JS port of Google's RE2/J — instead of JavaScript's built-in `RegExp`. re2js accepts RE2 syntax and guarantees **linear-time** matching, preventing ReDoS (Regular Expression Denial of Service) attacks from malicious or poorly written patterns, with zero native code and zero install scripts. Pattern compilation is validated at configuration time — invalid patterns fail fast with a descriptive error.
+Skip patterns use [re2js](https://github.com/le0pard/re2js) — a pure-JS port of Google's RE2/J
+— instead of JavaScript's built-in `RegExp`. re2js accepts RE2 syntax and guarantees
+**linear-time** matching, preventing ReDoS (Regular Expression Denial of Service) attacks from
+malicious or poorly written patterns, with zero native code and zero install scripts. Pattern
+compilation is validated at configuration time — invalid patterns fail fast with a descriptive
+error.
 
 `src/service/skipPattern.ts` defines the port the rest of the codebase depends on, so the regex engine stays out of `mutationListener.ts`, `mutantGenerator.ts`, and `mutationTestingService.ts`:
 
@@ -1168,7 +1179,11 @@ interface SkipPattern {
 compileSkipPattern(pattern: string): SkipPattern
 ```
 
-`compileSkipPattern` is the re2js-backed adapter: it compiles the pattern and returns a `SkipPattern` whose `test()` matches via RE2JS's unanchored substring `test()` on the DFA path. Compilation throws the raw engine error — the port stays domain-agnostic and leaves user-facing wrapping to the caller. `ConfigReader.compileSkipPatterns` catches that error and wraps it as `Invalid skip pattern '<p>': <reason>`.
+`compileSkipPattern` is the re2js-backed adapter: it compiles the pattern and returns a
+`SkipPattern` whose `test()` matches via RE2JS's unanchored substring `test()` on the DFA path.
+Compilation throws the raw engine error — the port stays domain-agnostic and leaves user-facing
+wrapping to the caller. `ConfigReader.compileSkipPatterns` catches that error and wraps it as
+`Invalid skip pattern '<p>': <reason>`.
 
 ### Data Flow
 
