@@ -1022,6 +1022,63 @@ describe('MutationTestingService', () => {
         )
       })
 
+      it('Given per-test fidelity and two classes contribute nothing, When processing, Then the spinner joins their names with a comma', async () => {
+        // Arrange
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            updateMany = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([[1, new Set(['FooTest.testA'])]]),
+            })
+          }
+        )
+        const zeroContributionSut = buildZeroContributionSut([
+          'FooTest',
+          'BarTest',
+          'BazTest',
+        ])
+
+        // Act
+        await zeroContributionSut.process()
+
+        // Assert — the two silent classes are joined with ', ', not concatenated
+        expect(spinner.start).toHaveBeenCalledWith(
+          'The following test class(es) contributed no covered lines and will not affect the mutation score: BarTest, BazTest',
+          undefined,
+          { stdout: true }
+        )
+      })
+
       it('Given per-test fidelity and every perimeter class is covered, When processing, Then the spinner never warns', async () => {
         // Arrange
         vi.mocked(ApexClassRepository).mockImplementation(
@@ -1718,7 +1775,7 @@ describe('MutationTestingService', () => {
         )
 
         // Act
-        await filteredSut.process()
+        const result = await filteredSut.process()
 
         // Assert
         expect(mockComputeFn).toHaveBeenCalledWith(
@@ -1733,6 +1790,9 @@ describe('MutationTestingService', () => {
             tokenStream: mockAnalyzeFullResult.tokenStream,
           })
         )
+        // The excluded line has no covering test methods left, so the
+        // no-coverage branch falls back to the run summary ('Failed' ⇒ Killed).
+        expect(result.mutants[0].status).toBe('Killed')
       })
     })
 
@@ -5342,6 +5402,9 @@ describe('MutationTestingService', () => {
 
         // Assert
         expect(result.mutants[0].attribution).toBeUndefined()
+        // No covering tests, and the run summary passed ⇒ nobody to blame,
+        // so the no-coverage branch falls back to Survived.
+        expect(result.mutants[0].status).toBe('Survived')
       })
     })
 
@@ -5626,6 +5689,14 @@ describe('MutationTestingService', () => {
         // Assert — fallback path triggered: 1 grouped + 2 per-mutant = 3 total runs
         expect(runMock).toHaveBeenCalledTimes(3)
         expect(result.mutants).toHaveLength(2)
+        const updateCalls = vi.mocked(progress.update).mock.calls as Array<
+          [number, { info: string }]
+        >
+        expect(
+          updateCalls.some(call =>
+            call[1].info.includes('Fallback for group of 2 complete')
+          )
+        ).toBe(true)
       })
 
       it('given grouping enabled when planning then announces the savings via the spinner', async () => {

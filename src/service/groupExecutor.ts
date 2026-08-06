@@ -230,6 +230,10 @@ export class GroupExecutor {
         t.outcome,
       ])
     )
+    // The non-Pass branch's literal value is never itself observed: every
+    // consumer (buildAttributedResult) only tests `!== 'Pass'`, so any
+    // distinct non-'Pass' string here is behaviourally interchangeable —
+    // 'Fail' is chosen for readability during debugging, not correctness.
     const summaryFallback =
       testResult.summary.outcome === 'Passed' ? 'Pass' : 'Fail'
     return group.mutations.map(mutation =>

@@ -607,19 +607,20 @@ describe('ConfigReader', () => {
     })
 
     it('Given a blank test class name, When resolving config, Then throws naming the offending raw input', async () => {
-      // Arrange
+      // Arrange — whitespace-only, not '', so raw ('   ') and trimmed ('')
+      // differ: this pins the error to the raw argument specifically.
       const parameter: ApexMutationParameter = {
         ...baseParameter,
-        apexTestClassNames: ['A', '', 'B'],
+        apexTestClassNames: ['A', '   ', 'B'],
       }
 
       // Act & Assert
       await expect(sut.resolve(parameter)).rejects.toThrow(
-        "Blank apex test class name found: ''"
+        "Blank apex test class name found: '   '"
       )
       expect(messagesMock.getMessage).toHaveBeenCalledWith(
         'error.blankTestClass',
-        ['']
+        ['   ']
       )
     })
 

@@ -20,6 +20,11 @@ interface ParsedReportMutant {
   coveredBy?: string[]
   killedBy?: string[]
   testsCompleted: number
+  static: boolean
+  location: {
+    start: { line: number; column: number }
+    end: { line: number; column: number }
+  }
 }
 
 interface ParsedReport {
@@ -237,6 +242,23 @@ describe('HTMLReporter', () => {
       expect(secondKilled.coveredBy).toEqual(['BarTest.testB'])
       expect(secondKilled.killedBy).toEqual(['BarTest.testB'])
       expect(secondKilled.testsCompleted).toBe(1)
+    })
+
+    it('Then marks every mutant non-static and passes through its location coordinates', async () => {
+      // Act
+      await sut.generateReport(testResults)
+
+      // Assert
+      const html = vi.mocked(writeFile).mock.calls[0][1] as string
+      const report = extractReport(html)
+      const mutant = report.files['TestClass.cls'].mutants.find(
+        m => m.id === '1'
+      )!
+      expect(mutant.static).toBe(false)
+      expect(mutant.location).toEqual({
+        start: { line: 1, column: 0 },
+        end: { line: 1, column: 10 },
+      })
     })
 
     it('Then omits killedBy when the attribution killedBy array is empty', async () => {

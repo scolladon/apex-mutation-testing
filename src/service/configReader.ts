@@ -132,6 +132,9 @@ export class ConfigReader {
       if (trimmed === '') {
         throw new Error(this.messages.getMessage('error.blankTestClass', [raw]))
       }
+      // Case-fold direction is arbitrary: `key` is a write-only lookup token
+      // — `values()` below returns `trimmed`, never `key` — so lower- or
+      // upper-casing it yields identical de-dup grouping for any input.
       const key = trimmed.toLowerCase()
       if (!seenByLowercase.has(key)) {
         seenByLowercase.set(key, trimmed)

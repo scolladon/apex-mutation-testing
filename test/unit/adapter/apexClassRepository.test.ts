@@ -139,6 +139,13 @@ describe('ApexClassRepository', () => {
         })
         expect(createMock).toHaveBeenCalledTimes(3)
         expect(retrieveMock).toHaveBeenCalledWith('request123')
+        // IsCheckOnly must stay false — true would validate-only and never
+        // actually deploy the mutated body.
+        expect(createMock).toHaveBeenNthCalledWith(3, {
+          IsCheckOnly: false,
+          MetadataContainerId: 'container123',
+          IsRunTests: true,
+        })
       })
     })
 
