@@ -371,9 +371,7 @@ export class MutationTestingService {
       const apexTestClasses = (await Promise.all(
         this.apexTestClassNames.map(name => apexClassRepository.read(name))
       )) as unknown as ApexClass[]
-      for (const apexTestClass of apexTestClasses) {
-        await apexClassRepository.update(apexTestClass)
-      }
+      await apexClassRepository.updateMany(apexTestClasses)
       this.spinner.stop('Done')
     } catch (error: unknown) {
       this.spinner.stop()
