@@ -2,6 +2,38 @@ import { readFile, realpath, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import * as path from 'path'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
+import { testClassOf } from '../type/TestMethodId.js'
+
+// Local module-scope shape of the Stryker mutation-testing-report-schema
+// (2.0.0) subset this reporter emits. mutation-testing-report-schema is only
+// a transitive dependency — importing it directly would trip knip's
+// lint:dependencies check — so the shape is declared here instead.
+interface ReportMutant {
+  id: string
+  mutatorName: string
+  replacement: string
+  status: ApexMutationTestResult['mutants'][number]['status']
+  statusReason?: string
+  static: boolean
+  coveredBy?: string[]
+  killedBy?: string[]
+  testsCompleted: number
+  location: ApexMutationTestResult['mutants'][number]['location']
+}
+
+interface ReportFile {
+  language: string
+  source: string
+  mutants: ReportMutant[]
+}
+
+interface MutationTestResult {
+  schemaVersion: string
+  config: Record<string, unknown>
+  thresholds: { high: number; low: number }
+  files: Record<string, ReportFile>
+  testFiles?: Record<string, { tests: { id: string; name: string }[] }>
+}
 
 const requireFromHere = createRequire(import.meta.url)
 const MUTATION_TEST_ELEMENTS_PATH = requireFromHere.resolve(
@@ -36,8 +68,14 @@ export class ApexMutationHTMLReporter {
     await writeFile(path.join(resolvedDir, 'index.html'), htmlContent)
   }
 
-  private transformApexResults(apexMutationTestResult: ApexMutationTestResult) {
-    const mutationTestResult = {
+  private transformApexResults(
+    apexMutationTestResult: ApexMutationTestResult
+  ): MutationTestResult {
+    const testFiles = buildTestFilesSection(
+      apexMutationTestResult.testFiles,
+      apexMutationTestResult.mutants
+    )
+    const mutationTestResult: MutationTestResult = {
       schemaVersion: '2.0.0',
       config: {},
       thresholds: {
@@ -45,44 +83,66 @@ export class ApexMutationHTMLReporter {
         low: 60,
       },
       files: {},
+      ...(testFiles && { testFiles }),
     }
 
-    const untestedStatuses = new Set([
-      'CompileError',
-      'RuntimeError',
-      'Pending',
-    ])
-
-    const fileResult = {
+    mutationTestResult.files[`${apexMutationTestResult.sourceFile}.cls`] = {
       language: 'java',
       source: apexMutationTestResult.sourceFileContent,
-      mutants: apexMutationTestResult.mutants.map(mutant => ({
-        id: mutant.id,
-        mutatorName: mutant.mutatorName,
-        replacement: mutant.replacement,
-        status: mutant.status,
-        statusReason: mutant.statusReason,
-        static: false,
-        coveredBy: untestedStatuses.has(mutant.status) ? undefined : ['0'],
-        killedBy: mutant.status === 'Killed' ? ['0'] : undefined,
-        testsCompleted: untestedStatuses.has(mutant.status) ? 0 : 1,
-        location: {
-          start: {
-            line: mutant.location.start.line,
-            column: mutant.location.start.column,
-          },
-          end: {
-            line: mutant.location.end.line,
-            column: mutant.location.end.column,
-          },
-        },
-      })),
+      mutants: apexMutationTestResult.mutants.map(mapMutant),
     }
 
-    mutationTestResult.files[`${apexMutationTestResult.sourceFile}.cls`] =
-      fileResult
-
     return mutationTestResult
+  }
+}
+
+// observed = union of every mutant's attribution.coveredBy. Empty ⇒ no run
+// data anywhere in this result (dry run, or every mutant a CompileError) ⇒
+// omit testFiles entirely so the app renders no test view (P6.4).
+function buildTestFilesSection(
+  perimeter: string[],
+  mutants: ApexMutationTestResult['mutants']
+): MutationTestResult['testFiles'] {
+  const observed = new Set(
+    mutants.flatMap(mutant => mutant.attribution?.coveredBy ?? [])
+  )
+  if (observed.size === 0) return undefined
+
+  return Object.fromEntries(
+    perimeter.map(className => {
+      const tests = [...observed]
+        .filter(id => testClassOf(id).toLowerCase() === className.toLowerCase())
+        .sort()
+        .map(id => ({ id, name: id }))
+      return [className, { tests }]
+    })
+  )
+}
+
+function mapMutant(
+  mutant: ApexMutationTestResult['mutants'][number]
+): ReportMutant {
+  const attribution = mutant.attribution
+  return {
+    id: mutant.id,
+    mutatorName: mutant.mutatorName,
+    replacement: mutant.replacement,
+    status: mutant.status,
+    statusReason: mutant.statusReason,
+    static: false,
+    coveredBy: attribution?.coveredBy,
+    killedBy: attribution?.killedBy.length ? attribution.killedBy : undefined,
+    testsCompleted: attribution?.testsCompleted ?? 0,
+    location: {
+      start: {
+        line: mutant.location.start.line,
+        column: mutant.location.start.column,
+      },
+      end: {
+        line: mutant.location.end.line,
+        column: mutant.location.end.column,
+      },
+    },
   }
 }
 

@@ -183,13 +183,16 @@ export class GroupExecutor {
     }
 
     // Leaf for k=1 with caught error: classify the error directly. (k>1 with
-    // an error was handled above by recursing into singletons.)
+    // an error was handled above by recursing into singletons.) No test
+    // outcomes were observed, so no attribution.
     if (batchError !== undefined) {
       const mutation = group.mutations[0]
       const c = classifyError(batchError, mutation)
       return {
         mutantResults: [
-          this.buildMutantResult(mutation, c.status, c.statusReason),
+          this.buildMutantResult(mutation, c.status, {
+            statusReason: c.statusReason,
+          }),
         ],
         progressMessage: c.progressMessage,
       }
@@ -212,14 +215,29 @@ export class GroupExecutor {
         new Set<TestMethodId>()
       // No covering tests (only possible in mocked or uncovered-line scenarios)
       // → fall back to the summary outcome so behaviour matches the legacy
-      // evaluateMutation path.
-      const killed =
-        myMethods.size === 0
-          ? summaryFallback !== 'Pass'
-          : [...myMethods].some(
-              name => (outcomeByMethod.get(name) ?? summaryFallback) !== 'Pass'
-            )
-      return this.buildMutantResult(m, killed ? 'Killed' : 'Survived')
+      // evaluateMutation path. Nobody to attribute the verdict to, so no
+      // attribution — emitting coveredBy: [] for a Killed mutant would be a
+      // contradiction the schema cannot express.
+      if (myMethods.size === 0) {
+        const killed = summaryFallback !== 'Pass'
+        return this.buildMutantResult(m, killed ? 'Killed' : 'Survived')
+      }
+
+      const coveredBy = [...myMethods].sort()
+      const killedBy: TestMethodId[] = []
+      let testsCompleted = 0
+      for (const name of coveredBy) {
+        const outcome = outcomeByMethod.get(name)
+        if (outcome === undefined) continue
+        testsCompleted++
+        if (outcome !== 'Pass') killedBy.push(name)
+      }
+      const killed = coveredBy.some(
+        name => (outcomeByMethod.get(name) ?? summaryFallback) !== 'Pass'
+      )
+      return this.buildMutantResult(m, killed ? 'Killed' : 'Survived', {
+        attribution: { coveredBy, killedBy, testsCompleted },
+      })
     })
 
     return {
@@ -256,14 +274,18 @@ export class GroupExecutor {
   private buildMutantResult(
     mutation: ApexMutation,
     status: 'Killed' | 'Survived' | 'CompileError' | 'RuntimeError',
-    statusReason?: string
+    extras: {
+      statusReason?: string
+      attribution?: ApexMutationTestResult['mutants'][number]['attribution']
+    } = {}
   ): ApexMutationTestResult['mutants'][number] {
     const start = mutation.target.startToken
     return {
       id: `${this.apexClassName}-${start.line}-${start.charPositionInLine}-${start.tokenIndex}-${Date.now()}`,
       mutatorName: mutation.mutationName,
       status,
-      ...(statusReason && { statusReason }),
+      ...(extras.statusReason && { statusReason: extras.statusReason }),
+      ...(extras.attribution && { attribution: extras.attribution }),
       location: calculateMutationPosition(mutation),
       replacement: mutation.replacement,
       original: extractMutationOriginalText(mutation, this.apexClassContent),

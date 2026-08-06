@@ -4931,6 +4931,378 @@ describe('MutationTestingService', () => {
       })
     })
 
+    describe('Given per-test attribution is computed from the success path', () => {
+      it('Given a Survived mutant covered by two classes both reporting Pass, When processing, Then attribution.coveredBy is sorted lexicographically not insertion order', async () => {
+        // Arrange — insertion order is FooTest then BarTest; sorted order is Bar then Foo
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            updateMany = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Passed',
+                passing: 2,
+                failing: 0,
+                testsRan: 2,
+              },
+              tests: [
+                {
+                  apexClass: { fullName: 'FooTest' },
+                  methodName: 'testA',
+                  outcome: 'Pass',
+                },
+                {
+                  apexClass: { fullName: 'BarTest' },
+                  methodName: 'testA',
+                  outcome: 'Pass',
+                },
+              ],
+            } as unknown as TestResult)
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([
+                [1, new Set(['FooTest.testA', 'BarTest.testA'])],
+              ]),
+            })
+          }
+        )
+
+        const twoClassSut = new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassNames: ['FooTest', 'BarTest'],
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+        // Act
+        const result = await twoClassSut.process()
+
+        // Assert
+        expect(result.mutants[0].status).toBe('Survived')
+        expect(result.mutants[0].attribution).toEqual({
+          coveredBy: ['BarTest.testA', 'FooTest.testA'],
+          killedBy: [],
+          testsCompleted: 2,
+        })
+      })
+
+      it('Given only FooTest.testA reports Fail and BarTest.testA never reports, When processing the mutant they both cover, Then killedBy lists only the observed kill and testsCompleted counts only what reported', async () => {
+        // Arrange
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            updateMany = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+              tests: [
+                {
+                  apexClass: { fullName: 'FooTest' },
+                  methodName: 'testA',
+                  outcome: 'Fail',
+                },
+              ],
+            } as unknown as TestResult)
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([
+                [1, new Set(['FooTest.testA', 'BarTest.testA'])],
+              ]),
+            })
+          }
+        )
+
+        const twoClassSut = new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassNames: ['FooTest', 'BarTest'],
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+        // Act
+        const result = await twoClassSut.process()
+
+        // Assert
+        expect(result.mutants[0].status).toBe('Killed')
+        expect(result.mutants[0].attribution).toEqual({
+          coveredBy: ['BarTest.testA', 'FooTest.testA'],
+          killedBy: ['FooTest.testA'],
+          testsCompleted: 1,
+        })
+      })
+
+      it('Given the covering test method never reports and the run summary fails, When processing, Then the mutant is Killed but attribution.killedBy is empty', async () => {
+        // Arrange — no per-method outcome at all; status comes purely from summaryFallback
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            updateMany = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+              tests: [],
+            } as unknown as TestResult)
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
+            })
+          }
+        )
+
+        // Act
+        const result = await sut.process()
+
+        // Assert
+        expect(result.mutants[0].status).toBe('Killed')
+        expect(result.mutants[0].attribution).toEqual({
+          coveredBy: ['TestClassTest.testMethodA'],
+          killedBy: [],
+          testsCompleted: 0,
+        })
+      })
+    })
+
+    describe('Given producer paths that deliberately emit no attribution', () => {
+      it('Given a compile error during mutant deploy, When processing, Then the mutant carries no attribution', async () => {
+        // Arrange
+        let updateCallCount = 0
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockImplementation(() => {
+              updateCallCount++
+              if (updateCallCount === 2) {
+                return Promise.reject(
+                  new Error(
+                    'Deployment failed: [MyClass.cls:5:10] Invalid syntax'
+                  )
+                )
+              }
+              return Promise.resolve({})
+            })
+            updateMany = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn()
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
+            })
+          }
+        )
+
+        // Act
+        const result = await sut.process()
+
+        // Assert
+        expect(result.mutants[0].status).toBe('CompileError')
+        expect(result.mutants[0].attribution).toBeUndefined()
+      })
+
+      it('Given a governor-limit error during test run, When processing, Then the mutant is Killed with no attribution', async () => {
+        // Arrange
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            updateMany = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi
+              .fn()
+              .mockRejectedValue(
+                new Error('LIMIT_USAGE_FOR_NS : Too many SOQL queries: 101')
+              )
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
+            })
+          }
+        )
+
+        // Act
+        const result = await sut.process()
+
+        // Assert
+        expect(result.mutants[0].status).toBe('Killed')
+        expect(result.mutants[0].attribution).toBeUndefined()
+      })
+
+      it('Given the mutation line has no covering test methods recorded for it, When processing, Then the mutant carries no attribution', async () => {
+        // Arrange — testMethodsPerLine covers a different line than
+        // mockMutation's line 1, forcing the myMethods.size === 0 branch.
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            updateMany = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Passed',
+                passing: 1,
+                failing: 0,
+                testsRan: 1,
+              },
+              tests: [
+                {
+                  apexClass: { fullName: 'TestClassTest' },
+                  methodName: 'testMethodA',
+                  outcome: 'Pass',
+                },
+              ],
+            } as unknown as TestResult)
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([
+                [99, new Set(['TestClassTest.testMethodA'])],
+              ]),
+            })
+          }
+        )
+
+        // Act
+        const result = await sut.process()
+
+        // Assert
+        expect(result.mutants[0].attribution).toBeUndefined()
+      })
+    })
+
     describe('When mutationGrouping is enabled', () => {
       // Two mutations on different lines, exercised by different test methods.
       // DSATUR collapses them into one group since their tests don't overlap.

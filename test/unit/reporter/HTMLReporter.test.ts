@@ -14,17 +14,51 @@ beforeEach(() => {
   vi.mocked(realpath).mockImplementation(async (p: unknown) => String(p))
 })
 
+interface ParsedReportMutant {
+  id: string
+  status: string
+  coveredBy?: string[]
+  killedBy?: string[]
+  testsCompleted: number
+}
+
+interface ParsedReport {
+  files: Record<string, { mutants: ParsedReportMutant[] }>
+  testFiles?: Record<string, { tests: { id: string; name: string }[] }>
+}
+
+// Reads the escape-hardened JSON data block back out of the generated HTML,
+// reversing the same neutralising transforms the existing tests apply inline.
+const extractReport = (html: string): ParsedReport => {
+  const reportMatch = html.match(
+    /<script id="mutation-report-data" type="application\/json">(.+?)<\/script>/s
+  )
+  const rawJson = reportMatch![1]
+    .replace(/<\\\//g, '</')
+    .replace(/<\\!--/g, '<!--')
+    .replace(/--\\>/g, '-->')
+    .replace(/<\\script/gi, '<script')
+  return JSON.parse(rawJson) as ParsedReport
+}
+
 describe('HTMLReporter', () => {
   let sut: ApexMutationHTMLReporter
   const testResults: ApexMutationTestResult = {
     sourceFile: 'TestClass',
     sourceFileContent: 'public class TestClass {}',
-    testFiles: ['TestClass_Test'],
+    // Deliberately not alphabetical — pins that testFiles keys follow user
+    // (perimeter) order, not a sort.
+    testFiles: ['FooTest', 'BazTest', 'BarTest'],
     mutants: [
       {
         id: '1',
         mutatorName: 'IncrementMutator',
         status: 'Killed',
+        attribution: {
+          coveredBy: ['BarTest.testA', 'FooTest.testA'],
+          killedBy: ['FooTest.testA'],
+          testsCompleted: 2,
+        },
         location: {
           start: { line: 1, column: 0 },
           end: { line: 1, column: 10 },
@@ -36,6 +70,11 @@ describe('HTMLReporter', () => {
         id: '2',
         mutatorName: 'BoundaryConditionMutator',
         status: 'Survived',
+        attribution: {
+          coveredBy: ['FooTest.testB'],
+          killedBy: [],
+          testsCompleted: 1,
+        },
         location: {
           start: { line: 2, column: 0 },
           end: { line: 2, column: 10 },
@@ -62,6 +101,11 @@ describe('HTMLReporter', () => {
         status: 'Killed',
         statusReason:
           'System.NullPointerException: Attempt to de-reference a null object',
+        attribution: {
+          coveredBy: ['BarTest.testB'],
+          killedBy: ['BarTest.testB'],
+          testsCompleted: 1,
+        },
         location: {
           start: { line: 4, column: 0 },
           end: { line: 4, column: 10 },
@@ -122,6 +166,181 @@ describe('HTMLReporter', () => {
       expect(pendingMutant.coveredBy).toBeUndefined()
       expect(pendingMutant.testsCompleted).toBe(0)
       expect(pendingMutant.status).toBe('Pending')
+    })
+
+    it('Then keys testFiles by the perimeter in user order, each observed id present exactly once with name equal to id', async () => {
+      // Act
+      await sut.generateReport(testResults)
+
+      // Assert
+      const html = vi.mocked(writeFile).mock.calls[0][1] as string
+      const report = extractReport(html)
+      expect(Object.keys(report.testFiles!)).toEqual([
+        'FooTest',
+        'BazTest',
+        'BarTest',
+      ])
+      expect(report.testFiles!.FooTest.tests).toEqual([
+        { id: 'FooTest.testA', name: 'FooTest.testA' },
+        { id: 'FooTest.testB', name: 'FooTest.testB' },
+      ])
+      expect(report.testFiles!.BarTest.tests).toEqual([
+        { id: 'BarTest.testA', name: 'BarTest.testA' },
+        { id: 'BarTest.testB', name: 'BarTest.testB' },
+      ])
+      // BazTest is in the perimeter but no mutant's attribution names it
+      expect(report.testFiles!.BazTest.tests).toEqual([])
+      const allIds = Object.values(report.testFiles!).flatMap(f =>
+        f.tests.map(t => t.id)
+      )
+      expect(new Set(allIds).size).toBe(allIds.length)
+    })
+
+    it('Then emits per-mutant coveredBy, killedBy and testsCompleted from attribution', async () => {
+      // Act
+      await sut.generateReport(testResults)
+
+      // Assert
+      const html = vi.mocked(writeFile).mock.calls[0][1] as string
+      const report = extractReport(html)
+      const mutants = report.files['TestClass.cls'].mutants
+      const killedByBoth = mutants.find(m => m.id === '1')!
+      expect(killedByBoth.coveredBy).toEqual(['BarTest.testA', 'FooTest.testA'])
+      expect(killedByBoth.killedBy).toEqual(['FooTest.testA'])
+      expect(killedByBoth.testsCompleted).toBe(2)
+
+      const secondKilled = mutants.find(m => m.id === '4')!
+      expect(secondKilled.coveredBy).toEqual(['BarTest.testB'])
+      expect(secondKilled.killedBy).toEqual(['BarTest.testB'])
+      expect(secondKilled.testsCompleted).toBe(1)
+    })
+
+    it('Then omits killedBy when the attribution killedBy array is empty', async () => {
+      // Act
+      await sut.generateReport(testResults)
+
+      // Assert — mutant '2' is Survived: attribution.killedBy is []
+      const html = vi.mocked(writeFile).mock.calls[0][1] as string
+      const report = extractReport(html)
+      const survivedMutant = report.files['TestClass.cls'].mutants.find(
+        m => m.id === '2'
+      )!
+      expect(survivedMutant.coveredBy).toEqual(['FooTest.testB'])
+      expect(survivedMutant.killedBy).toBeUndefined()
+    })
+
+    it('Then omits coveredBy and killedBy and reports testsCompleted 0 when a mutant carries no attribution', async () => {
+      // Act
+      await sut.generateReport(testResults)
+
+      // Assert — mutant '3' is a CompileError: no attribution was ever recorded
+      const html = vi.mocked(writeFile).mock.calls[0][1] as string
+      const report = extractReport(html)
+      const compileErrorMutant = report.files['TestClass.cls'].mutants.find(
+        m => m.id === '3'
+      )!
+      expect(compileErrorMutant.coveredBy).toBeUndefined()
+      expect(compileErrorMutant.killedBy).toBeUndefined()
+      expect(compileErrorMutant.testsCompleted).toBe(0)
+    })
+
+    it('Then places an id case-insensitively under its differently-cased perimeter key', async () => {
+      // Arrange — perimeter spelled lowercase (user input), id qualified from
+      // the org's fullName casing
+      const caseInsensitiveResults: ApexMutationTestResult = {
+        sourceFile: 'TestClass',
+        sourceFileContent: 'public class TestClass {}',
+        testFiles: ['footest'],
+        mutants: [
+          {
+            id: '1',
+            mutatorName: 'IncrementMutator',
+            status: 'Killed',
+            attribution: {
+              coveredBy: ['FooTest.a'],
+              killedBy: ['FooTest.a'],
+              testsCompleted: 1,
+            },
+            location: {
+              start: { line: 1, column: 0 },
+              end: { line: 1, column: 10 },
+            },
+            replacement: '--',
+            original: '++',
+          },
+        ],
+      }
+
+      // Act
+      await sut.generateReport(caseInsensitiveResults)
+
+      // Assert
+      const html = vi.mocked(writeFile).mock.calls[0][1] as string
+      const report = extractReport(html)
+      expect(report.testFiles!.footest.tests).toEqual([
+        { id: 'FooTest.a', name: 'FooTest.a' },
+      ])
+    })
+
+    it('Then omits testFiles entirely when no mutant in a dry-run report carries attribution', async () => {
+      // Arrange — the dry-run shape: every mutant is Pending, none observed
+      const dryRunResults: ApexMutationTestResult = {
+        sourceFile: 'TestClass',
+        sourceFileContent: 'public class TestClass {}',
+        testFiles: ['FooTest'],
+        mutants: [
+          {
+            id: '1',
+            mutatorName: 'IncrementMutator',
+            status: 'Pending',
+            location: {
+              start: { line: 1, column: 0 },
+              end: { line: 1, column: 10 },
+            },
+            replacement: '--',
+            original: '++',
+          },
+        ],
+      }
+
+      // Act
+      await sut.generateReport(dryRunResults)
+
+      // Assert
+      const html = vi.mocked(writeFile).mock.calls[0][1] as string
+      const report = extractReport(html)
+      expect('testFiles' in report).toBe(false)
+    })
+
+    it('Then omits testFiles entirely when every mutant in the report is a CompileError', async () => {
+      // Arrange — the all-compile-error shape: nothing was ever run
+      const allCompileErrorResults: ApexMutationTestResult = {
+        sourceFile: 'TestClass',
+        sourceFileContent: 'public class TestClass {}',
+        testFiles: ['FooTest'],
+        mutants: [
+          {
+            id: '1',
+            mutatorName: 'IncrementMutator',
+            status: 'CompileError',
+            statusReason: 'Deployment failed: bad syntax',
+            location: {
+              start: { line: 1, column: 0 },
+              end: { line: 1, column: 10 },
+            },
+            replacement: '--',
+            original: '++',
+          },
+        ],
+      }
+
+      // Act
+      await sut.generateReport(allCompileErrorResults)
+
+      // Assert
+      const html = vi.mocked(writeFile).mock.calls[0][1] as string
+      const report = extractReport(html)
+      expect('testFiles' in report).toBe(false)
     })
 
     it('Then does NOT create the output directory (caller pre-validates existence)', async () => {
