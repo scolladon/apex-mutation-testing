@@ -8,9 +8,9 @@ on:
     paths-ignore:
       - "**.md"
 
+# Least-privilege default; jobs that need more escalate explicitly.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   build:

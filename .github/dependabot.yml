@@ -8,7 +8,7 @@ updates:
     commit-message:
       prefix: "build"
     groups:
-      actions:
+      github-actions:
         patterns:
           - "*"
 
@@ -20,13 +20,8 @@ updates:
     commit-message:
       prefix: "build"
     allow:
-      - dependency-type: "direct"
+      - dependency-type: "all"
     groups:
-      production-dependencies:
-        dependency-type: "production"
-        patterns:
-          - "*"
-      development-dependencies:
-        dependency-type: "development"
+      npm:
         patterns:
           - "*"

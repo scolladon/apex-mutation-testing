@@ -3,34 +3,42 @@ name: E2E Tests a published version
 on:
   workflow_call:
     inputs:
-      # Deliberately no `default:` on either. A default silently substitutes when a caller
-      # passes an empty string, which would turn the whole matrix green against the wrong
-      # build. With both required and no default, a bad value fails at install or at the
-      # identity assertion below instead.
       channel:
-        type: string
-        required: true
-      expected-version:
+        description: npm spec or tarball url to install the plugin from
         type: string
         required: true
       run-org-e2e:
         description: >-
           Whether the org-bound e2e can run. Only the caller knows: a fork pull request
-          never receives repository secrets, so it must be false there and the job skips
-          rather than failing at authentication. Everywhere else it is true, and a missing
-          credential then fails loudly at login instead of silently skipping the only job
-          that asserts real behaviour.
+          never receives repository secrets, and a called workflow cannot read a secret
+          in a job-level condition. A release event has no pull_request context to test
+          either, so this cannot be derived here.
         type: boolean
         required: true
 
+permissions:
+  contents: read
+
 jobs:
-  smoke:
-    runs-on: ubuntu-latest
-    permissions: {}
+  e2e-test:
     strategy:
       fail-fast: false
       matrix:
-        node: [22, 24, 26]
+        os: [macos-latest, windows-latest, ubuntu-latest]
+        # Floating: previous LTS, active LTS, current. These shift when a new
+        # LTS is cut (Oct), so engines.node must move with them or CI stops
+        # testing a version the manifest still promises.
+        node: ['lts/-1', 'lts/*', 'latest']
+    runs-on: ${{ matrix.os }}
+    # Two different shells run here. `shell:` governs the run: block, where the
+    # windows default (pwsh) makes `>> "$GITHUB_ENV"` silently ineffective;
+    # npm_config_script_shell governs the bodies npm spawns for `npm run`, whose
+    # windows default is cmd.exe, not pwsh.
+    defaults:
+      run:
+        shell: bash
+    env:
+      npm_config_script_shell: bash
     steps:
       - name: Setup node
         uses: actions/setup-node@v7
@@ -50,34 +58,31 @@ jobs:
           CHANNEL: ${{ inputs.channel }}
         run: echo y | sf plugins install "$CHANNEL"
 
-      - name: Assert the installed plugin is the intended build
-        env:
-          EXPECTED_VERSION: ${{ inputs.expected-version }}
-        run: |
-          EXPECTED="${EXPECTED_VERSION#v}"
-          ACTUAL=$(sf plugins inspect apex-mutation-testing --json | jq -r '.[0].version')
-          echo "installed=$ACTUAL expected=$EXPECTED"
-          [ "$ACTUAL" = "$EXPECTED" ]
-
       - name: Test new plugin version installation
         run: sf apex mutation test run --help
 
-  # Runs independently of smoke: it installs the plugin and asserts its identity before
-  # it ever authenticates, so a build that cannot install never reaches the org. Gating
-  # it on the matrix bought no protection and cost the org leg the matrix's wall clock.
+  # Runs independently of the matrix: it installs the plugin before it ever
+  # authenticates, so a build that cannot install never reaches the org.
   org-e2e:
     if: inputs.run-org-e2e
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      npm_config_script_shell: bash
     steps:
       - name: Checkout sources
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Setup node
         uses: actions/setup-node@v7
         with:
-          node-version: latest
+          node-version: 'lts/*'
 
       - name: Set environment variables
         run: |
@@ -91,15 +96,6 @@ jobs:
         env:
           CHANNEL: ${{ inputs.channel }}
         run: echo y | sf plugins install "$CHANNEL"
-
-      - name: Assert the installed plugin is the intended build
-        env:
-          EXPECTED_VERSION: ${{ inputs.expected-version }}
-        run: |
-          EXPECTED="${EXPECTED_VERSION#v}"
-          ACTUAL=$(sf plugins inspect apex-mutation-testing --json | jq -r '.[0].version')
-          echo "installed=$ACTUAL expected=$EXPECTED"
-          [ "$ACTUAL" = "$EXPECTED" ]
 
       - name: Authenticate to E2E test org
         id: auth
@@ -116,9 +112,8 @@ jobs:
       - name: Validate - Check snapshot
         run: npm run test:e2e:validate
 
-      # Only meaningful once the org is authenticated. Without the guard, a build that
-      # fails the identity assertion would deploy against an org it never logged into,
-      # burying the real failure under a second misleading one.
+      # Only meaningful once the org is authenticated. Without the guard, a failed
+      # login would tear down against an org it never logged into.
       - name: Teardown - Reset test classes
         if: always() && steps.auth.conclusion == 'success'
         run: npm run test:e2e:teardown

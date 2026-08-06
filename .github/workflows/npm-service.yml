@@ -4,12 +4,8 @@ name: NPM Service
 on:
   release:
     types: [published]
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened]
-    paths-ignore:
-      - "**.md"
 
+# Least-privilege default; the publish job escalates explicitly.
 permissions:
   contents: read
 
@@ -19,7 +15,6 @@ concurrency:
 
 jobs:
   publish:
-    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     outputs:
       channel: ${{ steps.publish.outputs.channel }}
@@ -27,10 +22,12 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
         with:
-          node-version: latest
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 'lts/*'
           registry-url: "https://registry.npmjs.org"
       - run: npm install -g npm@latest
       - uses: ./.github/actions/install
@@ -43,95 +40,10 @@ jobs:
           npm publish --provenance --access public --tag "latest-rc"
           echo "channel=apex-mutation-testing@$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
-  preview:
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.actor != 'dependabot[bot]'
-    runs-on: ubuntu-latest
-    outputs:
-      channel: ${{ steps.publish.outputs.urls }}
-      preview-version: ${{ steps.record.outputs.preview-version }}
-    permissions:
-      contents: read
-      # Only usable on a same-repo pull request; a fork's token is clamped to read
-      # regardless, which is why the comment step below is guarded rather than trusted.
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: latest
-      - uses: ./.github/actions/install
-
-      - run: npm run build
-
-      - name: Publish preview
-        id: publish
-        run: npm run preview:publish
-
-      - name: Record the preview
-        id: record
-        env:
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          URLS: ${{ steps.publish.outputs.urls }}
-        run: |
-          if [ -z "${URLS// }" ]; then
-            echo "::error::pkg-pr-new produced no preview URL"
-            exit 1
-          fi
-          case "$URLS" in
-            *[[:space:]]*)
-              echo "::error::expected exactly one preview URL, got: $URLS"
-              exit 1
-              ;;
-          esac
-          # --previewVersion always builds the version from the 7-char abbreviation.
-          echo "preview-version=0.0.0-preview-${HEAD_SHA:0:7}" >> "$GITHUB_OUTPUT"
-
-      # Fork pull requests cannot hold pull-requests: write, so they get no comment.
-      # pkg.pr.new's own comment stays off because it says `npm i <url>`, which is the
-      # wrong install command for a CLI plugin. CONTRIBUTING documents the URL shape.
-      - name: Comment the install command
-        if: github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          URL: ${{ steps.publish.outputs.urls }}
-          MARKER: "<!-- pkg-pr-new-preview -->"
-        run: |
-          cat > body.md <<EOF
-          $MARKER
-
-          Preview build for this pull request.
-
-          \`\`\`sh
-          sf plugins install $URL
-          \`\`\`
-
-          Previews are removed after a month without a download.
-          EOF
-
-          # Matched on our own marker, not with --edit-last: that is author-scoped, and
-          # the perf comparison comment shares this bot identity, so it would be the one
-          # overwritten. The author clause stops anyone planting a comment we then adopt.
-          EXISTING=$(gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments" \
-            --jq "[.[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$MARKER\")))] | .[0].id // empty")
-
-          if [ -n "$EXISTING" ]; then
-            gh api --method PATCH "repos/$REPO/issues/comments/$EXISTING" -F body=@body.md
-          else
-            gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" -F body=@body.md
-          fi
-
   e2e-tests:
-    needs: [publish, preview]
-    if: "!cancelled() && (needs.publish.result == 'success' || needs.preview.result == 'success')"
+    needs: [publish]
     uses: ./.github/workflows/run-e2e-tests.yml
     with:
-      channel: ${{ needs.publish.outputs.channel || needs.preview.outputs.channel }}
-      expected-version: ${{ github.event.release.tag_name || needs.preview.outputs.preview-version }}
-      # Only a fork pull request lacks the org credential, and only the caller can tell -
-      # a called workflow cannot read secrets in a job-level condition.
-      run-org-e2e: ${{ github.event_name == 'release' || github.event.pull_request.head.repo.full_name == github.repository }}
+      channel: ${{ needs.publish.outputs.channel }}
+      run-org-e2e: true
     secrets: inherit

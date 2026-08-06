@@ -112,16 +112,32 @@ npm run commit
 This repository uses [ls-engines](https://github.com/ljharb/ls-engines) to verify the running Node version is within the supported range and that `engines.node` stays consistent with the dependency graph.
 It runs as a blocking pre-push git hook and as a pull request check.
 
-### Dependency pinning
+### Dependency policy
 
-Runtime `dependencies` are pinned to exact versions so that consumers installing the plugin
-with `sf plugins install` resolve the same tree the project tested. Keep them exact when adding
-one — Dependabot's `versioning-strategy: increase` raises a pinned requirement in place rather
-than widening it, so grouped updates stay exact on their own. `devDependencies` keep their ranges.
+This repository is kept aligned with its three sibling plugins (`sfdx-git-delta`,
+`apex-mutation-testing`, `sf-git-merge-driver`, `dataset-loader`), so the rules below are
+identical in all four.
 
-Note what the pin does and does not buy: it caps only the direct dependencies a consumer
-resolves. The transitive majority still floats, and capping one of those would mean declaring
-the whole chain directly.
+- **Every dependency is pinned exactly** — runtime and dev alike. No `^`, no `~`, no ranges.
+  A range in a runtime dependency becomes non-determinism for consumers, and a range in a dev
+  dependency becomes drift between the four repositories.
+- **`.npmrc` sets `save-exact=true`**, so `npm install <package>` records an exact version by
+  default. This is the only mechanism enforcing the rule — keep the file. `save-exact` cannot
+  be expressed in `package.json`: npm reads it from `.npmrc` or the `npm_config_save_exact`
+  environment variable, and `publishConfig` applies at publish time only.
+- **Pins track current latest.** Dependabot moves them; its `versioning-strategy: increase`
+  raises a pinned requirement in place rather than widening it, so grouped updates stay exact.
+- **npm 12 is required** (`engines.npm: ">=12"`), and **no shrinkwrap is shipped**. npm 12
+  excludes `npm-shrinkwrap.json` from `npm pack` even when it is listed in `files`, silently
+  and with exit 0, so the mechanism is inert rather than merely unused.
+- **There is deliberately no lint for this.** `npm outdated` runs as a blocking check in CI
+  and catches a pin that has fallen behind latest, but it cannot see a range that still
+  resolves to latest. Adding a hand-edited range is caught in review, not by tooling.
+
+What the pinning does and does not buy: it caps only the direct dependencies a consumer
+resolves. The transitive majority still floats, and capping those would mean declaring the
+whole chain directly.
+
 
 ### PR linting
 
@@ -253,17 +269,18 @@ to [pkg.pr.new](https://pkg.pr.new). A bot comment on the pull request carries t
 command:
 
 ```sh
-sf plugins install https://pkg.pr.new/scolladon/apex-mutation-testing/apex-mutation-testing@<commit>
+sf plugins install https://pkg.pr.new/apex-mutation-testing@<commit>
 ```
 
-The preview is versioned `0.0.0-preview-<commit>`, so `sf plugins inspect apex-mutation-testing`
-tells you which build you are running. Preview builds are removed once they have gone a month
-without a download, and after six months in any case — reinstall from a fresh comment if an old
-link stops resolving.
+Previews are addressed by commit, not by pull request: each push produces a new URL, so read
+the install command again rather than re-running an earlier one. Preview builds are removed
+once they have gone a month without a download, and after six months in any case — reinstall
+from a fresh comment if an old link stops resolving.
 
 A preview from a fork is unreviewed contributor code, and installing a plugin executes arbitrary
-code with your Salesforce org credentials in reach. The bot comment marks fork builds explicitly;
-install those only in a disposable environment.
+code with your Salesforce org credentials in reach. Install those only in a disposable
+environment. Fork pull requests get no comment — their token is read-only — so the URL must be
+read from the `preview` job's log.
 
 Previews publish only once the [pkg-pr-new GitHub App](https://github.com/apps/pkg-pr-new) is
 installed on the repository. Without it the preview job fails with a self-describing 404.
