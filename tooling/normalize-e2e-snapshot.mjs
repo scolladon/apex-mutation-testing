@@ -42,6 +42,22 @@ const escapeJsonIsland = s =>
 
 const report = JSON.parse(unescapeJsonIsland(match[1]))
 
+const VOLATILE_PLACEHOLDER = 'E2E_TEST'
+
+// `killedBy` and `testsCompleted` are the only report fields a rerun can
+// legitimately change. The plugin runs tests with maxFailedTests: 0, so an
+// async run aborts on the first failure — which of a mutant's covering
+// methods gets there first is Salesforce's scheduling decision, not ours.
+// Masking them keeps the snapshot a byte-comparison while leaving everything
+// deterministic — coveredBy, testFiles, status, counts, locations — asserted
+// exactly. Same treatment as the run timestamp baked into every mutant id.
+const normaliseVolatileAttribution = mutant => {
+  if (mutant.killedBy) {
+    mutant.killedBy = [VOLATILE_PLACEHOLDER]
+  }
+  mutant.testsCompleted = 0
+}
+
 for (const fileData of Object.values(report.files)) {
   fileData.mutants.sort((a, b) => {
     const lineDiff = a.location.start.line - b.location.start.line
@@ -58,6 +74,7 @@ for (const fileData of Object.values(report.files)) {
 
   for (const mutant of fileData.mutants) {
     mutant.id = mutant.id.replace(/\d{13}/, 'E2E_TEST')
+    normaliseVolatileAttribution(mutant)
   }
 }
 
