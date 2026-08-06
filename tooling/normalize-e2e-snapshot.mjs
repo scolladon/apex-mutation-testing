@@ -9,9 +9,9 @@ const content = readFileSync(file, 'utf8')
 // `<script>…</script>` block. We strip the bundle (not what the e2e is
 // asserting; ~500KB of churn on every regen) and normalise the JSON.
 //
-// The data island is escape-hardened: </, <!--, -->, <script, and
-// line/paragraph separators are backslash-escaped. Reverse those before
-// JSON.parse, and reapply after re-serialising.
+// The data island is escape-hardened by escaping < > and the line/paragraph
+// separators as \uXXXX. Those are JSON escapes, so the island parses as-is and
+// needs no reverse transform — only the same escaping reapplied on the way out.
 const dataIslandRegex =
   /<script id="mutation-report-data" type="application\/json">([\s\S]+?)<\/script>/
 
@@ -22,25 +22,13 @@ if (!match) {
   process.exit(1)
 }
 
-const unescapeJsonIsland = s =>
-  s
-    .replaceAll('<\\/', '</')
-    .replaceAll('<\\!--', '<!--')
-    .replaceAll('--\\>', '-->')
-    .replaceAll(/<\\script/gi, '<script')
-    .replaceAll('\\u2028', '\u2028')
-    .replaceAll('\\u2029', '\u2029')
-
 const escapeJsonIsland = s =>
-  s
-    .replaceAll('</', '<\\/')
-    .replaceAll('<!--', '<\\!--')
-    .replaceAll('-->', '--\\>')
-    .replaceAll(/<script/gi, '<\\script')
-    .replaceAll('\u2028', '\\u2028')
-    .replaceAll('\u2029', '\\u2029')
+  s.replaceAll(
+    /[<>\u2028\u2029]/g,
+    character => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`
+  )
 
-const report = JSON.parse(unescapeJsonIsland(match[1]))
+const report = JSON.parse(match[1])
 
 const VOLATILE_PLACEHOLDER = 'E2E_TEST'
 

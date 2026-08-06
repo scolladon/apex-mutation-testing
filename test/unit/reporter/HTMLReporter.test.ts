@@ -27,18 +27,15 @@ interface ParsedReport {
   testFiles?: Record<string, { tests: { id: string; name: string }[] }>
 }
 
-// Reads the escape-hardened JSON data block back out of the generated HTML,
-// reversing the same neutralising transforms the existing tests apply inline.
+// Reads the JSON data block back out of the generated HTML exactly as the
+// browser does — JSON.parse on the raw island, no reverse transform. That is
+// the point: if the island were not valid JSON, this would throw rather than
+// quietly repair the document before asserting on it.
 const extractReport = (html: string): ParsedReport => {
   const reportMatch = html.match(
     /<script id="mutation-report-data" type="application\/json">(.+?)<\/script>/s
   )
-  const rawJson = reportMatch![1]
-    .replace(/<\\\//g, '</')
-    .replace(/<\\!--/g, '<!--')
-    .replace(/--\\>/g, '-->')
-    .replace(/<\\script/gi, '<script')
-  return JSON.parse(rawJson) as ParsedReport
+  return JSON.parse(reportMatch![1]) as ParsedReport
 }
 
 describe('HTMLReporter', () => {
@@ -153,13 +150,7 @@ describe('HTMLReporter', () => {
         /<script id="mutation-report-data" type="application\/json">(.+?)<\/script>/s
       )
       expect(reportMatch).not.toBeNull()
-      // The data block is escape-hardened; reverse the neutralising transforms
-      const rawJson = reportMatch![1]
-        .replace(/<\\\//g, '</')
-        .replace(/<\\!--/g, '<!--')
-        .replace(/--\\>/g, '-->')
-        .replace(/<\\script/gi, '<script')
-      const report = JSON.parse(rawJson)
+      const report = JSON.parse(reportMatch![1])
       const pendingMutant = report.files['TestClass.cls'].mutants.find(
         (m: { id: string }) => m.id === '5'
       )
@@ -434,8 +425,44 @@ describe('HTMLReporter', () => {
         /<script id="mutation-report-data" type="application\/json">(.+?)<\/script>/s
       )![1]
       expect(dataBlock).not.toContain('</script>')
-      // The neutralised form is <\/ ... matching our transform
-      expect(dataBlock).toContain('<\\/script')
+      expect(dataBlock).toContain('\\u003c')
+    })
+
+    // An Apex class that builds HTML or an email template carries these
+    // sequences in ordinary string literals. Neutralising them with escapes
+    // that are not valid JSON would leave the tokenizer safe but the document
+    // unparseable, and the page would render blank.
+    it('Then keeps the data block parseable when apex source carries comment and script sequences', async () => {
+      // Arrange
+      const htmlBuildingResults: ApexMutationTestResult = {
+        sourceFile: 'Mailer',
+        sourceFileContent:
+          "public class Mailer { static String BODY = '<!-- header --> <script>x</script>'; }",
+        testFiles: ['MailerTest'],
+        mutants: [
+          {
+            id: 'x',
+            mutatorName: 'InlineConstantMutator',
+            status: 'Survived',
+            location: {
+              start: { line: 1, column: 0 },
+              end: { line: 1, column: 1 },
+            },
+            replacement: '<!-- -->',
+            original: '1',
+          },
+        ],
+      }
+
+      // Act
+      await sut.generateReport(htmlBuildingResults)
+
+      // Assert — parses as the browser would, and round-trips the source intact
+      const html = vi.mocked(writeFile).mock.calls[0][1] as string
+      const result = extractReport(html)
+      expect(result.files['Mailer.cls'].source).toBe(
+        htmlBuildingResults.sourceFileContent
+      )
     })
 
     it('Then rejects a symlinked outputDir that dereferences out of cwd (Sec-LOW-1)', async () => {

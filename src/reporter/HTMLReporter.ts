@@ -209,15 +209,21 @@ function neutraliseScriptContent(content: string): string {
 
 /**
  * Serialise report data for safe embedding inside a <script type="application/json"> block.
- * Neutralises every character sequence a browser parser treats specially inside script content:
- * `</` (script-end sentinel), `<!--` (HTML comment open), `-->` (close), `<script`, and U+2028/2029.
+ *
+ * Escaping `<` and `>` as \uXXXX removes every sequence a browser parser treats
+ * specially inside script content \u2014 `</` (script-end sentinel), `<!--`, `-->`,
+ * `<script` \u2014 because none of them can be spelled without one of those two
+ * characters. U+2028/2029 are escaped for the same reason they always were.
+ *
+ * These are JSON escape sequences, so the island stays parseable as-is: the page
+ * calls JSON.parse on it directly, and so can any reader. The previous scheme
+ * inserted `\!`, `\>` and `\s`, which are not valid JSON escapes \u2014 it neutralised
+ * the tokenizer but produced a document JSON.parse rejects, turning any report
+ * whose Apex source contained `<!--`, `-->` or `<script` into a blank page.
  */
 function serializeReportForScript(report: unknown): string {
-  return JSON.stringify(report)
-    .replace(/<\//g, '<\\/')
-    .replace(/<!--/g, '<\\!--')
-    .replace(/-->/g, '--\\>')
-    .replace(/<script/gi, '<\\script')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029')
+  return JSON.stringify(report).replace(
+    /[<>\u2028\u2029]/g,
+    character => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`
+  )
 }
