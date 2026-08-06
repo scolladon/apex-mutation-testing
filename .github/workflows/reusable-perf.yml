@@ -9,21 +9,24 @@ on:
         default: false
 
 jobs:
+  # This job declares no `permissions:` block on purpose: it inherits the caller's, because
+  # the two call sites need different scopes (the main-push path pushes benchmark data to
+  # gh-pages, the pull-request path only comments). It also runs fully pull-request-controlled
+  # code - `npm ci`, `npm run test:perf`, `node test/perf/*.mjs` - in the same job that holds
+  # the token. Every call site must therefore declare an explicit, minimal `permissions:`
+  # block; adding one that does not is how untrusted code acquires whatever the caller grants.
   perf:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
-          node-version: latest
+          node-version: 'lts/*'
 
       - uses: google/wireit@setup-github-actions-caching/v2
 
@@ -31,7 +34,7 @@ jobs:
         uses: ./.github/actions/install
 
       - name: Checkout gh-pages baseline data
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: gh-pages
           path: gh-pages-data
@@ -103,7 +106,7 @@ jobs:
           benchmark-data-dir-path: dev/bench/memory
 
       - name: Upload benchmark report
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: perf-report
           path: |

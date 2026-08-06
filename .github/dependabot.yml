@@ -7,6 +7,10 @@ updates:
       interval: "monthly"
     commit-message:
       prefix: "build"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: "npm"
     directory: "/"
@@ -17,3 +21,7 @@ updates:
       prefix: "build"
     allow:
       - dependency-type: "all"
+    groups:
+      npm:
+        patterns:
+          - "*"

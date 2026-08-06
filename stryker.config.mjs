@@ -20,9 +20,13 @@ export default {
     fileName: 'reports/mutation/index.html',
   },
   concurrency: 2,
+  // Shared across the four sibling plugins: high 95 / low 90 / break 90.
+  // Note the PR job mutates only the files changed against origin/main, so the
+  // score it reports is scoped to that subset and is not comparable to a full
+  // run. That job is advisory (continue-on-error), so break never blocks it.
   thresholds: {
-    high: 80,
-    low: 60,
-    break: null,
+    high: 95,
+    low: 90,
+    break: 90,
   },
 }

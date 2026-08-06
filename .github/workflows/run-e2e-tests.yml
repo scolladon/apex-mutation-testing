@@ -4,20 +4,46 @@ on:
   workflow_call:
     inputs:
       channel:
+        description: npm spec or tarball url to install the plugin from
         type: string
-        default: latest-rc
+        required: true
+      run-org-e2e:
+        description: >-
+          Whether the org-bound e2e can run. Only the caller knows: a fork pull request
+          never receives repository secrets, and a called workflow cannot read a secret
+          in a job-level condition. A release event has no pull_request context to test
+          either, so this cannot be derived here.
+        type: boolean
+        required: true
+
+permissions:
+  contents: read
 
 jobs:
   e2e-test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+        # Floating: previous LTS, active LTS, current. These shift when a new
+        # LTS is cut (Oct), so engines.node must move with them or CI stops
+        # testing a version the manifest still promises.
+        node: ['lts/-1', 'lts/*', 'latest']
+    runs-on: ${{ matrix.os }}
+    # Two different shells run here. `shell:` governs the run: block, where the
+    # windows default (pwsh) makes `>> "$GITHUB_ENV"` silently ineffective;
+    # npm_config_script_shell governs the bodies npm spawns for `npm run`, whose
+    # windows default is cmd.exe, not pwsh.
+    defaults:
+      run:
+        shell: bash
+    env:
+      npm_config_script_shell: bash
     steps:
-      - name: Checkout sources
-        uses: actions/checkout@v6
-
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
-          node-version: latest
+          node-version: ${{ matrix.node }}
 
       - name: Set environment variables
         run: |
@@ -28,12 +54,51 @@ jobs:
         run: npm install -g @salesforce/cli
 
       - name: Install new plugin version
-        run: echo y | sf plugins install ${{ inputs.channel }}
+        env:
+          CHANNEL: ${{ inputs.channel }}
+        run: echo y | sf plugins install "$CHANNEL"
 
       - name: Test new plugin version installation
         run: sf apex mutation test run --help
 
+  # Runs independently of the matrix: it installs the plugin before it ever
+  # authenticates, so a build that cannot install never reaches the org.
+  org-e2e:
+    if: inputs.run-org-e2e
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      npm_config_script_shell: bash
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 'lts/*'
+
+      - name: Set environment variables
+        run: |
+          echo "SF_DISABLE_AUTOUPDATE=true" >> "$GITHUB_ENV"
+          echo "SF_DISABLE_TELEMETRY=true" >> "$GITHUB_ENV"
+
+      - name: Install cli
+        run: npm install -g @salesforce/cli
+
+      - name: Install new plugin version
+        env:
+          CHANNEL: ${{ inputs.channel }}
+        run: echo y | sf plugins install "$CHANNEL"
+
       - name: Authenticate to E2E test org
+        id: auth
         env:
           SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
         run: echo "$SFDX_AUTH_URL" | sf org login sfdx-url --alias e2e-test-org --set-default --sfdx-url-stdin
@@ -47,11 +112,13 @@ jobs:
       - name: Validate - Check snapshot
         run: npm run test:e2e:validate
 
+      # Only meaningful once the org is authenticated. Without the guard, a failed
+      # login would tear down against an org it never logged into.
       - name: Teardown - Reset test classes
-        if: always()
+        if: always() && steps.auth.conclusion == 'success'
         run: npm run test:e2e:teardown
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: e2e-test-report

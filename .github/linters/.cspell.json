@@ -28,6 +28,7 @@
     "cspell",
     "djlint",
     "dreamforce",
+    "esac",
     "htmlhint",
     "instantiator",
     "jwalton",
@@ -40,7 +41,6 @@
     "neutralised",
     "mjyhjbm",
     "mocharc",
-    "movetag",
     "nonoctal",
     "nycrc",
     "sali",
@@ -68,6 +68,8 @@
     "wagoid",
     "wireit",
     "worktrees",
-    "zizmor"
+    "zizmor",
+    "startswith",
+    "unreviewed"
   ]
 }

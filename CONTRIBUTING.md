@@ -112,6 +112,33 @@ npm run commit
 This repository uses [ls-engines](https://github.com/ljharb/ls-engines) to verify the running Node version is within the supported range and that `engines.node` stays consistent with the dependency graph.
 It runs as a blocking pre-push git hook and as a pull request check.
 
+### Dependency policy
+
+This repository is kept aligned with its three sibling plugins (`sfdx-git-delta`,
+`apex-mutation-testing`, `sf-git-merge-driver`, `dataset-loader`), so the rules below are
+identical in all four.
+
+- **Every dependency is pinned exactly** — runtime and dev alike. No `^`, no `~`, no ranges.
+  A range in a runtime dependency becomes non-determinism for consumers, and a range in a dev
+  dependency becomes drift between the four repositories.
+- **`.npmrc` sets `save-exact=true`**, so `npm install <package>` records an exact version by
+  default. This is the only mechanism enforcing the rule — keep the file. `save-exact` cannot
+  be expressed in `package.json`: npm reads it from `.npmrc` or the `npm_config_save_exact`
+  environment variable, and `publishConfig` applies at publish time only.
+- **Pins track current latest.** Dependabot moves them; its `versioning-strategy: increase`
+  raises a pinned requirement in place rather than widening it, so grouped updates stay exact.
+- **npm 12 is required** (`engines.npm: ">=12"`), and **no shrinkwrap is shipped**. npm 12
+  excludes `npm-shrinkwrap.json` from `npm pack` even when it is listed in `files`, silently
+  and with exit 0, so the mechanism is inert rather than merely unused.
+- **There is deliberately no lint for this.** `npm outdated` runs as a blocking check in CI
+  and catches a pin that has fallen behind latest, but it cannot see a range that still
+  resolves to latest. Adding a hand-edited range is caught in review, not by tooling.
+
+What the pinning does and does not buy: it caps only the direct dependencies a consumer
+resolves. The transitive majority still floats, and capping those would mean declaring the
+whole chain directly.
+
+
 ### PR linting
 
 When a PR is ready for merge we use the PR name to create the squash and merge commit message.
@@ -237,25 +264,30 @@ The plugins uses [sf cli parameters convention](https://github.com/salesforcecli
 
 ## Testing the plugin from a pull request
 
-To test SGD as a Salesforce CLI plugin from a pending pull request:
+Every pull request — including one opened from a fork — publishes a preview build of the plugin
+to [pkg.pr.new](https://pkg.pr.new). A bot comment on the pull request carries the exact install
+command:
 
-1. locate the comment with the beta version published in the pull request
-2. install the beta version `sf plugins install apex-mutation-testing@<beta-channel>`
-3. test the plugin!
+```sh
+sf plugins install https://pkg.pr.new/apex-mutation-testing@<commit>
+```
 
-## How to modify npm tags
+Previews are addressed by commit, not by pull request: each push produces a new URL, so read
+the install command again rather than re-running an earlier one. Preview builds are removed
+once they have gone a month without a download, and after six months in any case — reinstall
+from a fresh comment if an old link stops resolving.
 
-Execute the npm script `npm run devops:move-tag -- <version> <tag>`
-Ex: `npm run devops:move-tag -- 1.0.0 stable`
+A preview from a fork is unreviewed contributor code, and installing a plugin executes arbitrary
+code with your Salesforce org credentials in reach. Install those only in a disposable
+environment. Fork pull requests get no comment — their token is read-only — so the URL must be
+read from the `preview` job's log.
 
-Use it to move tags to a version, for example to move `stable` and `latest` tags to a new version.
-Or to downgrade `latest-rc` tag to a previous version.
+Previews publish only once the [pkg-pr-new GitHub App](https://github.com/apps/pkg-pr-new) is
+installed on the repository. Without it the preview job fails with a self-describing 404.
 
-## How to cleanup dev tags
+To go back to the released plugin:
 
-Execute the npm script `npm run devops:cleanup:dev-tag -- <dev-tag> <otp>` to clean up a single dev tag.
-Ex: `npm run devops:cleanup:dev-tag -- dev-101 123456`
-
-To clean up **all** dev tags at once: `npm run devops:cleanup:dev-tag:all -- <otp>`
-
-Both will deprecate all versions related to the dev tag(s) and remove the dist-tag(s) from the npm registry.
+```sh
+sf plugins uninstall apex-mutation-testing
+sf plugins install apex-mutation-testing@latest-rc
+```

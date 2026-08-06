@@ -8,9 +8,9 @@ on:
     paths-ignore:
       - "**.md"
 
+# Least-privilege default; jobs that need more escalate explicitly.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   build:
@@ -25,7 +25,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         id: release
         with:
           token: ${{ secrets.RELEASE_PAT }}
@@ -35,6 +35,10 @@ jobs:
     needs: [prepare-release]
     if: ${{ needs.prepare-release.outputs.release_created != 'true' }}
     uses: ./.github/workflows/reusable-perf.yml
+    permissions:
+      # auto-push writes the benchmark history to gh-pages. No pull-requests scope:
+      # comment-on-alert is off and the comparison comment only runs on the PR path.
+      contents: write
     secrets: inherit
     with:
       auto-push: true
