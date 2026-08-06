@@ -421,9 +421,9 @@ export class MutationTestingService {
       this.spinner.stop()
       throw new Error(
         `No tests were executed! Check that:\n` +
-          `- Test class(es) '${this.testClassPerimeter}' must exist\n` +
+          `- Test class(es) '${this.testClassPerimeter}' exist\n` +
           `- Test methods have @IsTest annotation\n` +
-          `- Test class is properly deployed`
+          `- Test class(es) are properly deployed`
       )
     }
 

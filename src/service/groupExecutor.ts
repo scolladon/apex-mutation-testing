@@ -198,52 +198,69 @@ export class GroupExecutor {
       }
     }
 
-    // Success path. Per-method outcomes when present (required for k>1
-    // attribution); fall back to summary-derived outcome when the test
-    // runner did not report per-method data (legacy behaviour for k=1).
+    const mutantResults = this.attributeOutcomes(group, testResult!)
+    return {
+      mutantResults,
+      progressMessage: this.buildGroupProgressMessage(mutantResults),
+    }
+  }
+
+  // Success path. Per-method outcomes when present (required for k>1
+  // attribution); fall back to the summary-derived outcome when the test runner
+  // did not report per-method data (legacy behaviour for k=1).
+  private attributeOutcomes(
+    group: MutationGroup,
+    testResult: TestResult
+  ): ApexMutationTestResult['mutants'] {
     const outcomeByMethod = new Map<TestMethodId, string>(
-      (testResult!.tests ?? []).map(t => [
+      (testResult.tests ?? []).map(t => [
         qualifyTestMethod(t.apexClass.fullName, t.methodName),
         t.outcome,
       ])
     )
     const summaryFallback =
-      testResult!.summary.outcome === 'Passed' ? 'Pass' : 'Fail'
-    const mutantResults = group.mutations.map(m => {
-      const myMethods =
-        this.testMethodsPerLine.get(m.target.startToken.line) ??
-        new Set<TestMethodId>()
-      // No covering tests (only possible in mocked or uncovered-line scenarios)
-      // → fall back to the summary outcome so behaviour matches the legacy
-      // evaluateMutation path. Nobody to attribute the verdict to, so no
-      // attribution — emitting coveredBy: [] for a Killed mutant would be a
-      // contradiction the schema cannot express.
-      if (myMethods.size === 0) {
-        const killed = summaryFallback !== 'Pass'
-        return this.buildMutantResult(m, killed ? 'Killed' : 'Survived')
-      }
+      testResult.summary.outcome === 'Passed' ? 'Pass' : 'Fail'
+    return group.mutations.map(mutation =>
+      this.buildAttributedResult(mutation, outcomeByMethod, summaryFallback)
+    )
+  }
 
-      const coveredBy = [...myMethods].sort()
-      const killedBy: TestMethodId[] = []
-      let testsCompleted = 0
-      for (const name of coveredBy) {
-        const outcome = outcomeByMethod.get(name)
-        if (outcome === undefined) continue
-        testsCompleted++
-        if (outcome !== 'Pass') killedBy.push(name)
-      }
-      const killed = coveredBy.some(
-        name => (outcomeByMethod.get(name) ?? summaryFallback) !== 'Pass'
-      )
-      return this.buildMutantResult(m, killed ? 'Killed' : 'Survived', {
-        attribution: { coveredBy, killedBy, testsCompleted },
-      })
-    })
-
-    return {
-      mutantResults,
-      progressMessage: this.buildGroupProgressMessage(mutantResults),
+  private buildAttributedResult(
+    mutation: ApexMutation,
+    outcomeByMethod: ReadonlyMap<TestMethodId, string>,
+    summaryFallback: string
+  ): ApexMutationTestResult['mutants'][number] {
+    const myMethods =
+      this.testMethodsPerLine.get(mutation.target.startToken.line) ??
+      new Set<TestMethodId>()
+    // No covering tests (only possible in mocked or uncovered-line scenarios)
+    // → fall back to the summary outcome so behaviour matches the legacy
+    // evaluateMutation path. Nobody to attribute the verdict to, so no
+    // attribution — emitting coveredBy: [] for a Killed mutant would be a
+    // contradiction the schema cannot express.
+    if (myMethods.size === 0) {
+      const killed = summaryFallback !== 'Pass'
+      return this.buildMutantResult(mutation, killed ? 'Killed' : 'Survived')
     }
+
+    const coveredBy = [...myMethods].sort()
+    const killedBy: TestMethodId[] = []
+    let testsCompleted = 0
+    for (const name of coveredBy) {
+      const outcome = outcomeByMethod.get(name)
+      if (outcome === undefined) continue
+      testsCompleted++
+      if (outcome !== 'Pass') killedBy.push(name)
+    }
+    // A method that never reported falls back to the run summary; deriving the
+    // verdict from the counts keeps it in lockstep with the attribution above,
+    // rather than re-expressing the kill rule a second way.
+    const someOutcomeMissing = testsCompleted < coveredBy.length
+    const killed =
+      killedBy.length > 0 || (someOutcomeMissing && summaryFallback !== 'Pass')
+    return this.buildMutantResult(mutation, killed ? 'Killed' : 'Survived', {
+      attribution: { coveredBy, killedBy, testsCompleted },
+    })
   }
 
   private hasCoverageGap(

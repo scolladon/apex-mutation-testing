@@ -812,7 +812,7 @@ describe('MutationTestingService', () => {
 
         // Act & Assert
         await expect(multiSut.process()).rejects.toThrow(
-          "- Test class(es) 'A, B' must exist"
+          "- Test class(es) 'A, B' exist"
         )
       })
     })
@@ -3982,13 +3982,13 @@ describe('MutationTestingService', () => {
 
         // Act & Assert — the template literal interpolates ${this.testClassPerimeter}
         await expect(sut.process()).rejects.toThrow(
-          "- Test class(es) 'TestClassTest' must exist"
+          "- Test class(es) 'TestClassTest' exist"
         )
         await expect(sut.process()).rejects.toThrow(
           '- Test methods have @IsTest annotation'
         )
         await expect(sut.process()).rejects.toThrow(
-          '- Test class is properly deployed'
+          '- Test class(es) are properly deployed'
         )
       })
     })

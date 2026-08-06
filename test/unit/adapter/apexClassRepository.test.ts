@@ -11,40 +11,49 @@ describe('ApexClassRepository', () => {
   const createMock = vi.fn()
   const retrieveMock = vi.fn()
   const deleteMock = vi.fn()
+  // All four sObject types share one createMock, so the call payloads alone
+  // cannot say which type each create hit. Recording the type makes the
+  // container/member/request sequence assertable.
+  const sobjectMock = vi.fn()
 
   beforeEach(() => {
     deleteMock.mockResolvedValue(undefined)
     connectionStub = {
       tooling: {
         sobject: (objectType: string) => {
-          if (objectType === 'ApexClass') {
-            return {
-              find: () => ({ execute: findMock }),
-            }
-          } else if (objectType === 'MetadataContainer') {
-            return {
-              create: createMock,
-              delete: deleteMock,
-            }
-          } else if (objectType === 'ApexClassMember') {
-            return {
-              create: createMock,
-            }
-          } else if (objectType === 'ContainerAsyncRequest') {
-            return {
-              create: createMock,
-              retrieve: retrieveMock,
-            }
-          }
-          return {
-            find: () => ({ execute: findMock }),
-            create: createMock,
-            retrieve: retrieveMock,
-          }
+          sobjectMock(objectType)
+          return buildSObjectStub(objectType)
         },
       },
     } as unknown as Connection
     sut = new ApexClassRepository(connectionStub)
+
+    function buildSObjectStub(objectType: string) {
+      if (objectType === 'ApexClass') {
+        return {
+          find: () => ({ execute: findMock }),
+        }
+      } else if (objectType === 'MetadataContainer') {
+        return {
+          create: createMock,
+          delete: deleteMock,
+        }
+      } else if (objectType === 'ApexClassMember') {
+        return {
+          create: createMock,
+        }
+      } else if (objectType === 'ContainerAsyncRequest') {
+        return {
+          create: createMock,
+          retrieve: retrieveMock,
+        }
+      }
+      return {
+        find: () => ({ execute: findMock }),
+        create: createMock,
+        retrieve: retrieveMock,
+      }
+    }
   })
 
   afterEach(() => {
@@ -513,6 +522,40 @@ describe('ApexClassRepository', () => {
         })
         expect(retrieveMock).toHaveBeenCalledTimes(1)
         expect(retrieveMock).toHaveBeenCalledWith('request123')
+      })
+
+      it('then should address one container, one member per class, then one request', async () => {
+        // Arrange
+        const apexClasses = [
+          { Id: 'A1', Body: 'public class A {}' },
+          { Id: 'B1', Body: 'public class B {}' },
+          { Id: 'C1', Body: 'public class C {}' },
+        ]
+        createMock
+          .mockResolvedValueOnce({ id: 'container123' })
+          .mockResolvedValueOnce({ id: 'memberA' })
+          .mockResolvedValueOnce({ id: 'memberB' })
+          .mockResolvedValueOnce({ id: 'memberC' })
+          .mockResolvedValueOnce({ id: 'request123' })
+        retrieveMock.mockResolvedValue({
+          State: 'Completed',
+          Id: 'request123',
+        })
+
+        // Act
+        await sut.updateMany(apexClasses)
+
+        // Assert
+        const result = sobjectMock.mock.calls.map(([objectType]) => objectType)
+        expect(result).toEqual([
+          'MetadataContainer',
+          'ApexClassMember',
+          'ApexClassMember',
+          'ApexClassMember',
+          'ContainerAsyncRequest',
+          'ContainerAsyncRequest',
+          'MetadataContainer',
+        ])
       })
     })
 

@@ -1,6 +1,6 @@
 /**
  * Identity of a single test method, qualified by its declaring class:
- * `ClassName.methodName` (or `ns.ClassName.methodName` when namespaced).
+ * `ClassName.methodName`.
  *
  * A bare method name stops being a unique identity once the run spans more
  * than one test class — `setupData` can exist in both FooTest and BarTest.
@@ -14,6 +14,14 @@
  * Ids are minted exclusively by `qualifyTestMethod`, which always inserts the
  * separator — a dot-less `TestMethodId` is therefore unrepresentable and no
  * defensive check is needed when splitting one back apart.
+ *
+ * The split takes the LAST separator so a namespaced qualifier stays intact.
+ * That form does not arise today: ApexClassRepository.read pins its lookup to
+ * `NamespacePrefix: ''`, so a namespaced class cannot enter the perimeter and
+ * cannot be validated. It matters because consumers compare `testClassOf(id)`
+ * against the user-typed perimeter entry, which is never namespace-qualified —
+ * so were that filter ever relaxed, those comparisons would need to normalise
+ * both sides before this type could carry `ns.ClassName.methodName` safely.
  */
 export type TestMethodId = string
 
