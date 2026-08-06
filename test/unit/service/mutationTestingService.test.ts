@@ -125,6 +125,7 @@ describe('MutationTestingService', () => {
           'info.timeEstimateBreakdown': `Deploy: ${args?.[0]}/mutant | Test: ${args?.[1]}/mutant | Mutants: ${args?.[2]}`,
           'info.aggregatedCoverageOnly':
             'aggregate coverage mode — all tests run per mutant and score may be understated',
+          'info.zeroContributionTestClasses': `The following test class(es) contributed no covered lines and will not affect the mutation score: ${args?.[0]}`,
         }
         return templates[key] || key
       }),
@@ -427,7 +428,9 @@ describe('MutationTestingService', () => {
                 passing: 1,
                 failing: 0,
                 testsRan: 1,
-                testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+                testMethodsPerLine: new Map([
+                  [1, new Set(['TestClassTest.testMethodA'])],
+                ]),
               })
             }
           )
@@ -497,7 +500,9 @@ describe('MutationTestingService', () => {
                 passing: 1,
                 failing: 0,
                 testsRan: 1,
-                testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+                testMethodsPerLine: new Map([
+                  [1, new Set(['TestClassTest.testMethodA'])],
+                ]),
               })
             }
           )
@@ -549,7 +554,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -756,6 +763,246 @@ describe('MutationTestingService', () => {
       })
     })
 
+    describe('Given a perimeter class contributes zero covered lines', () => {
+      const buildZeroContributionSut = (
+        apexTestClassNames: string[]
+      ): MutationTestingService =>
+        new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassNames,
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+      it('Given per-test fidelity and only FooTest.testA is covered, When processing, Then the spinner warns that BarTest contributed nothing', async () => {
+        // Arrange
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([[1, new Set(['FooTest.testA'])]]),
+            })
+          }
+        )
+        const zeroContributionSut = buildZeroContributionSut([
+          'FooTest',
+          'BarTest',
+        ])
+
+        // Act
+        const result = await zeroContributionSut.process()
+
+        // Assert — the run is non-fatal and still completes
+        expect(result).toBeDefined()
+        expect(spinner.start).toHaveBeenCalledWith(
+          'The following test class(es) contributed no covered lines and will not affect the mutation score: BarTest',
+          undefined,
+          { stdout: true }
+        )
+      })
+
+      it('Given per-test fidelity and every perimeter class is covered, When processing, Then the spinner never warns', async () => {
+        // Arrange
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 2,
+              testMethodsPerLine: new Map([
+                [1, new Set(['FooTest.testA', 'BarTest.testA'])],
+              ]),
+            })
+          }
+        )
+        const zeroContributionSut = buildZeroContributionSut([
+          'FooTest',
+          'BarTest',
+        ])
+
+        // Act
+        await zeroContributionSut.process()
+
+        // Assert
+        expect(messagesMock.getMessage).not.toHaveBeenCalledWith(
+          'info.zeroContributionTestClasses',
+          expect.anything()
+        )
+      })
+
+      it('Given aggregate-only fidelity and BarTest contributes nothing, When processing, Then the spinner never warns', async () => {
+        // Arrange
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([[1, new Set(['FooTest.testA'])]]),
+            })
+          }
+        )
+        vi.mocked(ApexSettingsRepository).mockImplementation(
+          class {
+            isAggregateCoverageOnly = vi.fn().mockResolvedValue(true)
+          }
+        )
+        const zeroContributionSut = buildZeroContributionSut([
+          'FooTest',
+          'BarTest',
+        ])
+
+        // Act
+        await zeroContributionSut.process()
+
+        // Assert — AggregateCoverageStrategy has no per-test attribution, so
+        // the contribution set is not computable and the warning stays silent.
+        expect(messagesMock.getMessage).not.toHaveBeenCalledWith(
+          'info.zeroContributionTestClasses',
+          expect.anything()
+        )
+      })
+
+      it('Given the perimeter spelling differs only by case from the org fullName, When processing, Then the comparison is case-insensitive and no warning fires', async () => {
+        // Arrange
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([[1, new Set(['FooTest.testA'])]]),
+            })
+          }
+        )
+        const zeroContributionSut = buildZeroContributionSut(['footest'])
+
+        // Act
+        await zeroContributionSut.process()
+
+        // Assert — 'footest' (user spelling) vs 'FooTest' (org fullName) must
+        // still be recognized as the same class.
+        expect(messagesMock.getMessage).not.toHaveBeenCalledWith(
+          'info.zeroContributionTestClasses',
+          expect.anything()
+        )
+      })
+    })
+
     describe('When coverage exists but no mutations are generated', () => {
       it('then should throw an error with helpful message', async () => {
         // Arrange
@@ -784,7 +1031,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethod'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethod'])],
+              ]),
             })
           }
         )
@@ -938,7 +1187,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -994,7 +1245,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -1045,7 +1298,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -1109,7 +1364,13 @@ describe('MutationTestingService', () => {
               failing: 0,
               testsRan: 2,
               testMethodsPerLine: new Map([
-                [1, new Set(['testMethodA', 'testMethodB'])],
+                [
+                  1,
+                  new Set([
+                    'TestClassTest.testMethodA',
+                    'TestClassTest.testMethodB',
+                  ]),
+                ],
               ]),
             })
           }
@@ -1132,7 +1393,7 @@ describe('MutationTestingService', () => {
 
         // Assert
         expect(mockRunTestMethods).toHaveBeenCalledWith(
-          new Set(['testMethodA'])
+          new Set(['TestClassTest.testMethodA'])
         )
       })
     })
@@ -1171,7 +1432,13 @@ describe('MutationTestingService', () => {
               failing: 0,
               testsRan: 2,
               testMethodsPerLine: new Map([
-                [1, new Set(['testMethodA', 'testMethodB'])],
+                [
+                  1,
+                  new Set([
+                    'TestClassTest.testMethodA',
+                    'TestClassTest.testMethodB',
+                  ]),
+                ],
               ]),
             })
           }
@@ -1194,7 +1461,7 @@ describe('MutationTestingService', () => {
 
         // Assert
         expect(mockRunTestMethods).toHaveBeenCalledWith(
-          new Set(['testMethodB'])
+          new Set(['TestClassTest.testMethodB'])
         )
       })
     })
@@ -1237,8 +1504,8 @@ describe('MutationTestingService', () => {
               failing: 0,
               testsRan: 1,
               testMethodsPerLine: new Map([
-                [1, new Set(['testMethodA'])],
-                [2, new Set(['testMethodB'])],
+                [1, new Set(['TestClassTest.testMethodA'])],
+                [2, new Set(['TestClassTest.testMethodB'])],
               ]),
             })
           }
@@ -1271,6 +1538,183 @@ describe('MutationTestingService', () => {
             tree: mockAnalyzeFullResult.tree,
             tokenStream: mockAnalyzeFullResult.tokenStream,
           })
+        )
+      })
+    })
+
+    describe('Given a bare method name shared by two perimeter classes, When includeTestMethods holds the bare name, Then both classes survive the filter', () => {
+      it('Given FooTest.setup and BarTest.setup cover the same line, When includeTestMethods is ["setup"], Then both qualified ids are kept', async () => {
+        // Arrange
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        const mockRunTestMethods = vi.fn().mockResolvedValue({
+          summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 2 },
+        })
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = mockRunTestMethods
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 2,
+              testMethodsPerLine: new Map([
+                [1, new Set(['FooTest.setup', 'BarTest.setup'])],
+              ]),
+            })
+          }
+        )
+
+        const filteredSut = new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassNames: ['FooTest', 'BarTest'],
+            includeTestMethods: ['setup'],
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+        // Act
+        await filteredSut.process()
+
+        // Assert
+        expect(mockRunTestMethods).toHaveBeenCalledWith(
+          new Set(['FooTest.setup', 'BarTest.setup'])
+        )
+      })
+    })
+
+    describe('Given a bare method name shared by two perimeter classes, When includeTestMethods holds the qualified id, Then only that class survives the filter', () => {
+      it('Given FooTest.setup and BarTest.setup cover the same line, When includeTestMethods is ["FooTest.setup"], Then only FooTest.setup is kept', async () => {
+        // Arrange
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        const mockRunTestMethods = vi.fn().mockResolvedValue({
+          summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
+        })
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = mockRunTestMethods
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 2,
+              testMethodsPerLine: new Map([
+                [1, new Set(['FooTest.setup', 'BarTest.setup'])],
+              ]),
+            })
+          }
+        )
+
+        const filteredSut = new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassNames: ['FooTest', 'BarTest'],
+            includeTestMethods: ['FooTest.setup'],
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+        // Act
+        await filteredSut.process()
+
+        // Assert
+        expect(mockRunTestMethods).toHaveBeenCalledWith(
+          new Set(['FooTest.setup'])
+        )
+      })
+    })
+
+    describe('Given a bare method name shared by two perimeter classes, When excludeTestMethods holds the bare name, Then both classes are removed', () => {
+      it('Given FooTest.setup and BarTest.setup are the only tests on the line, When excludeTestMethods is ["setup"], Then the line is dropped and noCoverage is thrown', async () => {
+        // Arrange
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 2,
+                testsRan: 2,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 2,
+              testMethodsPerLine: new Map([
+                [1, new Set(['FooTest.setup', 'BarTest.setup'])],
+              ]),
+            })
+          }
+        )
+
+        const filteredSut = new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassNames: ['FooTest', 'BarTest'],
+            excludeTestMethods: ['setup'],
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+        // Act & Assert — a correctly bare-matched exclude drops both classes'
+        // setup and, with them, the line's only coverage.
+        await expect(filteredSut.process()).rejects.toThrow(
+          "No test coverage found for 'TestClass'."
         )
       })
     })
@@ -1312,7 +1756,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -1385,7 +1831,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -1554,7 +2002,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -1735,7 +2185,13 @@ describe('MutationTestingService', () => {
               failing: 0,
               testsRan: 2,
               testMethodsPerLine: new Map([
-                [1, new Set(['testMethodA', 'testMethodB'])],
+                [
+                  1,
+                  new Set([
+                    'TestClassTest.testMethodA',
+                    'TestClassTest.testMethodB',
+                  ]),
+                ],
               ]),
             })
           }
@@ -1746,7 +2202,7 @@ describe('MutationTestingService', () => {
 
         // Assert — all methods are passed, no filtering occurred
         expect(mockRunTestMethods).toHaveBeenCalledWith(
-          new Set(['testMethodA', 'testMethodB'])
+          new Set(['TestClassTest.testMethodA', 'TestClassTest.testMethodB'])
         )
       })
     })
@@ -1780,7 +2236,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -1848,7 +2306,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -1906,7 +2366,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -1950,7 +2412,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -2002,7 +2466,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -2060,7 +2526,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -2112,7 +2580,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -2155,7 +2625,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -2213,7 +2685,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -2413,7 +2887,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -2540,7 +3016,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -2600,7 +3078,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -2654,7 +3134,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -2715,7 +3197,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -2772,7 +3256,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -2844,7 +3330,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -2905,7 +3393,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -2946,7 +3436,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethod'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethod'])],
+              ]),
             })
           }
         )
@@ -2995,7 +3487,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -3043,7 +3537,14 @@ describe('MutationTestingService', () => {
               failing: 0,
               testsRan: 3,
               testMethodsPerLine: new Map([
-                [1, new Set(['testMethodA', 'testMethodB', 'testMethodC'])],
+                [
+                  1,
+                  new Set([
+                    'TestClassTest.testMethodA',
+                    'TestClassTest.testMethodB',
+                    'TestClassTest.testMethodC',
+                  ]),
+                ],
               ]),
             })
           }
@@ -3066,7 +3567,7 @@ describe('MutationTestingService', () => {
 
         // Assert — only testMethodC remains
         expect(mockRunTestMethods).toHaveBeenCalledWith(
-          new Set(['testMethodC'])
+          new Set(['TestClassTest.testMethodC'])
         )
       })
     })
@@ -3111,7 +3612,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -3156,7 +3659,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -3295,7 +3800,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -3349,7 +3856,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -3403,7 +3912,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -3463,7 +3974,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -3511,7 +4024,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -3562,7 +4077,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -3618,7 +4135,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -3674,7 +4193,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -3724,7 +4245,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -3774,7 +4297,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -3838,7 +4363,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )
@@ -3903,7 +4430,9 @@ describe('MutationTestingService', () => {
               passing: 1,
               failing: 0,
               testsRan: 1,
-              testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
+              testMethodsPerLine: new Map([
+                [1, new Set(['TestClassTest.testMethodA'])],
+              ]),
             })
           }
         )

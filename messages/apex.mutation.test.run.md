@@ -68,6 +68,10 @@ No test coverage found for '%s'. Ensure '%s' tests exercise the code you want to
 
 Per-test coverage unavailable on this org due to "Store Only Aggregated Code Coverage" setting, using aggregate coverage instead - all tests will run per mutant (slower), and the mutation score may be understated because ApexCodeCoverageAggregate is a cumulative org-wide rollup, so lines covered only by other test classes produce mutants these test classes can never kill
 
+# info.zeroContributionTestClasses
+
+The following test class(es) contributed no covered lines and will not affect the mutation score: %s
+
 # error.blankTestClass
 
 Blank apex test class name found: '%s'. Remove empty entries from the -t/--test-class flag.
@@ -102,11 +106,11 @@ Mutator names to exclude
 
 # flags.include-test-methods.summary
 
-Test method names to include
+Test method names to include. Bare `methodName` applies to that method in every test class in the perimeter; qualified `ClassName.methodName` applies to that one class only.
 
 # flags.exclude-test-methods.summary
 
-Test method names to exclude
+Test method names to exclude. Bare `methodName` applies to that method in every test class in the perimeter; qualified `ClassName.methodName` applies to that one class only.
 
 # flags.threshold.summary
 

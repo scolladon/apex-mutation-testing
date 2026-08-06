@@ -9,7 +9,11 @@ import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
-import type { TestMethodId } from '../type/TestMethodId.js'
+import {
+  type TestMethodId,
+  testClassOf,
+  testMethodOf,
+} from '../type/TestMethodId.js'
 import { ConfigReader } from './configReader.js'
 import {
   AggregateCoverageStrategy,
@@ -32,6 +36,14 @@ import type { SkipPattern } from './skipPattern.js'
 import { formatDuration, timeExecution } from './timeUtils.js'
 import { type TypeAnalysisResult, TypeDiscoverer } from './typeDiscoverer.js'
 import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
+
+// A filter entry matches a coverage-map id either by its full qualified form
+// (scoping the entry to one declaring class) or by its bare method name
+// (applying the entry to that method in every perimeter class). Both the CLI
+// flag and the .mutation-testing.json testMethods block land in the same
+// includeTestMethods/excludeTestMethods fields, so this single rule covers both.
+const matchesFilter = (id: TestMethodId, filterSet: Set<string>): boolean =>
+  filterSet.has(id) || filterSet.has(testMethodOf(id))
 
 export class MutationTestingService {
   protected readonly apexClassName: string
@@ -232,7 +244,7 @@ export class MutationTestingService {
     for (const [line, methods] of testMethodsPerLine) {
       const filtered = new Set(
         [...methods].filter(m =>
-          isInclude ? filterSet.has(m) : !filterSet.has(m)
+          isInclude ? matchesFilter(m, filterSet) : !matchesFilter(m, filterSet)
         )
       )
       if (filtered.size === 0) {
@@ -423,7 +435,36 @@ export class MutationTestingService {
         : 'Original tests passed'
     )
     this.filterTestMethods(testMethodsPerLine)
+    if (coverageStrategy.fidelity === 'per-test') {
+      this.warnZeroContributionTestClasses(testMethodsPerLine)
+    }
     return { testMethodsPerLine, testTime }
+  }
+
+  // AggregateCoverageStrategy has no per-test attribution, so this warning
+  // only makes sense — and is only called — under per-test fidelity.
+  private warnZeroContributionTestClasses(
+    testMethodsPerLine: Map<number, Set<TestMethodId>>
+  ): void {
+    const contributingClasses = new Set(
+      [...testMethodsPerLine.values()]
+        .flatMap(methods => [...methods])
+        .map(id => testClassOf(id).toLowerCase())
+    )
+    const silentClasses = this.apexTestClassNames.filter(
+      name => !contributingClasses.has(name.toLowerCase())
+    )
+    if (silentClasses.length === 0) {
+      return
+    }
+    this.spinner.start(
+      this.messages.getMessage('info.zeroContributionTestClasses', [
+        silentClasses.join(', '),
+      ]),
+      undefined,
+      { stdout: true }
+    )
+    this.spinner.stop()
   }
 
   private extractCoveredLines(
