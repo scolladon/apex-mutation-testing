@@ -81,8 +81,10 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │
 ├─ 2. VALIDATE
 │     ApexClassValidator
-│       ├─ read(MyClass)     → exists?
-│       └─ read(MyClassTest) → exists + @IsTest?
+│       ├─ read(MyClass) → exists?
+│       └─ read(name) for every class in the -t perimeter
+│            → exists + @IsTest? (Promise.all; every failure across
+│              the whole perimeter collected into one \n-joined error)
 │
 ├─ 3. FETCH SOURCE
 │     ApexClassRepository.read(MyClass) → { Id, Body }
@@ -109,9 +111,14 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │       → wrapped in timeExecution() → deployTime
 │       → validates class compiles (catches broken deps)
 │       → on failure: throw with Salesforce error details
-│     Fetch + deploy test class back to org
-│       → validates test class compiles
-│       → on failure: throw with Salesforce error details
+│     Fetch + deploy the whole test-class perimeter in ONE batched
+│       deploy via ApexClassRepository.updateMany(apexTestClasses)
+│       → one MetadataContainer, N ApexClassMembers, one
+│         ContainerAsyncRequest, one poll — O(1) deploy cycles
+│         regardless of how many test classes are in the perimeter
+│       → validates every test class compiles
+│       → on failure: throw with Salesforce error details naming
+│         each failing class (allComponentMessages, per file)
 │     Rationale: Salesforce only checks compilation of
 │       the deployed element, not its dependents. A class
 │       can be broken if a dependency changed after last
@@ -125,17 +132,30 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │       → knowledge, not inference: picks PerTestCoverageStrategy
 │         or AggregateCoverageStrategy up front (see Strategy
 │         Pattern — Coverage Fidelity)
-│     ApexTestRunner.getTestMethodsPerLines(MyClassTest, coverageStrategy)
+│     ApexTestRunner.getTestMethodsPerLines(perimeter[], coverageStrategy)
 │       → wrapped in timeExecution() → testTime
-│       → runTestAsynchronous (with code coverage)
-│       → testMethodsPerLine: Map<line, Set<testMethodName>>
-│         (shaped by the injected coverageStrategy)
+│       → ONE async run for the whole perimeter — apex-node's
+│         tests: TestItem[] takes every class natively, so an
+│         N-class perimeter costs no extra deploy or run cycle
+│       → testMethodsPerLine: Map<line, Set<TestMethodId>>
+│         (TestMethodId = "ClassName.methodName", minted here via
+│          qualifyTestMethod so identically-named methods in
+│          different perimeter classes never collide; shaped by
+│          the injected coverageStrategy; union across the
+│          perimeter under PerTestCoverageStrategy)
 │       ✓ All tests must pass (green baseline)
+│     Any perimeter class contributing zero covered lines is named
+│       in a non-fatal warning — per-test fidelity only, since
+│       AggregateCoverageStrategy has no per-test attribution to
+│       compute it from
 │
 ├─ 7b. FILTER TEST METHODS (if configured)
 │     buildTestMethodFilter() → predicate (or undefined)
 │     filterTestMethods(testMethodsPerLine, predicate)
 │       → filter testMethodsPerLine in-place
+│       → a filter entry matches a bare methodName (applies to
+│         that method in every perimeter class) or a qualified
+│         ClassName.methodName (applies to exactly one class)
 │       → lines with zero remaining methods are deleted
 │       → coveredLines derived after filtering
 │     Rationale: filtering early reduces both the number
@@ -187,8 +207,12 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │     │      }                                       │
 │     │                                              │
 │     │ c. ApexTestRunner.runTestMethods(            │
-│     │      testClass, testsForMutatedLine)         │
-│     │    → only tests covering the mutated line    │
+│     │      testMethodIds: Set<TestMethodId>)       │
+│     │    → only tests covering the mutated line,   │
+│     │      folded back per class (toTestItems)     │
+│     │    → outcomes matched by qualified id, so a  │
+│     │      same-named method in two perimeter      │
+│     │      classes is never conflated              │
 │     │                                              │
 │     │ d. Classify outcome:                         │
 │     │    Tests failed  → Killed                    │
@@ -349,15 +373,17 @@ Most orgs record per-test code coverage, but an org with **"Store Only Aggregate
 ```typescript
 interface CoverageStrategy {
   readonly fidelity: 'per-test' | 'aggregate'
-  getTestMethodsPerLine(testResult: TestResult): Map<number, Set<string>>
+  getTestMethodsPerLine(testResult: TestResult): Map<number, Set<TestMethodId>>
 }
 
 class PerTestCoverageStrategy implements CoverageStrategy   // fidelity: 'per-test'
 class AggregateCoverageStrategy implements CoverageStrategy // fidelity: 'aggregate'
 ```
 
-- `PerTestCoverageStrategy` filters each test's `perClassCoverage` down to the target class and maps each covered line to the set of test methods that actually covered it.
-- `AggregateCoverageStrategy` reads the target class's entry from `testResult.codecoverage` and assigns **every** covered line the full set of executed test method names — an over-approximation, since the aggregate rollup does not distinguish which test covered which line. This is the accepted "every test method runs per mutant" degradation.
+`TestMethodId` (`src/type/TestMethodId.ts`) is a `ClassName.methodName` string, minted by `qualifyTestMethod(test.apexClass.fullName, methodName)`. Both strategies qualify at this boundary — the one place a test method's declaring class is known — so a method name that exists in more than one perimeter class never collides downstream.
+
+- `PerTestCoverageStrategy` filters each test's `perClassCoverage` down to the target class and maps each covered line to the set of qualified test-method ids that actually covered it, unioned across every class in the perimeter.
+- `AggregateCoverageStrategy` reads the target class's entry from `testResult.codecoverage` and assigns **every** covered line the full set of qualified ids of every executed test method across the perimeter — an over-approximation, since the aggregate rollup does not distinguish which test covered which line. This is the accepted "every test method runs per mutant" degradation.
 - Both strategies lower-case the target class name once in their constructor for case-insensitive matching.
 
 **Selection is knowledge, not inference.** `MutationTestingService.selectCoverageStrategy` queries `ApexSettingsRepository.isAggregateCoverageOnly()` (a Tooling API read of `ApexSettings.IsAggregateCodeCoverageOnlyEnabled`) up front in `process()`, before the baseline test run, and picks the strategy accordingly:
@@ -369,7 +395,7 @@ const coverageStrategy = aggregateOnly
   : new PerTestCoverageStrategy(this.apexClassName)
 ```
 
-The chosen strategy is injected into `ApexTestRunner.getTestMethodsPerLines(testClassName, coverageStrategy)`, which delegates all coverage shaping to it. The adapter no longer guesses from the shape of an empty map — it is simply told which fidelity to use.
+The chosen strategy is injected into `ApexTestRunner.getTestMethodsPerLines(apexTestClassNames, coverageStrategy)`, which delegates all coverage shaping to it. The adapter no longer guesses from the shape of an empty map — it is simply told which fidelity to use.
 
 ### Template Method — BaseListener
 
@@ -772,25 +798,27 @@ A higher score means the test suite is better at detecting mutations. `RuntimeEr
 
 ## Targeted Test Execution
 
-A key performance optimization: only the test methods that **cover the mutated line** are executed per mutation.
+A key performance optimization: only the test methods that **cover the mutated line** are executed per mutation — across every class in the `-t` perimeter, unioned.
 
 ```text
-Baseline Test Run (with coverage)
+Baseline Test Run (one async run covering the whole perimeter)
     │
     ▼
-testMethodsPerLine: Map<line, Set<testMethodName>>
+testMethodsPerLine: Map<line, Set<TestMethodId>>   TestMethodId = "ClassName.methodName"
     │
-    │  Line 10 → { testA, testB }
-    │  Line 15 → { testA }
-    │  Line 20 → { testB, testC }
+    │  Line 10 → { FooTest.testA, BarTest.testB }
+    │  Line 15 → { FooTest.testA }
+    │  Line 20 → { FooTest.testB, BarTest.testB }
     │
     ▼
 Mutation on Line 15:
-    → only run testA (not testB, testC)
+    → only run FooTest.testA
 
 Mutation on Line 20:
-    → only run testB, testC (not testA)
+    → only run FooTest.testB, BarTest.testB
 ```
+
+Qualifying the token by its declaring class — minted once at the org boundary by both `CoverageStrategy` implementations and reused by `GroupExecutor` for outcome attribution — is what keeps kill/survive verdicts exact when two perimeter classes declare a method with the same name; a bare `methodName` map would silently collapse `FooTest.testA` and `BarTest.testA` into one entry.
 
 This dramatically reduces the number of test executions per mutation cycle.
 
@@ -815,11 +843,32 @@ ApexMutationTestResult
     │      symlinks whose target is outside the project root
     │
     ├─ transformApexResults()
+    │   ├─ testFiles?: keyed by every class in the perimeter, in
+    │   │   user-supplied order. Each entry lists that class's
+    │   │   observed test methods as { id, name } — id and name are
+    │   │   both the qualified "ClassName.methodName" — sorted; a
+    │   │   perimeter class that covered no tested mutant still gets
+    │   │   an entry with tests: []. Built from the union of every
+    │   │   mutant's coveredBy; the whole key is OMITTED (not an
+    │   │   empty object) when that union is empty — dry run, or
+    │   │   every mutant a CompileError — so the app renders no test
+    │   │   view at all.
     │   ├─ language: 'java' (Apex ≈ Java for highlighting)
     │   ├─ source: original Apex source
     │   └─ mutants[]:
     │       ├─ id, mutatorName, replacement
     │       ├─ status: Killed|Survived|NoCoverage|CompileError|RuntimeError|Pending
+    │       ├─ coveredBy? / killedBy?: qualified TestMethodIds
+    │       │   ("ClassName.methodName") read off the mutant's
+    │       │   attribution. Both absent when the mutant carries no
+    │       │   attribution (CompileError, RuntimeError, Pending —
+    │       │   no test outcomes were observed); killedBy is also
+    │       │   omitted, not emitted empty, when nothing killed it.
+    │       ├─ testsCompleted: covering methods that actually
+    │       │   reported before the run bailed. maxFailedTests: 0
+    │       │   aborts the async run at the first failure, so this
+    │       │   is normally lower than coveredBy.length on a killed
+    │       │   mutant — that gap is expected, not a bug.
     │       └─ location: { start: {line,column}, end: {line,column} }
     │
     ├─ loadMutationTestElements()
@@ -937,7 +986,7 @@ by line/column/mutatorName/replacement, replace volatile timestamps), then valid
 `git diff` against a committed HTML snapshot. The validate step displays the diff before
 failing for CI debugging. Teardown (class redeployment) always executes even on failure.
 
-**Test fixtures** (`test/classes/Mutation.cls` and `MutationTest.cls`) are shared across NUT and E2E tiers. `Mutation.cls` contains constructs triggering all 25 mutators. `MutationTest.cls` provides 100% line coverage.
+**Test fixtures** (`test/classes/Mutation.cls`, `MutationTest.cls` and `MutationBulkTest.cls`) are shared across NUT and E2E tiers. `Mutation.cls` contains constructs triggering all 25 mutators. `MutationTest.cls` provides 100% line coverage. `MutationBulkTest.cls` is the second perimeter class the E2E run exercises `-t MutationTest,MutationBulkTest` against: it declares one method, `testNum`, deliberately colliding with `MutationTest.testNum` while covering only `Mutation.num`, so the collision is observable without doubling every mutant's attribution or the run's async-test consumption.
 
 ---
 
@@ -1035,8 +1084,8 @@ Optional JSON file at `.mutation-testing.json` (or custom path via `--config-fil
 | --- | --- | --- |
 | `--include-mutators` | string[] | Mutator names to include (exclusive with exclude) |
 | `--exclude-mutators` | string[] | Mutator names to exclude (exclusive with include) |
-| `--include-test-methods` | string[] | Test method names to include (exclusive with exclude) |
-| `--exclude-test-methods` | string[] | Test method names to exclude (exclusive with include) |
+| `--include-test-methods` | string[] | Test method names to include — bare `methodName` or qualified `ClassName.methodName` (exclusive with exclude) |
+| `--exclude-test-methods` | string[] | Test method names to exclude — bare `methodName` or qualified `ClassName.methodName` (exclusive with include) |
 | `--threshold` | integer | Minimum mutation score (0-100) for success |
 | `--skip-patterns` | string[] | RE2 regex patterns — lines matching any pattern are excluded from mutation |
 | `--lines` | string[] | Line ranges (e.g., `10-50`, `100`) — only mutate lines within these ranges |

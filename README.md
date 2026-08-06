@@ -29,7 +29,7 @@ The apex-mutation-testing plugin implements this technique for Salesforce Apex c
 1. Parsing your Apex class to identify potential mutation points
 2. Generating mutated versions of your code with specific changes
 3. Deploying each mutated version to a Salesforce org
-4. Running your test class against each mutation
+4. Running your test class(es) against each mutation
 5. Analyzing the results to determine if your tests:
    - Detected the mutation (killed the mutant)
    - Failed to detect the mutation (created a zombie)
@@ -54,7 +54,7 @@ The more the test interacts with the database (dml or soql) the more times the t
 
 ### Test Coverage Requirements
 
-To maximize the benefits of mutation testing, your test class should have very high code coverage (ideally 100%) **AND** meaningful assert. Here's why:
+To maximize the benefits of mutation testing, your test class(es) should have very high code coverage (ideally 100%) **AND** meaningful assert. Here's why:
 
 1. **Accurate Metrics**: High coverage ensures the mutation score accurately reflects your test suite's effectiveness.
 
@@ -64,7 +64,7 @@ To maximize the benefits of mutation testing, your test class should have very h
 
 Before running mutation testing:
 
-- Ensure your test class achieves maximum coverage
+- Ensure your test class(es) achieve maximum coverage
 - Verify all critical paths are tested
 - Include edge case scenarios
 - Validate test assertions are comprehensive
@@ -78,7 +78,8 @@ Some orgs enable **"Store Only Aggregated Code Coverage"** (Setup → Apex Test 
 The plugin detects this automatically by querying `ApexSettings.IsAggregateCodeCoverageOnlyEnabled` via the Tooling API, and switches to aggregate coverage without requiring any flag. Two caveats apply when this mode is active:
 
 - **Slower**: without per-test coverage, every test method runs for every mutant, instead of only the tests that cover the mutated line.
-- **Score may be understated**: the aggregate coverage is a cumulative org-wide rollup, so lines covered only by other test classes still count as "covered" but their mutants can never be killed by this test class alone, surfacing as unkillable surviving mutants.
+- **Score may be understated**: the aggregate coverage is a cumulative org-wide rollup, so lines covered only by other test classes still count as "covered" but their mutants can never be killed by your test class(es) alone, surfacing as unkillable surviving mutants.
+- **Coarser report attribution**: without per-test coverage, the report's `coveredBy`/`killedBy` are class-level rather than method-level — every test class in the perimeter is listed against every mutant it could have run, not the specific method responsible.
 
 **Tip**: use "Clear test data" in Apex Test Execution before running mutation testing to reset the aggregate coverage rollup and get a truer score.
 
@@ -90,17 +91,30 @@ Before running the full mutation testing process, you can preview the mutations 
 sf apex mutation test run --apex-class MyClass --test-class MyClassTest --dry-run
 ```
 
-This runs your test class once to collect coverage data, then lists all mutations that would be generated without deploying any of them. Use it to estimate the scope of mutation testing for your class and verify that relevant mutations are being generated for your code patterns.
+This runs your test class(es) once to collect coverage data, then lists all mutations that would be generated without deploying any of them. Use it to estimate the scope of mutation testing for your class and verify that relevant mutations are being generated for your code patterns.
 
 In both normal and dry-run modes, the plugin displays a time estimate before starting the mutation loop, showing the estimated total duration along with a per-mutant breakdown of deployment and test execution time.
 
 ### Compilability Verification
 
-Before running mutation tests, the plugin deploys both the target class and its test class back to the org to verify they compile correctly. This step is necessary because Salesforce only validates compilation of the element being deployed, not its dependents. A class can exist on the org in a broken state if one of its dependencies was modified after it was last deployed.
+Before running mutation tests, the plugin deploys the target class, then deploys every test class in the perimeter together in a single batched deployment, to verify everything compiles correctly. This step is necessary because Salesforce only validates compilation of the element being deployed, not its dependents. A class can exist on the org in a broken state if one of its dependencies was modified after it was last deployed.
 
-Without this check, all mutants would result in `CompileError`, producing a misleading 100% mutation score. If either class fails to compile, the process stops early with a clear error message showing the compilation details.
+Without this check, all mutants would result in `CompileError`, producing a misleading 100% mutation score. If the target class or any test class fails to compile, the process stops early with a clear error message naming each failing class and its compilation details. The batched deployment costs a single deploy cycle no matter how many test classes are in the perimeter.
 
 This verification also serves as a baseline to measure deployment time, which is used to estimate the total mutation testing duration.
+
+### Multiple Test Classes
+
+A single Apex class is often covered by more than one test class. Pass `--test-class` (`-t`) multiple times, as a comma-delimited list, or mix both — the perimeter is the union either way:
+
+```sh
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest --test-class MyClassTest2
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest,MyClassTest2
+```
+
+Every class in the perimeter must exist and be marked `@IsTest`, or the command fails naming every offending class. Names are trimmed, blank entries are rejected, and duplicates are removed case-insensitively (keeping the first spelling you used) before the org is contacted.
+
+Coverage is the union of every class in the perimeter: a mutation only runs the test methods — from any class — that actually cover its line, and kill/survive results are attributed correctly even when two classes declare a method with the same name. If a class in the perimeter never contributes covered lines, the plugin names it in a warning and continues.
 
 ### Configuration
 
@@ -170,7 +184,7 @@ sf apex mutation test run --apex-class MyClass --test-class MyClassTest \
 
 #### Test Method Filtering
 
-Restrict which test methods are used to evaluate mutations using include or exclude lists.
+Restrict which test methods are used to evaluate mutations using include or exclude lists. A bare method name applies to that method in every test class in the perimeter; qualify it as `ClassName.methodName` to target one class only.
 
 ```sh
 # Only run those test methods
@@ -372,7 +386,7 @@ Evaluate test coverage quality by injecting mutations and measuring test detecti
 
 ```
 USAGE
-  $ sf apex mutation test run -c <value> -t <value> -o <value> [--json] [--flags-dir <value>] [-r <value>] [-d]
+  $ sf apex mutation test run -c <value> -t <value>... -o <value> [--json] [--flags-dir <value>] [-r <value>] [-d]
     [--include-mutators <value>... | --exclude-mutators <value>...] [--include-test-methods <value>... |
     --exclude-test-methods <value>...] [--threshold <value>] [-s <value>...] [-l <value>...] [--config-file <value>]
     [--mutation-grouping] [--api-version <value>]
@@ -387,13 +401,18 @@ FLAGS
   -r, --report-dir=<value>               [default: mutations] Path to the directory where mutation test reports will be
                                          generated
   -s, --skip-patterns=<value>...         RE2 regex patterns to skip lines from mutation (e.g., System\.debug)
-  -t, --test-class=<value>               (required) Apex test class name to validate mutations
+  -t, --test-class=<value>...            (required) Apex test class name(s) to validate mutations. Repeat the flag or
+                                         pass a comma-delimited list to cover a class with multiple test classes.
       --api-version=<value>              Override the api version used for api requests made by this command
       --config-file=<value>              Path to mutation testing configuration file
       --exclude-mutators=<value>...      Mutator names to exclude
-      --exclude-test-methods=<value>...  Test method names to exclude
+      --exclude-test-methods=<value>...  Test method names to exclude. Bare `methodName` applies to that method in every
+                                         test class in the perimeter; qualified `ClassName.methodName` applies to that
+                                         one class only.
       --include-mutators=<value>...      Mutator names to include (e.g. ArithmeticOperator, BoundaryCondition)
-      --include-test-methods=<value>...  Test method names to include
+      --include-test-methods=<value>...  Test method names to include. Bare `methodName` applies to that method in every
+                                         test class in the perimeter; qualified `ClassName.methodName` applies to that
+                                         one class only.
       --mutation-grouping                Group mutations whose covering tests are disjoint into a single deploy + test
                                          run. Reduces deployments and async test-run kickoffs at the cost of larger
                                          blast radius on compile errors. Runs the full pipeline: test-induced clique
@@ -421,6 +440,10 @@ EXAMPLES
   Preview mutations without running them:
 
     $ sf apex mutation test run --apex-class MyClass --test-class MyClassTest --dry-run
+
+  Run mutation testing on a class covered by multiple test classes:
+
+    $ sf apex mutation test run --apex-class MyClass --test-class MyClassTest,MyClassTest2
 ```
 
 _See code: [src/commands/apex/mutation/test/run.ts](https://github.com/scolladon/apex-mutation-testing/blob/main/src/commands/apex/mutation/test/run.ts)_
