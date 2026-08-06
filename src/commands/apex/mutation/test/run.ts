@@ -32,6 +32,8 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       char: 't',
       summary: messages.getMessage('flags.test-class.summary'),
       required: true,
+      multiple: true,
+      delimiter: ',',
     }),
     'report-dir': Flags.directory({
       char: 'r',
@@ -96,7 +98,7 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
 
     const parameters: ApexMutationParameter = {
       apexClassName: flags['apex-class'],
-      apexTestClassName: flags['test-class'],
+      apexTestClassNames: flags['test-class'],
       reportDir: flags['report-dir'],
       dryRun: flags['dry-run'],
       includeMutators: flags['include-mutators'],
@@ -110,7 +112,7 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       mutationGrouping: flags['mutation-grouping'],
     }
 
-    const configReader = new ConfigReader()
+    const configReader = new ConfigReader(messages)
     const resolvedParameters = await configReader.resolve(parameters)
 
     this.log(
@@ -118,7 +120,10 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
         flags['dry-run']
           ? 'info.DryRunCommandIsRunning'
           : 'info.CommandIsRunning',
-        [resolvedParameters.apexClassName, resolvedParameters.apexTestClassName]
+        [
+          resolvedParameters.apexClassName,
+          resolvedParameters.apexTestClassNames.join(', '),
+        ]
       )
     )
 

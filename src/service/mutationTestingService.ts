@@ -34,7 +34,7 @@ import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
 
 export class MutationTestingService {
   protected readonly apexClassName: string
-  protected readonly apexTestClassName: string
+  protected readonly apexTestClassNames: string[]
   protected readonly dryRun: boolean
   protected readonly includeMutators: string[] | undefined
   protected readonly excludeMutators: string[] | undefined
@@ -51,7 +51,7 @@ export class MutationTestingService {
     protected readonly connection: Connection,
     {
       apexClassName,
-      apexTestClassName,
+      apexTestClassNames,
       dryRun,
       includeMutators,
       excludeMutators,
@@ -64,7 +64,7 @@ export class MutationTestingService {
     protected readonly messages: Messages<string>
   ) {
     this.apexClassName = apexClassName
-    this.apexTestClassName = apexTestClassName
+    this.apexTestClassNames = apexTestClassNames
     this.dryRun = dryRun ?? false
     this.includeMutators = includeMutators
     this.excludeMutators = excludeMutators
@@ -73,6 +73,12 @@ export class MutationTestingService {
     this.skipPatterns = ConfigReader.compileSkipPatterns(skipPatterns)
     this.allowedLines = ConfigReader.parseLineRanges(lines)
     this.mutationGroupingEnabled = mutationGrouping ?? false
+  }
+
+  // Derived once so every log line, message and spinner text renders the
+  // same joined perimeter rather than recomputing join(', ') at each call site.
+  private get testClassPerimeter(): string {
+    return this.apexTestClassNames.join(', ')
   }
 
   public async process(): Promise<ApexMutationTestResult> {
@@ -344,15 +350,17 @@ export class MutationTestingService {
     apexClassRepository: ApexClassRepository
   ): Promise<void> {
     this.spinner.start(
-      `Verifying "${this.apexTestClassName}" apex test class compilation`,
+      `Verifying "${this.testClassPerimeter}" apex test class compilation`,
       undefined,
       { stdout: true }
     )
     try {
-      const apexTestClass = (await apexClassRepository.read(
-        this.apexTestClassName
-      )) as unknown as ApexClass
-      await apexClassRepository.update(apexTestClass)
+      const apexTestClasses = (await Promise.all(
+        this.apexTestClassNames.map(name => apexClassRepository.read(name))
+      )) as unknown as ApexClass[]
+      for (const apexTestClass of apexTestClasses) {
+        await apexClassRepository.update(apexTestClass)
+      }
       this.spinner.stop('Done')
     } catch (error: unknown) {
       this.spinner.stop()
@@ -360,7 +368,7 @@ export class MutationTestingService {
         error instanceof Error ? error.message : String(error)
       throw new Error(
         this.messages.getMessage('error.compilabilityCheckFailed', [
-          this.apexTestClassName,
+          this.testClassPerimeter,
           errorMessage,
         ])
       )
@@ -375,7 +383,7 @@ export class MutationTestingService {
     testTime: number
   }> {
     this.spinner.start(
-      `Executing "${this.apexTestClassName}" tests to get coverage`,
+      `Executing "${this.testClassPerimeter}" tests to get coverage`,
       undefined,
       { stdout: true }
     )
@@ -383,7 +391,7 @@ export class MutationTestingService {
     const { result: baselineResult, durationMs: testTime } =
       await timeExecution(() =>
         apexTestRunner.getTestMethodsPerLines(
-          this.apexTestClassName,
+          this.apexTestClassNames,
           coverageStrategy
         )
       )
@@ -402,7 +410,7 @@ export class MutationTestingService {
       this.spinner.stop()
       throw new Error(
         `No tests were executed! Check that:\n` +
-          `- Test class '${this.apexTestClassName}' exists\n` +
+          `- Test class(es) '${this.testClassPerimeter}' must exist\n` +
           `- Test methods have @IsTest annotation\n` +
           `- Test class is properly deployed`
       )
@@ -425,7 +433,7 @@ export class MutationTestingService {
       throw new Error(
         this.messages.getMessage('error.noCoverage', [
           this.apexClassName,
-          this.apexTestClassName,
+          this.testClassPerimeter,
         ])
       )
     }
@@ -512,7 +520,7 @@ export class MutationTestingService {
     return {
       sourceFile: this.apexClassName,
       sourceFileContent: apexClass.Body,
-      testFile: this.apexTestClassName,
+      testFiles: this.apexTestClassNames,
       mutants: mutations.map(mutation => ({
         id: `${this.apexClassName}-${mutation.target.startToken.line}-${mutation.target.startToken.charPositionInLine}-${mutation.target.startToken.tokenIndex}-${Date.now()}`,
         mutatorName: mutation.mutationName,
@@ -546,7 +554,7 @@ export class MutationTestingService {
     const executor = new GroupExecutor(
       apexClass,
       this.apexClassName,
-      this.apexTestClassName,
+      this.apexTestClassNames,
       this.apexClassContent,
       tokenStream,
       testMethodsPerLine,
@@ -582,7 +590,7 @@ export class MutationTestingService {
     return {
       sourceFile: this.apexClassName,
       sourceFileContent: apexClass.Body,
-      testFile: this.apexTestClassName,
+      testFiles: this.apexTestClassNames,
       mutants: orderedResults.filter(
         (r): r is ApexMutationTestResult['mutants'][number] => r !== null
       ),

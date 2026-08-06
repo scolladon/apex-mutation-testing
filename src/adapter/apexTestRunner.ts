@@ -9,11 +9,11 @@ export class ApexTestRunner {
   }
 
   public async getTestMethodsPerLines(
-    apexTestClassName: string,
+    apexTestClassNames: string[],
     coverageStrategy: CoverageStrategy
   ) {
     const testResult = await this.runTestAsynchronous(
-      { className: apexTestClassName },
+      apexTestClassNames.map(className => ({ className })),
       false
     )
     return {
@@ -25,22 +25,24 @@ export class ApexTestRunner {
   }
 
   public async runTestMethods(
-    className: string,
+    classNames: string[],
     testMethods: Set<string> = new Set<string>()
   ) {
-    return this.runTestAsynchronous({
-      className,
-      testMethods: Array.from(testMethods),
-    })
+    return this.runTestAsynchronous(
+      classNames.map(className => ({
+        className,
+        testMethods: Array.from(testMethods),
+      }))
+    )
   }
 
   private async runTestAsynchronous(
-    testPerimeter: { className: string; testMethods?: string[] },
+    tests: { className: string; testMethods?: string[] }[],
     skipCodeCoverage: boolean = true
   ) {
     return (await this.testService.runTestAsynchronous(
       {
-        tests: [testPerimeter],
+        tests,
         testLevel: TestLevel.RunSpecifiedTests,
         skipCodeCoverage,
         maxFailedTests: 0,

@@ -19,7 +19,7 @@ describe('HTMLReporter', () => {
   const testResults: ApexMutationTestResult = {
     sourceFile: 'TestClass',
     sourceFileContent: 'public class TestClass {}',
-    testFile: 'TestClass_Test',
+    testFiles: ['TestClass_Test'],
     mutants: [
       {
         id: '1',
@@ -157,7 +157,7 @@ describe('HTMLReporter', () => {
         sourceFile: 'Evil',
         sourceFileContent:
           'public class Evil { /* </script><script>alert(1) */ }',
-        testFile: 'EvilTest',
+        testFiles: ['EvilTest'],
         mutants: [
           {
             id: 'x',

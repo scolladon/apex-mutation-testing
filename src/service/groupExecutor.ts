@@ -58,7 +58,7 @@ export class GroupExecutor {
   constructor(
     private readonly apexClass: ApexClass,
     private readonly apexClassName: string,
-    private readonly apexTestClassName: string,
+    private readonly apexTestClassNames: string[],
     private readonly apexClassContent: string,
     private readonly tokenStream: CommonTokenStream,
     private readonly testMethodsPerLine: Map<number, Set<string>>,
@@ -145,7 +145,7 @@ export class GroupExecutor {
         Body: mutated,
       })
       testResult = await this.apexTestRunner.runTestMethods(
-        this.apexTestClassName,
+        this.apexTestClassNames,
         group.testMethods
       )
     } catch (error: unknown) {

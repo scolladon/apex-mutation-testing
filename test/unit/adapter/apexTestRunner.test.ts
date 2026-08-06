@@ -51,7 +51,7 @@ describe('ApexTestRunner', () => {
 
         // Act
         const result = await sut.getTestMethodsPerLines(
-          'TestClass',
+          ['TestClass'],
           strategyStub
         )
 
@@ -77,6 +77,39 @@ describe('ApexTestRunner', () => {
       })
     })
 
+    describe('given multiple test classes', () => {
+      it('then should build one test entry per class in perimeter order', async () => {
+        // Arrange
+        const mockTestResult = {
+          summary: {
+            outcome: 'Passed',
+            passing: 2,
+            failing: 0,
+            testsRan: 2,
+          },
+        }
+        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
+        const strategyStub = {
+          fidelity: 'per-test' as const,
+          getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
+        }
+
+        // Act
+        await sut.getTestMethodsPerLines(['A', 'B'], strategyStub)
+
+        // Assert
+        expect(runTestAsynchronousMock).toHaveBeenCalledWith(
+          {
+            tests: [{ className: 'A' }, { className: 'B' }],
+            testLevel: TestLevel.RunSpecifiedTests,
+            skipCodeCoverage: false,
+            maxFailedTests: 0,
+          },
+          true
+        )
+      })
+    })
+
     describe('given the test execution fails', () => {
       it('then should throw an error', async () => {
         // Arrange
@@ -90,7 +123,7 @@ describe('ApexTestRunner', () => {
 
         // Act & Assert
         await expect(
-          sut.getTestMethodsPerLines('TestClass', strategyStub)
+          sut.getTestMethodsPerLines(['TestClass'], strategyStub)
         ).rejects.toThrow('Test execution failed')
       })
     })
@@ -109,7 +142,7 @@ describe('ApexTestRunner', () => {
 
         // Act
         const result = await sut.runTestMethods(
-          'TestClass',
+          ['TestClass'],
           new Set<string>(['testMethod'])
         )
 
@@ -136,7 +169,7 @@ describe('ApexTestRunner', () => {
 
         // Act & Assert
         await expect(
-          sut.runTestMethods('TestClass', new Set<string>(['testMethod']))
+          sut.runTestMethods(['TestClass'], new Set<string>(['testMethod']))
         ).rejects.toThrow('Test execution failed')
       })
     })
@@ -150,7 +183,7 @@ describe('ApexTestRunner', () => {
         runTestAsynchronousMock.mockResolvedValue(mockTestResult)
 
         // Act
-        const result = await sut.runTestMethods('TestClass')
+        const result = await sut.runTestMethods(['TestClass'])
 
         // Assert
         expect(result).toEqual(mockTestResult)

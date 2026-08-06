@@ -165,7 +165,7 @@ describe('MutationTestingService', () => {
       connection,
       {
         apexClassName: 'TestClass',
-        apexTestClassName: 'TestClassTest',
+        apexTestClassNames: ['TestClassTest'],
       } as ApexMutationParameter,
       messagesMock
     )
@@ -439,7 +439,7 @@ describe('MutationTestingService', () => {
           expect(result).toEqual({
             sourceFile: 'TestClass',
             sourceFileContent: mockApexClass.Body,
-            testFile: 'TestClassTest',
+            testFiles: ['TestClassTest'],
             mutants: expectedMutants,
           })
           expect(progress.start).toHaveBeenCalled()
@@ -560,7 +560,7 @@ describe('MutationTestingService', () => {
           connection,
           {
             apexClassName: 'TestClass',
-            apexTestClassName: 'TestClassTest',
+            apexTestClassNames: ['TestClassTest'],
             dryRun: true,
           } as ApexMutationParameter,
           messagesMock
@@ -573,7 +573,7 @@ describe('MutationTestingService', () => {
         expect(result).toEqual({
           sourceFile: 'TestClass',
           sourceFileContent: mockApexClass.Body,
-          testFile: 'TestClassTest',
+          testFiles: ['TestClassTest'],
           mutants: [
             {
               id: expect.stringContaining('TestClass-'),
@@ -634,6 +634,124 @@ describe('MutationTestingService', () => {
         // Act & Assert
         await expect(sut.process()).rejects.toThrow(
           "No test coverage found for 'TestClass'. Ensure 'TestClassTest' tests exercise the code you want to mutation test."
+        )
+      })
+    })
+
+    describe('Given a two-class perimeter', () => {
+      const buildMultiClassSut = () =>
+        new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassNames: ['A', 'B'],
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+      it('When no coverage exists, Then error.noCoverage receives the joined perimeter', async () => {
+        // Arrange
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi
+              .fn()
+              .mockResolvedValue([] as MetadataComponentDependency[])
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map(),
+            })
+          }
+        )
+        const multiSut = buildMultiClassSut()
+
+        // Act & Assert
+        await expect(multiSut.process()).rejects.toThrow(
+          "No test coverage found for 'TestClass'. Ensure 'A, B' tests exercise the code you want to mutation test."
+        )
+      })
+
+      it('When baseline tests fail, Then the spinner text names the joined perimeter', async () => {
+        // Arrange
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi
+              .fn()
+              .mockResolvedValue([] as MetadataComponentDependency[])
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Failed',
+              passing: 0,
+              failing: 1,
+              testsRan: 1,
+              testMethodsPerLine: new Map(),
+            })
+          }
+        )
+        const multiSut = buildMultiClassSut()
+
+        // Act & Assert
+        await expect(multiSut.process()).rejects.toThrow(
+          'Original tests failed! Cannot proceed with mutation testing.'
+        )
+        expect(spinner.start).toHaveBeenCalledWith(
+          'Executing "A, B" tests to get coverage',
+          undefined,
+          { stdout: true }
+        )
+      })
+
+      it('When zero tests are executed, Then the bullet list names the joined perimeter', async () => {
+        // Arrange
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi
+              .fn()
+              .mockResolvedValue([] as MetadataComponentDependency[])
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 0,
+              failing: 0,
+              testsRan: 0,
+              testMethodsPerLine: new Map(),
+            })
+          }
+        )
+        const multiSut = buildMultiClassSut()
+
+        // Act & Assert
+        await expect(multiSut.process()).rejects.toThrow(
+          "- Test class(es) 'A, B' must exist"
         )
       })
     })
@@ -1003,7 +1121,7 @@ describe('MutationTestingService', () => {
           connection,
           {
             apexClassName: 'TestClass',
-            apexTestClassName: 'TestClassTest',
+            apexTestClassNames: ['TestClassTest'],
             includeTestMethods: ['testMethodA'],
           } as ApexMutationParameter,
           messagesMock
@@ -1014,7 +1132,7 @@ describe('MutationTestingService', () => {
 
         // Assert
         expect(mockRunTestMethods).toHaveBeenCalledWith(
-          'TestClassTest',
+          ['TestClassTest'],
           new Set(['testMethodA'])
         )
       })
@@ -1066,7 +1184,7 @@ describe('MutationTestingService', () => {
           connection,
           {
             apexClassName: 'TestClass',
-            apexTestClassName: 'TestClassTest',
+            apexTestClassNames: ['TestClassTest'],
             excludeTestMethods: ['testMethodA'],
           } as ApexMutationParameter,
           messagesMock
@@ -1077,7 +1195,7 @@ describe('MutationTestingService', () => {
 
         // Assert
         expect(mockRunTestMethods).toHaveBeenCalledWith(
-          'TestClassTest',
+          ['TestClassTest'],
           new Set(['testMethodB'])
         )
       })
@@ -1134,7 +1252,7 @@ describe('MutationTestingService', () => {
           connection,
           {
             apexClassName: 'TestClass',
-            apexTestClassName: 'TestClassTest',
+            apexTestClassNames: ['TestClassTest'],
             excludeTestMethods: ['testMethodA'],
           } as ApexMutationParameter,
           messagesMock
@@ -1207,7 +1325,7 @@ describe('MutationTestingService', () => {
           connection,
           {
             apexClassName: 'TestClass',
-            apexTestClassName: 'TestClassTest',
+            apexTestClassNames: ['TestClassTest'],
             includeMutators: ['ArithmeticOperator', 'BoundaryCondition'],
           } as ApexMutationParameter,
           messagesMock
@@ -1280,7 +1398,7 @@ describe('MutationTestingService', () => {
           connection,
           {
             apexClassName: 'TestClass',
-            apexTestClassName: 'TestClassTest',
+            apexTestClassNames: ['TestClassTest'],
             excludeMutators: ['ArithmeticOperator'],
           } as ApexMutationParameter,
           messagesMock
@@ -1388,7 +1506,7 @@ describe('MutationTestingService', () => {
           const mockResult = {
             sourceFile: 'TestClass',
             sourceFileContent: 'content',
-            testFile: 'TestClassTest',
+            testFiles: ['TestClassTest'],
             mutants,
           } as ApexMutationTestResult
 
@@ -1630,7 +1748,7 @@ describe('MutationTestingService', () => {
 
         // Assert — all methods are passed, no filtering occurred
         expect(mockRunTestMethods).toHaveBeenCalledWith(
-          'TestClassTest',
+          ['TestClassTest'],
           new Set(['testMethodA', 'testMethodB'])
         )
       })
@@ -1676,7 +1794,7 @@ describe('MutationTestingService', () => {
           connection,
           {
             apexClassName: 'TestClass',
-            apexTestClassName: 'TestClassTest',
+            apexTestClassNames: ['TestClassTest'],
             excludeTestMethods: ['testMethodA'],
           } as ApexMutationParameter,
           messagesMock
@@ -2940,7 +3058,7 @@ describe('MutationTestingService', () => {
           connection,
           {
             apexClassName: 'TestClass',
-            apexTestClassName: 'TestClassTest',
+            apexTestClassNames: ['TestClassTest'],
             excludeTestMethods: ['testMethodA', 'testMethodB'],
           } as ApexMutationParameter,
           messagesMock
@@ -2951,7 +3069,7 @@ describe('MutationTestingService', () => {
 
         // Assert — only testMethodC remains
         expect(mockRunTestMethods).toHaveBeenCalledWith(
-          'TestClassTest',
+          ['TestClassTest'],
           new Set(['testMethodC'])
         )
       })
@@ -3053,7 +3171,7 @@ describe('MutationTestingService', () => {
           connection,
           {
             apexClassName: 'TestClass',
-            apexTestClassName: 'TestClassTest',
+            apexTestClassNames: ['TestClassTest'],
             dryRun: true,
           } as ApexMutationParameter,
           messagesMock
@@ -3128,9 +3246,9 @@ describe('MutationTestingService', () => {
           }
         )
 
-        // Act & Assert — the template literal interpolates ${this.apexTestClassName}
+        // Act & Assert — the template literal interpolates ${this.testClassPerimeter}
         await expect(sut.process()).rejects.toThrow(
-          "- Test class 'TestClassTest' exists"
+          "- Test class(es) 'TestClassTest' must exist"
         )
         await expect(sut.process()).rejects.toThrow(
           '- Test methods have @IsTest annotation'
@@ -3671,7 +3789,7 @@ describe('MutationTestingService', () => {
           connection,
           {
             apexClassName: 'TestClass',
-            apexTestClassName: 'TestClassTest',
+            apexTestClassNames: ['TestClassTest'],
             dryRun: false,
           } as ApexMutationParameter,
           messagesMock
@@ -3735,7 +3853,7 @@ describe('MutationTestingService', () => {
           connection,
           {
             apexClassName: 'TestClass',
-            apexTestClassName: 'TestClassTest',
+            apexTestClassNames: ['TestClassTest'],
             skipPatterns: ['System\\.debug'],
           } as ApexMutationParameter,
           messagesMock
@@ -3800,7 +3918,7 @@ describe('MutationTestingService', () => {
           connection,
           {
             apexClassName: 'TestClass',
-            apexTestClassName: 'TestClassTest',
+            apexTestClassNames: ['TestClassTest'],
             lines: ['1-5'],
           } as ApexMutationParameter,
           messagesMock
@@ -3823,7 +3941,7 @@ describe('MutationTestingService', () => {
         const mockResult = {
           sourceFile: 'TestClass',
           sourceFileContent: 'content',
-          testFile: 'TestClassTest',
+          testFiles: ['TestClassTest'],
           mutants: [{ status: 'Killed' }, { status: 'Survived' }],
         } as ApexMutationTestResult
 
@@ -3839,7 +3957,7 @@ describe('MutationTestingService', () => {
         const mockResult = {
           sourceFile: 'TestClass',
           sourceFileContent: 'content',
-          testFile: 'TestClassTest',
+          testFiles: ['TestClassTest'],
           mutants: [
             { status: 'Killed' },
             { status: 'Killed' },
@@ -3959,7 +4077,7 @@ describe('MutationTestingService', () => {
           connection,
           {
             apexClassName: 'TestClass',
-            apexTestClassName: 'TestClassTest',
+            apexTestClassNames: ['TestClassTest'],
             mutationGrouping: true,
           } as ApexMutationParameter,
           messagesMock

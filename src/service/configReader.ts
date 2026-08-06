@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 
+import { Messages } from '@salesforce/core'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { compileSkipPattern, type SkipPattern } from './skipPattern.js'
 
@@ -21,6 +22,8 @@ interface MutationTestingConfig {
 }
 
 export class ConfigReader {
+  constructor(private readonly messages: Messages<string>) {}
+
   public async resolve(
     parameter: ApexMutationParameter
   ): Promise<ApexMutationParameter> {
@@ -29,6 +32,7 @@ export class ConfigReader {
 
     const resolved: ApexMutationParameter = {
       ...parameter,
+      apexTestClassNames: this.normalizePerimeter(parameter.apexTestClassNames),
       includeMutators:
         parameter.includeMutators ?? fileConfig?.mutators?.include,
       excludeMutators:
@@ -115,6 +119,25 @@ export class ConfigReader {
         throw new Error(`Invalid skip pattern '${pattern}': ${message}`)
       }
     })
+  }
+
+  // Trims each element, rejects a blank one, dedupes case-insensitively while
+  // keeping the first-seen spelling, and preserves user order. Downstream
+  // code (validator, service, executor) may then assume a non-empty,
+  // trimmed, duplicate-free perimeter.
+  private normalizePerimeter(names: string[]): string[] {
+    const seenByLowercase = new Map<string, string>()
+    for (const raw of names) {
+      const trimmed = raw.trim()
+      if (trimmed === '') {
+        throw new Error(this.messages.getMessage('error.blankTestClass', [raw]))
+      }
+      const key = trimmed.toLowerCase()
+      if (!seenByLowercase.has(key)) {
+        seenByLowercase.set(key, trimmed)
+      }
+    }
+    return [...seenByLowercase.values()]
   }
 
   private validate(parameter: ApexMutationParameter): void {

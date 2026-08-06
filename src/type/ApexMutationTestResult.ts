@@ -1,7 +1,7 @@
 export interface ApexMutationTestResult {
   sourceFile: string
   sourceFileContent: string
-  testFile: string
+  testFiles: string[]
   mutants: {
     id: string
     mutatorName: string
