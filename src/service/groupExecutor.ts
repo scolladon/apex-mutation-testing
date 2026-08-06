@@ -158,28 +158,7 @@ export class GroupExecutor {
       (batchError !== undefined ||
         this.hasCoverageGap(testResult!, group.testMethods))
     ) {
-      this.progress.update(completedSoFar, {
-        info: this.messages.getMessage('info.groupingFallback', [
-          String(group.mutations.length),
-        ]),
-      })
-      const fallbackResults: ApexMutationTestResult['mutants'] = []
-      for (const m of group.mutations) {
-        const singleton: MutationGroup = {
-          mutations: [m],
-          // extractCoveredLines guarantees the line is in the map.
-          testMethods: this.testMethodsPerLine.get(m.target.startToken.line)!,
-        }
-        const { mutantResults } = await this.evaluateGroup(
-          singleton,
-          completedSoFar
-        )
-        fallbackResults.push(...mutantResults)
-      }
-      return {
-        mutantResults: fallbackResults,
-        progressMessage: `Fallback for group of ${group.mutations.length} complete`,
-      }
+      return this.recurseIntoSingletons(group, completedSoFar)
     }
 
     // Leaf for k=1 with caught error: classify the error directly. (k>1 with
@@ -202,6 +181,39 @@ export class GroupExecutor {
     return {
       mutantResults,
       progressMessage: this.buildGroupProgressMessage(mutantResults),
+    }
+  }
+
+  // Re-evaluates each mutation in the group as its own singleton group,
+  // aggregating the leaf results into one fallback outcome for the caller.
+  private async recurseIntoSingletons(
+    group: MutationGroup,
+    completedSoFar: number
+  ): Promise<{
+    mutantResults: ApexMutationTestResult['mutants']
+    progressMessage: string
+  }> {
+    this.progress.update(completedSoFar, {
+      info: this.messages.getMessage('info.groupingFallback', [
+        String(group.mutations.length),
+      ]),
+    })
+    const fallbackResults: ApexMutationTestResult['mutants'] = []
+    for (const m of group.mutations) {
+      const singleton: MutationGroup = {
+        mutations: [m],
+        // extractCoveredLines guarantees the line is in the map.
+        testMethods: this.testMethodsPerLine.get(m.target.startToken.line)!,
+      }
+      const { mutantResults } = await this.evaluateGroup(
+        singleton,
+        completedSoFar
+      )
+      fallbackResults.push(...mutantResults)
+    }
+    return {
+      mutantResults: fallbackResults,
+      progressMessage: `Fallback for group of ${group.mutations.length} complete`,
     }
   }
 
