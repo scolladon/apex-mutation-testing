@@ -228,7 +228,7 @@ export class MutationTestingService {
 
   private filterTestMethods(
     testMethodsPerLine: Map<number, Set<TestMethodId>>
-  ): void {
+  ): Map<number, Set<TestMethodId>> {
     const filterSet = this.includeTestMethods
       ? new Set(this.includeTestMethods)
       : this.excludeTestMethods
@@ -236,23 +236,23 @@ export class MutationTestingService {
         : undefined
 
     if (!filterSet) {
-      return
+      return testMethodsPerLine
     }
 
     const isInclude = Boolean(this.includeTestMethods)
 
+    const filteredPerLine = new Map<number, Set<TestMethodId>>()
     for (const [line, methods] of testMethodsPerLine) {
       const filtered = new Set(
         [...methods].filter(m =>
           isInclude ? matchesFilter(m, filterSet) : !matchesFilter(m, filterSet)
         )
       )
-      if (filtered.size === 0) {
-        testMethodsPerLine.delete(line)
-      } else {
-        testMethodsPerLine.set(line, filtered)
+      if (filtered.size > 0) {
+        filteredPerLine.set(line, filtered)
       }
     }
+    return filteredPerLine
   }
 
   private createAdapters() {
@@ -432,11 +432,12 @@ export class MutationTestingService {
         ? `Original tests passed (${this.messages.getMessage('info.aggregatedCoverageOnly')})`
         : 'Original tests passed'
     )
-    this.filterTestMethods(testMethodsPerLine)
+    const filteredTestMethodsPerLine =
+      this.filterTestMethods(testMethodsPerLine)
     if (coverageStrategy.fidelity === 'per-test') {
-      this.warnZeroContributionTestClasses(testMethodsPerLine)
+      this.warnZeroContributionTestClasses(filteredTestMethodsPerLine)
     }
-    return { testMethodsPerLine, testTime }
+    return { testMethodsPerLine: filteredTestMethodsPerLine, testTime }
   }
 
   // AggregateCoverageStrategy has no per-test attribution, so this warning
