@@ -88,8 +88,8 @@ export class MutationTestingService {
     this.mutationGroupingEnabled = mutationGrouping ?? false
   }
 
-  // Derived once so every log line, message and spinner text renders the
-  // same joined perimeter rather than recomputing join(', ') at each call site.
+  // One canonical spelling of the joined test class perimeter, so every log
+  // line, message and spinner text within this service renders it identically.
   private get testClassPerimeter(): string {
     return this.apexTestClassNames.join(', ')
   }

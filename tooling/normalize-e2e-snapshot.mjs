@@ -61,7 +61,7 @@ for (const fileData of Object.values(report.files)) {
   })
 
   for (const mutant of fileData.mutants) {
-    mutant.id = mutant.id.replace(/\d{13}/, 'E2E_TEST')
+    mutant.id = mutant.id.replace(/\d{13}/, VOLATILE_PLACEHOLDER)
     normaliseVolatileAttribution(mutant)
   }
 }
