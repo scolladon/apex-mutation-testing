@@ -53,6 +53,9 @@ jobs:
       preview-version: ${{ steps.record.outputs.preview-version }}
     permissions:
       contents: read
+      # Only usable on a same-repo pull request; a fork's token is clamped to read
+      # regardless, which is why the comment step below is guarded rather than trusted.
+      pull-requests: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -66,14 +69,9 @@ jobs:
         id: publish
         run: npm run preview:publish
 
-      # The artifact deliberately carries ONLY the pull request number. The comment
-      # workflow reconstructs the preview URL from trusted context instead of trusting
-      # this job's output, because on a fork pull request this job runs from the fork's
-      # own workflow file and everything it writes is contributor-controlled.
-      - name: Record the preview for the comment workflow
+      - name: Record the preview
         id: record
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           URLS: ${{ steps.publish.outputs.urls }}
         run: |
@@ -87,29 +85,44 @@ jobs:
               exit 1
               ;;
           esac
-          # The comment workflow rebuilds this URL from trusted context rather than
-          # trusting the artifact, so the published URL must actually carry the
-          # abbreviated sha it will rebuild. pkg-pr-new downgrades to the full 40-char
-          # form if it cannot resolve the package on the registry, which would leave the
-          # comment pointing at a 404 with nothing else to catch it. Fail here instead.
-          case "$URLS" in
-            *"@${HEAD_SHA:0:7}") ;;
-            *)
-              echo "::error::published preview URL $URLS does not end with @${HEAD_SHA:0:7} - the comment workflow would rebuild a URL that does not resolve"
-              exit 1
-              ;;
-          esac
-
-          # --previewVersion always builds the version from the 7-char abbreviation,
-          # regardless of whether the published URL is compact or long form.
+          # --previewVersion always builds the version from the 7-char abbreviation.
           echo "preview-version=0.0.0-preview-${HEAD_SHA:0:7}" >> "$GITHUB_OUTPUT"
-          mkdir -p preview
-          printf '%s\n' "$PR_NUMBER" > preview/pr-number
 
-      - uses: actions/upload-artifact@v7
-        with:
-          name: preview
-          path: preview/
+      # Fork pull requests cannot hold pull-requests: write, so they get no comment.
+      # pkg.pr.new's own comment stays off because it says `npm i <url>`, which is the
+      # wrong install command for a CLI plugin. CONTRIBUTING documents the URL shape.
+      - name: Comment the install command
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          URL: ${{ steps.publish.outputs.urls }}
+          MARKER: "<!-- pkg-pr-new-preview -->"
+        run: |
+          cat > body.md <<EOF
+          $MARKER
+
+          Preview build for this pull request.
+
+          \`\`\`sh
+          sf plugins install $URL
+          \`\`\`
+
+          Previews are removed after a month without a download.
+          EOF
+
+          # Matched on our own marker, not with --edit-last: that is author-scoped, and
+          # the perf comparison comment shares this bot identity, so it would be the one
+          # overwritten. The author clause stops anyone planting a comment we then adopt.
+          EXISTING=$(gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --jq "[.[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$MARKER\")))] | .[0].id // empty")
+
+          if [ -n "$EXISTING" ]; then
+            gh api --method PATCH "repos/$REPO/issues/comments/$EXISTING" -F body=@body.md
+          else
+            gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" -F body=@body.md
+          fi
 
   e2e-tests:
     needs: [publish, preview]
@@ -118,5 +131,7 @@ jobs:
     with:
       channel: ${{ needs.publish.outputs.channel || needs.preview.outputs.channel }}
       expected-version: ${{ github.event.release.tag_name || needs.preview.outputs.preview-version }}
-      require-org: ${{ github.event_name == 'release' }}
+      # Only a fork pull request lacks the org credential, and only the caller can tell -
+      # a called workflow cannot read secrets in a job-level condition.
+      run-org-e2e: ${{ github.event_name == 'release' || github.event.pull_request.head.repo.full_name == github.repository }}
     secrets: inherit

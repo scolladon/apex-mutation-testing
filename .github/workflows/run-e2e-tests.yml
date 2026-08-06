@@ -9,64 +9,18 @@ on:
       expected-version:
         type: string
         required: true
-      require-org:
+      run-org-e2e:
         description: >-
-          Refuse to report success unless the org credential is present. Callers on a
-          path that must exercise a real org (the release path) set this to true, so a
-          revoked or renamed credential fails loudly instead of silently skipping the
-          only job that asserts real behaviour.
+          Whether the org-bound e2e can run. Only the caller knows: a fork pull request
+          never receives repository secrets, so it must be false there and the job skips
+          rather than failing at authentication. Everywhere else it is true, and a missing
+          credential then fails loudly at login instead of silently skipping the only job
+          that asserts real behaviour.
         type: boolean
-        default: false
+        required: true
 
 jobs:
-  preflight:
-    runs-on: ubuntu-latest
-    permissions: {}
-    outputs:
-      has-org: ${{ steps.detect.outputs.has-org }}
-    steps:
-      - name: Assert a channel was provided
-        env:
-          CHANNEL: ${{ inputs.channel }}
-        run: |
-          if [ -z "${CHANNEL// }" ]; then
-            echo "::error::channel input is empty - refusing to run e2e against an unknown build"
-            exit 1
-          fi
-
-      - name: Assert an expected version was provided
-        env:
-          EXPECTED: ${{ inputs.expected-version }}
-        run: |
-          if [ -z "${EXPECTED// }" ]; then
-            echo "::error::expected-version input is empty - refusing to run e2e against an unidentified build"
-            exit 1
-          fi
-
-      - name: Detect org credentials
-        id: detect
-        env:
-          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
-          REQUIRE_ORG: ${{ inputs.require-org }}
-        run: |
-          if [ -n "$SFDX_AUTH_URL" ]; then
-            echo "has-org=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # A fork pull request legitimately has no credential - it skips the org leg
-          # and stays green. Any path that declares it requires one must go red rather
-          # than report success on the strength of the smoke matrix alone.
-          if [ "$REQUIRE_ORG" = "true" ]; then
-            echo "::error::SFDX_AUTH_URL is missing but this path requires the org e2e - refusing to report success without it"
-            exit 1
-          fi
-
-          echo "has-org=false" >> "$GITHUB_OUTPUT"
-          echo "::notice::No org credential available - the org e2e will be skipped and only the smoke matrix will run"
-
   smoke:
-    needs: [preflight]
     runs-on: ubuntu-latest
     permissions: {}
     strategy:
@@ -74,6 +28,23 @@ jobs:
       matrix:
         node: [22, 24, 26]
     steps:
+      # Consumer-side on purpose. The `channel` input carries no `default:`, because a
+      # default silently substitutes when a caller passes an empty string and turns the
+      # whole matrix green against the wrong build. No producer-side check can close that.
+      - name: Assert a channel and an expected version were provided
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          EXPECTED: ${{ inputs.expected-version }}
+        run: |
+          if [ -z "${CHANNEL// }" ]; then
+            echo "::error::channel input is empty - refusing to run e2e against an unknown build"
+            exit 1
+          fi
+          if [ -z "${EXPECTED// }" ]; then
+            echo "::error::expected-version input is empty - refusing to run e2e against an unidentified build"
+            exit 1
+          fi
+
       - name: Setup node
         uses: actions/setup-node@v7
         with:
@@ -104,14 +75,11 @@ jobs:
       - name: Test new plugin version installation
         run: sf apex mutation test run --help
 
-  # Deliberately gated on preflight alone, not on smoke. This job installs the plugin
-  # and asserts its identity before it ever authenticates, so a build that cannot
-  # install never reaches the org - the extra gate bought no protection and cost the
-  # org leg the full wall clock of the matrix, including on the release path where an
-  # unrelated node-leg flake would have suppressed the only real-behaviour assertion.
+  # Runs independently of smoke: it installs the plugin and asserts its identity before
+  # it ever authenticates, so a build that cannot install never reaches the org. Gating
+  # it on the matrix bought no protection and cost the org leg the matrix's wall clock.
   org-e2e:
-    needs: [preflight]
-    if: needs.preflight.outputs.has-org == 'true'
+    if: inputs.run-org-e2e
     runs-on: ubuntu-latest
     permissions:
       contents: read

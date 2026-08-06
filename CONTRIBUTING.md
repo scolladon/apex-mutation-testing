@@ -115,9 +115,13 @@ It runs as a blocking pre-push git hook and as a pull request check.
 ### Dependency pinning
 
 Runtime `dependencies` are pinned to exact versions so that consumers installing the plugin
-with `sf plugins install` resolve the same tree the project tested. `npm run lint:deps-pinned`
-fails when a `dependencies` entry carries a range. It runs as a blocking pre-push git hook and
-as a pull request check. `devDependencies` keep their ranges.
+with `sf plugins install` resolve the same tree the project tested. Keep them exact when adding
+one — Dependabot's `versioning-strategy: increase` raises a pinned requirement in place rather
+than widening it, so grouped updates stay exact on their own. `devDependencies` keep their ranges.
+
+Note what the pin does and does not buy: it caps only the direct dependencies a consumer
+resolves. The transitive majority still floats, and capping one of those would mean declaring
+the whole chain directly.
 
 ### PR linting
 

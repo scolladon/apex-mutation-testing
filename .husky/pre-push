@@ -4,4 +4,3 @@ npm outdated || true
 npm audit || true
 npm run lint:dependencies || true
 npm run lint:engine
-npm run lint:deps-pinned

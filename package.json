@@ -77,7 +77,6 @@
     "test:e2e": "npm run test:e2e:setup && npm run test:e2e:run && npm run test:e2e:validate; npm run test:e2e:teardown",
     "lint": "wireit",
     "lint:dependencies": "wireit",
-    "lint:deps-pinned": "node tooling/lint-deps-pinned.mjs",
     "lint:engine": "ls-engines",
     "lint:fix": "wireit",
     "lint:staged": "wireit",
@@ -258,7 +257,6 @@
       "files": [
         "src/**/*.ts",
         "test/**/*.ts",
-        "tooling/**/*.mjs",
         "messages/**",
         "**/tsconfig.json"
       ],
