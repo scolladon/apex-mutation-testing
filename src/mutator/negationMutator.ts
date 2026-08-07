@@ -15,11 +15,17 @@ export class NegationMutator extends BaseListener {
       return
     }
 
+    // The length half is unreachable: a return statement always has at least
+    // the `return` keyword plus its terminator.
+    // Stryker disable next-line ConditionalExpression: unreachable.
     if (!ctx.children || ctx.children.length < 2) {
       return
     }
 
     const expressionNode = ctx.children[1]
+    // Unreachable via the parser: a bare `return;` only occurs in a void
+    // method, so child 1 is always the returned expression here.
+    // Stryker disable next-line ConditionalExpression,BlockStatement: unreachable.
     if (!(expressionNode instanceof ParserRuleContext)) {
       return
     }

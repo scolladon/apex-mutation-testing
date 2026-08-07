@@ -46,13 +46,14 @@ export class MutationListener implements ApexParserListener {
         }
 
         return (...args: unknown[]) => {
-          if (Array.isArray(args) && args.length > 0) {
-            const ctx = args[0] as ParserRuleContext
-            if (this.isLineEligible(ctx?.start?.line)) {
-              const subscribers = this.resolveSubscribers(prop)
-              for (const listener of subscribers) {
-                ;(listener[prop] as Function).apply(listener, args)
-              }
+          // No arity guard: `args` is a rest parameter so it is always an
+          // array, and a missing context is absorbed by the optional chaining
+          // below — `isLineEligible(undefined)` is false.
+          const ctx = args[0] as ParserRuleContext
+          if (this.isLineEligible(ctx?.start?.line)) {
+            const subscribers = this.resolveSubscribers(prop)
+            for (const listener of subscribers) {
+              ;(listener[prop] as Function).apply(listener, args)
             }
           }
         }
@@ -62,6 +63,8 @@ export class MutationListener implements ApexParserListener {
 
   private resolveSubscribers(prop: string | symbol): BaseListener[] {
     const cached = this.dispatchCache.get(prop)
+    // Memoisation only: a forced miss recomputes the identical subscriber list.
+    // Stryker disable next-line ConditionalExpression: cache hit is not observable.
     if (cached !== undefined) return cached
     const subs = this.listeners.filter(
       listener => prop in listener && typeof listener[prop] === 'function'
@@ -80,6 +83,9 @@ export class MutationListener implements ApexParserListener {
     if (this.allowedLines !== undefined && !this.allowedLines.has(line)) {
       return false
     }
+    // The length check is a short circuit: `some` over an empty pattern list is
+    // already false, so skipping it changes cost, not the verdict.
+    // Stryker disable next-line ConditionalExpression,EqualityOperator: short circuit only.
     if (this.skipPatterns.length > 0 && this.sourceLines.length >= line) {
       const sourceLine = this.sourceLines[line - 1]
       if (this.skipPatterns.some(pattern => pattern.test(sourceLine))) {

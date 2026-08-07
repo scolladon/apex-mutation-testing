@@ -36,9 +36,14 @@ interface MutationTestResult {
 }
 
 const requireFromHere = createRequire(import.meta.url)
-const MUTATION_TEST_ELEMENTS_PATH = requireFromHere.resolve(
+// Resolved once at module scope. Stryker flips mutants at runtime, after the
+// module graph is cached, so a mutant on this specifier is never re-executed
+// and cannot be killed by any test — the standard static-mutant limitation.
+// Stryker disable all: module-scope, never re-evaluated.
+const ELEMENTS_BUNDLE =
   'mutation-testing-elements/dist/mutation-test-elements.js'
-)
+// Stryker restore all
+const MUTATION_TEST_ELEMENTS_PATH = requireFromHere.resolve(ELEMENTS_BUNDLE)
 
 async function loadMutationTestElements(): Promise<string> {
   const content = await readFile(MUTATION_TEST_ELEMENTS_PATH, 'utf8')

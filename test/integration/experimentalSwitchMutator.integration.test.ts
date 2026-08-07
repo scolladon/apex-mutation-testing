@@ -26,6 +26,28 @@ describe('ExperimentalSwitchMutator Integration', () => {
     return listener.getMutations()
   }
 
+  describe('Given two when-clauses that sit on a single line', () => {
+    it('Then the atomic swap mutation is still generated', () => {
+      // Arrange — both clauses share one line, so the swap span collapses to
+      // start === stop. A coverage scan that stops before the end line would
+      // inspect no lines at all and wrongly report the span as uncovered.
+      const code = `
+        public class TestClass {
+          public void test(Integer value) {
+            switch on value { when 1 { handle1(); } when 2 { handle2(); } }
+          }
+        }
+      `
+
+      // Act — line 4 holds the whole switch and is covered
+      const mutations = parseAndMutate(code, new Set([4]))
+
+      // Assert
+      expect(mutations.length).toBeGreaterThan(0)
+      expect(mutations.some(m => m.replacement.includes('when 2'))).toBe(true)
+    })
+  })
+
   describe('Given Apex code with switch statement with multiple cases and else', () => {
     it('Then should generate all experimental mutations', () => {
       // Arrange

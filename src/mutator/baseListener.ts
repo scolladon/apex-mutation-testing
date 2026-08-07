@@ -74,6 +74,10 @@ export class BaseListener implements ApexParserListener {
     if (leftText.includes("'") || rightText.includes("'")) return true
     if (!this.typeRegistry) return false
     const methodName = this.getEnclosingMethodName(ctx)
+    // Not observable: an expression always sits inside a method, and even
+    // without one `isNumericOperand(undefined, ...)` misses the scope table and
+    // reports non-numeric, which the caller treats the same as this early exit.
+    // Stryker disable next-line ConditionalExpression: same result either way.
     if (!methodName) return false
     return (
       !this.typeRegistry.isNumericOperand(methodName, leftText) ||

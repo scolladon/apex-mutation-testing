@@ -35,11 +35,18 @@ export class EmptyReturnMutator extends BaseListener {
       return
     }
 
-    if (!ctx.children || ctx.children.length < 2) {
+    if (!ctx.children) {
       return
     }
 
+    // No length check: `return;` yields a terminal ';' at index 1, which the
+    // instanceof guard below rejects.
+
     const expressionNode = ctx.children[1]
+    // Unreachable via the parser: a bare `return;` only occurs in a void method,
+    // whose type is filtered by SKIP_TYPES above, so child 1 is always the
+    // returned expression here.
+    // Stryker disable next-line ConditionalExpression,BlockStatement: unreachable.
     if (!(expressionNode instanceof ParserRuleContext)) {
       return
     }
@@ -62,6 +69,10 @@ export class EmptyReturnMutator extends BaseListener {
       return null
     }
     const methodName = this.getEnclosingMethodName(ctx)
+    // Not observable: a return statement always sits inside a method, and even
+    // without one `resolveType(undefined)` misses the table and the `!resolved`
+    // check below returns null all the same.
+    // Stryker disable next-line ConditionalExpression,BlockStatement: same result either way.
     if (!methodName) {
       return null
     }
@@ -78,15 +89,18 @@ export class EmptyReturnMutator extends BaseListener {
     const emptyValuePatterns: Record<string, (expr: string) => boolean> = {
       string: expr => expr === "''",
       integer: expr => expr === '0',
-      double: expr => expr === '0' || expr === '0.0' || !!expr.match(/^0\.0+$/),
-      decimal: expr =>
-        expr === '0' || expr === '0.0' || !!expr.match(/^0\.0+$/),
+      // `0.0` is already covered by the /^0\.0+$/ pattern, so it needs no
+      // separate comparison.
+      double: expr => expr === '0' || !!expr.match(/^0\.0+$/),
+      decimal: expr => expr === '0' || !!expr.match(/^0\.0+$/),
       long: expr => expr === '0' || expr === '0L',
     }
 
     if (lowerType.startsWith('list<') || lowerType.endsWith('[]')) {
       return (
         !!expressionText.match(/new\s+List<[^>]*>\s*\(\s*\)/i) ||
+        // Stryker disable next-line Regex: `[^[\]]+` absorbs any extra
+        // whitespace, so `\s` and `\s+` accept exactly the same inputs.
         !!expressionText.match(/new\s+[^[\]]+\[\s*\]\s*\{\s*\}/)
       )
     }

@@ -238,6 +238,18 @@ describe('EmptyReturnMutator', () => {
         }
       )
 
+      it('Given an array initializer with repeated whitespace, When checking isEmpty, Then it is still recognised', () => {
+        // Arrange — `new  Integer[]{}` uses two spaces; a single-space pattern
+        // would stop matching.
+        const sut = new EmptyReturnMutator()
+
+        // Act
+        const result = sut.isEmptyValue('Integer[]', 'new  Integer[]{}')
+
+        // Assert
+        expect(result).toBe(true)
+      })
+
       it('Given Double type with 00.0 (not anchored at start), When checking isEmpty, Then returns false', () => {
         // Arrange
         const sut = new EmptyReturnMutator()

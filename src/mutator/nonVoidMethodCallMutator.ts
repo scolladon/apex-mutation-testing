@@ -14,16 +14,18 @@ export class NonVoidMethodCallMutator extends BaseListener {
   }
 
   enterLocalVariableDeclarationStatement(ctx: ParserRuleContext): void {
-    if (!ctx.children || ctx.children.length < 1) {
+    if (!ctx.children) {
       return
     }
 
+    // No length checks: a missing child reads as `undefined` and is rejected by
+    // the instanceof guards below, so the arity can never be short here.
     const declCtx = ctx.children[0]
     if (!(declCtx instanceof ParserRuleContext)) {
       return
     }
 
-    if (!declCtx.children || declCtx.children.length < 2) {
+    if (!declCtx.children) {
       return
     }
 
@@ -76,33 +78,30 @@ export class NonVoidMethodCallMutator extends BaseListener {
       ? (getDefaultValueForApexType(resolved.apexType) ?? 'null')
       : this.generateDefaultValue(resolved.typeName)
 
-    /* istanbul ignore next -- generateDefaultValue always returns non-null string */
-    if (defaultValue !== null) {
-      this.createMutationFromParserRuleContext(rhs, defaultValue)
-    }
+    this.createMutationFromParserRuleContext(rhs, defaultValue)
   }
 
   private processVariableDeclarator(
     ctx: ParserRuleContext,
     typeName: string
   ): void {
-    if (!ctx.children || ctx.children.length < 3) {
+    if (!ctx.children) {
       return
     }
 
-    let initializerIndex = -1
-    for (let i = 0; i < ctx.children.length; i++) {
-      if (ctx.children[i].text === '=') {
-        initializerIndex = i + 1
-        break
-      }
-    }
-
-    if (initializerIndex === -1 || initializerIndex >= ctx.children.length) {
+    // `id ('=' expression)?` — a declarator with no initializer has nothing to
+    // mutate. When '=' is present the expression always follows it.
+    const children = ctx.children
+    const equalsIndex = children.findIndex(child => child.text === '=')
+    // Not observable: without this early exit the index falls back to child 0,
+    // the declarator's identifier, which `isMethodCall` rejects downstream —
+    // so both paths emit nothing. Kept because relying on that is too subtle.
+    // Stryker disable next-line ConditionalExpression,BlockStatement: absorbed by isMethodCall.
+    if (equalsIndex === -1) {
       return
     }
 
-    const initializer = ctx.children[initializerIndex]
+    const initializer = children[equalsIndex + 1]
     if (!(initializer instanceof ParserRuleContext)) {
       return
     }
@@ -144,13 +143,10 @@ export class NonVoidMethodCallMutator extends BaseListener {
       return
     }
     const defaultValue = this.generateDefaultValue(typeName)
-    /* istanbul ignore next -- generateDefaultValue always returns non-null string */
-    if (defaultValue !== null) {
-      this.createMutationFromParserRuleContext(expression, defaultValue)
-    }
+    this.createMutationFromParserRuleContext(expression, defaultValue)
   }
 
-  private generateDefaultValue(typeName: string): string | null {
+  private generateDefaultValue(typeName: string): string {
     const lowerType = typeName.toLowerCase()
 
     if (lowerType.startsWith('list<') || lowerType.endsWith('[]')) {

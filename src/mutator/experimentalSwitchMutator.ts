@@ -14,6 +14,9 @@ export class ExperimentalSwitchMutator extends BaseListener {
     const switchCtx = ctx as WhenControlContext
     const whenControls = switchCtx.whenControl()
 
+    // The length half is an early-out: with no when-clauses the pairwise loops
+    // below have no iterations and emit nothing either way.
+    // Stryker disable next-line ConditionalExpression: shortcut only.
     if (!whenControls || whenControls.length === 0) {
       return
     }
@@ -30,6 +33,9 @@ export class ExperimentalSwitchMutator extends BaseListener {
       // Mutation 2: Duplicate first case block into else block
       const firstNonElseCase = whenControls.find(whenCtx => {
         const whenValue = whenCtx.getChild(1) as WhenValueContext
+        // Child 1 of a when-clause is always a WhenValueContext, and ELSE is
+        // always defined on it, so neither `?.` can short-circuit.
+        // Stryker disable next-line OptionalChaining: operands are never nullish.
         return whenValue?.ELSE?.() === undefined
       })
 

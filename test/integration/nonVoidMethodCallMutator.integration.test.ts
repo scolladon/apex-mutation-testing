@@ -65,6 +65,23 @@ describe('NonVoidMethodCallMutator Integration', () => {
       expect(mutations[0].mutationName).toBe('NonVoidMethodCallMutator')
     })
 
+    it('should not mutate a declaration that has no initializer', async () => {
+      // A bare declarator is just `id` with no '=' — there is no initializing
+      // expression to replace. Treating the missing '=' as index 0 would target
+      // the identifier itself.
+      const code = `
+        public class TestClass {
+          public void test() {
+            Integer x;
+          }
+        }
+      `
+
+      const mutations = await parseAndMutate(code, new Set([4]))
+
+      expect(mutations).toEqual([])
+    })
+
     it('should mutate String variable declaration with method call', async () => {
       const code = `
         public class TestClass {

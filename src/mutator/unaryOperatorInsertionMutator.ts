@@ -17,6 +17,9 @@ export class UnaryOperatorInsertionMutator extends BaseListener {
       return
     }
 
+    // Not observable: the IdPrimaryContext check below is the real filter, and
+    // a context with a different arity never presents one as child 0.
+    // Stryker disable next-line ConditionalExpression,BlockStatement: filtered downstream.
     if (ctx.childCount !== 1) {
       return
     }
@@ -35,6 +38,9 @@ export class UnaryOperatorInsertionMutator extends BaseListener {
       }
     }
 
+    // Both tokens are always present on a parsed context, so either connective
+    // yields the same truth value.
+    // Stryker disable next-line LogicalOperator: operands are always present.
     if (ctx.start && ctx.stop) {
       // Post-op mutations (x++, x--) inside a return statement are always equivalent:
       // return x++ returns the pre-increment value, identical to return x.

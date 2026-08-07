@@ -722,6 +722,60 @@ describe('MutantGenerator', () => {
       expect(result).toBe(classContent)
     })
 
+    it('given a filter object with neither include nor exclude when computing then every mutator stays enabled', () => {
+      // Arrange — an empty filter must behave like no filter at all; falling
+      // back to a non-empty name list would silently disable the registry.
+      const classContent =
+        'public class Test { public static integer m() { integer i = 0; ++i; return i; } }'
+
+      const warnSpy = vi
+        .spyOn(process, 'emitWarning')
+        .mockImplementation(() => undefined)
+
+      // Act
+      const { mutations } = sut.compute(
+        classContent,
+        new Set([1]),
+        undefined,
+        {}
+      )
+
+      // Assert — no filter names means no name to report as unknown
+      expect(mutations.length).toBeGreaterThan(0)
+      expect(warnSpy).not.toHaveBeenCalled()
+      warnSpy.mockRestore()
+    })
+
+    it('given non-overlapping mutations supplied in reverse token order when applied then both are rewritten', () => {
+      // Arrange — the overlap check compares each entry against its
+      // predecessor, so it is only sound once the list is in token order.
+      // Fed backwards without sorting, the later range's end is compared to
+      // the earlier range's start and reports a phantom overlap.
+      const classContent = [
+        'public class Test {',
+        '  public static integer m1() { integer i = 0; ++i; return i; }',
+        '  public static integer m2() { integer j = 0; ++j; return j; }',
+        '}',
+      ].join('\n')
+      const { mutations, tokenStream } = sut.compute(
+        classContent,
+        new Set([2, 3])
+      )
+      const incrementMutations = mutations.filter(
+        m => m.mutationName === 'IncrementMutator'
+      )
+
+      // Act
+      const result = sut.mutateMany(
+        [incrementMutations[1], incrementMutations[0]],
+        tokenStream
+      )
+
+      // Assert
+      expect((result.match(/--/g) ?? []).length).toBeGreaterThanOrEqual(2)
+      expect(result).not.toContain('++')
+    })
+
     it('given two mutations whose token ranges overlap when applied together then throws an explicit error', () => {
       // Arrange — same mutation passed twice ⇒ identical (overlapping) token ranges
       const classContent =

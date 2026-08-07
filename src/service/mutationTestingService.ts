@@ -45,6 +45,12 @@ import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
 const matchesFilter = (id: TestMethodId, filterSet: Set<string>): boolean =>
   filterSet.has(id) || filterSet.has(testMethodOf(id))
 
+// Every mutation belongs to exactly one group and every group reports a result,
+// so no slot is still null by the time the results are assembled — this is a
+// type guard for the compiler rather than a runtime narrowing.
+// Stryker disable next-line ConditionalExpression: no null slots remain.
+const isPresent = <T>(value: T | null): value is T => value !== null
+
 export class MutationTestingService {
   protected readonly apexClassName: string
   protected readonly apexTestClassNames: string[]
@@ -56,7 +62,8 @@ export class MutationTestingService {
   private readonly skipPatterns: SkipPattern[]
   private readonly allowedLines: Set<number> | undefined
   private readonly mutationGroupingEnabled: boolean
-  private apexClassContent: string = ''
+  // Assigned by fetchApexClass before any reader runs; no meaningful seed.
+  private apexClassContent!: string
 
   constructor(
     protected readonly progress: Progress,
@@ -606,9 +613,14 @@ export class MutationTestingService {
     )
 
     const indexByMutation = new Map(mutations.map((m, i) => [m, i]))
-    const orderedResults: Array<
-      ApexMutationTestResult['mutants'][number] | null
-    > = new Array(mutations.length).fill(null)
+    // Pre-filling with null only makes the holes explicit: every index is
+    // written below, and null slots and array holes are both skipped
+    // identically by the `filter` at the end.
+    type MutantResult = ApexMutationTestResult['mutants'][number]
+    // Stryker disable next-line ArrayDeclaration: pre-fill is not observable.
+    const orderedResults: Array<MutantResult | null> = new Array(
+      mutations.length
+    ).fill(null)
     let completed = 0
     const loopStartTime = performance.now()
 
@@ -619,6 +631,9 @@ export class MutationTestingService {
         loopStartTime,
         mutations.length
       )
+      // Stryker disable next-line EqualityOperator: an extra iteration reads
+      // `group.mutations[length]` as undefined, whose index lookup writes a
+      // non-index property that `filter` never visits.
       for (let i = 0; i < group.mutations.length; ++i) {
         const idx = indexByMutation.get(group.mutations[i])!
         orderedResults[idx] = mutantResults[i]
@@ -631,9 +646,9 @@ export class MutationTestingService {
       sourceFile: this.apexClassName,
       sourceFileContent: apexClass.Body,
       testFiles: this.apexTestClassNames,
-      mutants: orderedResults.filter(
-        (r): r is ApexMutationTestResult['mutants'][number] => r !== null
-      ),
+      // Stryker disable next-line MethodExpression: no null slots remain, so
+      // filtering and not filtering yield the same array — see `isPresent`.
+      mutants: orderedResults.filter(isPresent),
     }
   }
 

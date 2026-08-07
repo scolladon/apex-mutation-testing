@@ -1,6 +1,7 @@
 import {
   type GroupingResult,
   groupMutations,
+  groupMutationsWithInternals,
   type MutationGroup,
 } from '../../../src/service/mutationGrouper.js'
 import { ApexMutation } from '../../../src/type/ApexMutation.js'
@@ -432,6 +433,98 @@ describe('groupMutations', () => {
     a.groups.forEach((g, i) => {
       expect(b.groups[i].mutations).toEqual(g.mutations)
       expect(b.groups[i].testMethods).toEqual(g.testMethods)
+    })
+  })
+})
+
+describe('groupMutationsWithInternals — DSATUR assignment is deterministic', () => {
+  // Structural assertions (valid partition, group count) hold for any
+  // permutation of the DSATUR pick order, so they cannot pin the documented
+  // "saturation, then degree, then lowest index" contract. These fixtures were
+  // found by differential search: each one is an input where dropping one
+  // component of that ordering changes the resulting coloring.
+
+  const colorMutations = (testsPerMutation: string[][]) => {
+    const mutations = testsPerMutation.map((_, i) => mutationAt(i + 1))
+    const testMethodsPerLine = coverage(
+      testsPerMutation.map((tests, i) => [i + 1, tests])
+    )
+    return groupMutationsWithInternals(mutations, testMethodsPerLine)
+  }
+
+  it('given saturation and degree both discriminate when grouping then the coloring follows the full tiebreak chain', () => {
+    // Arrange — distinguishes: dropping the degree tiebreak, losing the
+    // saturation array, skipping the `saturation >` comparison, and inverting
+    // the saturation-equality test.
+    const result = colorMutations([
+      ['T0', 'T3'],
+      ['T0'],
+      ['T3'],
+      ['T2'],
+      ['T1', 'T3'],
+      ['T1', 'T2'],
+      ['T0'],
+    ])
+
+    // Assert
+    expect(result.internals.coloring).toEqual([0, 1, 2, 1, 1, 0, 2])
+    expect(result.lowerBound).toBe(3)
+    expect(result.groups).toHaveLength(3)
+  })
+
+  it('given two test buckets of equal maximal size when grouping then the first is taken as the witness clique', () => {
+    // Arrange — distinguishes `indices.length > best.length` from `>=` (which
+    // would seed the witness from the last maximal bucket instead of the
+    // first), and a decrementing saturation counter.
+    const result = colorMutations([
+      ['T0', 'T1'],
+      ['T2', 'T3'],
+      ['T0', 'T1', 'T2'],
+      ['T0', 'T1', 'T2', 'T3'],
+      ['T0', 'T3'],
+      ['T3'],
+    ])
+
+    // Assert
+    expect(result.internals.coloring).toEqual([0, 0, 1, 2, 3, 1])
+    expect(result.lowerBound).toBe(4)
+  })
+
+  it('given saturation ties that must be genuine when grouping then equality is compared, not assumed', () => {
+    // Arrange — distinguishes treating every saturation comparison as a tie,
+    // which hands each pick to the highest-degree vertex regardless of how
+    // constrained it actually is.
+    const result = colorMutations([
+      ['T0', 'T2'],
+      ['T1'],
+      ['T2'],
+      ['T0', 'T2'],
+      ['T0'],
+      ['T1'],
+      ['T1'],
+      ['T1'],
+      ['T1', 'T2'],
+      ['T0', 'T2'],
+    ])
+
+    // Assert
+    expect(result.internals.coloring).toEqual([0, 0, 1, 2, 1, 1, 2, 4, 3, 4])
+    expect(result.lowerBound).toBe(5)
+  })
+
+  it('given no mutations when grouping then the shared path yields empty groups and internals', () => {
+    // Arrange — there is no empty-input special case; this pins the behaviour
+    // the general path produces.
+    const result = groupMutationsWithInternals([], new Map())
+
+    // Assert
+    expect(result.groups).toEqual([])
+    expect(result.lowerBound).toBe(0)
+    expect(result.internals).toEqual({
+      adjacency: [],
+      witness: [],
+      coloring: [],
+      tests: [],
     })
   })
 })

@@ -1,4 +1,5 @@
-import { ParserRuleContext } from 'antlr4ts'
+import { ParserRuleContext, type Token } from 'antlr4ts'
+import type { ParseTree } from 'antlr4ts/tree/ParseTree.js'
 import {
   ApexLexer,
   ApexParser,
@@ -23,10 +24,19 @@ export interface TypeAnalysisResult {
 
 // Apex catch clause grammar: catch ( ExceptionType varName ) block
 // Indices from start: [0]=catch [1]=( [2]=ExceptionType [3]=varName [4]=) [5]=block
-// Minimum 6 children; ExceptionType and varName are at fixed offsets from the end.
+// ExceptionType and varName are at fixed offsets from the end.
 const CATCH_TYPE_OFFSET = 4 // ctx.children.length - 4 => ExceptionType
 const CATCH_VAR_OFFSET = 3 // ctx.children.length - 3 => varName
-const CATCH_MIN_CHILDREN = 6
+
+// Nesting delta for one character of a formal-parameter list, used to count
+// top-level commas without descending into generics. Only angle brackets nest:
+// the caller strips the outer parens, and an Apex formal parameter cannot
+// contain a nested pair (no calls, no default values).
+const delimiterDepthDelta = (ch: string): number => {
+  if (ch === '<') return 1
+  if (ch === '>') return -1
+  return 0
+}
 
 // @ts-ignore: ANTLR listener implementing only the hooks we need
 class TypeDiscoverListener implements ApexParserListener {
@@ -51,20 +61,11 @@ class TypeDiscoverListener implements ApexParserListener {
   }
 
   enterMethodDeclaration(ctx: ParserRuleContext): void {
-    /* c8 ignore start -- defensive guard: parser always produces well-formed contexts */
-    if (!ctx.children || ctx.children.length < 4) {
-      return
-    }
-    /* c8 ignore stop */
-
-    const returnType = ctx.children[0].text
-    const methodName = ctx.children[1].text
-
-    /* c8 ignore start -- defensive guard: parser always produces non-empty text */
-    if (!returnType || !methodName) {
-      return
-    }
-    /* c8 ignore stop */
+    // apex-parser always emits exactly 4 children for a methodDeclaration
+    // (typeRef, id, formalParameters, body), each with non-empty text.
+    const children = ctx.children as ParseTree[]
+    const returnType = children[0].text
+    const methodName = children[1].text
 
     this.currentMethodName = methodName
     this.currentMethodVariables = new Map()
@@ -76,32 +77,25 @@ class TypeDiscoverListener implements ApexParserListener {
       lowerReturnType.startsWith('list<') ||
       lowerReturnType.startsWith('set<')
     ) {
-      const match = returnType.match(/<(.+)>/)
-      /* istanbul ignore next -- defensive guard: parser always produces well-formed generics */
-      if (match?.[1]) {
-        elementType = match[1]
-      }
+      // Reached only when the return type already starts with `list<`/`set<`,
+      // so the generic body is always present and non-empty.
+      const match = returnType.match(/<(.+)>/) as RegExpMatchArray
+      elementType = match[1]
     } else if (lowerReturnType.startsWith('map<')) {
-      const match = returnType.match(/<(.+),(.+)>/)
-      /* istanbul ignore next -- defensive guard: parser always produces well-formed generics */
-      if (match?.[1] && match[2]) {
-        elementType = `${match[1]},${match[2]}`
-      }
+      // Likewise: a parsed `map<K,V>` always yields both capture groups.
+      const match = returnType.match(/<(.+),(.+)>/) as RegExpMatchArray
+      elementType = `${match[1]},${match[2]}`
     } else if (returnType.endsWith('[]')) {
       elementType = returnType.substring(0, returnType.length - 2)
     }
 
     const type = classifyApexType(returnType, this.matchers)
 
-    /* c8 ignore next -- defensive guard: parser always provides start/stop tokens */
-    const startLine = ctx.start?.line || 0
-    /* c8 ignore next -- defensive guard: parser always provides start/stop tokens */
-    const endLine = ctx.stop?.line || 0
-
+    // A parsed context always carries start/stop tokens with a 1-based line.
     const methodInfo: ApexMethod = {
       returnType,
-      startLine,
-      endLine,
+      startLine: ctx.start.line,
+      endLine: (ctx.stop as Token).line,
       type,
     }
 
@@ -124,41 +118,43 @@ class TypeDiscoverListener implements ApexParserListener {
   }
 
   private countFormalParameters(ctx: ParserRuleContext): number {
-    // Locate formalParameters child (child 3 in `<returnType> <name> ( formalParameters )`)
-    // and count comma-separated entries. Falls back to 0 if the shape is unexpected.
-    /* c8 ignore next -- defensive: parser always populates children on a method decl */
-    const children = ctx.children ?? []
-    for (const child of children) {
-      const text = child.text
-      if (text?.startsWith('(') && text.endsWith(')')) {
-        const inner = text.slice(1, -1).trim()
-        if (inner.length === 0) return 0
-        // crude param count — commas at depth 0 only
-        let depth = 0
-        let count = 1
-        for (let i = 0; i < inner.length; i++) {
-          const ch = inner[i]
-          if (ch === '<' || ch === '(') depth++
-          else if (ch === '>' || ch === ')') depth--
-          else if (ch === ',' && depth === 0) count++
-        }
-        return count
+    // The formalParameters child is the only one wrapped in parentheses; ANTLR's
+    // `.text` concatenates tokens with no whitespace, so it needs no trimming.
+    const children = ctx.children as ParseTree[]
+    const parameterList = children.find(child =>
+      child.text.startsWith('(')
+    ) as ParseTree
+    const inner = parameterList.text.slice(1, -1)
+    if (inner.length === 0) return 0
+
+    // Crude param count — commas at depth 0 only.
+    let depth = 0
+    let count = 1
+    // `i <= inner.length` reads one past the end, yielding `undefined`, which
+    // matches no delimiter — the extra iteration cannot change `count`.
+    // Stryker disable next-line EqualityOperator: bound is not observable.
+    for (let i = 0; i < inner.length; i++) {
+      const ch = inner[i]
+      if (ch === ',' && depth === 0) {
+        count++
+        continue
       }
+      // `depth` is only ever compared against 0, so negating every delta
+      // preserves the top-level test.
+      // Stryker disable next-line AssignmentOperator: sign of depth is not observable.
+      depth += delimiterDepthDelta(ch)
     }
-    /* c8 ignore next -- defensive: well-formed method declaration always contains (...) */
-    return 0
+    return count
   }
 
   exitMethodDeclaration(_ctx: ParserRuleContext): void {
-    /* istanbul ignore next -- defensive guard: exit always follows enter */
-    if (this.currentMethodName) {
-      this._variableScopes.set(
-        this.currentMethodName,
-        this.currentMethodVariables
-      )
-      this.currentMethodName = undefined
-      this.currentMethodVariables = new Map()
-    }
+    // Exit always follows a matching enter, so the method name is always set.
+    this._variableScopes.set(
+      this.currentMethodName as string,
+      this.currentMethodVariables
+    )
+    this.currentMethodName = undefined
+    this.currentMethodVariables = new Map()
   }
 
   enterLocalVariableDeclaration(ctx: ParserRuleContext): void {
@@ -166,13 +162,13 @@ class TypeDiscoverListener implements ApexParserListener {
   }
 
   enterFormalParameter(ctx: ParserRuleContext): void {
-    /* istanbul ignore next -- defensive guard: parser always produces well-formed contexts */
-    if (ctx.children && ctx.children.length >= 2) {
-      const typeName = ctx.children[ctx.children.length - 2].text
-      const paramName = ctx.children[ctx.children.length - 1].text
-      this.currentMethodVariables.set(paramName, typeName.toLowerCase())
-      this.collectToMatchers(typeName)
-    }
+    // A formalParameter always ends with the type and name pair; any leading
+    // annotations or modifiers sit before them.
+    const children = ctx.children as ParseTree[]
+    const typeName = children[children.length - 2].text
+    const paramName = children[children.length - 1].text
+    this.currentMethodVariables.set(paramName, typeName.toLowerCase())
+    this.collectToMatchers(typeName)
   }
 
   enterFieldDeclaration(ctx: ParserRuleContext): void {
@@ -180,42 +176,36 @@ class TypeDiscoverListener implements ApexParserListener {
   }
 
   enterEnhancedForControl(ctx: ParserRuleContext): void {
-    /* istanbul ignore next -- defensive guard: parser always produces well-formed contexts */
-    if (ctx.children && ctx.children.length >= 2) {
-      const typeName = ctx.children[0].text
-      const varName = ctx.children[1].text
-      this.currentMethodVariables.set(varName, typeName.toLowerCase())
-      this.collectToMatchers(typeName)
-    }
+    // An enhancedForControl always has 4 children: type, id, ':', expression.
+    const children = ctx.children as ParseTree[]
+    const typeName = children[0].text
+    const varName = children[1].text
+    this.currentMethodVariables.set(varName, typeName.toLowerCase())
+    this.collectToMatchers(typeName)
   }
 
   enterCatchClause(ctx: ParserRuleContext): void {
-    /* istanbul ignore next -- defensive guard: parser always produces well-formed contexts */
-    if (ctx.children && ctx.children.length >= CATCH_MIN_CHILDREN) {
-      const typeName =
-        ctx.children[ctx.children.length - CATCH_TYPE_OFFSET].text
-      const varName = ctx.children[ctx.children.length - CATCH_VAR_OFFSET].text
-      this.currentMethodVariables.set(varName, typeName.toLowerCase())
-      this.collectToMatchers(typeName)
-    }
+    // A catchClause always has CATCH_MIN_CHILDREN children, with the exception
+    // type and variable name at fixed offsets from the end.
+    const children = ctx.children as ParseTree[]
+    const typeName = children[children.length - CATCH_TYPE_OFFSET].text
+    const varName = children[children.length - CATCH_VAR_OFFSET].text
+    this.currentMethodVariables.set(varName, typeName.toLowerCase())
+    this.collectToMatchers(typeName)
   }
 
   private trackVariableDeclaration(
     ctx: ParserRuleContext,
     target: Map<string, string>
   ): void {
-    /* istanbul ignore next -- defensive guard: parser always produces well-formed contexts */
-    if (ctx.children && ctx.children.length >= 2) {
-      const typeName = ctx.children[0].text
-      this.collectToMatchers(typeName)
-      for (let i = 1; i < ctx.children.length; i++) {
-        const child = ctx.children[i]
-        const childText = child.text
-        if (childText !== ',' && childText !== '=') {
-          const varName = childText.split('=')[0]
-          target.set(varName, typeName.toLowerCase())
-        }
-      }
+    // ANTLR keeps the whole declarator list in ONE child (e.g. `x=5,y=6`), so
+    // every child after the type contributes a name via split-on-equals.
+    const children = ctx.children as ParseTree[]
+    const typeName = children[0].text
+    this.collectToMatchers(typeName)
+    for (let i = 1; i < children.length; i++) {
+      const varName = children[i].text.split('=')[0]
+      target.set(varName, typeName.toLowerCase())
     }
   }
 
@@ -240,6 +230,8 @@ export class TypeDiscoverer {
   }
 
   async analyzeFull(code: string): Promise<TypeAnalysisResult> {
+    // Stryker disable next-line StringLiteral: the stream name is a diagnostic
+    // label only — apex-parser never surfaces it in tokens, tree, or errors here.
     const lexer = new ApexLexer(new CaseInsensitiveInputStream('other', code))
     const tokenStream = new CommonTokenStream(lexer)
     const parser = new ApexParser(tokenStream)

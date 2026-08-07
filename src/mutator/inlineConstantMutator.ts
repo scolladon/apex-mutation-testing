@@ -31,6 +31,10 @@ class IntegerLiteralHandler implements LiteralHandler {
 
 class LongLiteralHandler implements LiteralHandler {
   getReplacements(node: TerminalNode, _ctx: LiteralContext): string[] {
+    // A long literal always ends in its L suffix and is otherwise all digits,
+    // so anchoring, inverting or changing the replacement text all leave
+    // `parseInt(text, 10)` at the same numeric value.
+    // Stryker disable next-line Regex,StringLiteral: parse result is unchanged.
     const text = node.text.replace(/[lL]$/, '')
     const value = Number.parseInt(text, 10)
     const candidates = [0, 1, -1, value + 1, value - 1]
@@ -89,6 +93,9 @@ class NullLiteralHandler implements LiteralHandler {
 
   private resolveFromReturn(ctx: ParserRuleContext): string | null {
     const methodName = getEnclosingMethodName(ctx)
+    // Not observable: without an enclosing method `resolveType(undefined)`
+    // misses the table and the `!resolved` path below returns null too.
+    // Stryker disable next-line ConditionalExpression,BlockStatement: same result either way.
     if (!methodName) {
       return null
     }

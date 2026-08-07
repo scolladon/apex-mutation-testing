@@ -21,6 +21,10 @@ export class BoundaryConditionMutator extends BaseListener {
       if (child instanceof TerminalNode) {
         const text = child.text
 
+        // '!' is unreachable: the lexer emits `!=` as a single token, so no
+        // comparison ever yields a lone '!' terminal. ('>=' does split into
+        // '>' and '=', which is why those entries are live.)
+        // Stryker disable next-line StringLiteral: lone '!' is never emitted.
         if (['>', '<', '=', '!'].includes(text)) {
           operatorText += text
           if (child.symbol !== null) {

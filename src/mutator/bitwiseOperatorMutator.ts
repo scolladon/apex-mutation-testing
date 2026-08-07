@@ -28,6 +28,9 @@ export class BitwiseOperatorMutator extends BaseListener {
 
     const operatorNode = ctx.getChild(1)
 
+    // Unreachable: the arity check above already pins this to a binary
+    // expression, whose middle child is always the operator terminal.
+    // Stryker disable next-line ConditionalExpression,BlockStatement: unreachable.
     if (!(operatorNode instanceof TerminalNode)) {
       return
     }

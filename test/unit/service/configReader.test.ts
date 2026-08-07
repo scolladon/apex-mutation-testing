@@ -903,6 +903,15 @@ describe('ConfigReader', () => {
       expect(sut).toEqual(new Set([1, 2, 3, 10, 20, 21, 22]))
     })
 
+    it('Given a range with a non-numeric bound, When parsing, Then throws', () => {
+      // Arrange & Act & Assert — only one side is unparseable, so requiring
+      // BOTH bounds to be non-finite would let this through and silently
+      // produce an empty range instead of reporting the bad input.
+      expect(() => ConfigReader.parseLineRanges(['5-abc'])).toThrow(
+        /Invalid line range '5-abc'/
+      )
+    })
+
     it('Given undefined, When parsing, Then returns undefined', () => {
       // Arrange & Act
       const sut = ConfigReader.parseLineRanges(undefined)

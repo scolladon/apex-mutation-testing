@@ -1222,5 +1222,76 @@ describe('TypeDiscoverer', () => {
       }
       expect(typeRegistry.methodTypeTable.has('process/2')).toBe(true)
     })
+
+    it('Given a parameter generic nesting two commas, Then arity ignores every comma inside the angle brackets', async () => {
+      // Arrange — a SINGLE internal comma lets a broken `<` counter cancel its own
+      // error out (one uncounted real comma offsets one spuriously counted generic
+      // comma), so `Map<String,Integer>` cannot detect a missing depth++. Nesting a
+      // second comma inside the generic breaks that symmetry: dropping the `<`
+      // increment yields arity 3 instead of 2.
+      const code = `
+        public class Generics {
+          public void process(Map<String,Map<Integer,String>> data, String label) { }
+        }
+      `
+      const typeDiscoverer = new TypeDiscoverer()
+
+      // Act
+      const analysis = await typeDiscoverer.analyzeFull(code)
+
+      // Assert
+      const typeRegistry = analysis.typeRegistry as unknown as {
+        methodTypeTable: Map<string, { returnType: string }>
+      }
+      expect(typeRegistry.methodTypeTable.has('process/2')).toBe(true)
+      expect(typeRegistry.methodTypeTable.has('process/3')).toBe(false)
+    })
+  })
+
+  describe('elementType is an absent key, not an undefined value', () => {
+    it('Given a plain return type, When analyze, Then the method entry carries no elementType key', async () => {
+      // Arrange — `resolveType` rebuilds ResolvedType behind the same
+      // `!== undefined` filter, so it masks an unconditional assignment of
+      // `undefined`. Assert on the raw table where the key would show up.
+      const code = `
+        public class TestClass {
+          public String getName() { return ''; }
+        }
+      `
+      const typeDiscoverer = new TypeDiscoverer()
+
+      // Act
+      const analysis = await typeDiscoverer.analyzeFull(code)
+
+      // Assert
+      const typeRegistry = analysis.typeRegistry as unknown as {
+        methodTypeTable: Map<string, object>
+      }
+      const methodInfo = typeRegistry.methodTypeTable.get('getName')
+      expect(methodInfo).toBeDefined()
+      expect(Object.hasOwn(methodInfo as object, 'elementType')).toBe(false)
+    })
+
+    it('Given a List return type, When analyze, Then the method entry carries the elementType key', async () => {
+      // Arrange — the positive counterpart, so the assertion above cannot pass
+      // by the key never being written at all.
+      const code = `
+        public class TestClass {
+          public List<Account> getAccounts() { return null; }
+        }
+      `
+      const typeDiscoverer = new TypeDiscoverer()
+
+      // Act
+      const analysis = await typeDiscoverer.analyzeFull(code)
+
+      // Assert
+      const typeRegistry = analysis.typeRegistry as unknown as {
+        methodTypeTable: Map<string, { elementType?: string }>
+      }
+      const methodInfo = typeRegistry.methodTypeTable.get('getAccounts')
+      expect(Object.hasOwn(methodInfo as object, 'elementType')).toBe(true)
+      expect(methodInfo?.elementType).toBe('Account')
+    })
   })
 })
