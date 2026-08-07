@@ -98,11 +98,13 @@ vi.mock('../../src/adapter/apexTestSuiteRepository.js', () => ({
   ApexTestSuiteRepository: vi.fn(),
 }))
 
+import { ApexTestSuiteRepository } from '../../src/adapter/apexTestSuiteRepository.js'
 import { default as ApexMutationTest } from '../../src/commands/apex/mutation/test/run.js'
 import { ApexMutationHTMLReporter } from '../../src/reporter/HTMLReporter.js'
 import { ApexClassValidator } from '../../src/service/apexClassValidator.js'
 import { ConfigReader } from '../../src/service/configReader.js'
 import { MutationTestingService } from '../../src/service/mutationTestingService.js'
+import { TestSuiteResolver } from '../../src/service/testSuiteResolver.js'
 
 describe('apex mutation test run NUT', () => {
   const mockConnection = {} as Record<string, unknown>
@@ -387,6 +389,11 @@ describe('apex mutation test run NUT', () => {
 
       // Assert
       expect(mockTestSuiteResolve).toHaveBeenCalledWith(configuredParameters)
+      expect(ApexTestSuiteRepository).toHaveBeenCalledWith(mockConnection)
+      expect(TestSuiteResolver).toHaveBeenCalledWith(
+        vi.mocked(ApexTestSuiteRepository).mock.results[0].value,
+        expect.anything()
+      )
       const validatorInstance = vi.mocked(ApexClassValidator).mock.results[0]
         .value as { validate: ReturnType<typeof vi.fn> }
       expect(validatorInstance.validate).toHaveBeenCalledWith(

@@ -129,7 +129,7 @@ sf apex mutation test run --apex-class MyClass --test-suite MyTestSuite
 sf apex mutation test run --apex-class MyClass --test-class MyClassTest --test-suite MyTestSuite
 ```
 
-`--test-class` and `--test-suite` union into one perimeter, and at least one of them is required — passing neither is an error naming both flags. Unlike class names, suite names are case-sensitive: the org matches them exactly, so a wrong-case name fails as "not found". An empty suite (no member classes) and an unknown suite are told apart, and both fail before any deploy or test run. Perimeter order is the `--test-class` entries first, then each suite's members ordered by class name. A suite member that isn't `@IsTest`, or that lives in a managed package and can't be read, fails the same class validation as a `--test-class` entry, naming the class.
+`--test-class` and `--test-suite` union into one perimeter, and at least one of them is required — passing neither is an error naming both flags. Unlike class names, suite names are case-sensitive: the org matches them exactly, so a wrong-case name fails as "not found". An empty suite (no member classes) and an unknown suite are told apart, and both fail before any deploy or test run. Perimeter order is the `--test-class` entries first, then the suites in the order you named them, each suite's members ordered by class name. A suite member that isn't `@IsTest`, or that lives in a managed package and can't be read, fails the same class validation as a `--test-class` entry, naming the class.
 
 ### Configuration
 

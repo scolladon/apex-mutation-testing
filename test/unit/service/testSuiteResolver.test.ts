@@ -86,6 +86,53 @@ describe('TestSuiteResolver', () => {
       ])
       expect(result).not.toBe(parameter)
       expect(parameter.apexTestClassNames).toEqual([])
+      expect(repositoryMock.readMembers).toHaveBeenCalledWith(['Alpha'])
+      expect(repositoryMock.readExistingSuiteNames).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('given two suites whose members have different class names', () => {
+    it('then groups the perimeter by requested suite order, not by class name', async () => {
+      // Arrange
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: [],
+        apexTestSuiteNames: ['Zed', 'Alpha'],
+      }
+      vi.mocked(repositoryMock.readMembers).mockResolvedValue([
+        { suiteName: 'Alpha', className: 'AlphaTest' },
+        { suiteName: 'Zed', className: 'ZedTest' },
+      ])
+
+      // Act
+      const result = await sut.resolve(parameter)
+
+      // Assert
+      expect(result.apexTestClassNames).toEqual(['ZedTest', 'AlphaTest'])
+    })
+  })
+
+  describe('given a requested suite whose only match differs by case', () => {
+    it('then treats the wrong-case name as unresolved', async () => {
+      // Arrange
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: [],
+        apexTestSuiteNames: ['Alpha', 'alpha'],
+      }
+      vi.mocked(repositoryMock.readMembers).mockResolvedValue([
+        { suiteName: 'Alpha', className: 'AlphaTest' },
+      ])
+      vi.mocked(repositoryMock.readExistingSuiteNames).mockResolvedValue([])
+
+      // Act
+      const result = sut.resolve(parameter)
+
+      // Assert
+      await expect(result).rejects.toThrow("Apex test suite 'alpha' not found")
+      expect(repositoryMock.readExistingSuiteNames).toHaveBeenCalledWith([
+        'alpha',
+      ])
     })
   })
 
@@ -229,6 +276,7 @@ describe('TestSuiteResolver', () => {
       expect(repositoryMock.readExistingSuiteNames).toHaveBeenCalledWith([
         'Nope',
       ])
+      expect(repositoryMock.readMembers).toHaveBeenCalledWith(['Alpha', 'Nope'])
     })
   })
 

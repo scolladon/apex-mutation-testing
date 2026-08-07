@@ -29,7 +29,14 @@ export class TestSuiteResolver {
       apexTestClassNames: ConfigReader.normalizeClassPerimeter(
         [
           ...parameter.apexTestClassNames,
-          ...members.map(member => member.className),
+          // Grouping by requested suite keeps the perimeter in the order the
+          // user named the suites. The adapter already returns each suite's
+          // members ordered by class name, and filtering preserves that.
+          ...suiteNames.flatMap(suiteName =>
+            members
+              .filter(member => member.suiteName === suiteName)
+              .map(member => member.className)
+          ),
         ],
         this.messages
       ),
