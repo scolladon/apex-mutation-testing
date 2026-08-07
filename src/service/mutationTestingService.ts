@@ -9,6 +9,8 @@ import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
+import { SkippedTestClass } from '../type/SkippedTestClass.js'
+import { TestClassOrigins } from '../type/TestClassOrigin.js'
 import {
   type TestMethodId,
   testClassOf,
@@ -33,6 +35,10 @@ import {
   extractMutationOriginalText,
 } from './mutationLocation.js'
 import type { SkipPattern } from './skipPattern.js'
+import {
+  attachSuiteProvenance,
+  formatSkippedTestClass,
+} from './skippedTestClassMessage.js'
 import { formatDuration, timeExecution } from './timeUtils.js'
 import { type TypeAnalysisResult, TypeDiscoverer } from './typeDiscoverer.js'
 import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
@@ -62,6 +68,7 @@ export class MutationTestingService {
   private readonly skipPatterns: SkipPattern[]
   private readonly allowedLines: Set<number> | undefined
   private readonly mutationGroupingEnabled: boolean
+  private readonly testClassOrigins: TestClassOrigins | undefined
   // Assigned by fetchApexClass before any reader runs; no meaningful seed.
   private apexClassContent!: string
 
@@ -80,6 +87,7 @@ export class MutationTestingService {
       skipPatterns,
       lines,
       mutationGrouping,
+      testClassOrigins,
     }: ApexMutationParameter,
     protected readonly messages: Messages<string>
   ) {
@@ -93,6 +101,7 @@ export class MutationTestingService {
     this.skipPatterns = ConfigReader.compileSkipPatterns(skipPatterns)
     this.allowedLines = ConfigReader.parseLineRanges(lines)
     this.mutationGroupingEnabled = mutationGrouping ?? false
+    this.testClassOrigins = testClassOrigins
   }
 
   // One canonical spelling of the joined test class perimeter, so every log
@@ -119,10 +128,8 @@ export class MutationTestingService {
     const coverageStrategy = await this.selectCoverageStrategy(
       apexSettingsRepository
     )
-    const { testMethodsPerLine, testTime } = await this.runBaselineTests(
-      apexTestRunner,
-      coverageStrategy
-    )
+    const { testMethodsPerLine, testTime, retainedTestClassNames } =
+      await this.runBaselineTests(apexTestRunner, coverageStrategy)
     const coveredLines = this.extractCoveredLines(testMethodsPerLine)
     const { mutations, mutantGenerator, tokenStream } = this.generateMutations(
       apexClass,
@@ -137,7 +144,11 @@ export class MutationTestingService {
         mutations.length,
         mutations.length
       )
-      return this.buildDryRunResult(apexClass, mutations)
+      return this.buildDryRunResult(
+        apexClass,
+        mutations,
+        retainedTestClassNames
+      )
     }
 
     const groups = await this.planGroups(mutations, testMethodsPerLine)
@@ -156,7 +167,8 @@ export class MutationTestingService {
       tokenStream,
       testMethodsPerLine,
       apexTestRunner,
-      apexClassRepository
+      apexClassRepository,
+      retainedTestClassNames
     )
     await this.rollback(apexClass, apexClassRepository)
     return result
@@ -399,6 +411,7 @@ export class MutationTestingService {
   ): Promise<{
     testMethodsPerLine: Map<number, Set<TestMethodId>>
     testTime: number
+    retainedTestClassNames: string[]
   }> {
     this.spinner.start(
       `Executing "${this.testClassPerimeter}" tests to get coverage`,
@@ -441,36 +454,47 @@ export class MutationTestingService {
     )
     const filteredTestMethodsPerLine =
       this.filterTestMethods(testMethodsPerLine)
-    if (coverageStrategy.fidelity === 'per-test') {
-      this.warnZeroContributionTestClasses(filteredTestMethodsPerLine)
+    const skipped =
+      coverageStrategy.fidelity === 'per-test'
+        ? this.findZeroContributionTestClasses(filteredTestMethodsPerLine)
+        : []
+    this.warnSkippedTestClasses(skipped)
+    const dropped = new Set(skipped.map(entry => entry.className))
+    const retainedTestClassNames = this.apexTestClassNames.filter(
+      name => !dropped.has(name)
+    )
+    return {
+      testMethodsPerLine: filteredTestMethodsPerLine,
+      testTime,
+      retainedTestClassNames,
     }
-    return { testMethodsPerLine: filteredTestMethodsPerLine, testTime }
   }
 
-  // AggregateCoverageStrategy has no per-test attribution, so this warning
-  // only makes sense — and is only called — under per-test fidelity.
-  private warnZeroContributionTestClasses(
+  // AggregateCoverageStrategy has no per-test attribution, so this diff
+  // only makes sense — and is only computed — under per-test fidelity.
+  private findZeroContributionTestClasses(
     testMethodsPerLine: Map<number, Set<TestMethodId>>
-  ): void {
+  ): SkippedTestClass[] {
     const contributingClasses = new Set(
       [...testMethodsPerLine.values()]
         .flatMap(methods => [...methods])
         .map(id => testClassOf(id).toLowerCase())
     )
-    const silentClasses = this.apexTestClassNames.filter(
-      name => !contributingClasses.has(name.toLowerCase())
-    )
-    if (silentClasses.length === 0) {
-      return
+    const silent = this.apexTestClassNames
+      .filter(name => !contributingClasses.has(name.toLowerCase()))
+      .map(className => ({ className, reason: 'no-coverage' as const }))
+    return attachSuiteProvenance(silent, this.testClassOrigins)
+  }
+
+  private warnSkippedTestClasses(skipped: SkippedTestClass[]): void {
+    for (const entry of skipped) {
+      this.spinner.start(
+        formatSkippedTestClass(entry, this.messages),
+        undefined,
+        { stdout: true }
+      )
+      this.spinner.stop()
     }
-    this.spinner.start(
-      this.messages.getMessage('info.zeroContributionTestClasses', [
-        silentClasses.join(', '),
-      ]),
-      undefined,
-      { stdout: true }
-    )
-    this.spinner.stop()
   }
 
   private extractCoveredLines(
@@ -563,12 +587,13 @@ export class MutationTestingService {
 
   private buildDryRunResult(
     apexClass: ApexClass,
-    mutations: ApexMutation[]
+    mutations: ApexMutation[],
+    retainedTestClassNames: string[]
   ): ApexMutationTestResult {
     return {
       sourceFile: this.apexClassName,
       sourceFileContent: apexClass.Body,
-      testFiles: this.apexTestClassNames,
+      testFiles: retainedTestClassNames,
       mutants: mutations.map(mutation => ({
         id: `${this.apexClassName}-${mutation.target.startToken.line}-${mutation.target.startToken.charPositionInLine}-${mutation.target.startToken.tokenIndex}-${Date.now()}`,
         mutatorName: mutation.mutationName,
@@ -588,7 +613,8 @@ export class MutationTestingService {
     tokenStream: CommonTokenStream,
     testMethodsPerLine: Map<number, Set<TestMethodId>>,
     apexTestRunner: ApexTestRunner,
-    apexClassRepository: ApexClassRepository
+    apexClassRepository: ApexClassRepository,
+    retainedTestClassNames: string[]
   ): Promise<ApexMutationTestResult> {
     this.progress.start(
       mutations.length,
@@ -645,7 +671,7 @@ export class MutationTestingService {
     return {
       sourceFile: this.apexClassName,
       sourceFileContent: apexClass.Body,
-      testFiles: this.apexTestClassNames,
+      testFiles: retainedTestClassNames,
       // Stryker disable next-line MethodExpression: no null slots remain, so
       // filtering and not filtering yield the same array — see `isPresent`.
       mutants: orderedResults.filter(isPresent),

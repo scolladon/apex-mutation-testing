@@ -21,6 +21,7 @@ import { ApexMutation } from '../../../src/type/ApexMutation.js'
 import { ApexMutationParameter } from '../../../src/type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult.js'
 import { MetadataComponentDependency } from '../../../src/type/MetadataComponentDependency.js'
+import { TestClassOrigins } from '../../../src/type/TestClassOrigin.js'
 
 vi.mock('../../../src/adapter/apexClassRepository.js')
 vi.mock('../../../src/adapter/apexSettingsRepository.js')
@@ -125,7 +126,9 @@ describe('MutationTestingService', () => {
           'info.timeEstimateBreakdown': `Deploy: ${args?.[0]}/mutant | Test: ${args?.[1]}/mutant | Mutants: ${args?.[2]}`,
           'info.aggregatedCoverageOnly':
             'aggregate coverage mode — all tests run per mutant and score may be understated',
-          'info.zeroContributionTestClasses': `The following test class(es) contributed no covered lines and will not affect the mutation score: ${args?.[0]}`,
+          'info.testClassNotUsable': `Skipping test class '${args?.[0]}'${args?.[1]}: ${args?.[2]}.`,
+          'info.contributedBySuite': `(contributed by test suite ${args?.[0]})`,
+          'info.reasonNoCoverage': 'it contributed no covered lines',
         }
         return templates[key] || key
       }),
@@ -709,9 +712,17 @@ describe('MutationTestingService', () => {
         )
         const multiSut = buildMultiClassSut()
 
-        // Act & Assert
+        // Act & Assert — both classes are dropped at stage B (no coverage to
+        // attribute), yet error.noCoverage keeps naming the perimeter the
+        // service was constructed with: the retained (post-drop) perimeter is
+        // threaded to the caller, never written back to this.apexTestClassNames.
         await expect(multiSut.process()).rejects.toThrow(
           "No test coverage found for 'TestClass'. Ensure 'A, B' tests exercise the code you want to mutation test."
+        )
+        expect(spinner.start).toHaveBeenCalledWith(
+          "Skipping test class 'A': it contributed no covered lines.",
+          undefined,
+          { stdout: true }
         )
       })
 
@@ -966,7 +977,8 @@ describe('MutationTestingService', () => {
 
     describe('Given a perimeter class contributes zero covered lines', () => {
       const buildZeroContributionSut = (
-        apexTestClassNames: string[]
+        apexTestClassNames: string[],
+        testClassOrigins?: TestClassOrigins
       ): MutationTestingService =>
         new MutationTestingService(
           progress,
@@ -975,11 +987,12 @@ describe('MutationTestingService', () => {
           {
             apexClassName: 'TestClass',
             apexTestClassNames,
+            testClassOrigins,
           } as ApexMutationParameter,
           messagesMock
         )
 
-      it('Given per-test fidelity and only FooTest.testA is covered, When processing, Then the spinner warns that BarTest contributed nothing', async () => {
+      it('Given per-test fidelity and only FooTest.testA is covered, When processing, Then BarTest is skipped with a cause-neutral notice and leaves testFiles', async () => {
         // Arrange
         vi.mocked(ApexClassRepository).mockImplementation(
           class {
@@ -1027,16 +1040,16 @@ describe('MutationTestingService', () => {
         // Act
         const result = await zeroContributionSut.process()
 
-        // Assert — the run is non-fatal and still completes
-        expect(result).toBeDefined()
+        // Assert — the run is non-fatal, drops the silent class, and still completes
         expect(spinner.start).toHaveBeenCalledWith(
-          'The following test class(es) contributed no covered lines and will not affect the mutation score: BarTest',
+          "Skipping test class 'BarTest': it contributed no covered lines.",
           undefined,
           { stdout: true }
         )
+        expect(result.testFiles).toEqual(['FooTest'])
       })
 
-      it('Given per-test fidelity and two classes contribute nothing, When processing, Then the spinner joins their names with a comma', async () => {
+      it('Given per-test fidelity and two classes contribute nothing, When processing, Then two separate notices are emitted in perimeter order and both leave testFiles', async () => {
         // Arrange
         vi.mocked(ApexClassRepository).mockImplementation(
           class {
@@ -1083,17 +1096,246 @@ describe('MutationTestingService', () => {
         ])
 
         // Act
+        const result = await zeroContributionSut.process()
+
+        // Assert — one notice per silent class, in perimeter order, not a
+        // single joined-list message.
+        const skipNotices = vi
+          .mocked(spinner.start)
+          .mock.calls.filter(([message]) =>
+            (message as string).startsWith('Skipping test class')
+          )
+          .map(([message]) => message)
+        expect(skipNotices).toEqual([
+          "Skipping test class 'BarTest': it contributed no covered lines.",
+          "Skipping test class 'BazTest': it contributed no covered lines.",
+        ])
+        expect(result.testFiles).toEqual(['FooTest'])
+      })
+
+      it('Given testClassOrigins supplies a suite for the silent class, When processing, Then the notice names the suite', async () => {
+        // Arrange
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            updateMany = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([[1, new Set(['FooTest.testA'])]]),
+            })
+          }
+        )
+        const zeroContributionSut = buildZeroContributionSut(
+          ['FooTest', 'BarTest'],
+          { bartest: ['SmokeSuite'] }
+        )
+
+        // Act
         await zeroContributionSut.process()
 
-        // Assert — the two silent classes are joined with ', ', not concatenated
+        // Assert
         expect(spinner.start).toHaveBeenCalledWith(
-          'The following test class(es) contributed no covered lines and will not affect the mutation score: BarTest, BazTest',
+          "Skipping test class 'BarTest' (contributed by test suite 'SmokeSuite'): it contributed no covered lines.",
           undefined,
           { stdout: true }
         )
       })
 
-      it('Given per-test fidelity and every perimeter class is covered, When processing, Then the spinner never warns', async () => {
+      it('Given testClassOrigins holds no entry for the silent class, When processing, Then no suite clause is rendered', async () => {
+        // Arrange
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            updateMany = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([[1, new Set(['FooTest.testA'])]]),
+            })
+          }
+        )
+        const zeroContributionSut = buildZeroContributionSut(
+          ['FooTest', 'BarTest'],
+          { someothertest: ['SmokeSuite'] }
+        )
+
+        // Act
+        await zeroContributionSut.process()
+
+        // Assert — no origin entry for BarTest, so the sentence has no suite clause
+        expect(spinner.start).toHaveBeenCalledWith(
+          "Skipping test class 'BarTest': it contributed no covered lines.",
+          undefined,
+          { stdout: true }
+        )
+      })
+
+      it('Given a silent class contributed by two suites, When processing, Then both suite names are listed in flag order', async () => {
+        // Arrange
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            updateMany = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([[1, new Set(['FooTest.testA'])]]),
+            })
+          }
+        )
+        const zeroContributionSut = buildZeroContributionSut(
+          ['FooTest', 'BarTest'],
+          { bartest: ['SmokeSuite', 'RegressionSuite'] }
+        )
+
+        // Act
+        await zeroContributionSut.process()
+
+        // Assert
+        expect(spinner.start).toHaveBeenCalledWith(
+          "Skipping test class 'BarTest' (contributed by test suite 'SmokeSuite', 'RegressionSuite'): it contributed no covered lines.",
+          undefined,
+          { stdout: true }
+        )
+      })
+
+      it('Given a silent class, When processing, Then the reason fragment names no cause', async () => {
+        // Arrange
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            updateMany = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([[1, new Set(['FooTest.testA'])]]),
+            })
+          }
+        )
+        const zeroContributionSut = buildZeroContributionSut([
+          'FooTest',
+          'BarTest',
+        ])
+
+        // Act
+        await zeroContributionSut.process()
+
+        // Assert — the sentence takes no argument naming the class under mutation
+        expect(messagesMock.getMessage).toHaveBeenCalledWith(
+          'info.reasonNoCoverage'
+        )
+      })
+
+      it('Given per-test fidelity and every perimeter class is covered, When processing, Then the spinner never warns and testFiles keeps every class', async () => {
         // Arrange
         vi.mocked(ApexClassRepository).mockImplementation(
           class {
@@ -1141,16 +1383,17 @@ describe('MutationTestingService', () => {
         ])
 
         // Act
-        await zeroContributionSut.process()
+        const result = await zeroContributionSut.process()
 
         // Assert
         expect(messagesMock.getMessage).not.toHaveBeenCalledWith(
-          'info.zeroContributionTestClasses',
+          'info.testClassNotUsable',
           expect.anything()
         )
+        expect(result.testFiles).toEqual(['FooTest', 'BarTest'])
       })
 
-      it('Given aggregate-only fidelity and BarTest contributes nothing, When processing, Then the spinner never warns', async () => {
+      it('Given aggregate-only fidelity and BarTest contributes nothing, When processing, Then the spinner never warns and testFiles keeps every class', async () => {
         // Arrange
         vi.mocked(ApexClassRepository).mockImplementation(
           class {
@@ -1201,17 +1444,19 @@ describe('MutationTestingService', () => {
         ])
 
         // Act
-        await zeroContributionSut.process()
+        const result = await zeroContributionSut.process()
 
         // Assert — AggregateCoverageStrategy has no per-test attribution, so
-        // the contribution set is not computable and the warning stays silent.
+        // the contribution set is not computable: the warning stays silent
+        // and no drop occurs either.
         expect(messagesMock.getMessage).not.toHaveBeenCalledWith(
-          'info.zeroContributionTestClasses',
+          'info.testClassNotUsable',
           expect.anything()
         )
+        expect(result.testFiles).toEqual(['FooTest', 'BarTest'])
       })
 
-      it('Given the perimeter spelling differs only by case from the org fullName, When processing, Then the comparison is case-insensitive and no warning fires', async () => {
+      it('Given the perimeter spelling differs only by case from the org fullName, When processing, Then the comparison is case-insensitive and testFiles keeps the user spelling', async () => {
         // Arrange
         vi.mocked(ApexClassRepository).mockImplementation(
           class {
@@ -1254,14 +1499,137 @@ describe('MutationTestingService', () => {
         const zeroContributionSut = buildZeroContributionSut(['footest'])
 
         // Act
-        await zeroContributionSut.process()
+        const result = await zeroContributionSut.process()
 
         // Assert — 'footest' (user spelling) vs 'FooTest' (org fullName) must
-        // still be recognized as the same class.
+        // still be recognized as the same class, and its own spelling survives.
         expect(messagesMock.getMessage).not.toHaveBeenCalledWith(
-          'info.zeroContributionTestClasses',
+          'info.testClassNotUsable',
           expect.anything()
         )
+        expect(result.testFiles).toEqual(['footest'])
+      })
+
+      it('Given --dry-run and a class that contributed nothing, When processing, Then result.testFiles reflects the stage-B reduction', async () => {
+        // Arrange
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            updateMany = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn()
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 1,
+              testMethodsPerLine: new Map([[1, new Set(['FooTest.testA'])]]),
+            })
+          }
+        )
+        const dryRunSut = new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassNames: ['FooTest', 'BarTest'],
+            dryRun: true,
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+        // Act
+        const result = await dryRunSut.process()
+
+        // Assert — asserted on the result object; buildTestFilesSection omits
+        // testFiles from the HTML report entirely when no mutant carries
+        // attribution, which is always true for dry-run mutants.
+        expect(result.testFiles).toEqual(['FooTest'])
+      })
+
+      it('Given excludeTestMethods removes every method of BarTest while FooTest still covers a line, When processing, Then BarTest is reported with the cause-neutral reason and dropped from testFiles', async () => {
+        // Arrange
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            updateMany = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue({
+              outcome: 'Passed',
+              passing: 1,
+              failing: 0,
+              testsRan: 2,
+              testMethodsPerLine: new Map([
+                [1, new Set(['FooTest.testA', 'BarTest.setup'])],
+              ]),
+            })
+          }
+        )
+        const filteredSut = new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassNames: ['FooTest', 'BarTest'],
+            excludeTestMethods: ['BarTest.setup'],
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+        // Act
+        const result = await filteredSut.process()
+
+        // Assert — the check runs on the post-filter map: BarTest exists and
+        // compiles, but every one of its methods was excluded, so it is
+        // genuinely silent. The wording still names no cause, distinguishing
+        // this from a class that never existed or a coverage-wide wipeout.
+        expect(spinner.start).toHaveBeenCalledWith(
+          "Skipping test class 'BarTest': it contributed no covered lines.",
+          undefined,
+          { stdout: true }
+        )
+        expect(result.testFiles).toEqual(['FooTest'])
       })
     })
 
