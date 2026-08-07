@@ -6,6 +6,13 @@ import { compileSkipPattern, type SkipPattern } from './skipPattern.js'
 
 const DEFAULT_CONFIG_FILE = '.mutation-testing.json'
 
+// An Apex class name is a letter followed by letters, digits or underscores.
+// Enforcing that shape keeps every other character out of the Tooling API
+// query text: its string-literal builder escapes quotes but leaves
+// backslashes raw, so a name ending in a backslash escapes the closing quote
+// and the literal runs on into the rest of the WHERE clause.
+const APEX_CLASS_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
+
 interface MutationTestingConfig {
   mutators?: {
     include?: string[]
@@ -27,6 +34,10 @@ export class ConfigReader {
   public async resolve(
     parameter: ApexMutationParameter
   ): Promise<ApexMutationParameter> {
+    // The class under mutation reaches the same lookup as the perimeter, so
+    // it answers to the same rule — checked first, before any file or org I/O.
+    ConfigReader.assertClassName(parameter.apexClassName, this.messages)
+
     const configPath = parameter.configFile ?? DEFAULT_CONFIG_FILE
     const fileConfig = await this.readConfigFile(configPath)
 
@@ -156,7 +167,7 @@ export class ConfigReader {
     names: string[],
     messages: Messages<string>
   ): string[] {
-    return ConfigReader.normalizeNames(
+    const normalized = ConfigReader.normalizeNames(
       names,
       // Case-fold direction is arbitrary: `key` is a write-only lookup
       // token — `values()` above returns `trimmed`, never `key`. This
@@ -169,6 +180,19 @@ export class ConfigReader {
       messages,
       'error.blankTestClass'
     )
+    for (const name of normalized) {
+      ConfigReader.assertClassName(name, messages)
+    }
+    return normalized
+  }
+
+  private static assertClassName(
+    name: string,
+    messages: Messages<string>
+  ): void {
+    if (!APEX_CLASS_NAME_PATTERN.test(name)) {
+      throw new Error(messages.getMessage('error.invalidClassName', [name]))
+    }
   }
 
   // The org matches ApexTestSuite.TestSuiteName case-sensitively (a

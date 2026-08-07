@@ -84,6 +84,10 @@ The following test class(es) contributed no covered lines and will not affect th
 
 Blank apex test class name found: '%s'. Remove empty entries from the -t/--test-class flag.
 
+# error.invalidClassName
+
+Invalid Apex class name: '%s'. An Apex class name starts with a letter and contains only letters, digits and underscores.
+
 # error.blankTestSuite
 
 Blank apex test suite name found: '%s'. Remove empty entries from the --test-suite flag.
