@@ -40,6 +40,7 @@ describe('TestSuiteResolver', () => {
 
       // Assert
       expect(result).toBe(parameter)
+      expect(result.testClassOrigins).toBeUndefined()
       expect(repositoryMock.readMembers).not.toHaveBeenCalled()
     })
   })
@@ -84,6 +85,11 @@ describe('TestSuiteResolver', () => {
         'AlphaTestB',
         'AlphaTestC',
       ])
+      expect(result.testClassOrigins).toEqual({
+        alphatesta: ['Alpha'],
+        alphatestb: ['Alpha'],
+        alphatestc: ['Alpha'],
+      })
       expect(result).not.toBe(parameter)
       expect(parameter.apexTestClassNames).toEqual([])
       expect(repositoryMock.readMembers).toHaveBeenCalledWith(['Alpha'])
@@ -109,6 +115,27 @@ describe('TestSuiteResolver', () => {
 
       // Assert
       expect(result.apexTestClassNames).toEqual(['ZedTest', 'AlphaTest'])
+    })
+  })
+
+  describe('given suites named in reverse alphabetical order sharing a class', () => {
+    it('then the shared class lists the suites in flag order, not adapter order', async () => {
+      // Arrange
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: [],
+        apexTestSuiteNames: ['Zed', 'Alpha'],
+      }
+      vi.mocked(repositoryMock.readMembers).mockResolvedValue([
+        { suiteName: 'Alpha', className: 'SharedTest' },
+        { suiteName: 'Zed', className: 'SharedTest' },
+      ])
+
+      // Act
+      const result = await sut.resolve(parameter)
+
+      // Assert
+      expect(result.testClassOrigins).toEqual({ sharedtest: ['Zed', 'Alpha'] })
     })
   })
 
@@ -154,6 +181,7 @@ describe('TestSuiteResolver', () => {
 
       // Assert
       expect(result.apexTestClassNames).toEqual(['SharedTest'])
+      expect(result.testClassOrigins).toEqual({ sharedtest: ['Alpha', 'Beta'] })
     })
   })
 
@@ -174,6 +202,27 @@ describe('TestSuiteResolver', () => {
 
       // Assert
       expect(result.apexTestClassNames).toEqual(['sharedtest'])
+      expect(result.testClassOrigins).toEqual({})
+    })
+  })
+
+  describe('given a suite name typed in mixed case', () => {
+    it('then echoes the suite name case-exact while folding the class key', async () => {
+      // Arrange
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: [],
+        apexTestSuiteNames: ['MySuite'],
+      }
+      vi.mocked(repositoryMock.readMembers).mockResolvedValue([
+        { suiteName: 'MySuite', className: 'AlphaTest' },
+      ])
+
+      // Act
+      const result = await sut.resolve(parameter)
+
+      // Assert
+      expect(result.testClassOrigins).toEqual({ alphatest: ['MySuite'] })
     })
   })
 
@@ -337,7 +386,7 @@ describe('TestSuiteResolver', () => {
   })
 
   describe('given a resolving invocation', () => {
-    it('then every field other than apexTestClassNames passes through unchanged', async () => {
+    it('then every field other than apexTestClassNames and testClassOrigins passes through unchanged', async () => {
       // Arrange
       const parameter: ApexMutationParameter = {
         ...baseParameter,
@@ -357,6 +406,7 @@ describe('TestSuiteResolver', () => {
       expect(result).toEqual({
         ...parameter,
         apexTestClassNames: result.apexTestClassNames,
+        testClassOrigins: { alphatest: ['Alpha'] },
       })
     })
   })

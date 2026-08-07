@@ -1,6 +1,10 @@
 import { Messages } from '@salesforce/core'
-import { ApexTestSuiteRepository } from '../adapter/apexTestSuiteRepository.js'
+import {
+  ApexTestSuiteMember,
+  ApexTestSuiteRepository,
+} from '../adapter/apexTestSuiteRepository.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
+import { TestClassOrigins } from '../type/TestClassOrigin.js'
 import { ConfigReader } from './configReader.js'
 
 export class TestSuiteResolver {
@@ -40,7 +44,30 @@ export class TestSuiteResolver {
         ],
         this.messages
       ),
+      testClassOrigins: this.buildTestClassOrigins(
+        suiteNames,
+        members,
+        parameter.apexTestClassNames
+      ),
     }
+  }
+
+  private buildTestClassOrigins(
+    suiteNames: string[],
+    members: ApexTestSuiteMember[],
+    cliClassNames: string[]
+  ): TestClassOrigins {
+    const cliKeys = new Set(cliClassNames.map(name => name.toLowerCase()))
+    const origins = new Map<string, string[]>()
+    for (const suiteName of suiteNames) {
+      for (const member of members) {
+        if (member.suiteName !== suiteName) continue
+        const key = member.className.toLowerCase()
+        if (cliKeys.has(key)) continue
+        origins.set(key, [...(origins.get(key) ?? []), suiteName])
+      }
+    }
+    return Object.fromEntries(origins)
   }
 
   private async failOnUnresolvedSuites(suiteNames: string[]): Promise<never> {
