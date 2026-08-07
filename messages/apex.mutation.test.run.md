@@ -167,3 +167,32 @@ Group of %s mutations failed batch deploy — re-evaluating individually
 # error.thresholdNotMet
 
 Mutation score %s% is below the required threshold of %s%
+
+# info.testClassNotUsable
+
+Skipping test class '%s'%s: %s.
+
+# info.contributedBySuite
+
+(contributed by test suite %s)
+
+# info.reasonNotATestClass
+
+it is not a test class
+
+# info.reasonNotReadable
+
+it could not be found or is not accessible on this org
+
+# info.reasonNoCoverage
+
+it contributed no covered lines
+
+# error.apexClassNotFound
+
+Apex class '%s' not found.
+
+# error.noUsableTestClass
+
+No usable Apex test class remains in the perimeter for '%s'. Every test class provided was skipped:
+%s
