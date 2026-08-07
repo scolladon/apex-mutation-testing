@@ -310,7 +310,7 @@ describe('TestSuiteResolver', () => {
   })
 
   describe('given suite names differing only by case', () => {
-    it('then both suites resolve independently and their members union-dedupe by class', async () => {
+    it('then each groups its own members and the union dedupes by class', async () => {
       // Arrange
       const parameter: ApexMutationParameter = {
         ...baseParameter,
@@ -318,16 +318,21 @@ describe('TestSuiteResolver', () => {
         apexTestSuiteNames: ['Foo', 'foo'],
       }
       vi.mocked(repositoryMock.readMembers).mockResolvedValue([
-        { suiteName: 'Foo', className: 'FooTest' },
-        { suiteName: 'foo', className: 'FooTest' },
-        { suiteName: 'foo', className: 'BarTest' },
+        { suiteName: 'foo', className: 'AlphaTest' },
+        { suiteName: 'Foo', className: 'SharedTest' },
+        { suiteName: 'foo', className: 'SharedTest' },
+        { suiteName: 'Foo', className: 'ZedTest' },
       ])
 
       // Act
       const result = await sut.resolve(parameter)
 
       // Assert
-      expect(result.apexTestClassNames).toEqual(['FooTest', 'BarTest'])
+      expect(result.apexTestClassNames).toEqual([
+        'SharedTest',
+        'ZedTest',
+        'AlphaTest',
+      ])
     })
   })
 
