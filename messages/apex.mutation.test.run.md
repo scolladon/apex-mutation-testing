@@ -172,13 +172,13 @@ Skipping test class '%s'%s: %s.
 
 (contributed by test suite %s)
 
-# info.reasonNotATestClass
+# info.reasonNotFound
 
-it is not a test class
+it could not be found on this org
 
-# info.reasonNotReadable
+# info.reasonNotAccessible
 
-it could not be found or is not accessible on this org
+it is not accessible on this org
 
 # info.reasonNoCoverage
 

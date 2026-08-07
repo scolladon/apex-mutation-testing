@@ -34,8 +34,8 @@ describe('ApexClassRepository', () => {
     function buildSObjectStub(objectType: string) {
       if (objectType === 'ApexClass') {
         return {
-          find: (filter: unknown) => {
-            findArgsMock(filter)
+          find: (...args: unknown[]) => {
+            findArgsMock(...args)
             return { execute: findMock }
           },
         }
@@ -55,8 +55,8 @@ describe('ApexClassRepository', () => {
         }
       }
       return {
-        find: (filter: unknown) => {
-          findArgsMock(filter)
+        find: (...args: unknown[]) => {
+          findArgsMock(...args)
           return { execute: findMock }
         },
         create: createMock,
@@ -106,6 +106,76 @@ describe('ApexClassRepository', () => {
         await expect(sut.read('NonExistentClass')).rejects.toThrow(
           'ApexClass NonExistentClass not found'
         )
+      })
+    })
+  })
+
+  describe('when reading ApexClass identities', () => {
+    describe('given a perimeter within the chunk limit', () => {
+      it('then issues one find call with an $in filter, no namespace pin, and the Name/NamespacePrefix projection', async () => {
+        // Arrange
+        const rows = [
+          { Name: 'A', NamespacePrefix: null },
+          { Name: 'B', NamespacePrefix: 'et4ae5' },
+        ]
+        findMock.mockResolvedValueOnce(rows)
+
+        // Act
+        const result = await sut.readIdentities(['A', 'B'])
+
+        // Assert
+        expect(result).toEqual(rows)
+        expect(findArgsMock).toHaveBeenCalledTimes(1)
+        const [conditions, fields] = findArgsMock.mock.calls[0]
+        expect(conditions).toEqual({ Name: { $in: ['A', 'B'] } })
+        // A namespace pin here would re-hide every namespaced class behind
+        // an indistinguishable empty result, the same trap `read` avoids by
+        // pinning it deliberately.
+        expect(conditions).not.toHaveProperty('NamespacePrefix')
+        expect(fields).toEqual(['Name', 'NamespacePrefix'])
+      })
+    })
+
+    describe('given a perimeter one name larger than the chunk size', () => {
+      it('then issues two find calls, one per chunk, and returns the union in chunk order', async () => {
+        // Arrange
+        const firstChunkNames = Array.from(
+          { length: 200 },
+          (_, i) => `Name${i}`
+        )
+        const names = [...firstChunkNames, 'Overflow']
+        const firstChunkRows = [{ Name: 'Name0', NamespacePrefix: null }]
+        const secondChunkRows = [{ Name: 'Overflow', NamespacePrefix: null }]
+        findMock
+          .mockResolvedValueOnce(firstChunkRows)
+          .mockResolvedValueOnce(secondChunkRows)
+
+        // Act
+        const result = await sut.readIdentities(names)
+
+        // Assert
+        expect(result).toEqual([...firstChunkRows, ...secondChunkRows])
+        expect(findArgsMock).toHaveBeenCalledTimes(2)
+        expect(findArgsMock.mock.calls[0][0]).toEqual({
+          Name: { $in: firstChunkNames },
+        })
+        expect(findArgsMock.mock.calls[1][0]).toEqual({
+          Name: { $in: ['Overflow'] },
+        })
+      })
+    })
+
+    describe('given a perimeter exactly the chunk size', () => {
+      it('then issues exactly one find call', async () => {
+        // Arrange
+        const names = Array.from({ length: 200 }, (_, i) => `Name${i}`)
+        findMock.mockResolvedValueOnce([])
+
+        // Act
+        await sut.readIdentities(names)
+
+        // Assert
+        expect(findArgsMock).toHaveBeenCalledTimes(1)
       })
     })
   })

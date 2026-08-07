@@ -14,9 +14,8 @@ describe('formatSkippedTestClass', () => {
         const templates: Record<string, string> = {
           'info.testClassNotUsable': `Skipping test class '${args?.[0]}'${args?.[1]}: ${args?.[2]}.`,
           'info.contributedBySuite': `(contributed by test suite ${args?.[0]})`,
-          'info.reasonNotATestClass': 'it is not a test class',
-          'info.reasonNotReadable':
-            'it could not be found or is not accessible on this org',
+          'info.reasonNotFound': 'it could not be found on this org',
+          'info.reasonNotAccessible': 'it is not accessible on this org',
           'info.reasonNoCoverage': 'it contributed no covered lines',
         }
         return templates[key] ?? key
@@ -24,25 +23,11 @@ describe('formatSkippedTestClass', () => {
     } as unknown as Messages<string>
   })
 
-  it('Given a not-a-test-class skip with no provenance, When formatted, Then the sentence names the class and the reason with no suite clause', () => {
+  it('Given a not-found skip with no provenance, When formatted, Then the sentence names the class and the reason with no suite clause', () => {
     // Arrange
     const skipped: SkippedTestClass = {
       className: 'BadTest',
-      reason: 'not-a-test-class',
-    }
-
-    // Act
-    const sut = formatSkippedTestClass(skipped, messages)
-
-    // Assert
-    expect(sut).toBe("Skipping test class 'BadTest': it is not a test class.")
-  })
-
-  it('Given a not-readable skip, When formatted, Then the reason fragment names the class as unreadable', () => {
-    // Arrange
-    const skipped: SkippedTestClass = {
-      className: 'MyClasTest',
-      reason: 'not-readable',
+      reason: 'not-found',
     }
 
     // Act
@@ -50,7 +35,23 @@ describe('formatSkippedTestClass', () => {
 
     // Assert
     expect(sut).toBe(
-      "Skipping test class 'MyClasTest': it could not be found or is not accessible on this org."
+      "Skipping test class 'BadTest': it could not be found on this org."
+    )
+  })
+
+  it('Given a not-accessible skip, When formatted, Then the reason fragment names the class as inaccessible', () => {
+    // Arrange
+    const skipped: SkippedTestClass = {
+      className: 'MyClasTest',
+      reason: 'not-accessible',
+    }
+
+    // Act
+    const sut = formatSkippedTestClass(skipped, messages)
+
+    // Assert
+    expect(sut).toBe(
+      "Skipping test class 'MyClasTest': it is not accessible on this org."
     )
   })
 
@@ -75,7 +76,7 @@ describe('formatSkippedTestClass', () => {
     // Arrange
     const skipped: SkippedTestClass = {
       className: 'BadTest',
-      reason: 'not-a-test-class',
+      reason: 'not-found',
       suiteNames: ['SmokeSuite'],
     }
 
@@ -84,7 +85,7 @@ describe('formatSkippedTestClass', () => {
 
     // Assert
     expect(sut).toBe(
-      "Skipping test class 'BadTest' (contributed by test suite 'SmokeSuite'): it is not a test class."
+      "Skipping test class 'BadTest' (contributed by test suite 'SmokeSuite'): it could not be found on this org."
     )
   })
 
@@ -109,7 +110,7 @@ describe('formatSkippedTestClass', () => {
     // Arrange
     const skipped: SkippedTestClass = {
       className: 'BadTest',
-      reason: 'not-a-test-class',
+      reason: 'not-found',
       suiteNames: [],
     }
 
@@ -117,7 +118,47 @@ describe('formatSkippedTestClass', () => {
     const sut = formatSkippedTestClass(skipped, messages)
 
     // Assert
-    expect(sut).toBe("Skipping test class 'BadTest': it is not a test class.")
+    expect(sut).toBe(
+      "Skipping test class 'BadTest': it could not be found on this org."
+    )
+  })
+
+  it('Given a suite name carrying control characters, When formatted, Then they are folded to single spaces and the sentence stays on one line', () => {
+    // Arrange — suite names come from the org and are not constrained by the
+    // class name grammar, unlike className.
+    const skipped: SkippedTestClass = {
+      className: 'BadTest',
+      reason: 'not-found',
+      suiteNames: ['Smoke\u0001Suite\u009FA\nB'],
+    }
+
+    // Act
+    const sut = formatSkippedTestClass(skipped, messages)
+
+    // Assert
+    expect(sut).not.toContain('\n')
+    const isControlCharacter = (character: string): boolean => {
+      const code = character.charCodeAt(0)
+      return code <= 0x1f || (code >= 0x7f && code <= 0x9f)
+    }
+    expect(Array.from(sut).some(isControlCharacter)).toBe(false)
+  })
+
+  it('Given a suite name carrying consecutive control characters, When formatted, Then they fold to a single space rather than one per character', () => {
+    // Arrange
+    const skipped: SkippedTestClass = {
+      className: 'BadTest',
+      reason: 'not-found',
+      suiteNames: ['Smoke\u0001\u0002Suite'],
+    }
+
+    // Act
+    const sut = formatSkippedTestClass(skipped, messages)
+
+    // Assert
+    expect(sut).toBe(
+      "Skipping test class 'BadTest' (contributed by test suite 'Smoke Suite'): it could not be found on this org."
+    )
   })
 })
 
@@ -130,7 +171,7 @@ describe('formatSkippedTestClasses', () => {
         const templates: Record<string, string> = {
           'info.testClassNotUsable': `Skipping test class '${args?.[0]}'${args?.[1]}: ${args?.[2]}.`,
           'info.contributedBySuite': `(contributed by test suite ${args?.[0]})`,
-          'info.reasonNotATestClass': 'it is not a test class',
+          'info.reasonNotFound': 'it could not be found on this org',
           'info.reasonNoCoverage': 'it contributed no covered lines',
         }
         return templates[key] ?? key
@@ -141,7 +182,7 @@ describe('formatSkippedTestClasses', () => {
   it('Given two verdicts, When formatted, Then two sentences are returned in input order', () => {
     // Arrange
     const skipped: SkippedTestClass[] = [
-      { className: 'BadTest', reason: 'not-a-test-class' },
+      { className: 'BadTest', reason: 'not-found' },
       { className: 'BarTest', reason: 'no-coverage' },
     ]
 
@@ -150,7 +191,7 @@ describe('formatSkippedTestClasses', () => {
 
     // Assert
     expect(sut).toEqual([
-      "Skipping test class 'BadTest': it is not a test class.",
+      "Skipping test class 'BadTest': it could not be found on this org.",
       "Skipping test class 'BarTest': it contributed no covered lines.",
     ])
   })

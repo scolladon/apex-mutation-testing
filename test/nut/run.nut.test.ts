@@ -6,9 +6,8 @@ const mockMessages = vi.hoisted(() => ({
     const templates: Record<string, string> = {
       'info.testClassNotUsable': `Skipping test class '${tokens?.[0]}'${tokens?.[1]}: ${tokens?.[2]}.`,
       'info.contributedBySuite': `(contributed by test suite ${tokens?.[0]})`,
-      'info.reasonNotATestClass': 'it is not a test class',
-      'info.reasonNotReadable':
-        'it could not be found or is not accessible on this org',
+      'info.reasonNotFound': 'it could not be found on this org',
+      'info.reasonNotAccessible': 'it is not accessible on this org',
       'info.reasonNoCoverage': 'it contributed no covered lines',
     }
     return templates[key] ?? 'mock message'
@@ -571,7 +570,7 @@ describe('apex mutation test run NUT', () => {
           assessPerimeter = vi
             .fn()
             .mockResolvedValue([
-              { className: 'BadTest', reason: 'not-a-test-class' },
+              { className: 'BadTest', reason: 'not-found' },
             ] as never)
         }
       )
@@ -599,7 +598,7 @@ describe('apex mutation test run NUT', () => {
       // Assert
       expect(sut.warn).toHaveBeenCalledTimes(1)
       expect(sut.warn).toHaveBeenCalledWith(
-        "Skipping test class 'BadTest': it is not a test class."
+        "Skipping test class 'BadTest': it could not be found on this org."
       )
     })
 
@@ -634,7 +633,7 @@ describe('apex mutation test run NUT', () => {
           assessPerimeter = vi
             .fn()
             .mockResolvedValue([
-              { className: 'BadTest', reason: 'not-a-test-class' },
+              { className: 'BadTest', reason: 'not-found' },
             ] as never)
         }
       )
@@ -645,7 +644,7 @@ describe('apex mutation test run NUT', () => {
 
       // Assert
       expect(sut.warn).toHaveBeenCalledWith(
-        "Skipping test class 'BadTest' (contributed by test suite 'SmokeSuite'): it is not a test class."
+        "Skipping test class 'BadTest' (contributed by test suite 'SmokeSuite'): it could not be found on this org."
       )
     })
 
@@ -666,7 +665,7 @@ describe('apex mutation test run NUT', () => {
           assessPerimeter = vi
             .fn()
             .mockResolvedValue([
-              { className: 'BadTest', reason: 'not-a-test-class' },
+              { className: 'BadTest', reason: 'not-found' },
             ] as never)
         }
       )
@@ -682,7 +681,7 @@ describe('apex mutation test run NUT', () => {
 
       // Assert
       expect(sut.warn).toHaveBeenCalledWith(
-        "Skipping test class 'BadTest' (contributed by test suite 'SmokeSuite', 'RegressionSuite'): it is not a test class."
+        "Skipping test class 'BadTest' (contributed by test suite 'SmokeSuite', 'RegressionSuite'): it could not be found on this org."
       )
     })
   })
@@ -702,7 +701,7 @@ describe('apex mutation test run NUT', () => {
           assessPerimeter = vi
             .fn()
             .mockResolvedValue([
-              { className: 'BadTest', reason: 'not-a-test-class' },
+              { className: 'BadTest', reason: 'not-found' },
             ] as never)
         }
       )
@@ -713,7 +712,7 @@ describe('apex mutation test run NUT', () => {
 
       // Assert
       expect(sut.warn).toHaveBeenCalledWith(
-        "Skipping test class 'BadTest': it is not a test class."
+        "Skipping test class 'BadTest': it could not be found on this org."
       )
     })
   })
@@ -727,7 +726,7 @@ describe('apex mutation test run NUT', () => {
           assessPerimeter = vi
             .fn()
             .mockResolvedValue([
-              { className: 'MyClasTest', reason: 'not-readable' },
+              { className: 'MyClasTest', reason: 'not-found' },
             ] as never)
         }
       )
@@ -740,7 +739,7 @@ describe('apex mutation test run NUT', () => {
         'error.noUsableTestClass',
         [
           'MyClass',
-          "Skipping test class 'MyClasTest': it could not be found or is not accessible on this org.",
+          "Skipping test class 'MyClasTest': it could not be found on this org.",
         ]
       )
     })
@@ -759,7 +758,7 @@ describe('apex mutation test run NUT', () => {
           assessPerimeter = vi
             .fn()
             .mockResolvedValue([
-              { className: 'SuiteTest', reason: 'not-a-test-class' },
+              { className: 'SuiteTest', reason: 'not-found' },
             ] as never)
         }
       )
@@ -778,7 +777,7 @@ describe('apex mutation test run NUT', () => {
           assessPerimeter = vi
             .fn()
             .mockResolvedValue([
-              { className: 'MyClasTest', reason: 'not-readable' },
+              { className: 'MyClasTest', reason: 'not-found' },
             ] as never)
         }
       )
@@ -800,7 +799,7 @@ describe('apex mutation test run NUT', () => {
           assessPerimeter = vi
             .fn()
             .mockResolvedValue([
-              { className: 'MyClasTest', reason: 'not-readable' },
+              { className: 'MyClasTest', reason: 'not-found' },
             ] as never)
         }
       )
@@ -812,7 +811,7 @@ describe('apex mutation test run NUT', () => {
       // Assert
       expect(sut.warn).toHaveBeenCalledTimes(1)
       expect(sut.warn).toHaveBeenCalledWith(
-        "Skipping test class 'MyClasTest': it could not be found or is not accessible on this org."
+        "Skipping test class 'MyClasTest': it could not be found on this org."
       )
     })
   })

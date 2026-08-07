@@ -1,5 +1,6 @@
 import { Connection } from '@salesforce/core'
 import { ApexClass } from '../type/ApexClass.js'
+import { ApexClassIdentity } from '../type/ApexClassIdentity.js'
 import { MetadataComponentDependency } from '../type/MetadataComponentDependency.js'
 
 const DEFAULT_POLL_INITIAL_INTERVAL_MS = 100
@@ -12,6 +13,19 @@ const TERMINAL_STATES = new Set([
   'Error',
   'Aborted',
 ]) as ReadonlySet<string>
+
+// SOQL caps statement length, so a large perimeter must be queried in
+// batches. An empty perimeter never reaches here, so the loop needs no
+// empty-input guard: it naturally yields zero chunks.
+const IDENTITY_QUERY_CHUNK_SIZE = 200
+
+const chunk = <T>(items: T[], size: number): T[][] => {
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
+}
 
 interface PollOptions {
   initialIntervalMs?: number
@@ -71,6 +85,24 @@ export class ApexClassRepository {
         .find({ Name: name, NamespacePrefix: '' })
         .execute()
     )[0]
+  }
+
+  // No namespace pin here, unlike `read`: pinning `NamespacePrefix: ''`
+  // makes a namespaced class indistinguishable from one that does not exist
+  // at all, and telling those two apart is the whole point of this query.
+  public async readIdentities(names: string[]): Promise<ApexClassIdentity[]> {
+    const chunks = chunk(names, IDENTITY_QUERY_CHUNK_SIZE)
+    const rows = await Promise.all(
+      chunks.map(chunkNames => this.queryIdentities(chunkNames))
+    )
+    return rows.flat()
+  }
+
+  private async queryIdentities(names: string[]): Promise<ApexClassIdentity[]> {
+    return (await this.connection.tooling
+      .sobject('ApexClass')
+      .find({ Name: { $in: names } }, ['Name', 'NamespacePrefix'])
+      .execute()) as unknown as ApexClassIdentity[]
   }
 
   public async getApexClassDependencies(

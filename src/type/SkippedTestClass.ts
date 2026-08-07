@@ -1,6 +1,6 @@
 import { TestClassOrigins } from './TestClassOrigin.js'
 
-export type UnusableReason = 'not-a-test-class' | 'not-readable' | 'no-coverage'
+export type UnusableReason = 'not-found' | 'not-accessible' | 'no-coverage'
 
 export interface SkippedTestClass {
   className: string
