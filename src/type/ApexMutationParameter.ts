@@ -1,6 +1,7 @@
 export interface ApexMutationParameter {
   apexClassName: string
   apexTestClassNames: string[]
+  apexTestSuiteNames?: string[]
   reportDir: string
   dryRun?: boolean
   includeMutators?: string[]

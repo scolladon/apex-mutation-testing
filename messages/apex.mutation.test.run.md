@@ -76,6 +76,10 @@ The following test class(es) contributed no covered lines and will not affect th
 
 Blank apex test class name found: '%s'. Remove empty entries from the -t/--test-class flag.
 
+# error.blankTestSuite
+
+Blank apex test suite name found: '%s'. Remove empty entries from the --test-suite flag.
+
 # error.noMutations
 
 No mutations could be generated for '%s'. %s line(s) covered but no mutable patterns found.

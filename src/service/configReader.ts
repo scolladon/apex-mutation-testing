@@ -32,7 +32,14 @@ export class ConfigReader {
 
     const resolved: ApexMutationParameter = {
       ...parameter,
-      apexTestClassNames: this.normalizePerimeter(parameter.apexTestClassNames),
+      apexTestClassNames: ConfigReader.normalizeClassPerimeter(
+        parameter.apexTestClassNames,
+        this.messages
+      ),
+      apexTestSuiteNames: ConfigReader.normalizeSuiteNames(
+        parameter.apexTestSuiteNames,
+        this.messages
+      ),
       includeMutators:
         parameter.includeMutators ?? fileConfig?.mutators?.include,
       excludeMutators:
@@ -121,26 +128,61 @@ export class ConfigReader {
     })
   }
 
-  // Trims each element, rejects a blank one, dedupes case-insensitively while
-  // keeping the first-seen spelling, and preserves user order. Downstream
-  // code (validator, service, executor) may then assume a non-empty,
-  // trimmed, duplicate-free perimeter.
-  private normalizePerimeter(names: string[]): string[] {
-    const seenByLowercase = new Map<string, string>()
+  // Trims each element, rejects a blank one, dedupes by a caller-supplied
+  // key while keeping the first-seen spelling, and preserves user order.
+  private static normalizeNames(
+    names: string[],
+    keyOf: (name: string) => string,
+    messages: Messages<string>,
+    blankMessageKey: string
+  ): string[] {
+    const seenByKey = new Map<string, string>()
     for (const raw of names) {
       const trimmed = raw.trim()
       if (trimmed === '') {
-        throw new Error(this.messages.getMessage('error.blankTestClass', [raw]))
+        throw new Error(messages.getMessage(blankMessageKey, [raw]))
       }
-      // Case-fold direction is arbitrary: `key` is a write-only lookup token
-      // — `values()` below returns `trimmed`, never `key` — so lower- or
-      // upper-casing it yields identical de-dup grouping for any input.
-      const key = trimmed.toLowerCase()
-      if (!seenByLowercase.has(key)) {
-        seenByLowercase.set(key, trimmed)
+      const key = keyOf(trimmed)
+      if (!seenByKey.has(key)) {
+        seenByKey.set(key, trimmed)
       }
     }
-    return [...seenByLowercase.values()]
+    return [...seenByKey.values()]
+  }
+
+  // Downstream code (validator, service, executor) may assume a
+  // non-empty, trimmed, duplicate-free perimeter.
+  public static normalizeClassPerimeter(
+    names: string[],
+    messages: Messages<string>
+  ): string[] {
+    return ConfigReader.normalizeNames(
+      names,
+      // Case-fold direction is arbitrary: `key` is a write-only lookup
+      // token — `values()` above returns `trimmed`, never `key` — so
+      // lower- or upper-casing it yields identical de-dup grouping for
+      // any input.
+      name => name.toLowerCase(),
+      messages,
+      'error.blankTestClass'
+    )
+  }
+
+  // The org matches ApexTestSuite.TestSuiteName case-sensitively (a
+  // case-mismatched equality or LIKE filter returns zero rows) while it
+  // matches ApexClass.Name case-insensitively. Folding suite names the
+  // same way as class names would silently drop a genuinely different
+  // suite and mask a wrong-case lookup, so the two rules must diverge.
+  public static normalizeSuiteNames(
+    names: string[] | undefined,
+    messages: Messages<string>
+  ): string[] {
+    return ConfigReader.normalizeNames(
+      names ?? [],
+      name => name,
+      messages,
+      'error.blankTestSuite'
+    )
   }
 
   private validate(parameter: ApexMutationParameter): void {
