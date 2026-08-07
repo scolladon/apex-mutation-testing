@@ -39,6 +39,7 @@ describe('ConfigReader', () => {
       getMessage: vi.fn((key: string, args?: string[]) => {
         const templates: Record<string, string> = {
           'error.blankTestClass': `Blank apex test class name found: '${args?.[0]}'`,
+          'error.blankTestSuite': `Blank apex test suite name found: '${args?.[0]}'`,
         }
         return templates[key] || key
       }),
@@ -680,6 +681,70 @@ describe('ConfigReader', () => {
 
       // Assert
       expect(result.apexTestClassNames).toEqual(['CliClass'])
+    })
+  })
+
+  describe('suite name normalization', () => {
+    it('Given a blank test suite name, When resolving config, Then throws naming the offending raw input', async () => {
+      // Arrange — whitespace-only, not '', so raw ('   ') and trimmed ('')
+      // differ: this pins the error to the raw argument specifically.
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestSuiteNames: ['A', '   ', 'B'],
+      }
+
+      // Act & Assert
+      await expect(sut.resolve(parameter)).rejects.toThrow(
+        "Blank apex test suite name found: '   '"
+      )
+      expect(messagesMock.getMessage).toHaveBeenCalledWith(
+        'error.blankTestSuite',
+        ['   ']
+      )
+    })
+
+    it('Given class and suite names differing only by case, When resolving config, Then class names dedupe case-insensitively but suite names both survive', async () => {
+      // Arrange — the org matches ApexClass.Name case-insensitively but
+      // ApexTestSuite.TestSuiteName case-sensitively, so the two dedupe
+      // rules must diverge on the same input.
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: ['FooTest', 'footest'],
+        apexTestSuiteNames: ['Foo', 'foo'],
+      }
+
+      // Act
+      const result = await sut.resolve(parameter)
+
+      // Assert
+      expect(result.apexTestClassNames).toEqual(['FooTest'])
+      expect(result.apexTestSuiteNames).toEqual(['Foo', 'foo'])
+      expect(result.apexTestSuiteNames).not.toBe(parameter.apexTestSuiteNames)
+    })
+
+    it('Given test suite names with whitespace and an exact duplicate, When resolving config, Then trims, dedupes exact matches and preserves user order', async () => {
+      // Arrange
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestSuiteNames: ['  Beta  ', 'Alpha', 'Beta'],
+      }
+
+      // Act
+      const result = await sut.resolve(parameter)
+
+      // Assert
+      expect(result.apexTestSuiteNames).toEqual(['Beta', 'Alpha'])
+    })
+
+    it('Given no test suite names, When resolving config, Then normalizes to an empty list', async () => {
+      // Arrange
+      const parameter: ApexMutationParameter = { ...baseParameter }
+
+      // Act
+      const result = await sut.resolve(parameter)
+
+      // Assert
+      expect(result.apexTestSuiteNames).toEqual([])
     })
   })
 

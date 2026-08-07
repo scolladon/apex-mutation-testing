@@ -86,11 +86,25 @@ vi.mock('../../src/service/configReader.js', () => ({
   ),
 }))
 
+const mockTestSuiteResolve = vi.hoisted(() => vi.fn())
+vi.mock('../../src/service/testSuiteResolver.js', () => ({
+  TestSuiteResolver: vi.fn().mockImplementation(
+    class {
+      resolve = mockTestSuiteResolve
+    }
+  ),
+}))
+vi.mock('../../src/adapter/apexTestSuiteRepository.js', () => ({
+  ApexTestSuiteRepository: vi.fn(),
+}))
+
+import { ApexTestSuiteRepository } from '../../src/adapter/apexTestSuiteRepository.js'
 import { default as ApexMutationTest } from '../../src/commands/apex/mutation/test/run.js'
 import { ApexMutationHTMLReporter } from '../../src/reporter/HTMLReporter.js'
 import { ApexClassValidator } from '../../src/service/apexClassValidator.js'
 import { ConfigReader } from '../../src/service/configReader.js'
 import { MutationTestingService } from '../../src/service/mutationTestingService.js'
+import { TestSuiteResolver } from '../../src/service/testSuiteResolver.js'
 
 describe('apex mutation test run NUT', () => {
   const mockConnection = {} as Record<string, unknown>
@@ -100,6 +114,9 @@ describe('apex mutation test run NUT', () => {
 
   beforeEach(() => {
     mockConfigReaderResolve.mockImplementation((...args: unknown[]) =>
+      Promise.resolve(args[0])
+    )
+    mockTestSuiteResolve.mockImplementation((...args: unknown[]) =>
       Promise.resolve(args[0])
     )
     vi.mocked(ApexClassValidator).mockImplementation(
@@ -125,17 +142,23 @@ describe('apex mutation test run NUT', () => {
     )
   })
 
-  // Mirrors oclif's `multiple: true, delimiter: ','` behaviour for the
-  // `-t`/`--test-class` flag: every occurrence contributes a value, and each
-  // value is split on comma.
-  function collectTestClassValues(args: string[]): string[] {
+  // Mirrors oclif's `multiple: true, delimiter: ','` behaviour for a flag:
+  // every occurrence contributes a value, each value is split on comma, and
+  // an absent flag yields `undefined` — never `[]` — exactly like oclif's
+  // own parser leaves an absent `multiple` flag with no default.
+  function collectFlagValues(
+    args: string[],
+    names: string[]
+  ): string[] | undefined {
     const rawValues = args.reduce<string[]>((values, arg, i) => {
-      if (arg === '-t' || arg === '--test-class') {
+      if (names.includes(arg)) {
         values.push(args[i + 1])
       }
       return values
     }, [])
-    return rawValues.flatMap(value => value.split(','))
+    return rawValues.length === 0
+      ? undefined
+      : rawValues.flatMap(value => value.split(','))
   }
 
   async function runCommand(
@@ -148,7 +171,8 @@ describe('apex mutation test run NUT', () => {
         'apex-class':
           args[args.indexOf('-c') + 1] ||
           args[args.indexOf('--apex-class') + 1],
-        'test-class': collectTestClassValues(args),
+        'test-class': collectFlagValues(args, ['-t', '--test-class']),
+        'test-suite': collectFlagValues(args, ['--test-suite']),
         'report-dir': 'mutations',
         'target-org': mockOrg,
         ...flagOverrides,
@@ -241,6 +265,41 @@ describe('apex mutation test run NUT', () => {
       // Assert
       expect(result).toMatchObject({ multiple: true, delimiter: ',' })
     })
+
+    it('When inspected, Then it is bound by atLeastOne and no longer required', () => {
+      // Act
+      const result = ApexMutationTest.flags['test-class']
+
+      // Assert
+      expect(result).toMatchObject({
+        atLeastOne: ['test-class', 'test-suite'],
+      })
+      expect(result).not.toHaveProperty('required')
+    })
+  })
+
+  describe('Given the test-suite flag declaration', () => {
+    it('When inspected, Then it accepts repeated and comma-delimited values bound by atLeastOne', () => {
+      // Act
+      const result = ApexMutationTest.flags['test-suite']
+
+      // Assert
+      expect(result).toMatchObject({
+        multiple: true,
+        delimiter: ',',
+        atLeastOne: ['test-class', 'test-suite'],
+      })
+    })
+  })
+
+  describe('Given the apex-class flag declaration', () => {
+    it('When inspected, Then it remains required', () => {
+      // Act
+      const result = ApexMutationTest.flags['apex-class']
+
+      // Assert
+      expect(result).toMatchObject({ required: true })
+    })
   })
 
   describe('Given multiple test classes via repeated -t flags', () => {
@@ -285,6 +344,108 @@ describe('apex mutation test run NUT', () => {
         'info.CommandIsRunning',
         ['MyClass', 'A, B']
       )
+    })
+  })
+
+  describe('Given a suite-only invocation', () => {
+    it('When running, Then ConfigReader resolves with an empty class list and the suite name', async () => {
+      // Act
+      await runCommand(['-c', 'MyClass', '--test-suite', 'MySuite'])
+
+      // Assert
+      expect(mockConfigReaderResolve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          apexTestClassNames: [],
+          apexTestSuiteNames: ['MySuite'],
+        })
+      )
+    })
+  })
+
+  describe('Given a suite that expands the perimeter', () => {
+    it('When running, Then the resolver sits between config resolution and validation and the running line names the resolved perimeter', async () => {
+      // Arrange
+      const configuredParameters = {
+        apexClassName: 'MyClass',
+        apexTestClassNames: ['MyClassTest'],
+        apexTestSuiteNames: ['MySuite'],
+        reportDir: 'mutations',
+      }
+      mockConfigReaderResolve.mockResolvedValue(configuredParameters)
+      mockTestSuiteResolve.mockResolvedValue({
+        ...configuredParameters,
+        apexTestClassNames: ['MyClassTest', 'FromSuite'],
+      })
+
+      // Act
+      await runCommand([
+        '-c',
+        'MyClass',
+        '-t',
+        'MyClassTest',
+        '--test-suite',
+        'MySuite',
+      ])
+
+      // Assert
+      expect(mockTestSuiteResolve).toHaveBeenCalledWith(configuredParameters)
+      expect(ApexTestSuiteRepository).toHaveBeenCalledWith(mockConnection)
+      expect(TestSuiteResolver).toHaveBeenCalledWith(
+        vi.mocked(ApexTestSuiteRepository).mock.results[0].value,
+        expect.anything()
+      )
+      const validatorInstance = vi.mocked(ApexClassValidator).mock.results[0]
+        .value as { validate: ReturnType<typeof vi.fn> }
+      expect(validatorInstance.validate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          apexTestClassNames: ['MyClassTest', 'FromSuite'],
+        })
+      )
+      expect(MutationTestingService).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        mockConnection,
+        expect.objectContaining({
+          apexTestClassNames: ['MyClassTest', 'FromSuite'],
+        }),
+        expect.anything()
+      )
+      expect(mockMessages.getMessage).toHaveBeenCalledWith(
+        'info.CommandIsRunning',
+        ['MyClass', 'MyClassTest, FromSuite']
+      )
+    })
+  })
+
+  describe('Given no expansion should surface as new output', () => {
+    it('When running with -t only vs -t and --test-suite, Then the message keys are identical in both normal and dry-run mode', async () => {
+      // Act
+      await runCommand(['-c', 'MyClass', '-t', 'A,B'])
+      const classOnlyKeys = mockMessages.getMessage.mock.calls.map(
+        call => call[0]
+      )
+      mockMessages.getMessage.mockClear()
+
+      await runCommand(['-c', 'MyClass', '-t', 'A', '--test-suite', 'S'])
+      const withSuiteKeys = mockMessages.getMessage.mock.calls.map(
+        call => call[0]
+      )
+      mockMessages.getMessage.mockClear()
+
+      await runDryRunCommand(['-c', 'MyClass', '-t', 'A,B'])
+      const dryRunClassOnlyKeys = mockMessages.getMessage.mock.calls.map(
+        call => call[0]
+      )
+      mockMessages.getMessage.mockClear()
+
+      await runDryRunCommand(['-c', 'MyClass', '-t', 'A', '--test-suite', 'S'])
+      const dryRunWithSuiteKeys = mockMessages.getMessage.mock.calls.map(
+        call => call[0]
+      )
+
+      // Assert
+      expect(withSuiteKeys).toEqual(classOnlyKeys)
+      expect(dryRunWithSuiteKeys).toEqual(dryRunClassOnlyKeys)
     })
   })
 
