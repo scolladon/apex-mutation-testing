@@ -159,9 +159,12 @@ export class ConfigReader {
     return ConfigReader.normalizeNames(
       names,
       // Case-fold direction is arbitrary: `key` is a write-only lookup
-      // token — `values()` above returns `trimmed`, never `key` — so
-      // lower- or upper-casing it yields identical de-dup grouping for
-      // any input.
+      // token — `values()` above returns `trimmed`, never `key`. This
+      // holds because Apex class identifiers are ASCII-only (letters,
+      // digits, underscore): the characters where lower- and upper-
+      // casing diverge (e.g. 'ß', the Kelvin sign U+212A) cannot occur
+      // in a real class name, so no reachable input can expose a
+      // difference in de-dup grouping between the two directions.
       name => name.toLowerCase(),
       messages,
       'error.blankTestClass'
