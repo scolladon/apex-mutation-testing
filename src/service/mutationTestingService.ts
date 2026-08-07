@@ -427,9 +427,15 @@ export class MutationTestingService {
           coverageStrategy
         )
       )
-    const { outcome, testsRan, failing, testMethodsPerLine } = baselineResult
+    const {
+      outcome,
+      testsRan,
+      failing,
+      otherFailureCount,
+      testMethodsPerLine,
+    } = baselineResult
 
-    if (outcome !== 'Passed') {
+    if (otherFailureCount > 0) {
       this.spinner.stop()
       throw new Error(
         `Original tests failed! Cannot proceed with mutation testing.\n` +
