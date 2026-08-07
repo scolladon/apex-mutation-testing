@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786022491267,
+  "lastUpdate": 1786089996285,
   "repoUrl": "https://github.com/scolladon/apex-mutation-testing",
   "entries": {
     "Memory Benchmark": [
@@ -1123,6 +1123,108 @@ window.BENCHMARK_DATA = {
             "name": "pipeline-apply-all-mutations",
             "value": 321.6525,
             "range": "±0.19%",
+            "unit": "ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "colladonsebastien@gmail.com",
+            "name": "Sebastien",
+            "username": "scolladon"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2f7ea8082132f946873fd595015bb7c7c24997dc",
+          "message": "feat: accept multiple apex test classes in the mutation perimeter (#141)",
+          "timestamp": "2026-08-07T10:04:40+02:00",
+          "tree_id": "87f6a360fc540d73dc69b9da11a96acef6e557f2",
+          "url": "https://github.com/scolladon/apex-mutation-testing/commit/2f7ea8082132f946873fd595015bb7c7c24997dc"
+        },
+        "date": 1786089996258,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "antlr-lex-small",
+            "value": 0.1295,
+            "range": "±0.56%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-parse-small",
+            "value": 8.3397,
+            "range": "±4.17%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-lex-medium",
+            "value": 0.5922,
+            "range": "±0.51%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-parse-medium",
+            "value": 40.8284,
+            "range": "±6.57%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-lex-large",
+            "value": 1.9181,
+            "range": "±1.86%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-parse-large",
+            "value": 105.4666,
+            "range": "±2.88%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-small-compute-mutations",
+            "value": 8.3341,
+            "range": "±4.47%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-small-type-discovery",
+            "value": 6.2751,
+            "range": "±5.61%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-medium-compute-mutations",
+            "value": 35.0673,
+            "range": "±3.71%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-medium-type-discovery",
+            "value": 28.0125,
+            "range": "±5.28%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-large-compute-mutations",
+            "value": 99.985,
+            "range": "±1.41%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-large-type-discovery",
+            "value": 81.1372,
+            "range": "±3.70%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-apply-all-mutations",
+            "value": 325.6346,
+            "range": "±0.24%",
             "unit": "ms"
           }
         ]
