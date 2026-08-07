@@ -21,6 +21,8 @@ export function getEnclosingMethodName(ctx: ParserRuleContext): string | null {
     | undefined
   while (current) {
     if (current instanceof MethodDeclarationContext) {
+      // A methodDeclaration always has 4 children, so child 1 is present.
+      // Stryker disable next-line OptionalChaining: index 1 always exists.
       return current.children?.[1]?.text ?? null
     }
     current = current.parent as ParserRuleContext | undefined
@@ -37,6 +39,9 @@ export function resolveDotMethodCall(
   }
 
   const lastChild = ctx.children[ctx.children.length - 1]
+  // Not observable: a trailing node that is not a dot-method-call has fewer
+  // than 3 children, so the arity check below returns null all the same.
+  // Stryker disable next-line ConditionalExpression,BlockStatement: same result either way.
   if (!(lastChild instanceof DotMethodCallContext)) {
     return null
   }

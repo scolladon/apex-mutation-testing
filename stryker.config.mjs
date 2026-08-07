@@ -14,8 +14,11 @@ export default {
     'src/service/**/*.ts',
     'src/type/**/*.ts',
   ],
-  reporters: ['html', 'clear-text', 'progress'],
+  reporters: ['html', 'clear-text', 'progress', 'json'],
   coverageAnalysis: 'perTest',
+  jsonReporter: {
+    fileName: 'reports/mutation/mutation.json',
+  },
   htmlReporter: {
     fileName: 'reports/mutation/index.html',
   },

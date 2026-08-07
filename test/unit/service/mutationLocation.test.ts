@@ -6,13 +6,15 @@ import { ApexMutation } from '../../../src/type/ApexMutation.js'
 
 describe('calculateMutationPosition', () => {
   it('given undefined startIndex when calculating then throws', () => {
-    // Arrange
+    // Arrange — the end token is otherwise complete so only the startIndex
+    // clause fires; leaving its `text` unset would trip the third clause and
+    // the test would pass even with this clause removed.
     const mutation = {
       mutationName: 'TestMutation',
       replacement: '0',
       target: {
         startToken: { startIndex: undefined },
-        endToken: { stopIndex: 10 },
+        endToken: { stopIndex: 10, text: '42', line: 1, charPositionInLine: 0 },
         text: '42',
       },
     }
@@ -24,13 +26,42 @@ describe('calculateMutationPosition', () => {
   })
 
   it('given undefined stopIndex when calculating then throws', () => {
-    // Arrange
+    // Arrange — only the stopIndex clause is left unsatisfied.
     const mutation = {
       mutationName: 'TestMutation',
       replacement: '0',
       target: {
-        startToken: { startIndex: 0 },
-        endToken: { stopIndex: undefined },
+        startToken: { startIndex: 0, line: 1, charPositionInLine: 0 },
+        endToken: {
+          stopIndex: undefined,
+          text: '42',
+          line: 1,
+          charPositionInLine: 0,
+        },
+        text: '42',
+      },
+    }
+
+    // Act & Assert
+    expect(() =>
+      calculateMutationPosition(mutation as unknown as ApexMutation)
+    ).toThrow('Failed to calculate position for mutation: TestMutation')
+  })
+
+  it('given undefined end token text when calculating then throws', () => {
+    // Arrange — both indices are present; only the token text is missing, and
+    // walking `endToken.text` is what needs it.
+    const mutation = {
+      mutationName: 'TestMutation',
+      replacement: '0',
+      target: {
+        startToken: { startIndex: 0, line: 1, charPositionInLine: 0 },
+        endToken: {
+          stopIndex: 10,
+          text: undefined,
+          line: 1,
+          charPositionInLine: 0,
+        },
         text: '42',
       },
     }

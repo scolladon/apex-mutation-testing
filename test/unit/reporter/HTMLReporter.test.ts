@@ -1,4 +1,5 @@
 import { readFile, realpath, writeFile } from 'node:fs/promises'
+import path from 'node:path'
 import { ApexMutationHTMLReporter } from '../../../src/reporter/HTMLReporter.js'
 import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult.js'
 
@@ -141,6 +142,58 @@ describe('HTMLReporter', () => {
       // Assert
       expect(writeFile).toHaveBeenCalledWith(
         expect.any(String),
+        expect.stringContaining('<html>')
+      )
+    })
+
+    it('Then writes index.html under the default reports directory', async () => {
+      // Act — no outputDir supplied, so the default must be used
+      await sut.generateReport(testResults)
+
+      // Assert
+      const [target] = vi.mocked(writeFile).mock.calls[0]
+      expect(target).toBe(path.join(process.cwd(), 'reports', 'index.html'))
+    })
+
+    it('Then reads the mutation-testing-elements bundle as utf8 text', async () => {
+      // Act
+      await sut.generateReport(testResults)
+
+      // Assert — an empty encoding would hand back a Buffer instead of a string
+      expect(readFile).toHaveBeenCalledWith(
+        expect.stringContaining('mutation-test-elements'),
+        'utf8'
+      )
+    })
+
+    it('Then emits the schema version, thresholds and language the report viewer expects', async () => {
+      // Act
+      await sut.generateReport(testResults)
+
+      // Assert — these drive how mutation-testing-elements renders the page
+      const html = vi.mocked(writeFile).mock.calls[0][1] as string
+      const report = JSON.parse(
+        html.match(
+          /<script id="mutation-report-data" type="application\/json">(.+?)<\/script>/s
+        )![1]
+      ) as {
+        schemaVersion: string
+        thresholds: { high: number; low: number }
+        files: Record<string, { language: string }>
+      }
+      expect(report.schemaVersion).toBe('2.0.0')
+      expect(report.thresholds).toEqual({ high: 80, low: 60 })
+      expect(report.files['TestClass.cls'].language).toBe('java')
+    })
+
+    it('Then accepts an output directory that resolves to the working directory itself', async () => {
+      // Act — '.' resolves to cwd exactly, the boundary of the containment
+      // check; treating that as "outside" would reject a legitimate target.
+      await sut.generateReport(testResults, '.')
+
+      // Assert
+      expect(writeFile).toHaveBeenCalledWith(
+        path.join(process.cwd(), 'index.html'),
         expect.stringContaining('<html>')
       )
     })
@@ -402,9 +455,12 @@ describe('HTMLReporter', () => {
     })
 
     it('Then rejects outputDir outside the current working directory', async () => {
-      // Arrange & Act & Assert — Sec-F2: defence against arbitrary file write
+      // Arrange & Act & Assert — Sec-F2: defence against arbitrary file write.
+      // Match the string-resolve stage specifically: the later realpath stage
+      // rejects '/tmp' too, so a looser pattern would pass even with the
+      // string-level guard removed entirely.
       await expect(sut.generateReport(testResults, '/tmp')).rejects.toThrow(
-        /outside the current working directory/
+        /resolves outside the current working directory/
       )
     })
 

@@ -192,6 +192,11 @@ interface PreParsedInput {
   tokenStream: CommonTokenStream
 }
 
+// Diagnostic label for the ANTLR input stream; apex-parser never surfaces it
+// in tokens, tree or errors, so its value is not observable.
+// Stryker disable next-line StringLiteral: diagnostic label only.
+const INPUT_STREAM_NAME = 'other'
+
 export class MutantGenerator {
   public compute(
     classContent: string,
@@ -209,7 +214,7 @@ export class MutantGenerator {
       tokenStream = preParsed.tokenStream
     } else {
       const lexer = new ApexLexer(
-        new CaseInsensitiveInputStream('other', classContent)
+        new CaseInsensitiveInputStream(INPUT_STREAM_NAME, classContent)
       )
       tokenStream = new CommonTokenStream(lexer)
       const parser = new ApexParser(tokenStream)
@@ -267,6 +272,9 @@ export class MutantGenerator {
   private assertNonOverlappingRanges(
     mutations: ReadonlyArray<ApexMutation>
   ): void {
+    // Early-out only: with fewer than two mutations the comparison loop below
+    // has no iterations and reaches the same conclusion.
+    // Stryker disable next-line ConditionalExpression: shortcut is not observable.
     if (mutations.length < 2) return
     const sorted = [...mutations].sort(
       (a, b) => a.target.startToken.tokenIndex - b.target.startToken.tokenIndex

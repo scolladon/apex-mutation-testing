@@ -38,7 +38,11 @@ export class MemberVariableMutator extends BaseListener {
       return
     }
 
+    // Both `?.` are belt-and-braces: the declarator has at least 3 children
+    // and `assignIdx` points at '=', so the initializer always follows it.
+    // Stryker disable next-line OptionalChaining: operands are never nullish.
     const initValue = declarator.children[assignIdx + 1]?.text
+    // Stryker disable next-line OptionalChaining: operands are never nullish.
     if (initValue?.toLowerCase() === 'null') {
       return
     }

@@ -171,4 +171,48 @@ describe('ArithmeticOperatorDeletionMutator Integration', () => {
       expect(mutations[1].replacement).toBe('b')
     })
   })
+
+  describe('Given a non-numeric operand with an operator other than +', () => {
+    it('Then mutations are still generated', async () => {
+      // Arrange — the non-numeric guard exists because `+` doubles as string
+      // concatenation in Apex. No other operator carries that overload, so
+      // applying the guard to them would suppress legitimate mutations.
+      const code = `
+        public class TestClass {
+          public void test() {
+            String s = 'x';
+            Integer n = 1;
+            Object r = s - n;
+          }
+        }
+      `
+
+      // Act
+      const mutations = await parseAndMutateTypeAware(code, new Set([6]))
+
+      // Assert
+      expect(mutations.map(m => m.replacement)).toEqual(['s', 'n'])
+    })
+  })
+
+  describe('Given a literal that merely ends in the identity element', () => {
+    it('Then both mutations are still generated', () => {
+      // Arrange — `21.0` is not the multiplicative identity. An identity test
+      // anchored only at the end would match the trailing `1.0` and wrongly
+      // suppress the "→ left" mutation.
+      const code = `
+        public class TestClass {
+          public void test() {
+            Decimal result = a * 21.0;
+          }
+        }
+      `
+
+      // Act
+      const mutations = parseAndMutate(code, new Set([4]))
+
+      // Assert
+      expect(mutations.map(m => m.replacement)).toEqual(['a', '21.0'])
+    })
+  })
 })

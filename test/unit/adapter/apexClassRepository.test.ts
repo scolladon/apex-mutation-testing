@@ -15,6 +15,9 @@ describe('ApexClassRepository', () => {
   // cannot say which type each create hit. Recording the type makes the
   // container/member/request sequence assertable.
   const sobjectMock = vi.fn()
+  // `find` args carry the ApexClass lookup filter; recording them makes the
+  // Name/NamespacePrefix payload assertable.
+  const findArgsMock = vi.fn()
 
   beforeEach(() => {
     deleteMock.mockResolvedValue(undefined)
@@ -31,7 +34,10 @@ describe('ApexClassRepository', () => {
     function buildSObjectStub(objectType: string) {
       if (objectType === 'ApexClass') {
         return {
-          find: () => ({ execute: findMock }),
+          find: (filter: unknown) => {
+            findArgsMock(filter)
+            return { execute: findMock }
+          },
         }
       } else if (objectType === 'MetadataContainer') {
         return {
@@ -49,7 +55,10 @@ describe('ApexClassRepository', () => {
         }
       }
       return {
-        find: () => ({ execute: findMock }),
+        find: (filter: unknown) => {
+          findArgsMock(filter)
+          return { execute: findMock }
+        },
         create: createMock,
         retrieve: retrieveMock,
       }
@@ -76,6 +85,13 @@ describe('ApexClassRepository', () => {
 
         // Assert
         expect(result).toEqual(mockApexClass)
+        expect(sobjectMock).toHaveBeenCalledWith('ApexClass')
+        // The namespace filter must stay an explicit empty string — dropping it
+        // would widen the lookup to managed-package classes of the same name.
+        expect(findArgsMock).toHaveBeenCalledWith({
+          Name: 'TestClass',
+          NamespacePrefix: '',
+        })
       })
     })
 
@@ -444,6 +460,8 @@ describe('ApexClassRepository', () => {
         expect(pollErr.requestId).toBe('request999')
         expect(pollErr.lastState).toBe('Queued')
         expect(pollErr.name).toBe('PollTimeoutError')
+        expect(pollErr.message).toContain('request999')
+        expect(pollErr.message).toContain('Queued')
         // container still cleaned up on timeout
         expect(deleteMock).toHaveBeenCalledWith('containerSLOW')
       })
@@ -476,6 +494,119 @@ describe('ApexClassRepository', () => {
 
         // Assert
         expect(result).toEqual({ State: 'Completed', Id: 'request123' })
+      })
+
+      it('then each wait follows the exponential backoff capped at maxIntervalMs', async () => {
+        // Arrange — initial 50ms, cap 60ms, factor 1.5. The cap has to bind on
+        // the very first step (75 > 60) so that capping, growing and defaulting
+        // all produce different sequences:
+        //   expected      50, 60, 60
+        //   Math.max      50, 75, 112   (grows past the cap)
+        //   `*` -> `/`    50, 33, 22    (decays instead of growing)
+        //   initial `??` -> `&&`  100, 60, 60   (falls back to the default)
+        //   max `??` -> `&&`      50, 75, 112   (cap becomes the 2000ms default)
+        // Neither configured value equals its default, so the fallbacks show up.
+        const waits: number[] = []
+        const timeoutSpy = vi
+          .spyOn(globalThis, 'setTimeout')
+          .mockImplementation(((callback: () => void, ms?: number) => {
+            waits.push(ms as number)
+            callback()
+            return 0
+          }) as never)
+        sut = new ApexClassRepository(connectionStub, {
+          initialIntervalMs: 50,
+          maxIntervalMs: 60,
+          timeoutMs: 5_000,
+        })
+        createMock
+          .mockResolvedValueOnce({ id: 'containerBK' })
+          .mockResolvedValueOnce({ id: 'member123' })
+          .mockResolvedValueOnce({ id: 'request123' })
+        retrieveMock
+          .mockResolvedValueOnce({ State: 'Queued', Id: 'request123' })
+          .mockResolvedValueOnce({ State: 'Queued', Id: 'request123' })
+          .mockResolvedValueOnce({ State: 'InProgress', Id: 'request123' })
+          .mockResolvedValueOnce({ State: 'Completed', Id: 'request123' })
+
+        // Act
+        const result = await sut.update({
+          Id: '123',
+          Body: 'public class TestClass {}',
+        })
+
+        // Assert
+        expect(result).toEqual({ State: 'Completed', Id: 'request123' })
+        expect(waits).toEqual([50, 60, 60])
+        // One create + one pre-loop retrieve + three in-loop retrieves.
+        expect(
+          sobjectMock.mock.calls.filter(
+            ([type]) => type === 'ContainerAsyncRequest'
+          )
+        ).toHaveLength(5)
+        timeoutSpy.mockRestore()
+      })
+
+      it('then a poll landing exactly on the deadline is still allowed to continue', async () => {
+        // Arrange — Date.now() is read once for the container name, once to
+        // compute the deadline, then once per loop pass. Returning exactly the
+        // deadline on that check pins `>` against `>=`: the budget is not spent
+        // until the deadline is passed.
+        const timeoutMs = 100
+        const nowValues = [1_000, 1_000, 1_100]
+        let nowIndex = 0
+        const nowSpy = vi
+          .spyOn(Date, 'now')
+          .mockImplementation(() => nowValues[Math.min(nowIndex++, 2)])
+        const timeoutSpy = vi
+          .spyOn(globalThis, 'setTimeout')
+          .mockImplementation(((callback: () => void) => {
+            callback()
+            return 0
+          }) as never)
+        sut = new ApexClassRepository(connectionStub, {
+          initialIntervalMs: 1,
+          maxIntervalMs: 1,
+          timeoutMs,
+        })
+        createMock
+          .mockResolvedValueOnce({ id: 'containerDL' })
+          .mockResolvedValueOnce({ id: 'member123' })
+          .mockResolvedValueOnce({ id: 'request123' })
+        retrieveMock
+          .mockResolvedValueOnce({ State: 'Queued', Id: 'request123' })
+          .mockResolvedValueOnce({ State: 'Completed', Id: 'request123' })
+
+        // Act
+        const result = await sut.update({
+          Id: '123',
+          Body: 'public class TestClass {}',
+        })
+
+        // Assert — reaching the deadline exactly must not abort the poll
+        expect(result).toEqual({ State: 'Completed', Id: 'request123' })
+        nowSpy.mockRestore()
+        timeoutSpy.mockRestore()
+      })
+
+      it('then the MetadataContainer is named with a MutationTest timestamp', async () => {
+        // Arrange
+        createMock
+          .mockResolvedValueOnce({ id: 'containerNM' })
+          .mockResolvedValueOnce({ id: 'member123' })
+          .mockResolvedValueOnce({ id: 'request123' })
+        retrieveMock.mockResolvedValue({
+          State: 'Completed',
+          Id: 'request123',
+        })
+
+        // Act
+        await sut.update({ Id: '123', Body: 'public class TestClass {}' })
+
+        // Assert — the container name must stay unique per run
+        expect(createMock).toHaveBeenNthCalledWith(1, {
+          Name: expect.stringMatching(/^MutationTest_\d+$/),
+        })
       })
     })
   })

@@ -176,6 +176,8 @@ export class ConfigReader {
       // casing diverge (e.g. 'ß', the Kelvin sign U+212A) cannot occur
       // in a real class name, so no reachable input can expose a
       // difference in de-dup grouping between the two directions.
+      // Stryker disable next-line MethodExpression: see the note above — no
+      // reachable class name distinguishes lower- from upper-casing here.
       name => name.toLowerCase(),
       messages,
       'error.blankTestClass'
@@ -221,10 +223,11 @@ export class ConfigReader {
         'Cannot specify both includeTestMethods and excludeTestMethods'
       )
     }
-    if (
-      parameter.threshold !== undefined &&
-      (parameter.threshold < 0 || parameter.threshold > 100)
-    ) {
+    // The `!== undefined` half is type narrowing only: `undefined < 0` and
+    // `undefined > 100` are both false, so an unset threshold never throws.
+    const { threshold } = parameter
+    // Stryker disable next-line ConditionalExpression: type narrowing only.
+    if (threshold !== undefined && (threshold < 0 || threshold > 100)) {
       throw new Error('Threshold must be between 0 and 100')
     }
     if (parameter.lines) {
@@ -234,6 +237,10 @@ export class ConfigReader {
             `Invalid line range '${range}': must be a number or range (e.g., '10' or '1-10')`
           )
         }
+        // Not observable: the regex above already accepted the range, and for a
+        // bare number `split('-')` yields a single element so `end` is
+        // undefined and `start > undefined` is false either way.
+        // Stryker disable next-line ConditionalExpression,StringLiteral: no-op for bare numbers.
         if (range.includes('-')) {
           const [start, end] = range.split('-').map(Number)
           if (start > end) {

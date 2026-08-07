@@ -42,6 +42,9 @@ export class ArgumentPropagationMutator extends BaseListener {
     }
 
     const args = extractArguments(methodCall)
+    // Early-out only: with no arguments the loop inside
+    // createMutationsForMatchingArgs has no iterations and emits nothing.
+    // Stryker disable next-line ConditionalExpression,BlockStatement: shortcut only.
     if (args.length === 0) {
       return
     }
@@ -65,6 +68,7 @@ export class ArgumentPropagationMutator extends BaseListener {
     }
 
     const args = extractArguments(info.dotMethodCall)
+    // Stryker disable next-line ConditionalExpression,BlockStatement: shortcut only.
     if (args.length === 0) {
       return
     }

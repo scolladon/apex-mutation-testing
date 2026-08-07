@@ -17,6 +17,9 @@ export class ConstructorCallMutator extends BaseListener {
       return
     }
 
+    // Unreachable: this hook only fires on a newExpression, whose first
+    // terminal is by definition the `new` keyword.
+    // Stryker disable next-line ConditionalExpression,BlockStatement: unreachable.
     if (newKeyword.text.toLowerCase() !== 'new') {
       return
     }

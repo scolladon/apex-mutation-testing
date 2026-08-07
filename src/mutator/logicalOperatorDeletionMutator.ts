@@ -8,6 +8,9 @@ export class LogicalOperatorDeletionMutator extends BaseListener {
   }
 
   enterLogOrExpression(ctx: ParserRuleContext): void {
+    // `isIdentityOperand` branches on `=== '&&'` and treats everything else as
+    // the OR case, so any non-'&&' string selects the same identity element.
+    // Stryker disable next-line StringLiteral: only '&&' is discriminated.
     this.processDeletion(ctx, '||')
   }
 

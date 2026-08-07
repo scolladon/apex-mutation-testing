@@ -380,6 +380,180 @@ describe('solveColoring', () => {
     expect(result.lowerBound).toBe(4)
     expect(result.optimal).toBe(true)
   })
+
+  it('given lowerBound above dsaturColors when solving then reports the result as not optimal', () => {
+    // Arrange — the only shape where the binary search never runs and lo
+    // overshoots hi, so `lo === hi` is genuinely false rather than trivially true.
+    const result = solveColoring(
+      baseInput({ lowerBound: 5, dsaturColors: 3, dsaturColoring: [0] })
+    )
+
+    // Assert
+    expect(result.optimal).toBe(false)
+    expect(result.lowerBound).toBe(5)
+  })
+
+  it('given the DSATUR coloring is kept when solving then the returned coloring is a defensive copy', () => {
+    // Arrange — `best` seeds from `dsaturColoring.slice()`; returning the
+    // caller's own array would let a later mutation leak into the result.
+    const dsaturColoring = [0]
+
+    // Act
+    const result = solveColoring(baseInput({ dsaturColoring }))
+
+    // Assert
+    expect(result.coloring).toEqual(dsaturColoring)
+    expect(result.coloring).not.toBe(dsaturColoring)
+  })
+})
+
+describe('tryKColoring — DSATUR selection is deterministic', () => {
+  // The selection order is a documented contract: highest saturation, then
+  // highest degree, then lowest input index. Asserting only validity lets any
+  // permutation of that order pass, so these assert the exact coloring.
+
+  it('given a path P4 when 2-coloring then the interior vertices are picked before the endpoints', () => {
+    // Arrange — all saturations start at 0, so the first pick is decided purely
+    // by degree: vertex 1 (degree 2) outranks vertex 0 (degree 1). Colouring in
+    // input order instead would yield [0,1,0,1].
+    const adjacency: number[][] = [[1], [0, 2], [1, 3], [2]]
+
+    // Act
+    const result = tryKColoring(adjacency, 4, 2, [])
+
+    // Assert
+    expect(result).toEqual([1, 0, 1, 0])
+  })
+
+  it('given a bull graph when 3-coloring then saturation outranks degree in the pick order', () => {
+    // Arrange — the triangle 0-1-2 carries the horns 3 and 4. Once the triangle
+    // is coloured the horns are saturated differently, so the exact assignment
+    // pins both the saturation and the degree tiebreak.
+    const adjacency: number[][] = [[1, 2], [0, 2, 3], [0, 1, 4], [1], [2]]
+
+    // Act
+    const result = tryKColoring(adjacency, 5, 3, [])
+
+    // Assert
+    expect(result).toEqual([2, 0, 1, 1, 0])
+  })
+
+  it('given an odd cycle C5 when 3-coloring then the third color lands on the last vertex', () => {
+    // Arrange — C_5 is not 2-colorable; walking the cycle greedily forces the
+    // extra color onto vertex 4.
+    const adjacency: number[][] = [
+      [1, 4],
+      [0, 2],
+      [1, 3],
+      [2, 4],
+      [3, 0],
+    ]
+
+    // Act
+    const result = tryKColoring(adjacency, 5, 3, [])
+
+    // Assert
+    expect(result).toEqual([0, 1, 0, 1, 2])
+  })
+
+  it('given a later vertex with strictly higher saturation when picking then it outranks an earlier higher-degree vertex', () => {
+    // Arrange — with vertex 0 seeded, vertex 4 reaches a strictly higher
+    // saturation than the current pick while having no degree advantage. Only a
+    // genuine `saturation > pickSaturation` test promotes it; folding that test
+    // into the `pick === -1` clause (or dropping it) re-orders the search and
+    // lands vertex 4 on a different color.
+    const adjacency: number[][] = [
+      [1, 2, 3],
+      [0, 3, 5],
+      [0, 3],
+      [0, 1, 2],
+      [5],
+      [1, 4],
+    ]
+
+    // Act
+    const result = tryKColoring(adjacency, 6, 4, [0])
+
+    // Assert
+    expect(result).toEqual([0, 1, 1, 2, 1, 0])
+  })
+
+  it('given saturation ties broken by degree when picking then equal saturation is required, not assumed', () => {
+    // Arrange — treating every saturation comparison as a tie hands the pick to
+    // whichever vertex has the highest degree regardless of constraint, which
+    // re-colors most of the graph.
+    const adjacency: number[][] = [
+      [2, 5],
+      [3, 4],
+      [0, 3],
+      [1, 2, 6],
+      [1, 6],
+      [0],
+      [3, 4],
+    ]
+
+    // Act
+    const result = tryKColoring(adjacency, 7, 3, [5])
+
+    // Assert
+    expect(result).toEqual([1, 0, 0, 1, 1, 0, 0])
+  })
+
+  it('given a vertex with both colored and uncolored neighbors when 2-coloring then uncolored neighbors are excluded from the used set', () => {
+    // Arrange — vertex 3 is picked while neighbor 2 is still uncolored. Counting
+    // the sentinel -1 as a used color inflates the set to size 2, tripping the
+    // `used.size >= k` early exit and failing a graph that is plainly 2-colorable.
+    const adjacency: number[][] = [[4], [], [3, 5], [2, 4], [0, 3], [2]]
+
+    // Act
+    const result = tryKColoring(adjacency, 6, 2, [])
+
+    // Assert
+    expect(result).toEqual([1, 0, 0, 1, 0, 1])
+  })
+
+  it('given a branch that fails below the forward-checking horizon when coloring then the next color is tried', () => {
+    // Arrange — a dense 10-vertex graph at k=4. Forward checking clears the
+    // first color for some vertex, yet the search below it still dead-ends, so
+    // the recursion must fall through and try the next color. Returning the
+    // failed recursion verbatim abandons the search and yields null.
+    const adjacency: number[][] = [
+      [3, 6, 8, 9],
+      [2, 3, 5, 8],
+      [1, 3, 6, 7, 8],
+      [0, 1, 2, 4, 6, 9],
+      [3, 5, 6],
+      [1, 4, 6, 7, 8, 9],
+      [0, 2, 3, 4, 5, 7, 8, 9],
+      [2, 5, 6, 9],
+      [0, 1, 2, 5, 6],
+      [0, 3, 5, 6, 7],
+    ]
+
+    // Act
+    const result = tryKColoring(adjacency, 10, 4, [9])
+
+    // Assert
+    expect(result).toEqual([3, 1, 0, 2, 0, 3, 1, 2, 2, 0])
+    expect(isValidColoring(result as number[], adjacency)).toBe(true)
+  })
+
+  it('given a witness clique when 3-coloring then witness vertices keep their seeded colors in witness order', () => {
+    // Arrange — the witness is pre-coloured by position, not by vertex id:
+    // witness[0]=2 takes color 0 and witness[1]=0 takes color 1, leaving
+    // vertex 1 to fill the remaining color.
+    const adjacency: number[][] = [
+      [1, 2],
+      [0, 2],
+      [0, 1],
+    ]
+
+    // Act
+    const result = tryKColoring(adjacency, 3, 3, [2, 0])
+
+    // Assert
+    expect(result).toEqual([1, 2, 0])
+  })
 })
 
 describe('decideExactOutcome', () => {

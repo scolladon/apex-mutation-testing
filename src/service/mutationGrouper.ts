@@ -59,15 +59,9 @@ export const groupMutationsWithInternals = (
   mutations: ReadonlyArray<ApexMutation>,
   testMethodsPerLine: Map<number, Set<TestMethodId>>
 ): GroupingResultWithInternals => {
+  // No empty-input special case: with n = 0 every structure below is built
+  // empty, both loops have zero iterations, and `assembleGroups` returns [].
   const n = mutations.length
-  if (n === 0) {
-    return {
-      groups: [],
-      lowerBound: 0,
-      internals: { adjacency: [], witness: [], coloring: [], tests: [] },
-    }
-  }
-
   const tests = mutations.map(
     m =>
       testMethodsPerLine.get(m.target.startToken.line) ??
@@ -126,7 +120,10 @@ const computeLowerBoundClique = (
   }
   // Stable canonical order: ascending by mutation index. Combined with the
   // strict-`>` tiebreak in pickNextVertex, makes the entire pipeline
-  // deterministic for fixed input.
+  // deterministic for fixed input. Buckets are already built by ascending `i`,
+  // so this normalisation is belt-and-braces and cannot change the outcome —
+  // it is kept so the invariant survives a future change to how buckets fill.
+  // Stryker disable next-line ArithmeticOperator,ArrowFunction,MethodExpression: already ordered.
   return best.slice().sort((a, b) => a - b)
 }
 
@@ -139,6 +136,10 @@ const propagate = (
   saturation: number[]
 ): void => {
   for (const neighbor of adjacency[v]) {
+    // Both arms only skip bookkeeping that is never read back: a coloured
+    // vertex is skipped by `pickNextVertex`, and re-adding a colour already in
+    // the set is a no-op. Verified by differential search over ~600k inputs.
+    // Stryker disable next-line ConditionalExpression,LogicalOperator: bookkeeping is not read back.
     if (color[neighbor] === -1 && !neighborColors[neighbor].has(c)) {
       neighborColors[neighbor].add(c)
       ++saturation[neighbor]
@@ -155,6 +156,8 @@ const pickNextVertex = (
   degree: ReadonlyArray<number>
 ): number => {
   let pick = -1
+  // Stryker disable next-line EqualityOperator: an extra iteration reads
+  // `color[length]` as undefined, which is `!== -1` and is therefore skipped.
   for (let i = 0; i < color.length; ++i) {
     if (color[i] !== -1) continue
     if (

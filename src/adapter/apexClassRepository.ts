@@ -38,12 +38,17 @@ export class ApexClassRepository {
   ) {
     // Validate poll configuration eagerly so misconfiguration fails fast
     // at construction rather than mid-deploy with non-deterministic behaviour.
+    // The `!== undefined` halves below are required by the type system, not by
+    // the logic: `undefined < 0` and `undefined === 0` are both false, so
+    // dropping them would not change behaviour for an unset option.
     const { initialIntervalMs, maxIntervalMs, timeoutMs } = pollOptions
+    // Stryker disable next-line ConditionalExpression: type narrowing only.
     if (initialIntervalMs !== undefined && initialIntervalMs < 0) {
       throw new Error(
         `pollOptions.initialIntervalMs must be >= 0 (got ${initialIntervalMs})`
       )
     }
+    // Stryker disable next-line ConditionalExpression: type narrowing only.
     if (maxIntervalMs !== undefined && maxIntervalMs < 0) {
       throw new Error(
         `pollOptions.maxIntervalMs must be >= 0 (got ${maxIntervalMs})`
@@ -51,6 +56,7 @@ export class ApexClassRepository {
     }
     // timeoutMs <= 0 allowed only for test harnesses that want an instant
     // timeout; reject 0 which is the racy value (deadline == now).
+    // Stryker disable next-line ConditionalExpression: type narrowing only.
     if (timeoutMs !== undefined && timeoutMs === 0) {
       throw new Error(
         `pollOptions.timeoutMs must be non-zero (0 is racy); use a negative value for immediate timeout or a positive value for a real budget`

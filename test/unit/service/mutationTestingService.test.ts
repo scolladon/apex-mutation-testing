@@ -611,11 +611,25 @@ describe('MutationTestingService', () => {
         expect(spinner.start).toHaveBeenCalledWith(
           expect.stringContaining('Estimated time:'),
           undefined,
-          expect.anything()
+          { stdout: true }
         )
         expect(spinner.stop).toHaveBeenCalledWith(
           expect.stringContaining('Deploy:')
         )
+        // Every phase that succeeds closes its spinner with the exact word
+        // 'Done'. Counting them pins each call site individually — a bare
+        // toHaveBeenCalledWith('Done') would still pass if only one regressed.
+        expect(
+          vi.mocked(spinner.stop).mock.calls.filter(([text]) => text === 'Done')
+        ).toHaveLength(4)
+        // The breakdown line must be built from real arguments — dropping them
+        // still yields a string containing 'Deploy:', just full of `undefined`.
+        const breakdown = vi
+          .mocked(spinner.stop)
+          .mock.calls.map(([text]) => text)
+          .find(text => typeof text === 'string' && text.startsWith('Deploy:'))
+        expect(breakdown).toBeDefined()
+        expect(breakdown).not.toContain('undefined')
       })
     })
 
@@ -5454,6 +5468,9 @@ describe('MutationTestingService', () => {
         updateMany?: (...args: unknown[]) => Promise<unknown>
         runTestMethods?: (...args: unknown[]) => Promise<unknown>
         mutateMany?: (mutations: ApexMutation[]) => string
+        // Leaves `mutationGrouping` off the parameter object entirely, so the
+        // service has to fall back to its own default.
+        omitGrouping?: boolean
       }) => {
         vi.mocked(ApexClassRepository).mockImplementation(
           class {
@@ -5525,11 +5542,55 @@ describe('MutationTestingService', () => {
           {
             apexClassName: 'TestClass',
             apexTestClassNames: ['TestClassTest'],
-            mutationGrouping: true,
+            ...(overrides.omitGrouping ? {} : { mutationGrouping: true }),
           } as ApexMutationParameter,
           messagesMock
         )
       }
+
+      it('given mutationGrouping is left unset when running then grouping stays off and no conflict graph is built', async () => {
+        // Arrange — grouping is opt-in: the default must be off, and the
+        // no-grouping branch must short-circuit before the grouper runs.
+        const grouperMod = await import(
+          '../../../src/service/mutationGrouper.js'
+        )
+        const groupSpy = vi.spyOn(grouperMod, 'groupMutationsWithInternals')
+        const localSut = buildGroupedSut({ omitGrouping: true })
+
+        // Act
+        await localSut.process()
+
+        // Assert
+        expect(groupSpy).not.toHaveBeenCalled()
+        // Without grouping each mutation is its own group, so the loop runs
+        // twice and the running total must climb 0 -> 1 -> 2. Subtracting
+        // instead would walk it backwards and finish at 0.
+        const positions = vi
+          .mocked(progress.update)
+          .mock.calls.map(([position]) => position)
+        expect(positions[positions.length - 1]).toBe(2)
+        // Four phases close with 'Done' on the way in, plus the rollback at the
+        // end; counting them pins each site individually.
+        expect(
+          vi.mocked(spinner.stop).mock.calls.filter(([t]) => t === 'Done')
+        ).toHaveLength(5)
+        groupSpy.mockRestore()
+      })
+
+      it('given grouping is enabled when planning then the grouping spinner writes to stdout', async () => {
+        // Arrange
+        const localSut = buildGroupedSut({})
+
+        // Act
+        await localSut.process()
+
+        // Assert — the option object is what routes the message to stdout
+        expect(spinner.start).toHaveBeenCalledWith(
+          expect.stringContaining('Grouping 2 mutations'),
+          undefined,
+          { stdout: true }
+        )
+      })
 
       it('given two disjoint mutations and all tests pass when running with grouping then both mutants are Survived in input order', async () => {
         // Arrange
@@ -5739,6 +5800,19 @@ describe('MutationTestingService', () => {
       })
 
       describe('Exact-coloring dispatch (always runs when mutationGrouping is on)', () => {
+        let assembleSpy: ReturnType<typeof vi.spyOn>
+
+        beforeEach(async () => {
+          const grouperMod = await import(
+            '../../../src/service/mutationGrouper.js'
+          )
+          assembleSpy = vi.spyOn(grouperMod, 'assembleGroups')
+        })
+
+        afterEach(() => {
+          assembleSpy.mockRestore()
+        })
+
         const groupingTokens = (): string[] => {
           const call = vi
             .mocked(messagesMock.getMessage)
@@ -5766,6 +5840,9 @@ describe('MutationTestingService', () => {
           // Assert
           expect(solveColoring).toHaveBeenCalledOnce()
           expect(groupingTokens()).toContain(' — exact: confirmed optimal')
+          // The suffix alone does not prove the dispatch kept the DSATUR
+          // groups — only the absence of a re-assemble does.
+          expect(assembleSpy).not.toHaveBeenCalled()
         })
 
         it('given exact returns strictly fewer colors than DSATUR when planning then re-assembles into the smaller group count and emits the improved suffix', async () => {
@@ -5847,6 +5924,13 @@ describe('MutationTestingService', () => {
           const tokens = groupingTokens()
           expect(tokens[tokens.length - 1]).toBe(
             ' — exact: improved by 1 deploy(s)'
+          )
+          // The improved branch must actually re-assemble the groups from the
+          // exact coloring, not merely relabel the plan.
+          expect(assembleSpy).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            [0, 0]
           )
           groupSpy.mockRestore()
         })

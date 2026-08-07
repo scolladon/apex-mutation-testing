@@ -195,25 +195,27 @@ describe('timeUtils', () => {
       fakeNow.mockRestore()
     })
 
-    it('given completedCount=2 of 10 with 100ms elapsed when called then remaining time is proportional', () => {
-      // Arrange — kills arithmetic operator mutants. avgPerMutant = 100/2 = 50;
-      // remainingMs = 50 * (10 - 2) = 400. If / → *, remaining=elapsed*16; if * → /,
-      // remaining=elapsed/16; if - → +, remaining=avgPerMutant*12 (different).
+    it('given completedCount=2 of 10 with 60s elapsed when called then remaining time is proportional', () => {
+      // Arrange — fixtures chosen so every arithmetic mutant formats to a
+      // DISTINCT duration, making the exact-equality assert below sufficient:
+      //   correct        (60000/2)*(10-2) = 240000ms -> ~4m 0s
+      //   elapsed - → +  (80000/2)*(10-2) = 320000ms -> ~5m 20s
+      //   / → *          (60000*2)*(10-2) = 960000ms -> ~16m 0s
+      //   count  - → +   (60000/2)*(10+2) = 360000ms -> ~6m 0s
       const loopStartTime = 10_000
       const fakeNow = vi.spyOn(performance, 'now')
-      fakeNow.mockReturnValue(loopStartTime + 100)
+      fakeNow.mockReturnValue(loopStartTime + 60_000)
 
       // Act
       const result = formatRemainingTime(loopStartTime, 2, 10)
 
       // Assert
-      expect(result).toContain('Remaining:')
-      expect(result).toContain(' | ')
+      expect(result).toBe('Remaining: ~4m 0s | ')
       fakeNow.mockRestore()
     })
 
     it('given completedCount equals totalCount when called then formatDuration receives 0', () => {
-      // Arrange — kills (totalCount - completedCount) → + mutant
+      // Arrange — completed == total means zero work left, whatever the elapsed.
       const loopStartTime = 5000
       const fakeNow = vi.spyOn(performance, 'now')
       fakeNow.mockReturnValue(loopStartTime + 200)

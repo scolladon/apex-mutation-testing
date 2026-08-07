@@ -16,6 +16,14 @@ import {
 } from './mutationLocation.js'
 import { formatRemainingTime } from './timeUtils.js'
 
+const PASS_OUTCOME = 'Pass'
+// The non-pass branch's literal value is never itself observed: every consumer
+// (buildAttributedResult) only tests `!== 'Pass'`, so any distinct non-pass
+// string is behaviourally interchangeable — 'Fail' is chosen for readability
+// during debugging, not correctness.
+// Stryker disable next-line StringLiteral: any non-pass value behaves the same.
+const NON_PASS_OUTCOME = 'Fail'
+
 // Classify a deploy/test-run error into a per-mutant outcome plus a progress
 // message. The three branches match Salesforce-side failure modes: a compile
 // error from the Tooling API deploy, a governor-limit kill (which is a real
@@ -230,12 +238,8 @@ export class GroupExecutor {
         t.outcome,
       ])
     )
-    // The non-Pass branch's literal value is never itself observed: every
-    // consumer (buildAttributedResult) only tests `!== 'Pass'`, so any
-    // distinct non-'Pass' string here is behaviourally interchangeable —
-    // 'Fail' is chosen for readability during debugging, not correctness.
     const summaryFallback =
-      testResult.summary.outcome === 'Passed' ? 'Pass' : 'Fail'
+      testResult.summary.outcome === 'Passed' ? PASS_OUTCOME : NON_PASS_OUTCOME
     return group.mutations.map(mutation =>
       this.buildAttributedResult(mutation, outcomeByMethod, summaryFallback)
     )
@@ -255,7 +259,7 @@ export class GroupExecutor {
     // attribution — emitting coveredBy: [] for a Killed mutant would be a
     // contradiction the schema cannot express.
     if (myMethods.size === 0) {
-      const killed = summaryFallback !== 'Pass'
+      const killed = summaryFallback !== PASS_OUTCOME
       return this.buildMutantResult(mutation, killed ? 'Killed' : 'Survived')
     }
 
@@ -266,14 +270,15 @@ export class GroupExecutor {
       const outcome = outcomeByMethod.get(name)
       if (outcome === undefined) continue
       testsCompleted++
-      if (outcome !== 'Pass') killedBy.push(name)
+      if (outcome !== PASS_OUTCOME) killedBy.push(name)
     }
     // A method that never reported falls back to the run summary; deriving the
     // verdict from the counts keeps it in lockstep with the attribution above,
     // rather than re-expressing the kill rule a second way.
     const someOutcomeMissing = testsCompleted < coveredBy.length
     const killed =
-      killedBy.length > 0 || (someOutcomeMissing && summaryFallback !== 'Pass')
+      killedBy.length > 0 ||
+      (someOutcomeMissing && summaryFallback !== PASS_OUTCOME)
     return this.buildMutantResult(mutation, killed ? 'Killed' : 'Survived', {
       attribution: { coveredBy, killedBy, testsCompleted },
     })
