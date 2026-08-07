@@ -94,8 +94,8 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │            name with the -t classes via
 │            ConfigReader.normalizeClassPerimeter (trim,
 │            dedupe case-insensitively, reject blanks) —
-│            CLI classes first, then each suite's members
-│            ordered by class name
+│            CLI classes first, then the suites in flag
+│            order, each suite's members by class name
 │
 ├─ 3. VALIDATE
 │     ApexClassValidator
