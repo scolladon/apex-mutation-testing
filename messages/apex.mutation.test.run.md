@@ -16,6 +16,10 @@ Apex class name to mutate
 
 Apex test class name(s) to validate mutations. Repeat the flag or pass a comma-delimited list to cover a class with multiple test classes.
 
+# flags.test-suite.summary
+
+Apex test suite name(s) whose classes define the mutation perimeter. Repeat the flag or pass a comma-delimited list. Suite names are case-sensitive.
+
 # flags.report-dir.summary
 
 Path to the directory where mutation test reports will be generated
@@ -33,6 +37,10 @@ Path to the directory where mutation test reports will be generated
 - Run mutation testing on a class covered by multiple test classes:
 
   <%= config.bin %> <%= command.id %> --apex-class MyClass --test-class MyClassTest,MyClassTest2
+
+- Run mutation testing on a class covered by an Apex test suite:
+
+  <%= config.bin %> <%= command.id %> --apex-class MyClass --test-suite MyTestSuite
 
 # info.reportGenerated
 

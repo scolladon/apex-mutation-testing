@@ -1,9 +1,11 @@
 import { Messages } from '@salesforce/core'
 import { Flags, SfCommand } from '@salesforce/sf-plugins-core'
+import { ApexTestSuiteRepository } from '../../../../adapter/apexTestSuiteRepository.js'
 import { ApexMutationHTMLReporter } from '../../../../reporter/HTMLReporter.js'
 import { ApexClassValidator } from '../../../../service/apexClassValidator.js'
 import { ConfigReader } from '../../../../service/configReader.js'
 import { MutationTestingService } from '../../../../service/mutationTestingService.js'
+import { TestSuiteResolver } from '../../../../service/testSuiteResolver.js'
 import { ApexMutationParameter } from '../../../../type/ApexMutationParameter.js'
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url)
@@ -31,9 +33,15 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
     'test-class': Flags.string({
       char: 't',
       summary: messages.getMessage('flags.test-class.summary'),
-      required: true,
       multiple: true,
       delimiter: ',',
+      atLeastOne: ['test-class', 'test-suite'],
+    }),
+    'test-suite': Flags.string({
+      summary: messages.getMessage('flags.test-suite.summary'),
+      multiple: true,
+      delimiter: ',',
+      atLeastOne: ['test-class', 'test-suite'],
     }),
     'report-dir': Flags.directory({
       char: 'r',
@@ -98,7 +106,8 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
 
     const parameters: ApexMutationParameter = {
       apexClassName: flags['apex-class'],
-      apexTestClassNames: flags['test-class'],
+      apexTestClassNames: flags['test-class'] ?? [],
+      apexTestSuiteNames: flags['test-suite'],
       reportDir: flags['report-dir'],
       dryRun: flags['dry-run'],
       includeMutators: flags['include-mutators'],
@@ -113,7 +122,14 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
     }
 
     const configReader = new ConfigReader(messages)
-    const resolvedParameters = await configReader.resolve(parameters)
+    const configuredParameters = await configReader.resolve(parameters)
+
+    const testSuiteResolver = new TestSuiteResolver(
+      new ApexTestSuiteRepository(connection),
+      messages
+    )
+    const resolvedParameters =
+      await testSuiteResolver.resolve(configuredParameters)
 
     this.log(
       messages.getMessage(
