@@ -1,9 +1,10 @@
 import { ApexMutation } from '../type/ApexMutation.js'
+import type { TestMethodId } from '../type/TestMethodId.js'
 import { buildAdjacency } from './exactColoring.js'
 
 export interface MutationGroup {
   mutations: ApexMutation[]
-  testMethods: Set<string>
+  testMethods: Set<TestMethodId>
 }
 
 export interface GroupingResult {
@@ -15,7 +16,7 @@ interface GroupingInternals {
   adjacency: number[][]
   witness: number[]
   coloring: number[]
-  tests: ReadonlyArray<Set<string>>
+  tests: ReadonlyArray<Set<TestMethodId>>
 }
 
 type GroupingResultWithInternals = GroupingResult & {
@@ -41,7 +42,7 @@ type GroupingResultWithInternals = GroupingResult & {
 // (groups.length === lowerBound implies provably optimal).
 export const groupMutations = (
   mutations: ReadonlyArray<ApexMutation>,
-  testMethodsPerLine: Map<number, Set<string>>
+  testMethodsPerLine: Map<number, Set<TestMethodId>>
 ): GroupingResult => {
   const { groups, lowerBound } = groupMutationsWithInternals(
     mutations,
@@ -56,7 +57,7 @@ export const groupMutations = (
 // the graph.
 export const groupMutationsWithInternals = (
   mutations: ReadonlyArray<ApexMutation>,
-  testMethodsPerLine: Map<number, Set<string>>
+  testMethodsPerLine: Map<number, Set<TestMethodId>>
 ): GroupingResultWithInternals => {
   const n = mutations.length
   if (n === 0) {
@@ -68,7 +69,9 @@ export const groupMutationsWithInternals = (
   }
 
   const tests = mutations.map(
-    m => testMethodsPerLine.get(m.target.startToken.line) ?? new Set<string>()
+    m =>
+      testMethodsPerLine.get(m.target.startToken.line) ??
+      new Set<TestMethodId>()
   )
   const adjacency = buildAdjacency(tests)
   const degree = adjacency.map(neighbors => neighbors.length)
@@ -107,9 +110,9 @@ export const groupMutationsWithInternals = (
 // line) so two mutations sharing the same Set reference still produce two
 // distinct witness entries.
 const computeLowerBoundClique = (
-  tests: ReadonlyArray<Set<string>>
+  tests: ReadonlyArray<Set<TestMethodId>>
 ): number[] => {
-  const testToMutations = new Map<string, number[]>()
+  const testToMutations = new Map<TestMethodId, number[]>()
   for (let i = 0; i < tests.length; ++i) {
     for (const t of tests[i]) {
       const bucket = testToMutations.get(t)
@@ -177,7 +180,7 @@ const pickSmallestAvailableColor = (
 
 export const assembleGroups = (
   mutations: ReadonlyArray<ApexMutation>,
-  tests: ReadonlyArray<Set<string>>,
+  tests: ReadonlyArray<Set<TestMethodId>>,
   color: ReadonlyArray<number>
 ): MutationGroup[] => {
   const groups: MutationGroup[] = []

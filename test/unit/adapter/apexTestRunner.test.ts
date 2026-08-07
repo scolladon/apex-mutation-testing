@@ -1,6 +1,7 @@
 import { TestLevel } from '@salesforce/apex-node'
 import { Connection } from '@salesforce/core'
 import { ApexTestRunner } from '../../../src/adapter/apexTestRunner.js'
+import type { TestMethodId } from '../../../src/type/TestMethodId.js'
 
 const runTestAsynchronousMock = vi.fn()
 
@@ -51,7 +52,7 @@ describe('ApexTestRunner', () => {
 
         // Act
         const result = await sut.getTestMethodsPerLines(
-          'TestClass',
+          ['TestClass'],
           strategyStub
         )
 
@@ -77,6 +78,39 @@ describe('ApexTestRunner', () => {
       })
     })
 
+    describe('given multiple test classes', () => {
+      it('then should build one test entry per class in perimeter order', async () => {
+        // Arrange
+        const mockTestResult = {
+          summary: {
+            outcome: 'Passed',
+            passing: 2,
+            failing: 0,
+            testsRan: 2,
+          },
+        }
+        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
+        const strategyStub = {
+          fidelity: 'per-test' as const,
+          getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
+        }
+
+        // Act
+        await sut.getTestMethodsPerLines(['A', 'B'], strategyStub)
+
+        // Assert
+        expect(runTestAsynchronousMock).toHaveBeenCalledWith(
+          {
+            tests: [{ className: 'A' }, { className: 'B' }],
+            testLevel: TestLevel.RunSpecifiedTests,
+            skipCodeCoverage: false,
+            maxFailedTests: 0,
+          },
+          true
+        )
+      })
+    })
+
     describe('given the test execution fails', () => {
       it('then should throw an error', async () => {
         // Arrange
@@ -90,7 +124,7 @@ describe('ApexTestRunner', () => {
 
         // Act & Assert
         await expect(
-          sut.getTestMethodsPerLines('TestClass', strategyStub)
+          sut.getTestMethodsPerLines(['TestClass'], strategyStub)
         ).rejects.toThrow('Test execution failed')
       })
     })
@@ -109,15 +143,42 @@ describe('ApexTestRunner', () => {
 
         // Act
         const result = await sut.runTestMethods(
-          'TestClass',
-          new Set<string>(['testMethod'])
+          new Set<TestMethodId>(['TestClass.testMethod'])
         )
 
-        // Assert
+        // Assert — a single-class id set reproduces the byte-identical
+        // single-element payload
         expect(result).toEqual(mockTestResult)
         expect(runTestAsynchronousMock).toHaveBeenCalledWith(
           {
             tests: [{ className: 'TestClass', testMethods: ['testMethod'] }],
+            testLevel: TestLevel.RunSpecifiedTests,
+            skipCodeCoverage: true,
+            maxFailedTests: 0,
+          },
+          false
+        )
+      })
+    })
+
+    describe('given a mixed-class id set', () => {
+      it('then should fold the ids into one test entry per declaring class', async () => {
+        // Arrange
+        const mockTestResult = { summary: { outcome: 'Passed' } }
+        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
+
+        // Act
+        await sut.runTestMethods(
+          new Set<TestMethodId>(['A.testOne', 'A.testTwo', 'B.testThree'])
+        )
+
+        // Assert — the class list is derived from the ids alone
+        expect(runTestAsynchronousMock).toHaveBeenCalledWith(
+          {
+            tests: [
+              { className: 'A', testMethods: ['testOne', 'testTwo'] },
+              { className: 'B', testMethods: ['testThree'] },
+            ],
             testLevel: TestLevel.RunSpecifiedTests,
             skipCodeCoverage: true,
             maxFailedTests: 0,
@@ -136,33 +197,8 @@ describe('ApexTestRunner', () => {
 
         // Act & Assert
         await expect(
-          sut.runTestMethods('TestClass', new Set<string>(['testMethod']))
+          sut.runTestMethods(new Set<TestMethodId>(['TestClass.testMethod']))
         ).rejects.toThrow('Test execution failed')
-      })
-    })
-
-    describe('given no test methods specified', () => {
-      it('then should use default empty set', async () => {
-        // Arrange
-        const mockTestResult = {
-          summary: { outcome: 'Passed' },
-        }
-        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
-
-        // Act
-        const result = await sut.runTestMethods('TestClass')
-
-        // Assert
-        expect(result).toEqual(mockTestResult)
-        expect(runTestAsynchronousMock).toHaveBeenCalledWith(
-          {
-            tests: [{ className: 'TestClass', testMethods: [] }],
-            testLevel: TestLevel.RunSpecifiedTests,
-            skipCodeCoverage: true,
-            maxFailedTests: 0,
-          },
-          false
-        )
       })
     })
   })

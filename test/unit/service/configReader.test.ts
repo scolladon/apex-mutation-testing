@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 
+import { Messages } from '@salesforce/core'
 import { ConfigReader } from '../../../src/service/configReader.js'
 import { ApexMutationParameter } from '../../../src/type/ApexMutationParameter.js'
 
@@ -26,14 +27,23 @@ vi.mock('../../../src/service/skipPattern.js', async importOriginal => {
 
 describe('ConfigReader', () => {
   let sut: ConfigReader
+  let messagesMock: Messages<string>
   const baseParameter: ApexMutationParameter = {
     apexClassName: 'MyClass',
-    apexTestClassName: 'MyClassTest',
+    apexTestClassNames: ['MyClassTest'],
     reportDir: 'reports',
   }
 
   beforeEach(() => {
-    sut = new ConfigReader()
+    messagesMock = {
+      getMessage: vi.fn((key: string, args?: string[]) => {
+        const templates: Record<string, string> = {
+          'error.blankTestClass': `Blank apex test class name found: '${args?.[0]}'`,
+        }
+        return templates[key] || key
+      }),
+    } as unknown as Messages<string>
+    sut = new ConfigReader(messagesMock)
     skipPatternThrows = false
     vi.mocked(readFile).mockRejectedValue({ code: 'ENOENT' })
   })
@@ -579,6 +589,98 @@ describe('ConfigReader', () => {
     expect(() => ConfigReader.compileSkipPatterns(['some-pattern'])).toThrow(
       /Invalid skip pattern 'some-pattern': string thrown/
     )
+  })
+
+  describe('perimeter normalization', () => {
+    it('Given test class names with surrounding whitespace, When resolving config, Then trims each name', async () => {
+      // Arrange
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: ['  A  ', 'B'],
+      }
+
+      // Act
+      const result = await sut.resolve(parameter)
+
+      // Assert
+      expect(result.apexTestClassNames).toEqual(['A', 'B'])
+    })
+
+    it('Given a blank test class name, When resolving config, Then throws naming the offending raw input', async () => {
+      // Arrange — whitespace-only, not '', so raw ('   ') and trimmed ('')
+      // differ: this pins the error to the raw argument specifically.
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: ['A', '   ', 'B'],
+      }
+
+      // Act & Assert
+      await expect(sut.resolve(parameter)).rejects.toThrow(
+        "Blank apex test class name found: '   '"
+      )
+      expect(messagesMock.getMessage).toHaveBeenCalledWith(
+        'error.blankTestClass',
+        ['   ']
+      )
+    })
+
+    it('Given case-insensitive duplicate test class names, When resolving config, Then keeps only the first-seen spelling', async () => {
+      // Arrange
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: ['A', 'a'],
+      }
+
+      // Act
+      const result = await sut.resolve(parameter)
+
+      // Assert
+      expect(result.apexTestClassNames).toEqual(['A'])
+    })
+
+    it('Given test class names out of alphabetical order, When resolving config, Then preserves user order', async () => {
+      // Arrange
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: ['B', 'A'],
+      }
+
+      // Act
+      const result = await sut.resolve(parameter)
+
+      // Assert
+      expect(result.apexTestClassNames).toEqual(['B', 'A'])
+    })
+
+    it('Given a single test class name, When resolving config, Then the perimeter passes through unchanged', async () => {
+      // Arrange — single-element perimeter is byte-identical to input
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: ['MyClassTest'],
+      }
+
+      // Act
+      const result = await sut.resolve(parameter)
+
+      // Assert
+      expect(result.apexTestClassNames).toEqual(['MyClassTest'])
+    })
+
+    it('Given a config file carrying a testClass-ish key, When resolving config, Then the file key has no effect on the perimeter', async () => {
+      // Arrange — MutationTestingConfig declares no test-class key
+      const config = { testClass: 'FromFileShouldBeIgnored' }
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: ['CliClass'],
+      }
+
+      // Act
+      const result = await sut.resolve(parameter)
+
+      // Assert
+      expect(result.apexTestClassNames).toEqual(['CliClass'])
+    })
   })
 
   describe('parseLineRanges', () => {

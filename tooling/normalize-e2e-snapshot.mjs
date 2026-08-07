@@ -9,9 +9,9 @@ const content = readFileSync(file, 'utf8')
 // `<script>…</script>` block. We strip the bundle (not what the e2e is
 // asserting; ~500KB of churn on every regen) and normalise the JSON.
 //
-// The data island is escape-hardened: </, <!--, -->, <script, and
-// line/paragraph separators are backslash-escaped. Reverse those before
-// JSON.parse, and reapply after re-serialising.
+// The data island is escape-hardened by escaping < > and the line/paragraph
+// separators as \uXXXX. Those are JSON escapes, so the island parses as-is and
+// needs no reverse transform — only the same escaping reapplied on the way out.
 const dataIslandRegex =
   /<script id="mutation-report-data" type="application\/json">([\s\S]+?)<\/script>/
 
@@ -22,25 +22,29 @@ if (!match) {
   process.exit(1)
 }
 
-const unescapeJsonIsland = s =>
-  s
-    .replaceAll('<\\/', '</')
-    .replaceAll('<\\!--', '<!--')
-    .replaceAll('--\\>', '-->')
-    .replaceAll(/<\\script/gi, '<script')
-    .replaceAll('\\u2028', '\u2028')
-    .replaceAll('\\u2029', '\u2029')
-
 const escapeJsonIsland = s =>
-  s
-    .replaceAll('</', '<\\/')
-    .replaceAll('<!--', '<\\!--')
-    .replaceAll('-->', '--\\>')
-    .replaceAll(/<script/gi, '<\\script')
-    .replaceAll('\u2028', '\\u2028')
-    .replaceAll('\u2029', '\\u2029')
+  s.replaceAll(
+    /[<>\u2028\u2029]/g,
+    character => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`
+  )
 
-const report = JSON.parse(unescapeJsonIsland(match[1]))
+const report = JSON.parse(match[1])
+
+const VOLATILE_PLACEHOLDER = 'E2E_TEST'
+
+// `killedBy` and `testsCompleted` are the only report fields a rerun can
+// legitimately change. The plugin runs tests with maxFailedTests: 0, so an
+// async run aborts on the first failure — which of a mutant's covering
+// methods gets there first is Salesforce's scheduling decision, not ours.
+// Masking them keeps the snapshot a byte-comparison while leaving everything
+// deterministic — coveredBy, testFiles, status, counts, locations — asserted
+// exactly. Same treatment as the run timestamp baked into every mutant id.
+const normaliseVolatileAttribution = mutant => {
+  if (mutant.killedBy) {
+    mutant.killedBy = [VOLATILE_PLACEHOLDER]
+  }
+  mutant.testsCompleted = 0
+}
 
 for (const fileData of Object.values(report.files)) {
   fileData.mutants.sort((a, b) => {
@@ -57,7 +61,8 @@ for (const fileData of Object.values(report.files)) {
   })
 
   for (const mutant of fileData.mutants) {
-    mutant.id = mutant.id.replace(/\d{13}/, 'E2E_TEST')
+    mutant.id = mutant.id.replace(/\d{13}/, VOLATILE_PLACEHOLDER)
+    normaliseVolatileAttribution(mutant)
   }
 }
 
@@ -66,11 +71,15 @@ const BUNDLE_PLACEHOLDER =
 
 const STRIPPED_BUNDLE_REGEX = /<head>([\s\S]+?)<\/head>/
 
+// Replacer FUNCTION, not a string: a `$&`/`$1`/`$$` occurring anywhere in the
+// report JSON would otherwise be interpreted as a substitution pattern and
+// silently corrupt the snapshot.
 let normalised = content.replace(
   dataIslandRegex,
-  `<script id="mutation-report-data" type="application/json">${escapeJsonIsland(
-    JSON.stringify(report)
-  )}</script>`
+  () =>
+    `<script id="mutation-report-data" type="application/json">${escapeJsonIsland(
+      JSON.stringify(report)
+    )}</script>`
 )
 
 normalised = normalised.replace(STRIPPED_BUNDLE_REGEX, headContent => {

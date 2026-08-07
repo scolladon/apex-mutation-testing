@@ -11,7 +11,7 @@ describe('ApexClassValidator', () => {
   let sut: ApexClassValidator
   const params = {
     apexClassName: 'TestClass',
-    apexTestClassName: 'TestClassTest',
+    apexTestClassNames: ['TestClassTest'],
     reportDir: 'reports',
   }
 
@@ -81,6 +81,82 @@ describe('ApexClassValidator', () => {
 
       // Act & Assert
       await expect(sut.validate(params)).rejects.toThrow(
+        'Apex class TestClass not found\nApex test class TestClassTest not found'
+      )
+    })
+
+    it('should resolve when the target class and every class in a multi-class perimeter are valid', async () => {
+      // Arrange
+      const mockApexClass = { Body: 'class TestClass {}' }
+      const mockTestClassA = { Body: '@IsTest class TestClassTest {}' }
+      const mockTestClassB = { Body: '@IsTest class TestClassTest2 {}' }
+      readMock
+        .mockResolvedValueOnce(mockApexClass as ApexClass)
+        .mockResolvedValueOnce(mockTestClassA as ApexClass)
+        .mockResolvedValueOnce(mockTestClassB as ApexClass)
+      const multiParams = {
+        ...params,
+        apexTestClassNames: ['TestClassTest', 'TestClassTest2'],
+      }
+
+      // Act & Assert
+      await expect(sut.validate(multiParams)).resolves.not.toThrow()
+    })
+
+    it('should name exactly the missing class when one among many perimeter classes is missing', async () => {
+      // Arrange
+      const mockApexClass = { Body: 'class TestClass {}' }
+      const mockTestClassB = { Body: '@IsTest class TestClassTest2 {}' }
+      readMock
+        .mockResolvedValueOnce(mockApexClass as ApexClass)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(mockTestClassB as ApexClass)
+      const multiParams = {
+        ...params,
+        apexTestClassNames: ['TestClassTest', 'TestClassTest2'],
+      }
+
+      // Act & Assert
+      await expect(sut.validate(multiParams)).rejects.toMatchObject({
+        message: 'Apex test class TestClassTest not found',
+      })
+    })
+
+    // An invalid class in the LAST position is the case that catches a validator
+    // which stops after the first perimeter entry.
+    it('should name the missing class when it is the last of the perimeter', async () => {
+      // Arrange
+      const mockApexClass = { Body: 'class TestClass {}' }
+      const mockTestClassA = { Body: '@IsTest class TestClassTest {}' }
+      readMock
+        .mockResolvedValueOnce(mockApexClass as ApexClass)
+        .mockResolvedValueOnce(mockTestClassA as ApexClass)
+        .mockResolvedValueOnce(null)
+      const multiParams = {
+        ...params,
+        apexTestClassNames: ['TestClassTest', 'TestClassTest2'],
+      }
+
+      // Act & Assert
+      await expect(sut.validate(multiParams)).rejects.toMatchObject({
+        message: 'Apex test class TestClassTest2 not found',
+      })
+    })
+
+    it('should join the target-class error first when the target class and one perimeter class are both invalid', async () => {
+      // Arrange
+      const mockTestClassB = { Body: '@IsTest class TestClassTest2 {}' }
+      readMock
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(mockTestClassB as ApexClass)
+      const multiParams = {
+        ...params,
+        apexTestClassNames: ['TestClassTest', 'TestClassTest2'],
+      }
+
+      // Act & Assert
+      await expect(sut.validate(multiParams)).rejects.toThrow(
         'Apex class TestClass not found\nApex test class TestClassTest not found'
       )
     })

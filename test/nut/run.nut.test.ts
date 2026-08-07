@@ -52,7 +52,9 @@ vi.mock('@salesforce/sf-plugins-core', () => {
   return {
     SfCommand: FakeSfCommand,
     Flags: {
-      string: vi.fn().mockReturnValue({}),
+      // Echo the options back so the declaration itself is assertable; `parse`
+      // is stubbed, so oclif never consumes these objects.
+      string: vi.fn(options => options),
       boolean: vi.fn().mockReturnValue({}),
       directory: vi.fn().mockReturnValue({}),
       integer: vi.fn().mockReturnValue({}),
@@ -110,7 +112,7 @@ describe('apex mutation test run NUT', () => {
         process = vi.fn().mockResolvedValue({
           sourceFile: 'TestClass',
           sourceFileContent: 'class TestClass {}',
-          testFile: 'TestClassTest',
+          testFiles: ['TestClassTest'],
           mutants: [{ status: 'Killed' }, { status: 'Survived' }],
         } as never)
         calculateScore = vi.fn().mockReturnValue(50)
@@ -123,6 +125,19 @@ describe('apex mutation test run NUT', () => {
     )
   })
 
+  // Mirrors oclif's `multiple: true, delimiter: ','` behaviour for the
+  // `-t`/`--test-class` flag: every occurrence contributes a value, and each
+  // value is split on comma.
+  function collectTestClassValues(args: string[]): string[] {
+    const rawValues = args.reduce<string[]>((values, arg, i) => {
+      if (arg === '-t' || arg === '--test-class') {
+        values.push(args[i + 1])
+      }
+      return values
+    }, [])
+    return rawValues.flatMap(value => value.split(','))
+  }
+
   async function runCommand(
     args: string[],
     flagOverrides: Record<string, unknown> = {}
@@ -133,9 +148,7 @@ describe('apex mutation test run NUT', () => {
         'apex-class':
           args[args.indexOf('-c') + 1] ||
           args[args.indexOf('--apex-class') + 1],
-        'test-class':
-          args[args.indexOf('-t') + 1] ||
-          args[args.indexOf('--test-class') + 1],
+        'test-class': collectTestClassValues(args),
         'report-dir': 'mutations',
         'target-org': mockOrg,
         ...flagOverrides,
@@ -179,7 +192,7 @@ describe('apex mutation test run NUT', () => {
       expect(validatorInstance.validate).toHaveBeenCalledWith(
         expect.objectContaining({
           apexClassName: 'MyClass',
-          apexTestClassName: 'MyClassTest',
+          apexTestClassNames: ['MyClassTest'],
         })
       )
     })
@@ -191,7 +204,7 @@ describe('apex mutation test run NUT', () => {
         mockConnection,
         expect.objectContaining({
           apexClassName: 'MyClass',
-          apexTestClassName: 'MyClassTest',
+          apexTestClassNames: ['MyClassTest'],
           reportDir: 'mutations',
         }),
         expect.anything()
@@ -210,8 +223,67 @@ describe('apex mutation test run NUT', () => {
       expect(mockConfigReaderResolve).toHaveBeenCalledWith(
         expect.objectContaining({
           apexClassName: 'MyClass',
-          apexTestClassName: 'MyClassTest',
+          apexTestClassNames: ['MyClassTest'],
         })
+      )
+    })
+  })
+
+  // runCommand stubs `parse`, so the two cases below exercise the plumbing
+  // downstream of parsing rather than oclif itself. This pins the flag
+  // declaration that makes the repeated and comma-delimited forms parse at all —
+  // without it, removing multiple/delimiter would leave the whole suite green.
+  describe('Given the test-class flag declaration', () => {
+    it('When inspected, Then it accepts repeated and comma-delimited values', () => {
+      // Act
+      const result = ApexMutationTest.flags['test-class']
+
+      // Assert
+      expect(result).toMatchObject({ multiple: true, delimiter: ',' })
+    })
+  })
+
+  describe('Given multiple test classes via repeated -t flags', () => {
+    it('When running, Then service receives apexTestClassNames in perimeter order', async () => {
+      // Act
+      await runCommand(['-c', 'MyClass', '-t', 'A', '-t', 'B'])
+
+      // Assert
+      expect(MutationTestingService).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        mockConnection,
+        expect.objectContaining({ apexTestClassNames: ['A', 'B'] }),
+        expect.anything()
+      )
+    })
+  })
+
+  describe('Given multiple test classes via a comma-delimited -t flag', () => {
+    it('When running, Then service receives apexTestClassNames split on comma', async () => {
+      // Act
+      await runCommand(['-c', 'MyClass', '-t', 'A,B'])
+
+      // Assert
+      expect(MutationTestingService).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        mockConnection,
+        expect.objectContaining({ apexTestClassNames: ['A', 'B'] }),
+        expect.anything()
+      )
+    })
+  })
+
+  describe('Given a multi-class perimeter', () => {
+    it('When running, Then info.CommandIsRunning receives the joined perimeter', async () => {
+      // Act
+      await runCommand(['-c', 'MyClass', '-t', 'A,B'])
+
+      // Assert
+      expect(mockMessages.getMessage).toHaveBeenCalledWith(
+        'info.CommandIsRunning',
+        ['MyClass', 'A, B']
       )
     })
   })
@@ -276,7 +348,7 @@ describe('apex mutation test run NUT', () => {
           process = vi.fn().mockResolvedValue({
             sourceFile: 'MyClass',
             sourceFileContent: 'class MyClass {}',
-            testFile: 'MyClassTest',
+            testFiles: ['MyClassTest'],
             mutants: [
               {
                 id: 'MyClass-0',
@@ -348,7 +420,7 @@ describe('apex mutation test run NUT', () => {
           mockConnection,
           expect.objectContaining({
             apexClassName: 'MyClass',
-            apexTestClassName: 'MyClassTest',
+            apexTestClassNames: ['MyClassTest'],
             dryRun: true,
           }),
           expect.anything()
@@ -376,7 +448,7 @@ describe('apex mutation test run NUT', () => {
           process = vi.fn().mockResolvedValue({
             sourceFile: 'MyClass',
             sourceFileContent: 'class MyClass {}',
-            testFile: 'MyClassTest',
+            testFiles: ['MyClassTest'],
             mutants: [{ status: 'Killed' }, { status: 'Survived' }],
           } as never)
           calculateScore = vi.fn().mockReturnValue(50)

@@ -1,6 +1,7 @@
 import { TestLevel, TestResult, TestService } from '@salesforce/apex-node'
 import { Connection } from '@salesforce/core'
 import type { CoverageStrategy } from '../service/coverageStrategy.js'
+import { type TestMethodId, toTestItems } from '../type/TestMethodId.js'
 
 export class ApexTestRunner {
   protected readonly testService: TestService
@@ -9,11 +10,11 @@ export class ApexTestRunner {
   }
 
   public async getTestMethodsPerLines(
-    apexTestClassName: string,
+    apexTestClassNames: string[],
     coverageStrategy: CoverageStrategy
   ) {
     const testResult = await this.runTestAsynchronous(
-      { className: apexTestClassName },
+      apexTestClassNames.map(className => ({ className })),
       false
     )
     return {
@@ -24,23 +25,17 @@ export class ApexTestRunner {
     }
   }
 
-  public async runTestMethods(
-    className: string,
-    testMethods: Set<string> = new Set<string>()
-  ) {
-    return this.runTestAsynchronous({
-      className,
-      testMethods: Array.from(testMethods),
-    })
+  public async runTestMethods(testMethods: Set<TestMethodId>) {
+    return this.runTestAsynchronous(toTestItems(testMethods))
   }
 
   private async runTestAsynchronous(
-    testPerimeter: { className: string; testMethods?: string[] },
+    tests: { className: string; testMethods?: string[] }[],
     skipCodeCoverage: boolean = true
   ) {
     return (await this.testService.runTestAsynchronous(
       {
-        tests: [testPerimeter],
+        tests,
         testLevel: TestLevel.RunSpecifiedTests,
         skipCodeCoverage,
         maxFailedTests: 0,

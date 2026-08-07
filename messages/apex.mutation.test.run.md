@@ -14,7 +14,7 @@ Apex class name to mutate
 
 # flags.test-class.summary
 
-Apex test class name to validate mutations
+Apex test class name(s) to validate mutations. Repeat the flag or pass a comma-delimited list to cover a class with multiple test classes.
 
 # flags.report-dir.summary
 
@@ -30,17 +30,21 @@ Path to the directory where mutation test reports will be generated
 
   <%= config.bin %> <%= command.id %> --apex-class MyClass --test-class MyClassTest --dry-run
 
+- Run mutation testing on a class covered by multiple test classes:
+
+  <%= config.bin %> <%= command.id %> --apex-class MyClass --test-class MyClassTest,MyClassTest2
+
 # info.reportGenerated
 
 Report has been generated at this location: %s
 
 # info.CommandIsRunning
 
-Running mutation testing for "%s" with "%s" test class
+Running mutation testing for "%s" with test class(es) "%s"
 
 # info.DryRunCommandIsRunning
 
-Running dry run mutation testing for "%s" with "%s" test class
+Running dry run mutation testing for "%s" with test class(es) "%s"
 
 # info.CommandSuccess
 
@@ -62,7 +66,15 @@ No test coverage found for '%s'. Ensure '%s' tests exercise the code you want to
 
 # info.aggregatedCoverageOnly
 
-Per-test coverage unavailable on this org due to "Store Only Aggregated Code Coverage" setting, using aggregate coverage instead - all tests will run per mutant (slower), and the mutation score may be understated because ApexCodeCoverageAggregate is a cumulative org-wide rollup, so lines covered only by other test classes produce mutants this test class can never kill
+Per-test coverage unavailable on this org due to "Store Only Aggregated Code Coverage" setting, using aggregate coverage instead - all tests will run per mutant (slower), and the mutation score may be understated because ApexCodeCoverageAggregate is a cumulative org-wide rollup, so lines covered only by other test classes produce mutants these test classes can never kill. Report attribution is also class-level, not method-level, in this mode: every test in the perimeter covers every mutant, so coveredBy and killedBy list every class that ran rather than the specific method responsible
+
+# info.zeroContributionTestClasses
+
+The following test class(es) contributed no covered lines and will not affect the mutation score: %s
+
+# error.blankTestClass
+
+Blank apex test class name found: '%s'. Remove empty entries from the -t/--test-class flag.
 
 # error.noMutations
 
@@ -94,11 +106,11 @@ Mutator names to exclude
 
 # flags.include-test-methods.summary
 
-Test method names to include
+Test method names to include. Bare `methodName` applies to that method in every test class in the perimeter; qualified `ClassName.methodName` applies to that one class only.
 
 # flags.exclude-test-methods.summary
 
-Test method names to exclude
+Test method names to exclude. Bare `methodName` applies to that method in every test class in the perimeter; qualified `ClassName.methodName` applies to that one class only.
 
 # flags.threshold.summary
 

@@ -77,6 +77,30 @@ export class ApexClassRepository {
   }
 
   public async update(apexClass: ApexClass) {
+    return this.deployToContainer([apexClass])
+  }
+
+  public async updateMany(apexClasses: ApexClass[]) {
+    return this.deployToContainer(apexClasses)
+  }
+
+  // Shared by update/updateMany so a single-class and a batched deploy run
+  // the exact same container → members → request → poll → cleanup cycle.
+  private async deployToContainer(apexClasses: ApexClass[]) {
+    const containerId = await this.createContainer()
+    try {
+      await this.addMembers(containerId, apexClasses)
+      const requestId = await this.createDeployRequest(containerId)
+      return await this.awaitSuccessfulDeploy(requestId)
+    } finally {
+      // Fire-and-forget cleanup: awaiting this would add a full Tooling API
+      // round-trip to every deploy (500 extra calls on a 500-mutant run).
+      // If the delete fails, Salesforce reaps the MetadataContainer after 24h.
+      this.deleteContainer(containerId)
+    }
+  }
+
+  private async createContainer(): Promise<string> {
     const container = await this.connection.tooling
       .sobject('MetadataContainer')
       .create({
@@ -86,49 +110,55 @@ export class ApexClassRepository {
     if (!container.id) {
       throw new Error('MetadataContainer did not return an ID')
     }
-    const containerId = container.id
-    try {
+    return container.id
+  }
+
+  private async addMembers(
+    containerId: string,
+    apexClasses: ApexClass[]
+  ): Promise<void> {
+    for (const apexClass of apexClasses) {
       await this.connection.tooling.sobject('ApexClassMember').create({
         MetadataContainerId: containerId,
         ContentEntityId: apexClass.Id,
         Body: apexClass.Body,
       })
-
-      const asyncRequest = await this.connection.tooling
-        .sobject('ContainerAsyncRequest')
-        .create({
-          IsCheckOnly: false,
-          MetadataContainerId: containerId,
-          IsRunTests: true,
-        })
-
-      if (!asyncRequest.id) {
-        throw new Error('ContainerAsyncRequest did not return an ID')
-      }
-
-      const result = await this.pollForCompletion(asyncRequest.id)
-
-      if (result['State'] === 'Failed') {
-        const messages = result['DeployDetails']?.['allComponentMessages']
-        const formattedErrors = Array.isArray(messages)
-          ? messages
-              .map(
-                m =>
-                  `[${m.fileName}:${m.lineNumber}:${m.columnNumber}] ${m.problem}`
-              )
-              .join('\n')
-          : result['ErrorMsg'] || 'Unknown error'
-
-        throw new Error(`Deployment failed:\n${formattedErrors}`)
-      }
-
-      return result
-    } finally {
-      // Fire-and-forget cleanup: awaiting this would add a full Tooling API
-      // round-trip to every deploy (500 extra calls on a 500-mutant run).
-      // If the delete fails, Salesforce reaps the MetadataContainer after 24h.
-      this.deleteContainer(containerId)
     }
+  }
+
+  private async createDeployRequest(containerId: string): Promise<string> {
+    const asyncRequest = await this.connection.tooling
+      .sobject('ContainerAsyncRequest')
+      .create({
+        IsCheckOnly: false,
+        MetadataContainerId: containerId,
+        IsRunTests: true,
+      })
+
+    if (!asyncRequest.id) {
+      throw new Error('ContainerAsyncRequest did not return an ID')
+    }
+    return asyncRequest.id
+  }
+
+  private async awaitSuccessfulDeploy(requestId: string) {
+    const result = await this.pollForCompletion(requestId)
+
+    if (result['State'] === 'Failed') {
+      const messages = result['DeployDetails']?.['allComponentMessages']
+      const formattedErrors = Array.isArray(messages)
+        ? messages
+            .map(
+              m =>
+                `[${m.fileName}:${m.lineNumber}:${m.columnNumber}] ${m.problem}`
+            )
+            .join('\n')
+        : result['ErrorMsg'] || 'Unknown error'
+
+      throw new Error(`Deployment failed:\n${formattedErrors}`)
+    }
+
+    return result
   }
 
   private deleteContainer(containerId: string): void {

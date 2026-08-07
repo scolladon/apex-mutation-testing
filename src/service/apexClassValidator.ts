@@ -36,13 +36,13 @@ export class ApexClassValidator {
 
   public async validate({
     apexClassName,
-    apexTestClassName,
+    apexTestClassNames,
   }: ApexMutationParameter) {
-    const [apexErrors, testErrors] = await Promise.all([
+    const errorsPerClass = await Promise.all([
       this.validateApexClass(apexClassName),
-      this.validateApexTestClass(apexTestClassName),
+      ...apexTestClassNames.map(name => this.validateApexTestClass(name)),
     ])
-    const errors: string[] = [...apexErrors, ...testErrors]
+    const errors: string[] = errorsPerClass.flat()
     if (errors.length > 0) {
       throw new Error(errors.join('\n'))
     }
