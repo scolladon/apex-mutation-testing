@@ -1,7 +1,10 @@
 import { Connection } from '@salesforce/core'
 import type { Mocked } from 'vitest'
 import { ApexClassRepository } from '../../../src/adapter/apexClassRepository.js'
-import { ApexClassValidator } from '../../../src/service/apexClassValidator.js'
+import {
+  ApexClassNotFoundError,
+  ApexClassValidator,
+} from '../../../src/service/apexClassValidator.js'
 import { ApexClass } from '../../../src/type/ApexClass.js'
 
 vi.mock('../../../src/adapter/apexClassRepository.js')
@@ -28,136 +31,140 @@ describe('ApexClassValidator', () => {
   })
 
   describe('validate', () => {
-    it('should throw error when apex class is not found', async () => {
+    it('should reject with an ApexClassNotFoundError carrying the class name when the class under mutation is unreadable', async () => {
       // Arrange
       readMock.mockResolvedValueOnce(null)
 
-      // Act & Assert
-      await expect(sut.validate(params)).rejects.toThrow(
-        'Apex class TestClass not found'
-      )
+      // Act
+      const result = sut.validate(params)
+
+      // Assert
+      await expect(result).rejects.toBeInstanceOf(ApexClassNotFoundError)
+      await expect(result).rejects.toMatchObject({
+        className: 'TestClass',
+        name: 'ApexClassNotFoundError',
+      })
     })
 
-    it('should throw error when apex test class is not found', async () => {
+    it('should resolve and read the class exactly once when the class under mutation is readable', async () => {
       // Arrange
       const mockApexClass = { Body: 'class TestClass {}' }
-      readMock
-        .mockResolvedValueOnce(mockApexClass as ApexClass)
-        .mockResolvedValueOnce(null)
+      readMock.mockResolvedValueOnce(mockApexClass as ApexClass)
 
-      // Act & Assert
-      await expect(sut.validate(params)).rejects.toThrow(
-        'Apex test class TestClassTest not found'
-      )
+      // Act
+      await expect(sut.validate(params)).resolves.not.toThrow()
+
+      // Assert
+      expect(readMock).toHaveBeenCalledTimes(1)
     })
 
-    it('should throw error when apex test class is not annotated with @isTest', async () => {
-      // Arrange
-      const mockApexClass = { Body: 'class TestClass {}' }
-      const mockTestClass = { Body: 'class TestClassTest {}' }
-      readMock
-        .mockResolvedValueOnce(mockApexClass as ApexClass)
-        .mockResolvedValueOnce(mockTestClass as ApexClass)
-      // Act & Assert
-      await expect(sut.validate(params)).rejects.toThrow(
-        'Apex test class TestClassTest is not annotated with @isTest'
-      )
-    })
-
-    it('should not throw error when both classes are valid', async () => {
-      // Arrange
-      const mockApexClass = { Body: 'class TestClass {}' }
-      const mockTestClass = { Body: '@IsTest class TestClassTest {}' }
-      readMock
-        .mockResolvedValueOnce(mockApexClass as ApexClass)
-        .mockResolvedValueOnce(mockTestClass as ApexClass),
-        // Act & Assert
-        await expect(sut.validate(params)).resolves.not.toThrow()
-    })
-
-    it('should join multiple errors with newline when both classes are not found', async () => {
+    it('should reject naming only the target class when the target class is unreadable and a perimeter class is independently unusable', async () => {
       // Arrange
       readMock.mockResolvedValueOnce(null).mockResolvedValueOnce(null)
 
-      // Act & Assert
-      await expect(sut.validate(params)).rejects.toThrow(
-        'Apex class TestClass not found\nApex test class TestClassTest not found'
-      )
+      // Act
+      const validateResult = sut.validate(params)
+      const perimeterResult = sut.assessPerimeter(params.apexTestClassNames)
+
+      // Assert
+      await expect(validateResult).rejects.toMatchObject({
+        className: 'TestClass',
+      })
+      await expect(perimeterResult).resolves.toEqual([
+        { className: 'TestClassTest', reason: 'not-readable' },
+      ])
+    })
+  })
+
+  describe('assessPerimeter', () => {
+    it('should resolve with a not-readable verdict when a perimeter class cannot be read', async () => {
+      // Arrange
+      readMock.mockResolvedValueOnce(null)
+
+      // Act
+      const result = await sut.assessPerimeter(['TestClassTest'])
+
+      // Assert
+      expect(result).toEqual([
+        { className: 'TestClassTest', reason: 'not-readable' },
+      ])
     })
 
-    it('should resolve when the target class and every class in a multi-class perimeter are valid', async () => {
+    it('should resolve with a not-a-test-class verdict when a perimeter class has no @isTest annotation', async () => {
       // Arrange
-      const mockApexClass = { Body: 'class TestClass {}' }
+      const mockTestClass = { Body: 'class TestClassTest {}' }
+      readMock.mockResolvedValueOnce(mockTestClass as ApexClass)
+
+      // Act
+      const result = await sut.assessPerimeter(['TestClassTest'])
+
+      // Assert
+      expect(result).toEqual([
+        { className: 'TestClassTest', reason: 'not-a-test-class' },
+      ])
+    })
+
+    it('should resolve with an empty list when every perimeter class is a readable @isTest class', async () => {
+      // Arrange
       const mockTestClassA = { Body: '@IsTest class TestClassTest {}' }
       const mockTestClassB = { Body: '@IsTest class TestClassTest2 {}' }
       readMock
-        .mockResolvedValueOnce(mockApexClass as ApexClass)
         .mockResolvedValueOnce(mockTestClassA as ApexClass)
         .mockResolvedValueOnce(mockTestClassB as ApexClass)
-      const multiParams = {
-        ...params,
-        apexTestClassNames: ['TestClassTest', 'TestClassTest2'],
-      }
 
-      // Act & Assert
-      await expect(sut.validate(multiParams)).resolves.not.toThrow()
+      // Act
+      const result = await sut.assessPerimeter([
+        'TestClassTest',
+        'TestClassTest2',
+      ])
+
+      // Assert
+      expect(result).toEqual([])
     })
 
-    it('should name exactly the missing class when one among many perimeter classes is missing', async () => {
+    // A three-class perimeter with the first AND last entries unusable is what
+    // catches a reducer that stops at the first bad entry.
+    it('should name exactly the unusable entries, in perimeter order, when the first and last of a three-class perimeter are unusable', async () => {
       // Arrange
-      const mockApexClass = { Body: 'class TestClass {}' }
-      const mockTestClassB = { Body: '@IsTest class TestClassTest2 {}' }
+      const mockUsable = { Body: '@IsTest class Usable {}' }
       readMock
-        .mockResolvedValueOnce(mockApexClass as ApexClass)
         .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(mockTestClassB as ApexClass)
-      const multiParams = {
-        ...params,
-        apexTestClassNames: ['TestClassTest', 'TestClassTest2'],
-      }
+        .mockResolvedValueOnce(mockUsable as ApexClass)
+        .mockResolvedValueOnce({ Body: 'class NotATest {}' } as ApexClass)
 
-      // Act & Assert
-      await expect(sut.validate(multiParams)).rejects.toMatchObject({
-        message: 'Apex test class TestClassTest not found',
-      })
+      // Act
+      const result = await sut.assessPerimeter([
+        'Missing',
+        'Usable',
+        'NotATest',
+      ])
+
+      // Assert
+      expect(result).toEqual([
+        { className: 'Missing', reason: 'not-readable' },
+        { className: 'NotATest', reason: 'not-a-test-class' },
+      ])
     })
 
-    // An invalid class in the LAST position is the case that catches a validator
-    // which stops after the first perimeter entry.
-    it('should name the missing class when it is the last of the perimeter', async () => {
+    it('should return verdicts carrying no suiteNames', async () => {
       // Arrange
-      const mockApexClass = { Body: 'class TestClass {}' }
-      const mockTestClassA = { Body: '@IsTest class TestClassTest {}' }
-      readMock
-        .mockResolvedValueOnce(mockApexClass as ApexClass)
-        .mockResolvedValueOnce(mockTestClassA as ApexClass)
-        .mockResolvedValueOnce(null)
-      const multiParams = {
-        ...params,
-        apexTestClassNames: ['TestClassTest', 'TestClassTest2'],
-      }
+      readMock.mockResolvedValueOnce(null)
 
-      // Act & Assert
-      await expect(sut.validate(multiParams)).rejects.toMatchObject({
-        message: 'Apex test class TestClassTest2 not found',
-      })
+      // Act
+      const [verdict] = await sut.assessPerimeter(['TestClassTest'])
+
+      // Assert
+      expect(verdict.suiteNames).toBeUndefined()
     })
 
-    it('should join the target-class error first when the target class and one perimeter class are both invalid', async () => {
+    it('should propagate a rejecting read untouched', async () => {
       // Arrange
-      const mockTestClassB = { Body: '@IsTest class TestClassTest2 {}' }
-      readMock
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(mockTestClassB as ApexClass)
-      const multiParams = {
-        ...params,
-        apexTestClassNames: ['TestClassTest', 'TestClassTest2'],
-      }
+      const failure = new Error('org unavailable')
+      readMock.mockRejectedValueOnce(failure)
 
       // Act & Assert
-      await expect(sut.validate(multiParams)).rejects.toThrow(
-        'Apex class TestClass not found\nApex test class TestClassTest not found'
+      await expect(sut.assessPerimeter(['TestClassTest'])).rejects.toThrow(
+        'org unavailable'
       )
     })
   })

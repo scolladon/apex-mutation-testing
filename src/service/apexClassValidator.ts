@@ -2,6 +2,14 @@ import { Connection } from '@salesforce/core'
 import { ApexClassRepository } from '../adapter/apexClassRepository.js'
 import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
+import { SkippedTestClass } from '../type/SkippedTestClass.js'
+
+export class ApexClassNotFoundError extends Error {
+  constructor(public readonly className: string) {
+    super(className)
+    this.name = 'ApexClassNotFoundError'
+  }
+}
 
 export class ApexClassValidator {
   private readonly apexClassRepository: ApexClassRepository
@@ -9,42 +17,36 @@ export class ApexClassValidator {
     this.apexClassRepository = new ApexClassRepository(this.connection)
   }
 
-  private async validateApexClass(apexClassName: string) {
-    const errors: string[] = []
+  public async validate({
+    apexClassName,
+  }: ApexMutationParameter): Promise<void> {
     const apexClass = await this.apexClassRepository.read(apexClassName)
     if (!apexClass) {
-      errors.push(`Apex class ${apexClassName} not found`)
+      throw new ApexClassNotFoundError(apexClassName)
     }
-    return errors
   }
 
-  private async validateApexTestClass(apexTestClassName: string) {
-    const errors: string[] = []
+  public async assessPerimeter(
+    apexTestClassNames: string[]
+  ): Promise<SkippedTestClass[]> {
+    const verdicts = await Promise.all(
+      apexTestClassNames.map(name => this.assessTestClass(name))
+    )
+    return verdicts.flat()
+  }
+
+  private async assessTestClass(
+    apexTestClassName: string
+  ): Promise<SkippedTestClass[]> {
     const apexTestClass: ApexClass = (await this.apexClassRepository.read(
       apexTestClassName
     )) as unknown as ApexClass
     if (!apexTestClass) {
-      errors.push(`Apex test class ${apexTestClassName} not found`)
-    } else if (!apexTestClass.Body.toLowerCase().includes('@istest')) {
-      errors.push(
-        `Apex test class ${apexTestClassName} is not annotated with @isTest`
-      )
+      return [{ className: apexTestClassName, reason: 'not-readable' }]
     }
-
-    return errors
-  }
-
-  public async validate({
-    apexClassName,
-    apexTestClassNames,
-  }: ApexMutationParameter) {
-    const errorsPerClass = await Promise.all([
-      this.validateApexClass(apexClassName),
-      ...apexTestClassNames.map(name => this.validateApexTestClass(name)),
-    ])
-    const errors: string[] = errorsPerClass.flat()
-    if (errors.length > 0) {
-      throw new Error(errors.join('\n'))
+    if (!apexTestClass.Body.toLowerCase().includes('@istest')) {
+      return [{ className: apexTestClassName, reason: 'not-a-test-class' }]
     }
+    return []
   }
 }

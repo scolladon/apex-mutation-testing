@@ -2,9 +2,16 @@ import { Messages } from '@salesforce/core'
 import { Flags, SfCommand } from '@salesforce/sf-plugins-core'
 import { ApexTestSuiteRepository } from '../../../../adapter/apexTestSuiteRepository.js'
 import { ApexMutationHTMLReporter } from '../../../../reporter/HTMLReporter.js'
-import { ApexClassValidator } from '../../../../service/apexClassValidator.js'
+import {
+  ApexClassNotFoundError,
+  ApexClassValidator,
+} from '../../../../service/apexClassValidator.js'
 import { ConfigReader } from '../../../../service/configReader.js'
 import { MutationTestingService } from '../../../../service/mutationTestingService.js'
+import {
+  attachSuiteProvenance,
+  formatSkippedTestClass,
+} from '../../../../service/skippedTestClassMessage.js'
 import { TestSuiteResolver } from '../../../../service/testSuiteResolver.js'
 import { ApexMutationParameter } from '../../../../type/ApexMutationParameter.js'
 
@@ -144,13 +151,45 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
     )
 
     const apexClassValidator = new ApexClassValidator(connection)
-    await apexClassValidator.validate(resolvedParameters)
+    const [, skipped] = await Promise.all([
+      apexClassValidator.validate(resolvedParameters),
+      apexClassValidator.assessPerimeter(resolvedParameters.apexTestClassNames),
+    ]).catch((error: unknown): never => {
+      if (error instanceof ApexClassNotFoundError) {
+        throw messages.createError('error.apexClassNotFound', [error.className])
+      }
+      throw error
+    })
+
+    const droppedTestClasses = attachSuiteProvenance(
+      skipped,
+      resolvedParameters.testClassOrigins
+    )
+    const sentences = droppedTestClasses.map(entry =>
+      formatSkippedTestClass(entry, messages)
+    )
+    for (const sentence of sentences) {
+      this.warn(sentence)
+    }
+
+    const droppedNames = new Set(
+      droppedTestClasses.map(entry => entry.className)
+    )
+    const usableTestClassNames = resolvedParameters.apexTestClassNames.filter(
+      name => !droppedNames.has(name)
+    )
+    if (usableTestClassNames.length === 0) {
+      throw messages.createError('error.noUsableTestClass', [
+        resolvedParameters.apexClassName,
+        sentences.join('\n'),
+      ])
+    }
 
     const mutationTestingService = new MutationTestingService(
       this.progress,
       this.spinner,
       connection,
-      resolvedParameters,
+      { ...resolvedParameters, apexTestClassNames: usableTestClassNames },
       messages
     )
     const mutationResult = await mutationTestingService.process()
