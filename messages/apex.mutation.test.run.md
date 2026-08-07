@@ -80,6 +80,14 @@ Blank apex test class name found: '%s'. Remove empty entries from the -t/--test-
 
 Blank apex test suite name found: '%s'. Remove empty entries from the --test-suite flag.
 
+# error.testSuiteNotFound
+
+Apex test suite '%s' not found. Apex test suite names are case-sensitive — check the exact spelling in Setup > Apex Test Suites.
+
+# error.testSuiteEmpty
+
+Apex test suite '%s' contains no Apex test classes. Add classes to it in Setup > Apex Test Suites, or remove it from the --test-suite flag.
+
 # error.noMutations
 
 No mutations could be generated for '%s'. %s line(s) covered but no mutable patterns found.
