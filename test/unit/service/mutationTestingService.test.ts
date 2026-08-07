@@ -1155,7 +1155,7 @@ describe('MutationTestingService', () => {
         )
         const zeroContributionSut = buildZeroContributionSut(
           ['FooTest', 'BarTest'],
-          { bartest: ['SmokeSuite'] }
+          new Map([['bartest', ['SmokeSuite']]])
         )
 
         // Act
@@ -1211,7 +1211,7 @@ describe('MutationTestingService', () => {
         )
         const zeroContributionSut = buildZeroContributionSut(
           ['FooTest', 'BarTest'],
-          { someothertest: ['SmokeSuite'] }
+          new Map([['someothertest', ['SmokeSuite']]])
         )
 
         // Act
@@ -1267,7 +1267,7 @@ describe('MutationTestingService', () => {
         )
         const zeroContributionSut = buildZeroContributionSut(
           ['FooTest', 'BarTest'],
-          { bartest: ['SmokeSuite', 'RegressionSuite'] }
+          new Map([['bartest', ['SmokeSuite', 'RegressionSuite']]])
         )
 
         // Act

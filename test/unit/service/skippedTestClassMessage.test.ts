@@ -1,10 +1,9 @@
 import { Messages } from '@salesforce/core'
 import {
-  attachSuiteProvenance,
   formatSkippedTestClass,
+  formatSkippedTestClasses,
 } from '../../../src/service/skippedTestClassMessage.js'
 import { SkippedTestClass } from '../../../src/type/SkippedTestClass.js'
-import { TestClassOrigins } from '../../../src/type/TestClassOrigin.js'
 
 describe('formatSkippedTestClass', () => {
   let messages: Messages<string>
@@ -122,62 +121,48 @@ describe('formatSkippedTestClass', () => {
   })
 })
 
-describe('attachSuiteProvenance', () => {
-  it('Given verdicts and undefined origins, When attached, Then every entry is returned unchanged', () => {
-    // Arrange
-    const skipped: SkippedTestClass[] = [
-      { className: 'BadTest', reason: 'not-a-test-class' },
-    ]
+describe('formatSkippedTestClasses', () => {
+  let messages: Messages<string>
 
-    // Act
-    const sut = attachSuiteProvenance(skipped, undefined)
-
-    // Assert
-    expect(sut).toEqual(skipped)
+  beforeEach(() => {
+    messages = {
+      getMessage: vi.fn((key: string, args?: string[]) => {
+        const templates: Record<string, string> = {
+          'info.testClassNotUsable': `Skipping test class '${args?.[0]}'${args?.[1]}: ${args?.[2]}.`,
+          'info.contributedBySuite': `(contributed by test suite ${args?.[0]})`,
+          'info.reasonNotATestClass': 'it is not a test class',
+          'info.reasonNoCoverage': 'it contributed no covered lines',
+        }
+        return templates[key] ?? key
+      }),
+    } as unknown as Messages<string>
   })
 
-  it('Given origins keyed lower-case and a verdict class differing only in case, When attached, Then the suite names are attached', () => {
+  it('Given two verdicts, When formatted, Then two sentences are returned in input order', () => {
     // Arrange
     const skipped: SkippedTestClass[] = [
       { className: 'BadTest', reason: 'not-a-test-class' },
+      { className: 'BarTest', reason: 'no-coverage' },
     ]
-    const origins: TestClassOrigins = { badtest: ['SmokeSuite'] }
 
     // Act
-    const sut = attachSuiteProvenance(skipped, origins)
+    const sut = formatSkippedTestClasses(skipped, messages)
 
     // Assert
-    expect(sut[0]?.suiteNames).toEqual(['SmokeSuite'])
+    expect(sut).toEqual([
+      "Skipping test class 'BadTest': it is not a test class.",
+      "Skipping test class 'BarTest': it contributed no covered lines.",
+    ])
   })
 
-  it('Given origins with no entry for the verdict class, When attached, Then that entry has no suiteNames field', () => {
+  it('Given an empty verdict list, When formatted, Then an empty array is returned', () => {
     // Arrange
-    const skipped: SkippedTestClass[] = [
-      { className: 'BadTest', reason: 'not-a-test-class' },
-    ]
-    const origins: TestClassOrigins = { othertest: ['SmokeSuite'] }
+    const skipped: SkippedTestClass[] = []
 
     // Act
-    const sut = attachSuiteProvenance(skipped, origins)
+    const sut = formatSkippedTestClasses(skipped, messages)
 
     // Assert
-    expect(sut[0]).not.toHaveProperty('suiteNames')
-  })
-
-  it('Given an input array of verdicts, When attached, Then neither the array nor its entries are mutated', () => {
-    // Arrange
-    const skipped: SkippedTestClass[] = [
-      { className: 'BadTest', reason: 'not-a-test-class' },
-    ]
-    const origins: TestClassOrigins = { badtest: ['SmokeSuite'] }
-    const originalEntry = skipped[0]
-
-    // Act
-    const sut = attachSuiteProvenance(skipped, origins)
-
-    // Assert
-    expect(sut).not.toBe(skipped)
-    expect(skipped[0]).toBe(originalEntry)
-    expect(skipped[0]).not.toHaveProperty('suiteNames')
+    expect(sut).toEqual([])
   })
 })

@@ -626,7 +626,7 @@ describe('apex mutation test run NUT', () => {
         apexTestClassNames: ['GoodTest', 'BadTest'],
         apexTestSuiteNames: ['SmokeSuite'],
         reportDir: 'mutations',
-        testClassOrigins: { badtest: ['SmokeSuite'] },
+        testClassOrigins: new Map([['badtest', ['SmokeSuite']]]),
       })
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
@@ -656,7 +656,9 @@ describe('apex mutation test run NUT', () => {
         apexTestClassNames: ['GoodTest', 'BadTest'],
         apexTestSuiteNames: ['SmokeSuite', 'RegressionSuite'],
         reportDir: 'mutations',
-        testClassOrigins: { badtest: ['SmokeSuite', 'RegressionSuite'] },
+        testClassOrigins: new Map([
+          ['badtest', ['SmokeSuite', 'RegressionSuite']],
+        ]),
       })
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
@@ -692,7 +694,7 @@ describe('apex mutation test run NUT', () => {
         apexClassName: 'MyClass',
         apexTestClassNames: ['GoodTest', 'BadTest'],
         reportDir: 'mutations',
-        testClassOrigins: { fromsuite: ['SmokeSuite'] },
+        testClassOrigins: new Map([['fromsuite', ['SmokeSuite']]]),
       })
       vi.mocked(ApexClassValidator).mockImplementation(
         class {

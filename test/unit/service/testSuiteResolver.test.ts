@@ -85,11 +85,13 @@ describe('TestSuiteResolver', () => {
         'AlphaTestB',
         'AlphaTestC',
       ])
-      expect(result.testClassOrigins).toEqual({
-        alphatesta: ['Alpha'],
-        alphatestb: ['Alpha'],
-        alphatestc: ['Alpha'],
-      })
+      expect(result.testClassOrigins).toEqual(
+        new Map([
+          ['alphatesta', ['Alpha']],
+          ['alphatestb', ['Alpha']],
+          ['alphatestc', ['Alpha']],
+        ])
+      )
       expect(result).not.toBe(parameter)
       expect(parameter.apexTestClassNames).toEqual([])
       expect(repositoryMock.readMembers).toHaveBeenCalledWith(['Alpha'])
@@ -135,7 +137,9 @@ describe('TestSuiteResolver', () => {
       const result = await sut.resolve(parameter)
 
       // Assert
-      expect(result.testClassOrigins).toEqual({ sharedtest: ['Zed', 'Alpha'] })
+      expect(result.testClassOrigins).toEqual(
+        new Map([['sharedtest', ['Zed', 'Alpha']]])
+      )
     })
   })
 
@@ -181,16 +185,18 @@ describe('TestSuiteResolver', () => {
 
       // Assert
       expect(result.apexTestClassNames).toEqual(['SharedTest'])
-      expect(result.testClassOrigins).toEqual({ sharedtest: ['Alpha', 'Beta'] })
+      expect(result.testClassOrigins).toEqual(
+        new Map([['sharedtest', ['Alpha', 'Beta']]])
+      )
     })
   })
 
-  describe('given a suite member also passed via the CLI test-class flag', () => {
-    it('then keeps a single entry using the first-seen CLI spelling', async () => {
+  describe('given a suite member also passed via the CLI test-class flag, in a different case', () => {
+    it('then keeps a single entry using the CLI spelling and records no origin for it', async () => {
       // Arrange
       const parameter: ApexMutationParameter = {
         ...baseParameter,
-        apexTestClassNames: ['sharedtest'],
+        apexTestClassNames: ['sHAREDtest'],
         apexTestSuiteNames: ['Alpha'],
       }
       vi.mocked(repositoryMock.readMembers).mockResolvedValue([
@@ -201,8 +207,32 @@ describe('TestSuiteResolver', () => {
       const result = await sut.resolve(parameter)
 
       // Assert
-      expect(result.apexTestClassNames).toEqual(['sharedtest'])
-      expect(result.testClassOrigins).toEqual({})
+      expect(result.apexTestClassNames).toEqual(['sHAREDtest'])
+      expect(result.testClassOrigins).toEqual(new Map())
+    })
+  })
+
+  describe('given two suites contributing the same class under different casing', () => {
+    it('then the origins map holds one entry listing both suites in flag order', async () => {
+      // Arrange
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: [],
+        apexTestSuiteNames: ['Alpha', 'Beta'],
+      }
+      vi.mocked(repositoryMock.readMembers).mockResolvedValue([
+        { suiteName: 'Alpha', className: 'BarTest' },
+        { suiteName: 'Beta', className: 'bartest' },
+      ])
+
+      // Act
+      const result = await sut.resolve(parameter)
+
+      // Assert
+      expect(result.testClassOrigins).toEqual(
+        new Map([['bartest', ['Alpha', 'Beta']]])
+      )
+      expect(result.apexTestClassNames).toEqual(['BarTest'])
     })
   })
 
@@ -222,7 +252,9 @@ describe('TestSuiteResolver', () => {
       const result = await sut.resolve(parameter)
 
       // Assert
-      expect(result.testClassOrigins).toEqual({ alphatest: ['MySuite'] })
+      expect(result.testClassOrigins).toEqual(
+        new Map([['alphatest', ['MySuite']]])
+      )
     })
   })
 
@@ -406,7 +438,7 @@ describe('TestSuiteResolver', () => {
       expect(result).toEqual({
         ...parameter,
         apexTestClassNames: result.apexTestClassNames,
-        testClassOrigins: { alphatest: ['Alpha'] },
+        testClassOrigins: new Map([['alphatest', ['Alpha']]]),
       })
     })
   })

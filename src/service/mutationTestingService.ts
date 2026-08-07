@@ -9,7 +9,11 @@ import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
-import { SkippedTestClass } from '../type/SkippedTestClass.js'
+import {
+  attachSuiteProvenance,
+  reducePerimeter,
+  SkippedTestClass,
+} from '../type/SkippedTestClass.js'
 import { TestClassOrigins } from '../type/TestClassOrigin.js'
 import {
   type TestMethodId,
@@ -35,10 +39,7 @@ import {
   extractMutationOriginalText,
 } from './mutationLocation.js'
 import type { SkipPattern } from './skipPattern.js'
-import {
-  attachSuiteProvenance,
-  formatSkippedTestClass,
-} from './skippedTestClassMessage.js'
+import { formatSkippedTestClass } from './skippedTestClassMessage.js'
 import { formatDuration, timeExecution } from './timeUtils.js'
 import { type TypeAnalysisResult, TypeDiscoverer } from './typeDiscoverer.js'
 import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
@@ -459,9 +460,9 @@ export class MutationTestingService {
         ? this.findZeroContributionTestClasses(filteredTestMethodsPerLine)
         : []
     this.warnSkippedTestClasses(skipped)
-    const dropped = new Set(skipped.map(entry => entry.className))
-    const retainedTestClassNames = this.apexTestClassNames.filter(
-      name => !dropped.has(name)
+    const retainedTestClassNames = reducePerimeter(
+      this.apexTestClassNames,
+      skipped
     )
     return {
       testMethodsPerLine: filteredTestMethodsPerLine,

@@ -1,6 +1,5 @@
 import { Messages } from '@salesforce/core'
 import { SkippedTestClass, UnusableReason } from '../type/SkippedTestClass.js'
-import { TestClassOrigins } from '../type/TestClassOrigin.js'
 
 const REASON_KEY: Record<UnusableReason, string> = {
   'not-a-test-class': 'info.reasonNotATestClass',
@@ -26,11 +25,7 @@ export const formatSkippedTestClass = (
   ])
 }
 
-export const attachSuiteProvenance = (
+export const formatSkippedTestClasses = (
   skipped: SkippedTestClass[],
-  origins: TestClassOrigins | undefined
-): SkippedTestClass[] =>
-  skipped.map(entry => {
-    const suiteNames = origins?.[entry.className.toLowerCase()]
-    return suiteNames ? { ...entry, suiteNames } : entry
-  })
+  messages: Messages<string>
+): string[] => skipped.map(entry => formatSkippedTestClass(entry, messages))

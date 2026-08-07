@@ -8,12 +8,13 @@ import {
 } from '../../../../service/apexClassValidator.js'
 import { ConfigReader } from '../../../../service/configReader.js'
 import { MutationTestingService } from '../../../../service/mutationTestingService.js'
-import {
-  attachSuiteProvenance,
-  formatSkippedTestClass,
-} from '../../../../service/skippedTestClassMessage.js'
+import { formatSkippedTestClasses } from '../../../../service/skippedTestClassMessage.js'
 import { TestSuiteResolver } from '../../../../service/testSuiteResolver.js'
 import { ApexMutationParameter } from '../../../../type/ApexMutationParameter.js'
+import {
+  attachSuiteProvenance,
+  reducePerimeter,
+} from '../../../../type/SkippedTestClass.js'
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url)
 const messages = Messages.loadMessages(
@@ -165,18 +166,14 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       skipped,
       resolvedParameters.testClassOrigins
     )
-    const sentences = droppedTestClasses.map(entry =>
-      formatSkippedTestClass(entry, messages)
-    )
+    const sentences = formatSkippedTestClasses(droppedTestClasses, messages)
     for (const sentence of sentences) {
       this.warn(sentence)
     }
 
-    const droppedNames = new Set(
-      droppedTestClasses.map(entry => entry.className)
-    )
-    const usableTestClassNames = resolvedParameters.apexTestClassNames.filter(
-      name => !droppedNames.has(name)
+    const usableTestClassNames = reducePerimeter(
+      resolvedParameters.apexTestClassNames,
+      droppedTestClasses
     )
     if (usableTestClassNames.length === 0) {
       throw messages.createError('error.noUsableTestClass', [
