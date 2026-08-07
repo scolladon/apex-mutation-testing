@@ -615,6 +615,90 @@ describe('apex mutation test run NUT', () => {
         expect.anything()
       )
     })
+
+    it('When running, Then the running line names the requested perimeter and precedes the drop warning', async () => {
+      // Act
+      const sut = buildCommand(['-c', 'MyClass', '-t', 'GoodTest,BadTest'])
+      await sut.run()
+
+      // Assert
+      expect(mockMessages.getMessage).toHaveBeenCalledWith(
+        'info.CommandIsRunning',
+        ['MyClass', 'GoodTest, BadTest']
+      )
+      expect(vi.mocked(sut.log).mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(sut.warn).mock.invocationCallOrder[0]
+      )
+    })
+  })
+
+  describe('Given a perimeter where the validator drops two classes', () => {
+    beforeEach(() => {
+      vi.mocked(ApexClassValidator).mockImplementation(
+        class {
+          validate = vi.fn().mockResolvedValue(undefined as never)
+          assessPerimeter = vi.fn().mockResolvedValue([
+            { className: 'AaaTest', reason: 'not-found' },
+            { className: 'BbbTest', reason: 'not-accessible' },
+          ] as never)
+        }
+      )
+    })
+
+    it('When one usable class remains, Then this.warn is called once per drop in perimeter order', async () => {
+      // Act
+      const sut = buildCommand([
+        '-c',
+        'MyClass',
+        '-t',
+        'AaaTest,BbbTest,GoodTest',
+      ])
+      await sut.run()
+
+      // Assert
+      expect(sut.warn).toHaveBeenCalledTimes(2)
+      expect(vi.mocked(sut.warn).mock.calls[0][0]).toBe(
+        "Skipping test class 'AaaTest': it could not be found on this org."
+      )
+      expect(vi.mocked(sut.warn).mock.calls[1][0]).toBe(
+        "Skipping test class 'BbbTest': it is not accessible on this org."
+      )
+    })
+
+    it('When both drops empty the perimeter, Then error.noUsableTestClass carries both sentences joined by a newline', async () => {
+      // Act & Assert
+      await expect(
+        runCommand(['-c', 'MyClass', '-t', 'AaaTest,BbbTest'])
+      ).rejects.toThrow('error.noUsableTestClass')
+      expect(mockMessages.createError).toHaveBeenCalledWith(
+        'error.noUsableTestClass',
+        [
+          'MyClass',
+          "Skipping test class 'AaaTest': it could not be found on this org.\nSkipping test class 'BbbTest': it is not accessible on this org.",
+        ]
+      )
+    })
+  })
+
+  describe('Given testClassOrigins resolved from a suite', () => {
+    it('When running, Then MutationTestingService receives the same Map instance', async () => {
+      // Arrange
+      const testClassOrigins = new Map([['badtest', ['SmokeSuite']]])
+      mockTestSuiteResolve.mockResolvedValue({
+        apexClassName: 'MyClass',
+        apexTestClassNames: ['MyClassTest'],
+        reportDir: 'mutations',
+        testClassOrigins,
+      })
+
+      // Act
+      await runCommand(['-c', 'MyClass', '-t', 'MyClassTest'])
+
+      // Assert
+      const constructorParameter = vi.mocked(MutationTestingService).mock
+        .calls[0][3]
+      expect(constructorParameter.testClassOrigins).toBe(testClassOrigins)
+    })
   })
 
   describe('Given the dropped class was contributed by a test suite', () => {

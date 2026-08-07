@@ -1,4 +1,4 @@
-import { Messages } from '@salesforce/core'
+import { Connection, Messages } from '@salesforce/core'
 import { Flags, SfCommand } from '@salesforce/sf-plugins-core'
 import { ApexTestSuiteRepository } from '../../../../adapter/apexTestSuiteRepository.js'
 import { ApexMutationHTMLReporter } from '../../../../reporter/HTMLReporter.js'
@@ -11,6 +11,7 @@ import { MutationTestingService } from '../../../../service/mutationTestingServi
 import { formatSkippedTestClasses } from '../../../../service/skippedTestClassMessage.js'
 import { TestSuiteResolver } from '../../../../service/testSuiteResolver.js'
 import { ApexMutationParameter } from '../../../../type/ApexMutationParameter.js'
+import type { ApexMutationTestResult as MutationProcessResult } from '../../../../type/ApexMutationTestResult.js'
 import {
   attachSuiteProvenance,
   reducePerimeter,
@@ -24,6 +25,16 @@ const messages = Messages.loadMessages(
 
 export type ApexMutationTestResult = {
   score: number | null
+}
+
+// Every rejection from validate/assessPerimeter passes through here.
+// ApexClassNotFoundError renders as the command's own error; anything else
+// is rethrown untouched — no rejection reason is swallowed.
+function renderTargetClassError(error: unknown): never {
+  if (error instanceof ApexClassNotFoundError) {
+    throw messages.createError('error.apexClassNotFound', [error.className])
+  }
+  throw error
 }
 
 export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> {
@@ -129,58 +140,16 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       mutationGrouping: flags['mutation-grouping'],
     }
 
-    const configReader = new ConfigReader(messages)
-    const configuredParameters = await configReader.resolve(parameters)
-
-    const testSuiteResolver = new TestSuiteResolver(
-      new ApexTestSuiteRepository(connection),
-      messages
+    const resolvedParameters = await this.resolveParameters(
+      parameters,
+      connection
     )
-    const resolvedParameters =
-      await testSuiteResolver.resolve(configuredParameters)
+    this.logRunningLine(resolvedParameters)
 
-    this.log(
-      messages.getMessage(
-        flags['dry-run']
-          ? 'info.DryRunCommandIsRunning'
-          : 'info.CommandIsRunning',
-        [
-          resolvedParameters.apexClassName,
-          resolvedParameters.apexTestClassNames.join(', '),
-        ]
-      )
+    const usableTestClassNames = await this.reduceToUsablePerimeter(
+      resolvedParameters,
+      connection
     )
-
-    const apexClassValidator = new ApexClassValidator(connection)
-    const [, skipped] = await Promise.all([
-      apexClassValidator.validate(resolvedParameters),
-      apexClassValidator.assessPerimeter(resolvedParameters.apexTestClassNames),
-    ]).catch((error: unknown): never => {
-      if (error instanceof ApexClassNotFoundError) {
-        throw messages.createError('error.apexClassNotFound', [error.className])
-      }
-      throw error
-    })
-
-    const droppedTestClasses = attachSuiteProvenance(
-      skipped,
-      resolvedParameters.testClassOrigins
-    )
-    const sentences = formatSkippedTestClasses(droppedTestClasses, messages)
-    for (const sentence of sentences) {
-      this.warn(sentence)
-    }
-
-    const usableTestClassNames = reducePerimeter(
-      resolvedParameters.apexTestClassNames,
-      droppedTestClasses
-    )
-    if (usableTestClassNames.length === 0) {
-      throw messages.createError('error.noUsableTestClass', [
-        resolvedParameters.apexClassName,
-        sentences.join('\n'),
-      ])
-    }
 
     const mutationTestingService = new MutationTestingService(
       this.progress,
@@ -191,16 +160,7 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
     )
     const mutationResult = await mutationTestingService.process()
 
-    const htmlReporter = new ApexMutationHTMLReporter()
-    await htmlReporter.generateReport(
-      mutationResult,
-      resolvedParameters.reportDir
-    )
-    this.log(
-      messages.getMessage('info.reportGenerated', [
-        resolvedParameters.reportDir,
-      ])
-    )
+    await this.publishReport(mutationResult, resolvedParameters.reportDir)
 
     const score = flags['dry-run']
       ? null
@@ -209,17 +169,80 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
     if (score !== null) {
       this.log(messages.getMessage('info.CommandSuccess', [score]))
     }
-
-    if (score !== null && resolvedParameters.threshold !== undefined) {
-      if (score < resolvedParameters.threshold) {
-        throw messages.createError('error.thresholdNotMet', [
-          String(score),
-          String(resolvedParameters.threshold),
-        ])
-      }
-    }
+    this.enforceThreshold(score, resolvedParameters.threshold)
 
     this.info(messages.getMessage('info.EncourageSponsorship'))
     return { score }
+  }
+
+  private async resolveParameters(
+    parameters: ApexMutationParameter,
+    connection: Connection
+  ): Promise<ApexMutationParameter> {
+    const configReader = new ConfigReader(messages)
+    const configuredParameters = await configReader.resolve(parameters)
+
+    const testSuiteResolver = new TestSuiteResolver(
+      new ApexTestSuiteRepository(connection),
+      messages
+    )
+    return testSuiteResolver.resolve(configuredParameters)
+  }
+
+  private logRunningLine(parameters: ApexMutationParameter): void {
+    this.log(
+      messages.getMessage(
+        parameters.dryRun
+          ? 'info.DryRunCommandIsRunning'
+          : 'info.CommandIsRunning',
+        [parameters.apexClassName, parameters.apexTestClassNames.join(', ')]
+      )
+    )
+  }
+
+  private async reduceToUsablePerimeter(
+    parameters: ApexMutationParameter,
+    connection: Connection
+  ): Promise<string[]> {
+    const apexClassValidator = new ApexClassValidator(connection)
+    const [, verdicts] = await Promise.all([
+      apexClassValidator.validate(parameters),
+      apexClassValidator.assessPerimeter(parameters.apexTestClassNames),
+    ]).catch(renderTargetClassError)
+
+    const skipped = attachSuiteProvenance(verdicts, parameters.testClassOrigins)
+    const sentences = formatSkippedTestClasses(skipped, messages)
+    sentences.forEach(sentence => this.warn(sentence))
+
+    const usable = reducePerimeter(parameters.apexTestClassNames, skipped)
+    if (usable.length === 0) {
+      throw messages.createError('error.noUsableTestClass', [
+        parameters.apexClassName,
+        sentences.join('\n'),
+      ])
+    }
+    return usable
+  }
+
+  private async publishReport(
+    mutationResult: MutationProcessResult,
+    reportDir: string
+  ): Promise<void> {
+    const htmlReporter = new ApexMutationHTMLReporter()
+    await htmlReporter.generateReport(mutationResult, reportDir)
+    this.log(messages.getMessage('info.reportGenerated', [reportDir]))
+  }
+
+  private enforceThreshold(
+    score: number | null,
+    threshold: number | undefined
+  ): void {
+    if (score === null || threshold === undefined) return
+    if (score < threshold) {
+      throw messages.createError('error.thresholdNotMet', [
+        String(score),
+        String(threshold),
+      ])
+    }
   }
 }
