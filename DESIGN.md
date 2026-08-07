@@ -10,6 +10,7 @@ sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --dry-run
 sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --include-mutators ArithmeticOperator --threshold 80
 sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --skip-patterns "System\\.debug" --lines 10-50 100-120
 sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --config-file .mutation-testing.json
+sf apex mutation test run -c <ApexClass> --test-suite <TestSuite> -o <TargetOrg>
 ```
 
 **Runtime:** requires Node 22, 24, or 26 (`engines.node` = `^22.22 || ^24.15 || >=26`).
@@ -50,10 +51,10 @@ sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --config-
 │  │ApexClassRepository│ │ApexTestRunner│ │SObjectDescribe│ │
 │  │  (Tooling API)    │ │ (apex-node) │ │  Repository   │ │
 │  └───────────────────┘ └─────────────┘ └──────────────┘ │
-│  ┌──────────────────────┐                                │
-│  │ApexSettingsRepository│                                │
-│  │  (Tooling API)       │                                │
-│  └──────────────────────┘                                │
+│  ┌──────────────────────┐ ┌───────────────────────┐      │
+│  │ApexSettingsRepository│ │ApexTestSuiteRepository│      │
+│  │  (Tooling API)       │ │  (Tooling API)        │      │
+│  └──────────────────────┘ └───────────────────────┘      │
 ├──────────────────────────────────────────────────────────┤
 │                    Reporting Layer                        │
 │  ┌───────────────────────────────────────────────────────┐│
@@ -79,22 +80,39 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │       └─ validate: lines format (N or N-M, start ≤ end)
 │     Precedence: CLI flags > config file > defaults
 │
-├─ 2. VALIDATE
+├─ 2. RESOLVE TEST SUITES
+│     TestSuiteResolver.resolve(parameter)
+│       → no-op when --test-suite is not provided
+│     ApexTestSuiteRepository.readMembers(suiteNames)
+│       → one Tooling API join on TestSuiteMembership,
+│         ordered by ApexClass.Name
+│       ├─ a suite name absent from the results is
+│       │    unresolved: readExistingSuiteNames() tells
+│       │    an empty suite from an unknown one, then
+│       │    throws — before any deploy or test run
+│       └─ otherwise: union every resolved member class
+│            name with the -t classes via
+│            ConfigReader.normalizeClassPerimeter (trim,
+│            dedupe case-insensitively, reject blanks) —
+│            CLI classes first, then each suite's members
+│            ordered by class name
+│
+├─ 3. VALIDATE
 │     ApexClassValidator
 │       ├─ read(MyClass) → exists?
 │       └─ read(name) for every class in the -t perimeter
 │            → exists + @IsTest? (Promise.all; every failure across
 │              the whole perimeter collected into one \n-joined error)
 │
-├─ 3. FETCH SOURCE
+├─ 4. FETCH SOURCE
 │     ApexClassRepository.read(MyClass) → { Id, Body }
 │
-├─ 4. DISCOVER DEPENDENCIES
+├─ 5. DISCOVER DEPENDENCIES
 │     ApexClassRepository.getApexClassDependencies(Id)
 │       → MetadataComponentDependency[]
 │       → partition into: ApexClass | StandardEntity | CustomObject
 │
-├─ 5. BUILD TYPE SYSTEM
+├─ 6. BUILD TYPE SYSTEM
 │     SObjectDescribeRepository.describe(sObjectTypes)
 │       → parallel Describe API calls (max 25 concurrent)
 │     TypeDiscoverer.analyzeFull(Body)
@@ -102,10 +120,10 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │         { typeRegistry, tree, tokenStream }
 │         (methodTypeTable keyed by name+arity AND name-only,
 │          variableScopes, classFields)
-│       → tree + tokenStream are threaded into step 8 so
+│       → tree + tokenStream are threaded into step 9 so
 │         MutantGenerator skips its own parse (see Perf-3).
 │
-├─ 6. COMPILABILITY VERIFICATION
+├─ 7. COMPILABILITY VERIFICATION
 │     Deploy main class back to org via
 │       ApexClassRepository.update(apexClass)
 │       → wrapped in timeExecution() → deployTime
@@ -125,7 +143,7 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │       deploy. Without this check, all mutants would get
 │       CompileError → misleading 100% score.
 │
-├─ 7. BASELINE TEST RUN
+├─ 8. BASELINE TEST RUN
 │     selectCoverageStrategy(apexSettingsRepository)
 │       → ApexSettingsRepository.isAggregateCoverageOnly()
 │         (Tooling API: ApexSettings.IsAggregateCodeCoverageOnlyEnabled)
@@ -149,7 +167,7 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │       AggregateCoverageStrategy has no per-test attribution to
 │       compute it from
 │
-├─ 7b. FILTER TEST METHODS (if configured)
+├─ 8b. FILTER TEST METHODS (if configured)
 │     buildTestMethodFilter() → predicate (or undefined)
 │     filterTestMethods(testMethodsPerLine, predicate)
 │       → filter testMethodsPerLine in-place
@@ -161,10 +179,10 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │     Rationale: filtering early reduces both the number
 │       of mutations generated AND test executions per mutant.
 │
-├─ 8. GENERATE MUTATIONS
+├─ 9. GENERATE MUTATIONS
 │     MutantGenerator.compute(Body, coveredLines, typeRegistry,
 │       mutatorFilter, skipPatterns, allowedLines, preParsed?)
-│       → when preParsed is supplied (from step 5), the lexer
+│       → when preParsed is supplied (from step 6), the lexer
 │         and parser are SKIPPED — tree + tokenStream are reused
 │       → otherwise a fresh parse happens (legacy call sites)
 │       → filter mutator registry by include/exclude
@@ -173,9 +191,9 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │         (filtered by isLineEligible() via Proxy —
 │          intersects coverage, line ranges, skip patterns)
 │       → returns { mutations: ApexMutation[], tokenStream }
-│         so step 10 can reuse the stream across mutate() calls.
+│         so step 11 can reuse the stream across mutate() calls.
 │
-├─ 9. TIME ESTIMATION
+├─ 10. TIME ESTIMATION
 │     estimate = (deployTime + testTime) × mutantCount
 │     Display: "Estimated time: ~Xm Ys"
 │     Breakdown: "Deploy: ~Xs/mutant | Test: ~Xs/mutant"
@@ -189,11 +207,11 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │       path) and returns { score: null }.
 │     ────────────────────────────────────────────────
 │
-├─ 10. MUTATION TESTING LOOP (for each mutation)
+├─ 11. MUTATION TESTING LOOP (for each mutation)
 │     ┌─────────────────────────────────────────────┐
 │     │ a. MutantGenerator.mutate(mutation, tokens)  │
 │     │    → TokenStreamRewriter → mutated source    │
-│     │    (tokens passed from step 8, never cached  │
+│     │    (tokens passed from step 9, never cached  │
 │     │     on the generator instance)               │
 │     │                                              │
 │     │ b. ApexClassRepository.update(mutatedSource) │
@@ -227,13 +245,13 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │     │    "Remaining: ~Xm Ys | <result>"            │
 │     └─────────────────────────────────────────────┘
 │
-├─ 11. ROLLBACK
+├─ 12. ROLLBACK
 │      ApexClassRepository.update(originalBody)
 │      On failure: spinner shows "Rollback FAILED …"
 │      and the error is RE-THROWN so CI / scripts observe
 │      a non-zero exit when a class is left mutated.
 │
-├─ 12. REPORT
+├─ 13. REPORT
 │      HTMLReporter →
 │        ├─ path.resolve(outputDir) + realpath(outputDir)
 │        │  both must live inside process.cwd(). The directory
@@ -246,10 +264,10 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │           <script type="application/json"> data island,
 │           with </, <!--, -->, <script, U+2028/2029 escaped
 │
-├─ 13. SCORE
+├─ 14. SCORE
 │      score = killed / (total - compileErrors) × 100
 │
-└─ 14. THRESHOLD GATING (if configured)
+└─ 15. THRESHOLD GATING (if configured)
 │      If score < threshold → throw SfError (exit code 1)
 │      Message: "Mutation score X% is below threshold Y%"
 │      Skipped in dry-run mode (no score computed)
@@ -261,19 +279,19 @@ The `process()` method is a thin orchestrator (~40 lines) that delegates each li
 
 ```text
 process()
-├── createAdapters()            → step 2 (adapters)
-├── fetchApexClass()            → step 3
-├── discoverTypes()             → steps 4-5
-├── verifyCompilation()         → step 6 (main class)
-├── verifyTestClassCompilation()→ step 6 (test class)
-├── runBaselineTests()          → step 7
-├── extractCoveredLines()       → step 7b (filtering + coverage)
-├── generateMutations()         → step 8
-├── displayTimeEstimate()       → step 9
+├── createAdapters()            → step 3 (adapters)
+├── fetchApexClass()            → step 4
+├── discoverTypes()             → steps 5-6
+├── verifyCompilation()         → step 7 (main class)
+├── verifyTestClassCompilation()→ step 7 (test class)
+├── runBaselineTests()          → step 8
+├── extractCoveredLines()       → step 8b (filtering + coverage)
+├── generateMutations()         → step 9
+├── displayTimeEstimate()       → step 10
 ├── buildDryRunResult()         → dry-run exit point
-├── executeMutationLoop()       → step 10
+├── executeMutationLoop()       → step 11
 │   └── evaluateMutation()      → single mutation: deploy + test + classify
-└── rollback()                  → step 11
+└── rollback()                  → step 12
 ```
 
 Each method encapsulates one logical concern. `evaluateMutation()` handles the try/catch error classification for a single mutation. `formatRemainingTime()` extracts the time estimation math from the progress update. `rollback()` throws on failure instead of swallowing so that `process()`'s caller observes a non-zero exit whenever the target org is left in a mutated state.
@@ -425,6 +443,7 @@ All Salesforce org interactions are isolated behind repository interfaces:
 | `ApexTestRunner` | @salesforce/apex-node | Test execution with/without coverage |
 | `SObjectDescribeRepository` | Metadata API describe | SObject field type resolution |
 | `ApexSettingsRepository` | Tooling API | Reads `IsAggregateCodeCoverageOnlyEnabled` to select the coverage strategy |
+| `ApexTestSuiteRepository` | Tooling API | Resolves ApexTestSuite names to member Apex test class names |
 
 ### Builder/Fluent API — TypeDiscoverer
 

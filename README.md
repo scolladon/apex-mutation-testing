@@ -120,6 +120,17 @@ Every class in the perimeter must exist and be marked `@IsTest`, or the command 
 
 Coverage is the union of every class in the perimeter: a mutation only runs the test methods — from any class — that actually cover its line, and kill/survive results are attributed correctly even when two classes declare a method with the same name. If a class in the perimeter never contributes covered lines, the plugin names it in a warning and continues.
 
+### Test Suites
+
+A class can also be covered by an Apex test suite. Pass `--test-suite` multiple times, as a comma-delimited list, or mix both — like `--test-class`, the perimeter is the union either way:
+
+```sh
+sf apex mutation test run --apex-class MyClass --test-suite MyTestSuite
+sf apex mutation test run --apex-class MyClass --test-class MyClassTest --test-suite MyTestSuite
+```
+
+`--test-class` and `--test-suite` union into one perimeter, and at least one of them is required — passing neither is an error naming both flags. Unlike class names, suite names are case-sensitive: the org matches them exactly, so a wrong-case name fails as "not found". An empty suite (no member classes) and an unknown suite are told apart, and both fail before any deploy or test run. Perimeter order is the `--test-class` entries first, then each suite's members ordered by class name. A suite member that isn't `@IsTest`, or that lives in a managed package and can't be read, fails the same class validation as a `--test-class` entry, naming the class.
+
 ### Configuration
 
 The plugin supports configuration through a JSON file and CLI flags. CLI flags always take precedence over config file values.
@@ -390,9 +401,9 @@ Evaluate test coverage quality by injecting mutations and measuring test detecti
 
 ```
 USAGE
-  $ sf apex mutation test run -c <value> -t <value>... -o <value> [--json] [--flags-dir <value>] [-r <value>] [-d]
-    [--include-mutators <value>... | --exclude-mutators <value>...] [--include-test-methods <value>... |
-    --exclude-test-methods <value>...] [--threshold <value>] [-s <value>...] [-l <value>...] [--config-file <value>]
+  $ sf apex mutation test run -c <value> -o <value> [--json] [--flags-dir <value>] [-t <value>...] [--test-suite <value>...]
+    [-r <value>] [-d] [--include-mutators <value>... | --exclude-mutators <value>...] [--include-test-methods <value>...
+    | --exclude-test-methods <value>...] [--threshold <value>] [-s <value>...] [-l <value>...] [--config-file <value>]
     [--mutation-grouping] [--api-version <value>]
 
 FLAGS
@@ -405,8 +416,8 @@ FLAGS
   -r, --report-dir=<value>               [default: mutations] Path to the directory where mutation test reports will be
                                          generated
   -s, --skip-patterns=<value>...         RE2 regex patterns to skip lines from mutation (e.g., System\.debug)
-  -t, --test-class=<value>...            (required) Apex test class name(s) to validate mutations. Repeat the flag or
-                                         pass a comma-delimited list to cover a class with multiple test classes.
+  -t, --test-class=<value>...            Apex test class name(s) to validate mutations. Repeat the flag or pass a
+                                         comma-delimited list to cover a class with multiple test classes.
       --api-version=<value>              Override the api version used for api requests made by this command
       --config-file=<value>              Path to mutation testing configuration file
       --exclude-mutators=<value>...      Mutator names to exclude
@@ -421,6 +432,8 @@ FLAGS
                                          run. Reduces deployments and async test-run kickoffs at the cost of larger
                                          blast radius on compile errors. Runs the full pipeline: test-induced clique
                                          lower bound → DSATUR heuristic → exact backtracking coloring. Off by default.
+      --test-suite=<value>...            Apex test suite name(s) whose classes define the mutation perimeter. Repeat the
+                                         flag or pass a comma-delimited list. Suite names are case-sensitive.
       --threshold=<value>                Minimum mutation score (0-100) required for the command to succeed
 
 GLOBAL FLAGS
@@ -448,6 +461,10 @@ EXAMPLES
   Run mutation testing on a class covered by multiple test classes:
 
     $ sf apex mutation test run --apex-class MyClass --test-class MyClassTest,MyClassTest2
+
+  Run mutation testing on a class covered by an Apex test suite:
+
+    $ sf apex mutation test run --apex-class MyClass --test-suite MyTestSuite
 ```
 
 _See code: [src/commands/apex/mutation/test/run.ts](https://github.com/scolladon/apex-mutation-testing/blob/main/src/commands/apex/mutation/test/run.ts)_
