@@ -74,6 +74,7 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │
 ├─ 1. RESOLVE CONFIGURATION
 │     ConfigReader.resolve(cliFlags)
+│       ├─ validate: -c names an Apex identifier
 │       ├─ read .mutation-testing.json (if exists)
 │       ├─ merge: CLI flags override config file
 │       ├─ validate: threshold 0-100
@@ -93,7 +94,8 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │       └─ otherwise: union every resolved member class
 │            name with the -t classes via
 │            ConfigReader.normalizeClassPerimeter (trim,
-│            dedupe case-insensitively, reject blanks) —
+│            dedupe case-insensitively, reject blanks,
+│            reject non-identifier names) —
 │            CLI classes first, then the suites in flag
 │            order, each suite's members by class name
 │
@@ -1123,6 +1125,22 @@ CLI flags > config file > defaults (all mutators, all tests, no threshold)
 ```
 
 `ConfigReader.resolve()` merges config file values with CLI flag overrides using `??` (CLI wins when present). Include/exclude pairs are mutually exclusive — enforced by oclif `exclusive` flag attribute. `skipPatterns` and `lines` follow the same merge precedence: CLI flags override config file values.
+
+### Class Name Validation
+
+Every Apex class name — the `-c` class under mutation and every `-t` perimeter class — must
+match `/^[A-Za-z][A-Za-z0-9_]*$/` before any file or org I/O. `ApexClassRepository.read()`
+reaches the Tooling API through jsforce's `.find()`, whose string-literal builder escapes
+single quotes but leaves backslashes raw: a name ending in a backslash escapes its own
+closing quote, so the literal runs on into the rest of the `WHERE` clause and the org
+answers `MALFORMED_QUERY`. Constraining the name to the Apex identifier grammar keeps every
+such character out of the query text, and covers the four `read()` call sites at once
+rather than one.
+
+Suite names are deliberately excluded from this rule: they name a different field
+(`ApexTestSuite.TestSuiteName`), reach the org through `ApexTestSuiteRepository`, which
+builds raw SOQL with correct escaping (backslash before quote — the order is load-bearing),
+and their permitted character set is not the class identifier grammar.
 
 ### Mutator Registry
 

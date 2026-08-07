@@ -40,6 +40,7 @@ describe('ConfigReader', () => {
         const templates: Record<string, string> = {
           'error.blankTestClass': `Blank apex test class name found: '${args?.[0]}'`,
           'error.blankTestSuite': `Blank apex test suite name found: '${args?.[0]}'`,
+          'error.invalidClassName': `Invalid Apex class name: '${args?.[0]}'`,
         }
         return templates[key] || key
       }),
@@ -681,6 +682,135 @@ describe('ConfigReader', () => {
 
       // Assert
       expect(result.apexTestClassNames).toEqual(['CliClass'])
+    })
+  })
+
+  describe('class name validation', () => {
+    it('Given a test class name ending in a backslash, When resolving config, Then throws naming the offending input', async () => {
+      // Arrange — the Tooling API literal builder escapes quotes but not
+      // backslashes, so a trailing backslash escapes the closing quote and
+      // the literal runs on into the rest of the WHERE clause.
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: ['Foo\\'],
+      }
+
+      // Act & Assert
+      await expect(sut.resolve(parameter)).rejects.toThrow(
+        "Invalid Apex class name: 'Foo\\'"
+      )
+      expect(messagesMock.getMessage).toHaveBeenCalledWith(
+        'error.invalidClassName',
+        ['Foo\\']
+      )
+    })
+
+    it('Given a class under mutation ending in a backslash, When resolving config, Then throws naming the offending input', async () => {
+      // Arrange — -c reaches the same Tooling API query as the perimeter
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexClassName: 'Foo\\',
+      }
+
+      // Act & Assert
+      await expect(sut.resolve(parameter)).rejects.toThrow(
+        "Invalid Apex class name: 'Foo\\'"
+      )
+    })
+
+    it('Given a test class name with an underscore and a digit, When resolving config, Then accepts it', async () => {
+      // Arrange — guards against an over-tight rule rejecting real names
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: ['Logger_Tests2'],
+      }
+
+      // Act
+      const result = await sut.resolve(parameter)
+
+      // Assert
+      expect(result.apexTestClassNames).toEqual(['Logger_Tests2'])
+    })
+
+    it('Given a single-letter test class name, When resolving config, Then accepts it', async () => {
+      // Arrange — the tail is optional: a one-character identifier is legal
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: ['A'],
+      }
+
+      // Act
+      const result = await sut.resolve(parameter)
+
+      // Assert
+      expect(result.apexTestClassNames).toEqual(['A'])
+    })
+
+    it('Given a dotted namespace-qualified test class name, When resolving config, Then throws before any org call', async () => {
+      // Arrange — the adapter pins NamespacePrefix to '', so a qualified
+      // name never resolved; it now fails locally instead of at the org.
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: ['ns.ClassName'],
+      }
+
+      // Act & Assert
+      await expect(sut.resolve(parameter)).rejects.toThrow(
+        "Invalid Apex class name: 'ns.ClassName'"
+      )
+    })
+
+    it('Given a test class name starting with a digit, When resolving config, Then throws', async () => {
+      // Arrange — an identifier may not open with a digit
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: ['1Foo'],
+      }
+
+      // Act & Assert
+      await expect(sut.resolve(parameter)).rejects.toThrow(
+        "Invalid Apex class name: '1Foo'"
+      )
+    })
+
+    it('Given a test class name embedding a quote and a clause, When resolving config, Then throws', async () => {
+      // Arrange — the break-out shape: backslash then quote closes the
+      // literal, leaving the rest of the input as query text.
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: ["Foo\\' OR Id != null"],
+      }
+
+      // Act & Assert
+      await expect(sut.resolve(parameter)).rejects.toThrow(
+        "Invalid Apex class name: 'Foo\\' OR Id != null'"
+      )
+    })
+
+    it('Given a test class name with a trailing newline, When resolving config, Then throws', async () => {
+      // Arrange — the rule matches the whole name, not just its first line
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: ['Foo\nBar'],
+      }
+
+      // Act & Assert
+      await expect(sut.resolve(parameter)).rejects.toThrow(
+        'Invalid Apex class name'
+      )
+    })
+
+    it('Given an invalid name repeated in different case, When resolving config, Then throws once naming the first-seen spelling', async () => {
+      // Arrange — validation runs on the deduped perimeter
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: ['ns.Foo', 'NS.FOO'],
+      }
+
+      // Act & Assert
+      await expect(sut.resolve(parameter)).rejects.toThrow(
+        "Invalid Apex class name: 'ns.Foo'"
+      )
     })
   })
 
