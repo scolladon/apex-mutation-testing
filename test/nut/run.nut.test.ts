@@ -1004,6 +1004,43 @@ describe('apex mutation test run NUT', () => {
           expect.anything()
         )
       })
+
+      it('Then logs the running line using info.DryRunCommandIsRunning with the resolved perimeter', () => {
+        expect(mockMessages.getMessage).toHaveBeenCalledWith(
+          'info.DryRunCommandIsRunning',
+          ['MyClass', 'MyClassTest']
+        )
+      })
+    })
+  })
+
+  describe('Given the config file supplies dryRun without the --dry-run flag', () => {
+    it('When running, Then both the running line and the returned score treat the run as a dry run', async () => {
+      // Arrange — pins run.ts to a single dryRun source: logRunningLine and
+      // the returned score must agree even when the CLI flag itself is absent.
+      mockConfigReaderResolve.mockResolvedValue({
+        apexClassName: 'MyClass',
+        apexTestClassNames: ['MyClassTest'],
+        reportDir: 'mutations',
+        dryRun: true,
+      })
+
+      // Act
+      const sut = (await runCommand([
+        '-c',
+        'MyClass',
+        '-t',
+        'MyClassTest',
+      ])) as {
+        score: number | null
+      }
+
+      // Assert
+      expect(sut.score).toBeNull()
+      expect(mockMessages.getMessage).toHaveBeenCalledWith(
+        'info.DryRunCommandIsRunning',
+        ['MyClass', 'MyClassTest']
+      )
     })
   })
 

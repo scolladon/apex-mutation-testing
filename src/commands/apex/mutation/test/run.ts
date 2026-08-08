@@ -162,7 +162,7 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
 
     await this.publishReport(mutationResult, resolvedParameters.reportDir)
 
-    const score = flags['dry-run']
+    const score = resolvedParameters.dryRun
       ? null
       : mutationTestingService.calculateScore(mutationResult)
 
