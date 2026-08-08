@@ -581,6 +581,20 @@ describe('EmptyReturnMutator', () => {
       // Assert
       expect(result).toBe(false)
     })
+
+    it('Given Constructor type name, When checking isEmpty, Then returns false rather than resolving Object.prototype.constructor', () => {
+      // Arrange — Constructor is a legal Apex identifier. A Record-based
+      // lookup table resolves the inherited Object.prototype.constructor
+      // function for this key, which is truthy, silently suppressing
+      // empty-return mutations for every input of this type.
+      const sut = new EmptyReturnMutator()
+
+      // Act
+      const result = sut.isEmptyValue('Constructor', 'someValue')
+
+      // Assert
+      expect(result).toBe(false)
+    })
   })
 
   describe('regex whitespace sensitivity — isEmptyValue', () => {

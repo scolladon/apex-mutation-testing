@@ -76,10 +76,6 @@ No test coverage found for '%s'. Ensure '%s' tests exercise the code you want to
 
 Per-test coverage unavailable on this org due to "Store Only Aggregated Code Coverage" setting, using aggregate coverage instead - all tests will run per mutant (slower), and the mutation score may be understated because ApexCodeCoverageAggregate is a cumulative org-wide rollup, so lines covered only by other test classes produce mutants these test classes can never kill. Report attribution is also class-level, not method-level, in this mode: every test in the perimeter covers every mutant, so coveredBy and killedBy list every class that ran rather than the specific method responsible
 
-# info.zeroContributionTestClasses
-
-The following test class(es) contributed no covered lines and will not affect the mutation score: %s
-
 # error.blankTestClass
 
 Blank apex test class name found: '%s'. Remove empty entries from the -t/--test-class flag.
@@ -167,3 +163,36 @@ Group of %s mutations failed batch deploy — re-evaluating individually
 # error.thresholdNotMet
 
 Mutation score %s% is below the required threshold of %s%
+
+# info.testClassNotUsable
+
+Skipping test class '%s'%s: %s.
+
+# info.contributedBySuite
+
+(contributed by test suite %s)
+
+# info.reasonNotFound
+
+it could not be found on this org
+
+# info.reasonNotAccessible
+
+it is not accessible on this org
+
+# info.reasonNoCoverage
+
+it contributed no covered lines
+
+# info.reasonDoesNotCompile
+
+it does not compile%s
+
+# error.apexClassNotFound
+
+Apex class '%s' not found.
+
+# error.noUsableTestClass
+
+No usable Apex test class remains in the perimeter for '%s'. The following test class(es) were skipped:
+%s

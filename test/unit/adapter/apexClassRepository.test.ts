@@ -34,8 +34,8 @@ describe('ApexClassRepository', () => {
     function buildSObjectStub(objectType: string) {
       if (objectType === 'ApexClass') {
         return {
-          find: (filter: unknown) => {
-            findArgsMock(filter)
+          find: (...args: unknown[]) => {
+            findArgsMock(...args)
             return { execute: findMock }
           },
         }
@@ -55,8 +55,8 @@ describe('ApexClassRepository', () => {
         }
       }
       return {
-        find: (filter: unknown) => {
-          findArgsMock(filter)
+        find: (...args: unknown[]) => {
+          findArgsMock(...args)
           return { execute: findMock }
         },
         create: createMock,
@@ -106,6 +106,148 @@ describe('ApexClassRepository', () => {
         await expect(sut.read('NonExistentClass')).rejects.toThrow(
           'ApexClass NonExistentClass not found'
         )
+      })
+    })
+
+    describe('given a fields projection is requested', () => {
+      it('then issues the find call with the projection as a second argument', async () => {
+        // Arrange
+        findMock.mockResolvedValue([{ Id: '123' }])
+
+        // Act
+        const result = await sut.read('TestClass', ['Id'])
+
+        // Assert
+        expect(result).toEqual({ Id: '123' })
+        expect(findArgsMock).toHaveBeenCalledWith(
+          { Name: 'TestClass', NamespacePrefix: '' },
+          ['Id']
+        )
+      })
+    })
+  })
+
+  describe('when reading ApexClass identities', () => {
+    describe('given a perimeter within the chunk limit', () => {
+      it('then issues one find call with an $in filter, no namespace pin, and the Name/NamespacePrefix projection', async () => {
+        // Arrange
+        const rows = [
+          { Name: 'A', NamespacePrefix: null },
+          { Name: 'B', NamespacePrefix: 'et4ae5' },
+        ]
+        findMock.mockResolvedValueOnce(rows)
+
+        // Act
+        const result = await sut.readIdentities(['A', 'B'])
+
+        // Assert
+        expect(result).toEqual(rows)
+        expect(findArgsMock).toHaveBeenCalledTimes(1)
+        const [conditions, fields] = findArgsMock.mock.calls[0]
+        expect(conditions).toEqual({ Name: { $in: ['A', 'B'] } })
+        // A namespace pin here would re-hide every namespaced class behind
+        // an indistinguishable empty result, the same trap `read` avoids by
+        // pinning it deliberately.
+        expect(conditions).not.toHaveProperty('NamespacePrefix')
+        expect(fields).toEqual(['Name', 'NamespacePrefix'])
+      })
+    })
+
+    describe('given a perimeter one name larger than the chunk size', () => {
+      it('then issues two find calls, one per chunk, and returns the union in chunk order', async () => {
+        // Arrange
+        const firstChunkNames = Array.from(
+          { length: 200 },
+          (_, i) => `Name${i}`
+        )
+        const names = [...firstChunkNames, 'Overflow']
+        const firstChunkRows = [{ Name: 'Name0', NamespacePrefix: null }]
+        const secondChunkRows = [{ Name: 'Overflow', NamespacePrefix: null }]
+        findMock
+          .mockResolvedValueOnce(firstChunkRows)
+          .mockResolvedValueOnce(secondChunkRows)
+
+        // Act
+        const result = await sut.readIdentities(names)
+
+        // Assert
+        expect(result).toEqual([...firstChunkRows, ...secondChunkRows])
+        expect(findArgsMock).toHaveBeenCalledTimes(2)
+        expect(findArgsMock.mock.calls[0][0]).toEqual({
+          Name: { $in: firstChunkNames },
+        })
+        expect(findArgsMock.mock.calls[1][0]).toEqual({
+          Name: { $in: ['Overflow'] },
+        })
+      })
+    })
+
+    describe('given a perimeter exactly the chunk size', () => {
+      it('then issues exactly one find call', async () => {
+        // Arrange
+        const names = Array.from({ length: 200 }, (_, i) => `Name${i}`)
+        findMock.mockResolvedValueOnce([])
+
+        // Act
+        await sut.readIdentities(names)
+
+        // Assert
+        expect(findArgsMock).toHaveBeenCalledTimes(1)
+      })
+    })
+
+    describe('given an empty perimeter', () => {
+      it('then resolves with an empty array and issues no find call', async () => {
+        // Act
+        const result = await sut.readIdentities([])
+
+        // Assert
+        expect(result).toEqual([])
+        expect(findArgsMock).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('given the sink is invoked directly with no names', () => {
+      it('then it resolves with an empty array without building an unfiltered $in query', async () => {
+        // Arrange — chunk([]) already yields zero chunks, so readIdentities([])
+        // never reaches this private sink through the public API. This exercises
+        // the guard directly since it exists as defense-in-depth against a
+        // future change to chunk's emptiness semantics.
+        const queryIdentities = (
+          sut as unknown as {
+            queryIdentities(names: string[]): Promise<unknown[]>
+          }
+        ).queryIdentities.bind(sut)
+
+        // Act
+        const result = await queryIdentities([])
+
+        // Assert
+        expect(result).toEqual([])
+        expect(findArgsMock).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('given a perimeter large enough to produce more chunks than the concurrency cap', () => {
+      it('then never issues more than 25 concurrent find calls', async () => {
+        // Arrange — 30 chunks (6000 names) against a cap of 25 concurrent queries
+        const names = Array.from({ length: 30 * 200 }, (_, i) => `Name${i}`)
+        let inFlight = 0
+        let maxInFlight = 0
+        findMock.mockImplementation(async () => {
+          inFlight++
+          maxInFlight = Math.max(maxInFlight, inFlight)
+          await Promise.resolve()
+          inFlight--
+          return []
+        })
+
+        // Act
+        await sut.readIdentities(names)
+
+        // Assert
+        expect(findArgsMock).toHaveBeenCalledTimes(30)
+        expect(maxInFlight).toBeLessThanOrEqual(25)
       })
     })
   })
@@ -607,237 +749,6 @@ describe('ApexClassRepository', () => {
         expect(createMock).toHaveBeenNthCalledWith(1, {
           Name: expect.stringMatching(/^MutationTest_\d+$/),
         })
-      })
-    })
-  })
-
-  describe('when updating multiple ApexClasses', () => {
-    describe('given the batch update is successful', () => {
-      it('then should create one container, one member per class, and one request with IsRunTests true', async () => {
-        // Arrange
-        const apexClasses = [
-          { Id: 'A1', Body: 'public class A {}' },
-          { Id: 'B1', Body: 'public class B {}' },
-          { Id: 'C1', Body: 'public class C {}' },
-        ]
-
-        createMock
-          .mockResolvedValueOnce({ id: 'container123' }) // MetadataContainer creation
-          .mockResolvedValueOnce({ id: 'memberA' }) // ApexClassMember A
-          .mockResolvedValueOnce({ id: 'memberB' }) // ApexClassMember B
-          .mockResolvedValueOnce({ id: 'memberC' }) // ApexClassMember C
-          .mockResolvedValueOnce({ id: 'request123' }) // ContainerAsyncRequest creation
-
-        retrieveMock.mockResolvedValue({
-          State: 'Completed',
-          Id: 'request123',
-        })
-
-        // Act
-        const result = await sut.updateMany(apexClasses)
-
-        // Assert
-        expect(result).toEqual({ State: 'Completed', Id: 'request123' })
-        expect(createMock).toHaveBeenCalledTimes(5)
-        expect(createMock.mock.calls[1][0]).toMatchObject({
-          MetadataContainerId: 'container123',
-          ContentEntityId: 'A1',
-          Body: 'public class A {}',
-        })
-        expect(createMock.mock.calls[2][0]).toMatchObject({
-          MetadataContainerId: 'container123',
-          ContentEntityId: 'B1',
-          Body: 'public class B {}',
-        })
-        expect(createMock.mock.calls[3][0]).toMatchObject({
-          MetadataContainerId: 'container123',
-          ContentEntityId: 'C1',
-          Body: 'public class C {}',
-        })
-        expect(createMock.mock.calls[4][0]).toMatchObject({
-          MetadataContainerId: 'container123',
-          IsRunTests: true,
-        })
-        expect(retrieveMock).toHaveBeenCalledTimes(1)
-        expect(retrieveMock).toHaveBeenCalledWith('request123')
-      })
-
-      it('then should address one container, one member per class, then one request', async () => {
-        // Arrange
-        const apexClasses = [
-          { Id: 'A1', Body: 'public class A {}' },
-          { Id: 'B1', Body: 'public class B {}' },
-          { Id: 'C1', Body: 'public class C {}' },
-        ]
-        createMock
-          .mockResolvedValueOnce({ id: 'container123' })
-          .mockResolvedValueOnce({ id: 'memberA' })
-          .mockResolvedValueOnce({ id: 'memberB' })
-          .mockResolvedValueOnce({ id: 'memberC' })
-          .mockResolvedValueOnce({ id: 'request123' })
-        retrieveMock.mockResolvedValue({
-          State: 'Completed',
-          Id: 'request123',
-        })
-
-        // Act
-        await sut.updateMany(apexClasses)
-
-        // Assert
-        const result = sobjectMock.mock.calls.map(([objectType]) => objectType)
-        expect(result).toEqual([
-          'MetadataContainer',
-          'ApexClassMember',
-          'ApexClassMember',
-          'ApexClassMember',
-          'ContainerAsyncRequest',
-          'ContainerAsyncRequest',
-          'MetadataContainer',
-        ])
-      })
-    })
-
-    describe('given the batch deployment fails', () => {
-      it('then should throw an error naming every failing class', async () => {
-        // Arrange
-        const apexClasses = [
-          { Id: 'A1', Body: 'public class A {}' },
-          { Id: 'B1', Body: 'public class B {}' },
-        ]
-
-        createMock
-          .mockResolvedValueOnce({ id: 'container456' })
-          .mockResolvedValueOnce({ id: 'memberA' })
-          .mockResolvedValueOnce({ id: 'memberB' })
-          .mockResolvedValueOnce({ id: 'request456' })
-
-        retrieveMock.mockResolvedValue({
-          State: 'Failed',
-          DeployDetails: {
-            allComponentMessages: [
-              {
-                fileName: 'A.cls',
-                lineNumber: 1,
-                columnNumber: 5,
-                problem: 'Missing semicolon',
-              },
-              {
-                fileName: 'B.cls',
-                lineNumber: 2,
-                columnNumber: 9,
-                problem: 'Unexpected token',
-              },
-            ],
-          },
-        })
-
-        // Act & Assert
-        await expect(sut.updateMany(apexClasses)).rejects.toThrow(
-          'Deployment failed:\n[A.cls:1:5] Missing semicolon\n[B.cls:2:9] Unexpected token'
-        )
-      })
-    })
-
-    describe('given the batch update succeeds', () => {
-      it('then the MetadataContainer is deleted after success', async () => {
-        // Arrange
-        const apexClasses = [{ Id: 'A1', Body: 'public class A {}' }]
-
-        createMock
-          .mockResolvedValueOnce({ id: 'containerBatchOK' })
-          .mockResolvedValueOnce({ id: 'memberA' })
-          .mockResolvedValueOnce({ id: 'requestOK' })
-        retrieveMock.mockResolvedValue({
-          State: 'Completed',
-          Id: 'requestOK',
-        })
-
-        // Act
-        await sut.updateMany(apexClasses)
-
-        // Assert
-        expect(deleteMock).toHaveBeenCalledWith('containerBatchOK')
-      })
-    })
-
-    describe('given the batch update fails', () => {
-      it('then the MetadataContainer is still deleted (finally block)', async () => {
-        // Arrange
-        const apexClasses = [{ Id: 'A1', Body: 'public class A {}' }]
-
-        createMock
-          .mockResolvedValueOnce({ id: 'containerBatchFail' })
-          .mockResolvedValueOnce({ id: 'memberA' })
-          .mockResolvedValueOnce({ id: 'requestFail' })
-        retrieveMock.mockResolvedValue({
-          State: 'Failed',
-          ErrorMsg: 'batch boom',
-        })
-
-        // Act
-        await expect(sut.updateMany(apexClasses)).rejects.toThrow(
-          'Deployment failed'
-        )
-
-        // Assert — cleanup MUST run even on failure
-        expect(deleteMock).toHaveBeenCalledWith('containerBatchFail')
-      })
-    })
-
-    describe('given the MetadataContainer delete fails after a batch update', () => {
-      it('then the failure is swallowed and original result is returned', async () => {
-        // Arrange
-        const apexClasses = [{ Id: 'A1', Body: 'public class A {}' }]
-
-        createMock
-          .mockResolvedValueOnce({ id: 'containerBatchDeleteFail' })
-          .mockResolvedValueOnce({ id: 'memberA' })
-          .mockResolvedValueOnce({ id: 'requestDeleteFail' })
-        retrieveMock.mockResolvedValue({
-          State: 'Completed',
-          Id: 'requestDeleteFail',
-        })
-        deleteMock.mockRejectedValueOnce(new Error('delete failed'))
-
-        // Act
-        const result = await sut.updateMany(apexClasses)
-
-        // Assert — the delete failure is non-fatal
-        expect(result).toEqual({ State: 'Completed', Id: 'requestDeleteFail' })
-        expect(deleteMock).toHaveBeenCalledWith('containerBatchDeleteFail')
-      })
-    })
-
-    describe('given a single-class batch', () => {
-      it('then updateMany issues the same call sequence as update', async () => {
-        // Arrange
-        const mockApexClass = {
-          Id: '123',
-          Body: 'public class TestClass {}',
-        }
-
-        createMock
-          .mockResolvedValueOnce({ id: 'container123' })
-          .mockResolvedValueOnce({ id: 'member123' })
-          .mockResolvedValueOnce({ id: 'request123' })
-
-        retrieveMock.mockResolvedValue({
-          State: 'Completed',
-          Id: 'request123',
-        })
-
-        // Act
-        const result = await sut.updateMany([mockApexClass])
-
-        // Assert — identical call sequence to update(one)
-        expect(result).toEqual({ State: 'Completed', Id: 'request123' })
-        expect(createMock).toHaveBeenCalledTimes(3)
-        expect(createMock.mock.calls[1][0]).toMatchObject({
-          MetadataContainerId: 'container123',
-          ContentEntityId: '123',
-          Body: 'public class TestClass {}',
-        })
-        expect(retrieveMock).toHaveBeenCalledWith('request123')
       })
     })
   })

@@ -1,5 +1,7 @@
 import { Connection } from '@salesforce/core'
+import { mapLimit } from 'async'
 import { ApexClass } from '../type/ApexClass.js'
+import { ApexClassIdentity } from '../type/ApexClassIdentity.js'
 import { MetadataComponentDependency } from '../type/MetadataComponentDependency.js'
 
 const DEFAULT_POLL_INITIAL_INTERVAL_MS = 100
@@ -12,6 +14,24 @@ const TERMINAL_STATES = new Set([
   'Error',
   'Aborted',
 ]) as ReadonlySet<string>
+
+// SOQL caps statement length, so a large perimeter must be queried in
+// batches.
+const IDENTITY_QUERY_CHUNK_SIZE = 200
+
+// Bounds the fan-out of concurrent identity queries: chunk count is
+// user-controlled (one chunk per 200 perimeter classes), so an unbounded
+// Promise.all would let the perimeter size dictate concurrent Tooling API
+// load. Matches the bounded idiom in sObjectDescribeRepository.ts.
+const MAX_CONCURRENT_IDENTITY_QUERIES = 25
+
+const chunk = <T>(items: T[], size: number): T[][] => {
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
+}
 
 interface PollOptions {
   initialIntervalMs?: number
@@ -64,13 +84,39 @@ export class ApexClassRepository {
     }
   }
 
-  public async read(name: string) {
-    return (
-      await this.connection.tooling
-        .sobject('ApexClass')
-        .find({ Name: name, NamespacePrefix: '' })
-        .execute()
-    )[0]
+  public async read(name: string, fields?: string[]) {
+    const finder = this.connection.tooling.sobject('ApexClass')
+    const query = fields
+      ? finder.find({ Name: name, NamespacePrefix: '' }, fields)
+      : finder.find({ Name: name, NamespacePrefix: '' })
+    return (await query.execute())[0]
+  }
+
+  // No namespace pin here, unlike `read`: pinning `NamespacePrefix: ''`
+  // makes a namespaced class indistinguishable from one that does not exist
+  // at all, and telling those two apart is the whole point of this query.
+  public async readIdentities(names: string[]): Promise<ApexClassIdentity[]> {
+    const chunks = chunk(names, IDENTITY_QUERY_CHUNK_SIZE)
+    const rows = await mapLimit(
+      chunks,
+      MAX_CONCURRENT_IDENTITY_QUERIES,
+      async (chunkNames: string[]) => this.queryIdentities(chunkNames)
+    )
+    return rows.flat()
+  }
+
+  // Guards the sink rather than trusting `chunk`'s emptiness semantics: an
+  // empty `$in` makes jsforce drop the whole WHERE clause, turning this into
+  // an unfiltered org-wide read that would classify every perimeter entry as
+  // accessible.
+  private async queryIdentities(names: string[]): Promise<ApexClassIdentity[]> {
+    if (names.length === 0) {
+      return []
+    }
+    return (await this.connection.tooling
+      .sobject('ApexClass')
+      .find({ Name: { $in: names } }, ['Name', 'NamespacePrefix'])
+      .execute()) as unknown as ApexClassIdentity[]
   }
 
   public async getApexClassDependencies(
@@ -83,19 +129,15 @@ export class ApexClassRepository {
   }
 
   public async update(apexClass: ApexClass) {
-    return this.deployToContainer([apexClass])
+    return this.deployToContainer(apexClass)
   }
 
-  public async updateMany(apexClasses: ApexClass[]) {
-    return this.deployToContainer(apexClasses)
-  }
-
-  // Shared by update/updateMany so a single-class and a batched deploy run
-  // the exact same container → members → request → poll → cleanup cycle.
-  private async deployToContainer(apexClasses: ApexClass[]) {
+  // The container → member → request → poll → cleanup cycle a single class
+  // deploy runs to verify compilation and pick up its coverage.
+  private async deployToContainer(apexClass: ApexClass) {
     const containerId = await this.createContainer()
     try {
-      await this.addMembers(containerId, apexClasses)
+      await this.addMembers(containerId, apexClass)
       const requestId = await this.createDeployRequest(containerId)
       return await this.awaitSuccessfulDeploy(requestId)
     } finally {
@@ -121,15 +163,13 @@ export class ApexClassRepository {
 
   private async addMembers(
     containerId: string,
-    apexClasses: ApexClass[]
+    apexClass: ApexClass
   ): Promise<void> {
-    for (const apexClass of apexClasses) {
-      await this.connection.tooling.sobject('ApexClassMember').create({
-        MetadataContainerId: containerId,
-        ContentEntityId: apexClass.Id,
-        Body: apexClass.Body,
-      })
-    }
+    await this.connection.tooling.sobject('ApexClassMember').create({
+      MetadataContainerId: containerId,
+      ContentEntityId: apexClass.Id,
+      Body: apexClass.Body,
+    })
   }
 
   private async createDeployRequest(containerId: string): Promise<string> {

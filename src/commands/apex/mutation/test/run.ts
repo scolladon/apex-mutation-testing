@@ -1,12 +1,21 @@
-import { Messages } from '@salesforce/core'
+import { Connection, Messages } from '@salesforce/core'
 import { Flags, SfCommand } from '@salesforce/sf-plugins-core'
 import { ApexTestSuiteRepository } from '../../../../adapter/apexTestSuiteRepository.js'
 import { ApexMutationHTMLReporter } from '../../../../reporter/HTMLReporter.js'
-import { ApexClassValidator } from '../../../../service/apexClassValidator.js'
+import {
+  ApexClassNotFoundError,
+  ApexClassValidator,
+} from '../../../../service/apexClassValidator.js'
 import { ConfigReader } from '../../../../service/configReader.js'
 import { MutationTestingService } from '../../../../service/mutationTestingService.js'
+import { formatSkippedTestClasses } from '../../../../service/skippedTestClassMessage.js'
 import { TestSuiteResolver } from '../../../../service/testSuiteResolver.js'
 import { ApexMutationParameter } from '../../../../type/ApexMutationParameter.js'
+import type { ApexMutationTestResult as MutationProcessResult } from '../../../../type/ApexMutationTestResult.js'
+import {
+  attachSuiteProvenance,
+  reducePerimeter,
+} from '../../../../type/SkippedTestClass.js'
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url)
 const messages = Messages.loadMessages(
@@ -16,6 +25,16 @@ const messages = Messages.loadMessages(
 
 export type ApexMutationTestResult = {
   score: number | null
+}
+
+// Every rejection from validate/assessPerimeter passes through here.
+// ApexClassNotFoundError renders as the command's own error; anything else
+// is rethrown untouched — no rejection reason is swallowed.
+function renderTargetClassError(error: unknown): never {
+  if (error instanceof ApexClassNotFoundError) {
+    throw messages.createError('error.apexClassNotFound', [error.className])
+  }
+  throw error
 }
 
 export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> {
@@ -121,6 +140,45 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       mutationGrouping: flags['mutation-grouping'],
     }
 
+    const resolvedParameters = await this.resolveParameters(
+      parameters,
+      connection
+    )
+    this.logRunningLine(resolvedParameters)
+
+    const usableTestClassNames = await this.reduceToUsablePerimeter(
+      resolvedParameters,
+      connection
+    )
+
+    const mutationTestingService = new MutationTestingService(
+      this.progress,
+      this.spinner,
+      connection,
+      { ...resolvedParameters, apexTestClassNames: usableTestClassNames },
+      messages
+    )
+    const mutationResult = await mutationTestingService.process()
+
+    await this.publishReport(mutationResult, resolvedParameters.reportDir)
+
+    const score = resolvedParameters.dryRun
+      ? null
+      : mutationTestingService.calculateScore(mutationResult)
+
+    if (score !== null) {
+      this.log(messages.getMessage('info.CommandSuccess', [score]))
+    }
+    this.enforceThreshold(score, resolvedParameters.threshold)
+
+    this.info(messages.getMessage('info.EncourageSponsorship'))
+    return { score }
+  }
+
+  private async resolveParameters(
+    parameters: ApexMutationParameter,
+    connection: Connection
+  ): Promise<ApexMutationParameter> {
     const configReader = new ConfigReader(messages)
     const configuredParameters = await configReader.resolve(parameters)
 
@@ -128,62 +186,63 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       new ApexTestSuiteRepository(connection),
       messages
     )
-    const resolvedParameters =
-      await testSuiteResolver.resolve(configuredParameters)
+    return testSuiteResolver.resolve(configuredParameters)
+  }
 
+  private logRunningLine(parameters: ApexMutationParameter): void {
     this.log(
       messages.getMessage(
-        flags['dry-run']
+        parameters.dryRun
           ? 'info.DryRunCommandIsRunning'
           : 'info.CommandIsRunning',
-        [
-          resolvedParameters.apexClassName,
-          resolvedParameters.apexTestClassNames.join(', '),
-        ]
+        [parameters.apexClassName, parameters.apexTestClassNames.join(', ')]
       )
     )
+  }
 
+  private async reduceToUsablePerimeter(
+    parameters: ApexMutationParameter,
+    connection: Connection
+  ): Promise<string[]> {
     const apexClassValidator = new ApexClassValidator(connection)
-    await apexClassValidator.validate(resolvedParameters)
+    const [, verdicts] = await Promise.all([
+      apexClassValidator.validate(parameters),
+      apexClassValidator.assessPerimeter(parameters.apexTestClassNames),
+    ]).catch(renderTargetClassError)
 
-    const mutationTestingService = new MutationTestingService(
-      this.progress,
-      this.spinner,
-      connection,
-      resolvedParameters,
-      messages
-    )
-    const mutationResult = await mutationTestingService.process()
+    const skipped = attachSuiteProvenance(verdicts, parameters.testClassOrigins)
+    const sentences = formatSkippedTestClasses(skipped, messages)
+    sentences.forEach(sentence => this.warn(sentence))
 
-    const htmlReporter = new ApexMutationHTMLReporter()
-    await htmlReporter.generateReport(
-      mutationResult,
-      resolvedParameters.reportDir
-    )
-    this.log(
-      messages.getMessage('info.reportGenerated', [
-        resolvedParameters.reportDir,
+    const usable = reducePerimeter(parameters.apexTestClassNames, skipped)
+    if (usable.length === 0) {
+      throw messages.createError('error.noUsableTestClass', [
+        parameters.apexClassName,
+        sentences.join('\n'),
       ])
-    )
-
-    const score = flags['dry-run']
-      ? null
-      : mutationTestingService.calculateScore(mutationResult)
-
-    if (score !== null) {
-      this.log(messages.getMessage('info.CommandSuccess', [score]))
     }
+    return usable
+  }
 
-    if (score !== null && resolvedParameters.threshold !== undefined) {
-      if (score < resolvedParameters.threshold) {
-        throw messages.createError('error.thresholdNotMet', [
-          String(score),
-          String(resolvedParameters.threshold),
-        ])
-      }
+  private async publishReport(
+    mutationResult: MutationProcessResult,
+    reportDir: string
+  ): Promise<void> {
+    const htmlReporter = new ApexMutationHTMLReporter()
+    await htmlReporter.generateReport(mutationResult, reportDir)
+    this.log(messages.getMessage('info.reportGenerated', [reportDir]))
+  }
+
+  private enforceThreshold(
+    score: number | null,
+    threshold: number | undefined
+  ): void {
+    if (score === null || threshold === undefined) return
+    if (score < threshold) {
+      throw messages.createError('error.thresholdNotMet', [
+        String(score),
+        String(threshold),
+      ])
     }
-
-    this.info(messages.getMessage('info.EncourageSponsorship'))
-    return { score }
   }
 }

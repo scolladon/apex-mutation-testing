@@ -1,3 +1,5 @@
+import { TestClassOrigins } from './TestClassOrigin.js'
+
 export interface ApexMutationParameter {
   apexClassName: string
   apexTestClassNames: string[]
@@ -13,4 +15,5 @@ export interface ApexMutationParameter {
   skipPatterns?: string[]
   lines?: string[]
   mutationGrouping?: boolean
+  testClassOrigins?: TestClassOrigins
 }

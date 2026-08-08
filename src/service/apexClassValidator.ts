@@ -1,7 +1,20 @@
 import { Connection } from '@salesforce/core'
 import { ApexClassRepository } from '../adapter/apexClassRepository.js'
-import { ApexClass } from '../type/ApexClass.js'
+import { ApexClassIdentity } from '../type/ApexClassIdentity.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
+import { SkippedTestClass } from '../type/SkippedTestClass.js'
+
+export class ApexClassNotFoundError extends Error {
+  constructor(public readonly className: string) {
+    super(`Apex class '${className}' not found`)
+    this.name = 'ApexClassNotFoundError'
+  }
+}
+
+// A namespace prefix of `null` or `''` both mean local: the org emits either
+// depending on projection, so both must read as usable.
+const isLocal = (identity: ApexClassIdentity): boolean =>
+  !identity.NamespacePrefix
 
 export class ApexClassValidator {
   private readonly apexClassRepository: ApexClassRepository
@@ -9,42 +22,40 @@ export class ApexClassValidator {
     this.apexClassRepository = new ApexClassRepository(this.connection)
   }
 
-  private async validateApexClass(apexClassName: string) {
-    const errors: string[] = []
-    const apexClass = await this.apexClassRepository.read(apexClassName)
-    if (!apexClass) {
-      errors.push(`Apex class ${apexClassName} not found`)
-    }
-    return errors
-  }
-
-  private async validateApexTestClass(apexTestClassName: string) {
-    const errors: string[] = []
-    const apexTestClass: ApexClass = (await this.apexClassRepository.read(
-      apexTestClassName
-    )) as unknown as ApexClass
-    if (!apexTestClass) {
-      errors.push(`Apex test class ${apexTestClassName} not found`)
-    } else if (!apexTestClass.Body.toLowerCase().includes('@istest')) {
-      errors.push(
-        `Apex test class ${apexTestClassName} is not annotated with @isTest`
-      )
-    }
-
-    return errors
-  }
-
   public async validate({
     apexClassName,
-    apexTestClassNames,
-  }: ApexMutationParameter) {
-    const errorsPerClass = await Promise.all([
-      this.validateApexClass(apexClassName),
-      ...apexTestClassNames.map(name => this.validateApexTestClass(name)),
-    ])
-    const errors: string[] = errorsPerClass.flat()
-    if (errors.length > 0) {
-      throw new Error(errors.join('\n'))
+  }: ApexMutationParameter): Promise<void> {
+    // Existence-only check: a minimal projection avoids the `*` field list
+    // jsforce resolves for an unprojected find (a describe$ round-trip
+    // pulling every ApexClass field, including Body and SymbolTable).
+    // fetchApexClass re-reads the same class in full when mutation actually
+    // starts, so that full read is deliberately left alone.
+    const apexClass = await this.apexClassRepository.read(apexClassName, ['Id'])
+    if (!apexClass) {
+      throw new ApexClassNotFoundError(apexClassName)
     }
+  }
+
+  /** A name can return two rows when a managed and a local class share it,
+   *  and any local row makes the entry usable. Every join is case-folded —
+   *  `ApexClass.Name` matches case-insensitively on the org — while the
+   *  reported className keeps the perimeter entry's own spelling. */
+  public async assessPerimeter(
+    apexTestClassNames: string[]
+  ): Promise<SkippedTestClass[]> {
+    const identities =
+      await this.apexClassRepository.readIdentities(apexTestClassNames)
+    const lowerNames = (rows: ApexClassIdentity[]) =>
+      new Set(rows.map(identity => identity.Name.toLowerCase()))
+    const known = lowerNames(identities)
+    const accessible = lowerNames(identities.filter(isLocal))
+    return apexTestClassNames
+      .filter(name => !accessible.has(name.toLowerCase()))
+      .map(name => ({
+        className: name,
+        reason: known.has(name.toLowerCase())
+          ? ('not-accessible' as const)
+          : ('not-found' as const),
+      }))
   }
 }

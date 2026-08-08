@@ -3,12 +3,22 @@ import { Progress, Spinner } from '@salesforce/sf-plugins-core'
 import type { CommonTokenStream } from 'apex-parser'
 import { ApexClassRepository } from '../adapter/apexClassRepository.js'
 import { ApexSettingsRepository } from '../adapter/apexSettingsRepository.js'
-import { ApexTestRunner } from '../adapter/apexTestRunner.js'
+import {
+  ApexTestRunner,
+  type BaselineCompileFailure,
+  type BaselineTestResult,
+} from '../adapter/apexTestRunner.js'
 import { SObjectDescribeRepository } from '../adapter/sObjectDescribeRepository.js'
 import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
+import {
+  attachSuiteProvenance,
+  reducePerimeter,
+  SkippedTestClass,
+} from '../type/SkippedTestClass.js'
+import { TestClassOrigins } from '../type/TestClassOrigin.js'
 import {
   type TestMethodId,
   testClassOf,
@@ -33,6 +43,7 @@ import {
   extractMutationOriginalText,
 } from './mutationLocation.js'
 import type { SkipPattern } from './skipPattern.js'
+import { formatSkippedTestClasses } from './skippedTestClassMessage.js'
 import { formatDuration, timeExecution } from './timeUtils.js'
 import { type TypeAnalysisResult, TypeDiscoverer } from './typeDiscoverer.js'
 import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
@@ -51,6 +62,18 @@ const matchesFilter = (id: TestMethodId, filterSet: Set<string>): boolean =>
 // Stryker disable next-line ConditionalExpression: no null slots remain.
 const isPresent = <T>(value: T | null): value is T => value !== null
 
+interface MutationLoopContext {
+  apexClass: ApexClass
+  mutations: ApexMutation[]
+  groups: MutationGroup[]
+  mutantGenerator: MutantGenerator
+  tokenStream: CommonTokenStream
+  testMethodsPerLine: Map<number, Set<TestMethodId>>
+  apexTestRunner: ApexTestRunner
+  apexClassRepository: ApexClassRepository
+  retainedTestClassNames: string[]
+}
+
 export class MutationTestingService {
   protected readonly apexClassName: string
   protected readonly apexTestClassNames: string[]
@@ -62,6 +85,7 @@ export class MutationTestingService {
   private readonly skipPatterns: SkipPattern[]
   private readonly allowedLines: Set<number> | undefined
   private readonly mutationGroupingEnabled: boolean
+  private readonly testClassOrigins: TestClassOrigins | undefined
   // Assigned by fetchApexClass before any reader runs; no meaningful seed.
   private apexClassContent!: string
 
@@ -80,6 +104,7 @@ export class MutationTestingService {
       skipPatterns,
       lines,
       mutationGrouping,
+      testClassOrigins,
     }: ApexMutationParameter,
     protected readonly messages: Messages<string>
   ) {
@@ -93,6 +118,7 @@ export class MutationTestingService {
     this.skipPatterns = ConfigReader.compileSkipPatterns(skipPatterns)
     this.allowedLines = ConfigReader.parseLineRanges(lines)
     this.mutationGroupingEnabled = mutationGrouping ?? false
+    this.testClassOrigins = testClassOrigins
   }
 
   // One canonical spelling of the joined test class perimeter, so every log
@@ -114,15 +140,12 @@ export class MutationTestingService {
       apexClass,
       apexClassRepository
     )
-    await this.verifyTestClassCompilation(apexClassRepository)
 
     const coverageStrategy = await this.selectCoverageStrategy(
       apexSettingsRepository
     )
-    const { testMethodsPerLine, testTime } = await this.runBaselineTests(
-      apexTestRunner,
-      coverageStrategy
-    )
+    const { testMethodsPerLine, testTime, retainedTestClassNames } =
+      await this.runBaselineTests(apexTestRunner, coverageStrategy)
     const coveredLines = this.extractCoveredLines(testMethodsPerLine)
     const { mutations, mutantGenerator, tokenStream } = this.generateMutations(
       apexClass,
@@ -137,7 +160,11 @@ export class MutationTestingService {
         mutations.length,
         mutations.length
       )
-      return this.buildDryRunResult(apexClass, mutations)
+      return this.buildDryRunResult(
+        apexClass,
+        mutations,
+        retainedTestClassNames
+      )
     }
 
     const groups = await this.planGroups(mutations, testMethodsPerLine)
@@ -148,7 +175,7 @@ export class MutationTestingService {
       groups.length
     )
 
-    const result = await this.executeMutationLoop(
+    const result = await this.executeMutationLoop({
       apexClass,
       mutations,
       groups,
@@ -156,8 +183,9 @@ export class MutationTestingService {
       tokenStream,
       testMethodsPerLine,
       apexTestRunner,
-      apexClassRepository
-    )
+      apexClassRepository,
+      retainedTestClassNames,
+    })
     await this.rollback(apexClass, apexClassRepository)
     return result
   }
@@ -366,61 +394,57 @@ export class MutationTestingService {
     }
   }
 
-  private async verifyTestClassCompilation(
-    apexClassRepository: ApexClassRepository
-  ): Promise<void> {
-    this.spinner.start(
-      `Verifying "${this.testClassPerimeter}" apex test class compilation`,
-      undefined,
-      { stdout: true }
-    )
-    try {
-      const apexTestClasses = (await Promise.all(
-        this.apexTestClassNames.map(name => apexClassRepository.read(name))
-      )) as unknown as ApexClass[]
-      await apexClassRepository.updateMany(apexTestClasses)
-      this.spinner.stop('Done')
-    } catch (error: unknown) {
-      this.spinner.stop()
-      const errorMessage =
-        error instanceof Error ? error.message : String(error)
-      throw new Error(
-        this.messages.getMessage('error.compilabilityCheckFailed', [
-          this.testClassPerimeter,
-          errorMessage,
-        ])
-      )
-    }
-  }
-
   private async runBaselineTests(
     apexTestRunner: ApexTestRunner,
     coverageStrategy: CoverageStrategy
   ): Promise<{
     testMethodsPerLine: Map<number, Set<TestMethodId>>
     testTime: number
+    retainedTestClassNames: string[]
   }> {
     this.spinner.start(
       `Executing "${this.testClassPerimeter}" tests to get coverage`,
       undefined,
       { stdout: true }
     )
-
-    const { result: baselineResult, durationMs: testTime } =
-      await timeExecution(() =>
-        apexTestRunner.getTestMethodsPerLines(
-          this.apexTestClassNames,
-          coverageStrategy
-        )
+    const { result: baseline, durationMs: testTime } = await timeExecution(() =>
+      apexTestRunner.getTestMethodsPerLines(
+        this.apexTestClassNames,
+        coverageStrategy
       )
-    const { outcome, testsRan, failing, testMethodsPerLine } = baselineResult
+    )
+    this.assertUsableBaseline(baseline)
+    const testMethodsPerLine = this.filterTestMethods(
+      baseline.testMethodsPerLine
+    )
+    const retainedTestClassNames = this.reducePerimeterFromBaseline(
+      baseline,
+      testMethodsPerLine,
+      coverageStrategy
+    )
+    return { testMethodsPerLine, testTime, retainedTestClassNames }
+  }
 
-    if (outcome !== 'Passed') {
+  // Both aborts stop the spinner before throwing — losing either leaves a
+  // spinner running on the failure path. A CompileFail row counts toward
+  // testsRan, so an all-CompileFail baseline never reaches this second
+  // guard; it is caught downstream by the empty-perimeter guard in
+  // reducePerimeterFromBaseline instead.
+  private assertUsableBaseline(baseline: BaselineTestResult): void {
+    const { outcome, testsRan, otherFailureCount } = baseline
+    if (otherFailureCount > 0) {
       this.spinner.stop()
+      const compileSentences = formatSkippedTestClasses(
+        this.toCompileSkips(baseline.compileFailures),
+        this.messages
+      )
+      const compileDetail =
+        compileSentences.length > 0 ? `${compileSentences.join('\n')}\n` : ''
       throw new Error(
         `Original tests failed! Cannot proceed with mutation testing.\n` +
           `Test outcome: ${outcome}\n` +
-          `Failing tests: ${failing}\n`
+          `Failing tests: ${otherFailureCount}\n` +
+          compileDetail
       )
     }
 
@@ -433,44 +457,118 @@ export class MutationTestingService {
           `- Test class(es) are properly deployed`
       )
     }
+  }
 
+  private stopBaselineSpinner(coverageStrategy: CoverageStrategy): void {
     this.spinner.stop(
       coverageStrategy.fidelity === 'aggregate'
         ? `Original tests passed (${this.messages.getMessage('info.aggregatedCoverageOnly')})`
         : 'Original tests passed'
     )
-    const filteredTestMethodsPerLine =
-      this.filterTestMethods(testMethodsPerLine)
-    if (coverageStrategy.fidelity === 'per-test') {
-      this.warnZeroContributionTestClasses(filteredTestMethodsPerLine)
-    }
-    return { testMethodsPerLine: filteredTestMethodsPerLine, testTime }
   }
 
-  // AggregateCoverageStrategy has no per-test attribution, so this warning
-  // only makes sense — and is only called — under per-test fidelity.
-  private warnZeroContributionTestClasses(
+  // Stops the same spinner without claiming a pass, for the path where every
+  // class failed to compile: no test ran, so there is nothing to have passed.
+  private abandonBaselineSpinner(): void {
+    this.spinner.stop()
+  }
+
+  // The two drops and the guard, in order: a class that cannot compile never
+  // ran a test, so it is dropped before zero-contribution is even computed.
+  // If every class drops here, error.noUsableTestClass is the truthful
+  // failure — error.noCoverage would name a perimeter that simply never
+  // compiled, not one that ran and covered nothing.
+  //
+  // Three constraints pin the spinner handling, and they only reconcile if the
+  // TEXT is conditional rather than the ordering. The notices must precede the
+  // throw, or an all-CompileFail run never says which classes broke. The
+  // spinner must stop before the notices, because announcing stops it too and
+  // stopping an already-stopped spinner renders nothing — that would swallow
+  // the pass line whenever only some classes failed. And the pass text must
+  // not appear when nothing survived: an all-CompileFail baseline reports
+  // otherFailureCount === 0 and testsRan > 0, since CompileFail rows count
+  // toward testsRan, so it would claim a pass that never happened.
+  private reducePerimeterFromBaseline(
+    baseline: BaselineTestResult,
+    testMethodsPerLine: Map<number, Set<TestMethodId>>,
+    coverageStrategy: CoverageStrategy
+  ): string[] {
+    const compileSkips = this.toCompileSkips(baseline.compileFailures)
+    const compileSentences = formatSkippedTestClasses(
+      compileSkips,
+      this.messages
+    )
+    const compiling = reducePerimeter(this.apexTestClassNames, compileSkips)
+    if (compiling.length === 0) {
+      this.abandonBaselineSpinner()
+      this.announceSkips(compileSentences)
+      throw this.messages.createError('error.noUsableTestClass', [
+        this.apexClassName,
+        compileSentences.join('\n'),
+      ])
+    }
+    this.stopBaselineSpinner(coverageStrategy)
+    this.announceSkips(compileSentences)
+
+    const silent =
+      coverageStrategy.fidelity === 'per-test'
+        ? this.findZeroContributionTestClasses(compiling, testMethodsPerLine)
+        : []
+    this.announceSkips(formatSkippedTestClasses(silent, this.messages))
+    return reducePerimeter(compiling, silent)
+  }
+
+  // Walking the perimeter (rather than the failures) emits the perimeter
+  // entry's own spelling, renders warnings in perimeter order like every
+  // other drop, and avoids a non-null assertion on a lookup that can only
+  // miss in a state the platform cannot produce.
+  private toCompileSkips(
+    failures: BaselineCompileFailure[]
+  ): SkippedTestClass[] {
+    const detailByKey = new Map(
+      failures.map(failure => [
+        failure.className.toLowerCase(),
+        failure.message,
+      ])
+    )
+    const skips = this.apexTestClassNames.flatMap(name => {
+      const detail = detailByKey.get(name.toLowerCase())
+      return detail === undefined
+        ? []
+        : [{ className: name, reason: 'does-not-compile' as const, detail }]
+    })
+    return attachSuiteProvenance(skips, this.testClassOrigins)
+  }
+
+  // AggregateCoverageStrategy has no per-test attribution, so this diff
+  // only makes sense — and is only computed — under per-test fidelity.
+  // Diffs against the compile-reduced perimeter, so a class that failed to
+  // compile is never also reported as contributing nothing. No namespace
+  // guard is needed on the join below: assessPerimeter already dropped every
+  // namespaced entry before the perimeter reached this service, so every
+  // remaining class is local and `test.apexClass.fullName` on the org
+  // matches the perimeter spelling — the case-folded join cannot
+  // systematically miss it.
+  private findZeroContributionTestClasses(
+    perimeter: string[],
     testMethodsPerLine: Map<number, Set<TestMethodId>>
-  ): void {
+  ): SkippedTestClass[] {
     const contributingClasses = new Set(
       [...testMethodsPerLine.values()]
         .flatMap(methods => [...methods])
         .map(id => testClassOf(id).toLowerCase())
     )
-    const silentClasses = this.apexTestClassNames.filter(
-      name => !contributingClasses.has(name.toLowerCase())
-    )
-    if (silentClasses.length === 0) {
-      return
+    const silent = perimeter
+      .filter(name => !contributingClasses.has(name.toLowerCase()))
+      .map(className => ({ className, reason: 'no-coverage' as const }))
+    return attachSuiteProvenance(silent, this.testClassOrigins)
+  }
+
+  private announceSkips(sentences: string[]): void {
+    for (const sentence of sentences) {
+      this.spinner.start(sentence, undefined, { stdout: true })
+      this.spinner.stop()
     }
-    this.spinner.start(
-      this.messages.getMessage('info.zeroContributionTestClasses', [
-        silentClasses.join(', '),
-      ]),
-      undefined,
-      { stdout: true }
-    )
-    this.spinner.stop()
   }
 
   private extractCoveredLines(
@@ -563,12 +661,13 @@ export class MutationTestingService {
 
   private buildDryRunResult(
     apexClass: ApexClass,
-    mutations: ApexMutation[]
+    mutations: ApexMutation[],
+    retainedTestClassNames: string[]
   ): ApexMutationTestResult {
     return {
       sourceFile: this.apexClassName,
       sourceFileContent: apexClass.Body,
-      testFiles: this.apexTestClassNames,
+      testFiles: retainedTestClassNames,
       mutants: mutations.map(mutation => ({
         id: `${this.apexClassName}-${mutation.target.startToken.line}-${mutation.target.startToken.charPositionInLine}-${mutation.target.startToken.tokenIndex}-${Date.now()}`,
         mutatorName: mutation.mutationName,
@@ -581,15 +680,20 @@ export class MutationTestingService {
   }
 
   private async executeMutationLoop(
-    apexClass: ApexClass,
-    mutations: ApexMutation[],
-    groups: MutationGroup[],
-    mutantGenerator: MutantGenerator,
-    tokenStream: CommonTokenStream,
-    testMethodsPerLine: Map<number, Set<TestMethodId>>,
-    apexTestRunner: ApexTestRunner,
-    apexClassRepository: ApexClassRepository
+    context: MutationLoopContext
   ): Promise<ApexMutationTestResult> {
+    const {
+      apexClass,
+      mutations,
+      groups,
+      mutantGenerator,
+      tokenStream,
+      testMethodsPerLine,
+      apexTestRunner,
+      apexClassRepository,
+      retainedTestClassNames,
+    } = context
+
     this.progress.start(
       mutations.length,
       { info: 'Starting mutation testing' },
@@ -645,7 +749,7 @@ export class MutationTestingService {
     return {
       sourceFile: this.apexClassName,
       sourceFileContent: apexClass.Body,
-      testFiles: this.apexTestClassNames,
+      testFiles: retainedTestClassNames,
       // Stryker disable next-line MethodExpression: no null slots remain, so
       // filtering and not filtering yield the same array — see `isPresent`.
       mutants: orderedResults.filter(isPresent),
