@@ -3,7 +3,10 @@ import { Progress, Spinner } from '@salesforce/sf-plugins-core'
 import type { CommonTokenStream } from 'apex-parser'
 import { ApexClassRepository } from '../adapter/apexClassRepository.js'
 import { ApexSettingsRepository } from '../adapter/apexSettingsRepository.js'
-import { ApexTestRunner } from '../adapter/apexTestRunner.js'
+import {
+  ApexTestRunner,
+  type BaselineCompileFailure,
+} from '../adapter/apexTestRunner.js'
 import { SObjectDescribeRepository } from '../adapter/sObjectDescribeRepository.js'
 import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
@@ -39,7 +42,7 @@ import {
   extractMutationOriginalText,
 } from './mutationLocation.js'
 import type { SkipPattern } from './skipPattern.js'
-import { formatSkippedTestClass } from './skippedTestClassMessage.js'
+import { formatSkippedTestClasses } from './skippedTestClassMessage.js'
 import { formatDuration, timeExecution } from './timeUtils.js'
 import { type TypeAnalysisResult, TypeDiscoverer } from './typeDiscoverer.js'
 import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
@@ -69,6 +72,10 @@ interface MutationLoopContext {
   apexClassRepository: ApexClassRepository
   retainedTestClassNames: string[]
 }
+
+type BaselineTestResult = Awaited<
+  ReturnType<ApexTestRunner['getTestMethodsPerLines']>
+>
 
 export class MutationTestingService {
   protected readonly apexClassName: string
@@ -403,22 +410,26 @@ export class MutationTestingService {
       undefined,
       { stdout: true }
     )
-
-    const { result: baselineResult, durationMs: testTime } =
-      await timeExecution(() =>
-        apexTestRunner.getTestMethodsPerLines(
-          this.apexTestClassNames,
-          coverageStrategy
-        )
+    const { result: baseline, durationMs: testTime } = await timeExecution(() =>
+      apexTestRunner.getTestMethodsPerLines(
+        this.apexTestClassNames,
+        coverageStrategy
       )
-    const {
-      outcome,
-      testsRan,
-      failing,
-      otherFailureCount,
-      testMethodsPerLine,
-    } = baselineResult
+    )
+    this.assertUsableBaseline(baseline)
+    this.stopBaselineSpinner(coverageStrategy)
+    const { testMethodsPerLine, retainedTestClassNames } =
+      this.reducePerimeterFromBaseline(baseline, coverageStrategy)
+    return { testMethodsPerLine, testTime, retainedTestClassNames }
+  }
 
+  // Both aborts keep their message byte-identical and both stop the spinner
+  // before throwing — losing either leaves a spinner running on the failure
+  // path. A CompileFail row counts toward testsRan, so an all-CompileFail
+  // baseline never reaches this second guard; it is caught downstream by
+  // the empty-perimeter guard in reducePerimeterFromBaseline instead.
+  private assertUsableBaseline(baseline: BaselineTestResult): void {
+    const { outcome, testsRan, failing, otherFailureCount } = baseline
     if (otherFailureCount > 0) {
       this.spinner.stop()
       throw new Error(
@@ -437,33 +448,86 @@ export class MutationTestingService {
           `- Test class(es) are properly deployed`
       )
     }
+  }
 
+  private stopBaselineSpinner(coverageStrategy: CoverageStrategy): void {
     this.spinner.stop(
       coverageStrategy.fidelity === 'aggregate'
         ? `Original tests passed (${this.messages.getMessage('info.aggregatedCoverageOnly')})`
         : 'Original tests passed'
     )
-    const filteredTestMethodsPerLine =
-      this.filterTestMethods(testMethodsPerLine)
-    const skipped =
-      coverageStrategy.fidelity === 'per-test'
-        ? this.findZeroContributionTestClasses(filteredTestMethodsPerLine)
-        : []
-    this.warnSkippedTestClasses(skipped)
-    const retainedTestClassNames = reducePerimeter(
-      this.apexTestClassNames,
-      skipped
+  }
+
+  // The two drops and the guard, in order: a class that cannot compile never
+  // ran a test, so it is dropped before zero-contribution is even computed.
+  // If every class drops here, error.noUsableTestClass is the truthful
+  // failure — error.noCoverage would name a perimeter that simply never
+  // compiled, not one that ran and covered nothing.
+  private reducePerimeterFromBaseline(
+    baseline: BaselineTestResult,
+    coverageStrategy: CoverageStrategy
+  ): {
+    testMethodsPerLine: Map<number, Set<TestMethodId>>
+    retainedTestClassNames: string[]
+  } {
+    const compileSkips = this.toCompileSkips(baseline.compileFailures)
+    const compileSentences = formatSkippedTestClasses(
+      compileSkips,
+      this.messages
     )
-    return {
-      testMethodsPerLine: filteredTestMethodsPerLine,
-      testTime,
-      retainedTestClassNames,
+    this.announceSkips(compileSentences)
+    const compiling = reducePerimeter(this.apexTestClassNames, compileSkips)
+    if (compiling.length === 0) {
+      throw new Error(
+        this.messages.getMessage('error.noUsableTestClass', [
+          this.apexClassName,
+          compileSentences.join('\n'),
+        ])
+      )
     }
+
+    const testMethodsPerLine = this.filterTestMethods(
+      baseline.testMethodsPerLine
+    )
+    const silent =
+      coverageStrategy.fidelity === 'per-test'
+        ? this.findZeroContributionTestClasses(compiling, testMethodsPerLine)
+        : []
+    this.announceSkips(formatSkippedTestClasses(silent, this.messages))
+    return {
+      testMethodsPerLine,
+      retainedTestClassNames: reducePerimeter(compiling, silent),
+    }
+  }
+
+  // Walking the perimeter (rather than the failures) emits the perimeter
+  // entry's own spelling, renders warnings in perimeter order like every
+  // other drop, and avoids a non-null assertion on a lookup that can only
+  // miss in a state the platform cannot produce.
+  private toCompileSkips(
+    failures: BaselineCompileFailure[]
+  ): SkippedTestClass[] {
+    const detailByKey = new Map(
+      failures.map(failure => [
+        failure.className.toLowerCase(),
+        failure.message,
+      ])
+    )
+    const skips = this.apexTestClassNames.flatMap(name => {
+      const detail = detailByKey.get(name.toLowerCase())
+      return detail === undefined
+        ? []
+        : [{ className: name, reason: 'does-not-compile' as const, detail }]
+    })
+    return attachSuiteProvenance(skips, this.testClassOrigins)
   }
 
   // AggregateCoverageStrategy has no per-test attribution, so this diff
   // only makes sense — and is only computed — under per-test fidelity.
+  // Diffs against the compile-reduced perimeter, so a class that failed to
+  // compile is never also reported as contributing nothing.
   private findZeroContributionTestClasses(
+    perimeter: string[],
     testMethodsPerLine: Map<number, Set<TestMethodId>>
   ): SkippedTestClass[] {
     const contributingClasses = new Set(
@@ -471,19 +535,15 @@ export class MutationTestingService {
         .flatMap(methods => [...methods])
         .map(id => testClassOf(id).toLowerCase())
     )
-    const silent = this.apexTestClassNames
+    const silent = perimeter
       .filter(name => !contributingClasses.has(name.toLowerCase()))
       .map(className => ({ className, reason: 'no-coverage' as const }))
     return attachSuiteProvenance(silent, this.testClassOrigins)
   }
 
-  private warnSkippedTestClasses(skipped: SkippedTestClass[]): void {
-    for (const entry of skipped) {
-      this.spinner.start(
-        formatSkippedTestClass(entry, this.messages),
-        undefined,
-        { stdout: true }
-      )
+  private announceSkips(sentences: string[]): void {
+    for (const sentence of sentences) {
+      this.spinner.start(sentence, undefined, { stdout: true })
       this.spinner.stop()
     }
   }

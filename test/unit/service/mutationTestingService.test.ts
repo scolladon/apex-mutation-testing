@@ -142,6 +142,8 @@ describe('MutationTestingService', () => {
           'info.testClassNotUsable': `Skipping test class '${args?.[0]}'${args?.[1]}: ${args?.[2]}.`,
           'info.contributedBySuite': `(contributed by test suite ${args?.[0]})`,
           'info.reasonNoCoverage': 'it contributed no covered lines',
+          'info.reasonDoesNotCompile': `it does not compile${args?.[0] ?? ''}`,
+          'error.noUsableTestClass': `No usable Apex test class remains in the perimeter for '${args?.[0]}'. The following test class(es) were skipped:\n${args?.[1]}`,
         }
         return templates[key] || key
       }),
@@ -228,7 +230,9 @@ describe('MutationTestingService', () => {
 
     describe('When baseline includes a CompileFail row alongside a passing test', () => {
       it('then should not treat the compile failure as an aborting test failure', async () => {
-        // Arrange
+        // Arrange — a two-class perimeter: TestClassTest never compiles and is
+        // dropped, GoodTest ran, passed and covers the class under mutation, so
+        // the compile-drop guard (a distinct concern) does not also fire here.
         vi.mocked(ApexClassRepository).mockImplementation(
           class {
             read = vi.fn().mockImplementation((name: string) => {
@@ -269,15 +273,25 @@ describe('MutationTestingService', () => {
                   { className: 'TestClassTest', message: 'boom' },
                 ],
                 testMethodsPerLine: new Map([
-                  [1, new Set(['TestClassTest.testMethodA'])],
+                  [1, new Set(['GoodTest.testMethodA'])],
                 ]),
               })
             )
           }
         )
+        const twoClassSut = new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassNames: ['GoodTest', 'TestClassTest'],
+          } as ApexMutationParameter,
+          messagesMock
+        )
 
         // Act & Assert
-        await expect(sut.process()).resolves.toBeDefined()
+        await expect(twoClassSut.process()).resolves.toBeDefined()
       })
     })
 
@@ -1716,6 +1730,378 @@ describe('MutationTestingService', () => {
           { stdout: true }
         )
         expect(result.testFiles).toEqual(['FooTest'])
+      })
+    })
+
+    describe('Given a perimeter class fails to compile in the baseline', () => {
+      const buildCompileDropSut = (
+        apexTestClassNames: string[],
+        testClassOrigins?: TestClassOrigins
+      ): MutationTestingService =>
+        new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassNames,
+            testClassOrigins,
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+      const mockCompilingAdapters = (): void => {
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+      }
+
+      it('Given perimeter GoodTest, BrokenTest and BrokenTest fails to compile, When processing, Then BrokenTest is skipped with the compile reason and testFiles keeps GoodTest', async () => {
+        // Arrange
+        mockCompilingAdapters()
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue(
+              baselineResult({
+                compileFailures: [
+                  {
+                    className: 'BrokenTest',
+                    message: 'Invalid type: Dep at line 3 column 5',
+                  },
+                ],
+                testMethodsPerLine: new Map([[1, new Set(['GoodTest.testA'])]]),
+              })
+            )
+          }
+        )
+        const compileDropSut = buildCompileDropSut(['GoodTest', 'BrokenTest'])
+
+        // Act
+        const result = await compileDropSut.process()
+
+        // Assert
+        expect(spinner.start).toHaveBeenCalledWith(
+          "Skipping test class 'BrokenTest': it does not compile (Invalid type: Dep at line 3 column 5).",
+          undefined,
+          { stdout: true }
+        )
+        expect(result.testFiles).toEqual(['GoodTest'])
+      })
+
+      it('Given the same fixture, When processing, Then BrokenTest is not also reported as zero-contribution', async () => {
+        // Arrange
+        mockCompilingAdapters()
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue(
+              baselineResult({
+                compileFailures: [
+                  {
+                    className: 'BrokenTest',
+                    message: 'Invalid type: Dep at line 3 column 5',
+                  },
+                ],
+                testMethodsPerLine: new Map([[1, new Set(['GoodTest.testA'])]]),
+              })
+            )
+          }
+        )
+        const compileDropSut = buildCompileDropSut(['GoodTest', 'BrokenTest'])
+
+        // Act
+        await compileDropSut.process()
+
+        // Assert — exactly one warning for BrokenTest, not a second one from
+        // the zero-contribution step.
+        expect(spinner.start).not.toHaveBeenCalledWith(
+          "Skipping test class 'BrokenTest': it contributed no covered lines.",
+          undefined,
+          { stdout: true }
+        )
+      })
+
+      it('Given the org reports the compile failure as FooTest while the perimeter reads footest, When processing, Then the case-folded match renders the perimeter spelling', async () => {
+        // Arrange
+        mockCompilingAdapters()
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue(
+              baselineResult({
+                compileFailures: [{ className: 'FooTest', message: 'boom' }],
+                testMethodsPerLine: new Map([[1, new Set(['GoodTest.testA'])]]),
+              })
+            )
+          }
+        )
+        const compileDropSut = buildCompileDropSut(['footest', 'GoodTest'])
+
+        // Act
+        const result = await compileDropSut.process()
+
+        // Assert
+        expect(spinner.start).toHaveBeenCalledWith(
+          "Skipping test class 'footest': it does not compile (boom).",
+          undefined,
+          { stdout: true }
+        )
+        expect(result.testFiles).toEqual(['GoodTest'])
+      })
+
+      it('Given testClassOrigins supplies a suite for the compile-failed class, When processing, Then the notice carries the suite clause', async () => {
+        // Arrange
+        mockCompilingAdapters()
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue(
+              baselineResult({
+                compileFailures: [
+                  {
+                    className: 'BrokenTest',
+                    message: 'Invalid type: Dep at line 3 column 5',
+                  },
+                ],
+                testMethodsPerLine: new Map([[1, new Set(['GoodTest.testA'])]]),
+              })
+            )
+          }
+        )
+        const compileDropSut = buildCompileDropSut(
+          ['GoodTest', 'BrokenTest'],
+          new Map([['brokentest', ['SmokeSuite']]])
+        )
+
+        // Act
+        await compileDropSut.process()
+
+        // Assert
+        expect(spinner.start).toHaveBeenCalledWith(
+          "Skipping test class 'BrokenTest' (contributed by test suite 'SmokeSuite'): it does not compile (Invalid type: Dep at line 3 column 5).",
+          undefined,
+          { stdout: true }
+        )
+      })
+
+      it('Given testClassOrigins holds no entry for the compile-failed class, When processing, Then no suite clause is rendered', async () => {
+        // Arrange
+        mockCompilingAdapters()
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue(
+              baselineResult({
+                compileFailures: [
+                  {
+                    className: 'BrokenTest',
+                    message: 'Invalid type: Dep at line 3 column 5',
+                  },
+                ],
+                testMethodsPerLine: new Map([[1, new Set(['GoodTest.testA'])]]),
+              })
+            )
+          }
+        )
+        const compileDropSut = buildCompileDropSut(
+          ['GoodTest', 'BrokenTest'],
+          new Map([['someothertest', ['SmokeSuite']]])
+        )
+
+        // Act
+        await compileDropSut.process()
+
+        // Assert
+        expect(spinner.start).toHaveBeenCalledWith(
+          "Skipping test class 'BrokenTest': it does not compile (Invalid type: Dep at line 3 column 5).",
+          undefined,
+          { stdout: true }
+        )
+      })
+
+      it('Given every perimeter class fails to compile, When processing, Then process() rejects with error.noUsableTestClass carrying both sentences and error.noCoverage is not what surfaces', async () => {
+        // Arrange
+        mockCompilingAdapters()
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            getTestMethodsPerLines = vi.fn().mockResolvedValue(
+              baselineResult({
+                testsRan: 2,
+                compileFailures: [
+                  { className: 'FooTest', message: 'boom one' },
+                  { className: 'BarTest', message: 'boom two' },
+                ],
+                testMethodsPerLine: new Map(),
+              })
+            )
+          }
+        )
+        const compileDropSut = buildCompileDropSut(['FooTest', 'BarTest'])
+
+        // Act & Assert
+        await expect(compileDropSut.process()).rejects.toThrow(
+          "No usable Apex test class remains in the perimeter for 'TestClass'. The following test class(es) were skipped:\n" +
+            "Skipping test class 'FooTest': it does not compile (boom one).\n" +
+            "Skipping test class 'BarTest': it does not compile (boom two)."
+        )
+        await expect(compileDropSut.process()).rejects.not.toThrow(
+          'No test coverage found'
+        )
+      })
+
+      it('Given aggregate-only fidelity and one class fails to compile, When processing, Then that class is still warned and dropped while a silent class is not', async () => {
+        // Arrange
+        mockCompilingAdapters()
+        vi.mocked(ApexSettingsRepository).mockImplementation(
+          class {
+            isAggregateCoverageOnly = vi.fn().mockResolvedValue(true)
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: {
+                outcome: 'Failed',
+                passing: 0,
+                failing: 1,
+                testsRan: 1,
+              },
+            })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue(
+              baselineResult({
+                compileFailures: [{ className: 'BrokenTest', message: 'boom' }],
+                testMethodsPerLine: new Map([[1, new Set(['GoodTest.testA'])]]),
+              })
+            )
+          }
+        )
+        const compileDropSut = buildCompileDropSut([
+          'GoodTest',
+          'SilentTest',
+          'BrokenTest',
+        ])
+
+        // Act
+        const result = await compileDropSut.process()
+
+        // Assert
+        expect(spinner.start).toHaveBeenCalledWith(
+          "Skipping test class 'BrokenTest': it does not compile (boom).",
+          undefined,
+          { stdout: true }
+        )
+        expect(spinner.start).not.toHaveBeenCalledWith(
+          "Skipping test class 'SilentTest': it contributed no covered lines.",
+          undefined,
+          { stdout: true }
+        )
+        expect(result.testFiles).toEqual(['GoodTest', 'SilentTest'])
+      })
+
+      it('Given --dry-run and a class fails to compile, When processing, Then result.testFiles reflects the compile-drop reduction', async () => {
+        // Arrange
+        mockCompilingAdapters()
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            getTestMethodsPerLines = vi.fn().mockResolvedValue(
+              baselineResult({
+                compileFailures: [{ className: 'BrokenTest', message: 'boom' }],
+                testMethodsPerLine: new Map([[1, new Set(['GoodTest.testA'])]]),
+              })
+            )
+          }
+        )
+        const dryRunSut = new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassNames: ['GoodTest', 'BrokenTest'],
+            dryRun: true,
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+        // Act
+        const result = await dryRunSut.process()
+
+        // Assert
+        expect(result.testFiles).toEqual(['GoodTest'])
+      })
+
+      it('Given the remaining class also contributes zero covered lines, When processing, Then error.noCoverage still names the full original perimeter', async () => {
+        // Arrange
+        mockCompilingAdapters()
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            getTestMethodsPerLines = vi.fn().mockResolvedValue(
+              baselineResult({
+                compileFailures: [{ className: 'BrokenTest', message: 'boom' }],
+                testMethodsPerLine: new Map(),
+              })
+            )
+          }
+        )
+        const compileDropSut = buildCompileDropSut(['GoodTest', 'BrokenTest'])
+
+        // Act & Assert — GoodTest is the only compiling class, yet it also
+        // contributes nothing; error.noCoverage must still name the perimeter
+        // the service was constructed with, not the post-drop remainder.
+        await expect(compileDropSut.process()).rejects.toThrow(
+          "No test coverage found for 'TestClass'. Ensure 'GoodTest, BrokenTest' tests exercise the code you want to mutation test."
+        )
       })
     })
 

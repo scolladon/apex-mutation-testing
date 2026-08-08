@@ -1,18 +1,27 @@
 import { TestClassOrigins } from './TestClassOrigin.js'
 
-export type UnusableReason = 'not-found' | 'not-accessible' | 'no-coverage'
+export type UnusableReason =
+  | 'not-found'
+  | 'not-accessible'
+  | 'does-not-compile'
+  | 'no-coverage'
 
-export interface SkippedTestClass {
+type SkippedTestClassBase = {
   className: string
-  reason: UnusableReason
   suiteNames?: string[]
 }
+
+export type SkippedTestClass =
+  | (SkippedTestClassBase & {
+      reason: Exclude<UnusableReason, 'does-not-compile'>
+    })
+  | (SkippedTestClassBase & { reason: 'does-not-compile'; detail: string })
 
 export const attachSuiteProvenance = (
   skipped: SkippedTestClass[],
   origins: TestClassOrigins | undefined
 ): SkippedTestClass[] =>
-  skipped.map(entry => {
+  skipped.map((entry): SkippedTestClass => {
     const suiteNames = origins?.get(entry.className.toLowerCase())
     return suiteNames ? { ...entry, suiteNames } : entry
   })

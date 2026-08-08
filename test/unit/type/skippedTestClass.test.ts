@@ -64,6 +64,29 @@ describe('attachSuiteProvenance', () => {
     expect(skipped[0]).not.toHaveProperty('suiteNames')
   })
 
+  it('Given a does-not-compile verdict and matching origins, When attached, Then detail is preserved alongside the attached suiteNames', () => {
+    // Arrange
+    const skipped: SkippedTestClass[] = [
+      {
+        className: 'BrokenTest',
+        reason: 'does-not-compile',
+        detail: 'Invalid type: Dep',
+      },
+    ]
+    const origins: TestClassOrigins = new Map([['brokentest', ['SmokeSuite']]])
+
+    // Act
+    const sut = attachSuiteProvenance(skipped, origins)
+
+    // Assert
+    expect(sut[0]).toEqual({
+      className: 'BrokenTest',
+      reason: 'does-not-compile',
+      detail: 'Invalid type: Dep',
+      suiteNames: ['SmokeSuite'],
+    })
+  })
+
   it('Given a verdict for a class named Constructor and an empty origins map, When attached, Then the entry is returned unchanged and no prototype method is picked up', () => {
     // Arrange
     const skipped: SkippedTestClass[] = [

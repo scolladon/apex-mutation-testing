@@ -17,6 +17,7 @@ describe('formatSkippedTestClass', () => {
           'info.reasonNotFound': 'it could not be found on this org',
           'info.reasonNotAccessible': 'it is not accessible on this org',
           'info.reasonNoCoverage': 'it contributed no covered lines',
+          'info.reasonDoesNotCompile': `it does not compile${args?.[0] ?? ''}`,
         }
         return templates[key] ?? key
       }),
@@ -70,6 +71,73 @@ describe('formatSkippedTestClass', () => {
       "Skipping test class 'BarTest': it contributed no covered lines."
     )
     expect(messages.getMessage).toHaveBeenCalledWith('info.reasonNoCoverage')
+  })
+
+  it('Given a does-not-compile skip carrying a detail, When formatted, Then the detail renders as a parenthetical after the reason', () => {
+    // Arrange
+    const skipped: SkippedTestClass = {
+      className: 'AmtProbeDepTest',
+      reason: 'does-not-compile',
+      detail: 'Invalid type: AmtProbeDep at line 3 column 5',
+    }
+
+    // Act
+    const sut = formatSkippedTestClass(skipped, messages)
+
+    // Assert
+    expect(sut).toBe(
+      "Skipping test class 'AmtProbeDepTest': it does not compile (Invalid type: AmtProbeDep at line 3 column 5)."
+    )
+  })
+
+  it('Given a does-not-compile skip with a blank detail, When formatted, Then no parenthetical is rendered', () => {
+    // Arrange
+    const skipped: SkippedTestClass = {
+      className: 'X',
+      reason: 'does-not-compile',
+      detail: '',
+    }
+
+    // Act
+    const sut = formatSkippedTestClass(skipped, messages)
+
+    // Assert
+    expect(sut).toBe("Skipping test class 'X': it does not compile.")
+  })
+
+  it('Given a does-not-compile detail carrying newlines and control characters, When formatted, Then it is folded to a single space and the sentence stays on one line', () => {
+    // Arrange
+    const skipped: SkippedTestClass = {
+      className: 'BrokenTest',
+      reason: 'does-not-compile',
+      detail: 'line 3\ncolumn 5: Variable does not exist',
+    }
+
+    // Act
+    const sut = formatSkippedTestClass(skipped, messages)
+
+    // Assert
+    expect(sut).toBe(
+      "Skipping test class 'BrokenTest': it does not compile (line 3 column 5: Variable does not exist)."
+    )
+  })
+
+  it('Given a does-not-compile skip contributed by a suite, When formatted, Then both the suite clause and the detail render', () => {
+    // Arrange
+    const skipped: SkippedTestClass = {
+      className: 'BrokenTest',
+      reason: 'does-not-compile',
+      detail: 'Invalid type: Dep',
+      suiteNames: ['SmokeSuite'],
+    }
+
+    // Act
+    const sut = formatSkippedTestClass(skipped, messages)
+
+    // Assert
+    expect(sut).toBe(
+      "Skipping test class 'BrokenTest' (contributed by test suite 'SmokeSuite'): it does not compile (Invalid type: Dep)."
+    )
   })
 
   it('Given a skip contributed by one suite, When formatted, Then a suite clause is inserted with a leading separator space', () => {

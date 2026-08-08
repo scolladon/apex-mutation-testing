@@ -4,6 +4,7 @@ import { SkippedTestClass, UnusableReason } from '../type/SkippedTestClass.js'
 const REASON_KEY: Record<UnusableReason, string> = {
   'not-found': 'info.reasonNotFound',
   'not-accessible': 'info.reasonNotAccessible',
+  'does-not-compile': 'info.reasonDoesNotCompile',
   'no-coverage': 'info.reasonNoCoverage',
 }
 
@@ -43,6 +44,24 @@ const suiteClause = (
   return ` ${messages.getMessage('info.contributedBySuite', [quotedNames])}`
 }
 
+// A compile diagnosis carries newlines and is the only fragment that takes a
+// token; every other reason fragment is specifier-free. A blank detail
+// renders no parenthetical rather than an empty pair of parentheses.
+const detailClause = (detail: string): string => {
+  const sanitized = sanitizeForDisplay(detail)
+  return sanitized === '' ? '' : ` (${sanitized})`
+}
+
+const renderReason = (
+  skipped: SkippedTestClass,
+  messages: Messages<string>
+): string =>
+  skipped.reason === 'does-not-compile'
+    ? messages.getMessage(REASON_KEY[skipped.reason], [
+        detailClause(skipped.detail),
+      ])
+    : messages.getMessage(REASON_KEY[skipped.reason])
+
 export const formatSkippedTestClass = (
   skipped: SkippedTestClass,
   messages: Messages<string>
@@ -50,7 +69,7 @@ export const formatSkippedTestClass = (
   messages.getMessage('info.testClassNotUsable', [
     skipped.className,
     suiteClause(skipped.suiteNames, messages),
-    messages.getMessage(REASON_KEY[skipped.reason]),
+    renderReason(skipped, messages),
   ])
 
 export const formatSkippedTestClasses = (

@@ -184,11 +184,15 @@ it is not accessible on this org
 
 it contributed no covered lines
 
+# info.reasonDoesNotCompile
+
+it does not compile%s
+
 # error.apexClassNotFound
 
 Apex class '%s' not found.
 
 # error.noUsableTestClass
 
-No usable Apex test class remains in the perimeter for '%s'. Every test class provided was skipped:
+No usable Apex test class remains in the perimeter for '%s'. The following test class(es) were skipped:
 %s
