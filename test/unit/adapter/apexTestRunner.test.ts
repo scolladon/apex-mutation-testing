@@ -4,6 +4,7 @@ import { ApexTestRunner } from '../../../src/adapter/apexTestRunner.js'
 import type { TestMethodId } from '../../../src/type/TestMethodId.js'
 
 const runTestAsynchronousMock = vi.fn()
+const runTestSynchronousMock = vi.fn()
 
 vi.mock('@salesforce/apex-node', async importOriginal => {
   const actual = await importOriginal<typeof import('@salesforce/apex-node')>()
@@ -12,6 +13,7 @@ vi.mock('@salesforce/apex-node', async importOriginal => {
     TestService: vi.fn().mockImplementation(
       class {
         runTestAsynchronous = runTestAsynchronousMock
+        runTestSynchronous = runTestSynchronousMock
       }
     ),
   }
@@ -42,7 +44,7 @@ describe('ApexTestRunner', () => {
             testsRan: 1,
           },
         }
-        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
+        runTestSynchronousMock.mockResolvedValue(mockTestResult)
         const strategyStub = {
           fidelity: 'per-test' as const,
           getTestMethodsPerLine: vi
@@ -56,7 +58,8 @@ describe('ApexTestRunner', () => {
           strategyStub
         )
 
-        // Assert
+        // Assert — a single-class perimeter routes through the synchronous
+        // transport, with no `testLevel` key on the payload
         expect(result).toEqual({
           outcome: 'Passed',
           testsRan: 1,
@@ -69,15 +72,15 @@ describe('ApexTestRunner', () => {
           ...mockTestResult,
           tests: [],
         })
-        expect(runTestAsynchronousMock).toHaveBeenCalledWith(
+        expect(runTestSynchronousMock).toHaveBeenCalledWith(
           {
             tests: [{ className: 'TestClass' }],
-            testLevel: TestLevel.RunSpecifiedTests,
             skipCodeCoverage: false,
             maxFailedTests: 0,
           },
           true
         )
+        expect(runTestAsynchronousMock).not.toHaveBeenCalled()
       })
     })
 
@@ -96,7 +99,7 @@ describe('ApexTestRunner', () => {
       }
 
       it('then should collect the compile failure and feed the strategy only the executed tests', async () => {
-        // Arrange
+        // Arrange — two classes in the perimeter stay on the asynchronous transport
         const mockTestResult = {
           summary: {
             outcome: 'Failed',
@@ -130,10 +133,11 @@ describe('ApexTestRunner', () => {
           ...mockTestResult,
           tests: [passRow],
         })
+        expect(runTestSynchronousMock).not.toHaveBeenCalled()
       })
 
       it('then should count a Fail row toward otherFailureCount', async () => {
-        // Arrange
+        // Arrange — a single class routes through the synchronous transport
         const failRow = {
           apexClass: { fullName: 'FlakyTest' },
           methodName: 'itFails',
@@ -144,7 +148,7 @@ describe('ApexTestRunner', () => {
           summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
           tests: [failRow],
         }
-        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
+        runTestSynchronousMock.mockResolvedValue(mockTestResult)
         const strategyStub = {
           fidelity: 'aggregate' as const,
           getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
@@ -158,10 +162,11 @@ describe('ApexTestRunner', () => {
 
         // Assert
         expect(result.otherFailureCount).toBe(1)
+        expect(runTestAsynchronousMock).not.toHaveBeenCalled()
       })
 
       it('then should count a Skip row toward otherFailureCount', async () => {
-        // Arrange
+        // Arrange — a single class routes through the synchronous transport
         const skipRow = {
           apexClass: { fullName: 'SkippedTest' },
           methodName: 'itIsSkipped',
@@ -172,7 +177,7 @@ describe('ApexTestRunner', () => {
           summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
           tests: [skipRow],
         }
-        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
+        runTestSynchronousMock.mockResolvedValue(mockTestResult)
         const strategyStub = {
           fidelity: 'aggregate' as const,
           getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
@@ -186,10 +191,11 @@ describe('ApexTestRunner', () => {
 
         // Assert
         expect(result.otherFailureCount).toBe(1)
+        expect(runTestAsynchronousMock).not.toHaveBeenCalled()
       })
 
       it('then should dedupe CompileFail rows by folded class name and keep the first message', async () => {
-        // Arrange
+        // Arrange — a single class routes through the synchronous transport
         const firstCompileRow = {
           apexClass: { fullName: 'BrokenTest' },
           methodName: '<compile>',
@@ -206,7 +212,7 @@ describe('ApexTestRunner', () => {
           summary: { outcome: 'Failed', passing: 0, failing: 0, testsRan: 2 },
           tests: [firstCompileRow, secondCompileRow],
         }
-        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
+        runTestSynchronousMock.mockResolvedValue(mockTestResult)
         const strategyStub = {
           fidelity: 'aggregate' as const,
           getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
@@ -225,10 +231,11 @@ describe('ApexTestRunner', () => {
             message: 'Invalid type: AmtProbeDep at line 3 column 5',
           },
         ])
+        expect(runTestAsynchronousMock).not.toHaveBeenCalled()
       })
 
       it('then should normalise a null compile message to an empty string', async () => {
-        // Arrange
+        // Arrange — a single class routes through the synchronous transport
         const compileRowWithoutMessage = {
           apexClass: { fullName: 'BrokenTest' },
           methodName: '<compile>',
@@ -239,7 +246,7 @@ describe('ApexTestRunner', () => {
           summary: { outcome: 'Failed', passing: 0, failing: 0, testsRan: 1 },
           tests: [compileRowWithoutMessage],
         }
-        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
+        runTestSynchronousMock.mockResolvedValue(mockTestResult)
         const strategyStub = {
           fidelity: 'aggregate' as const,
           getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
@@ -255,12 +262,13 @@ describe('ApexTestRunner', () => {
         expect(result.compileFailures).toEqual([
           { className: 'BrokenTest', message: '' },
         ])
+        expect(runTestAsynchronousMock).not.toHaveBeenCalled()
       })
     })
 
     describe('given multiple test classes', () => {
       it('then should build one test entry per class in perimeter order', async () => {
-        // Arrange
+        // Arrange — two classes stay on the asynchronous transport
         const mockTestResult = {
           summary: {
             outcome: 'Passed',
@@ -288,13 +296,14 @@ describe('ApexTestRunner', () => {
           },
           true
         )
+        expect(runTestSynchronousMock).not.toHaveBeenCalled()
       })
     })
 
     describe('given the test execution fails', () => {
       it('then should throw an error', async () => {
-        // Arrange
-        runTestAsynchronousMock.mockRejectedValue(
+        // Arrange — a single class routes through the synchronous transport
+        runTestSynchronousMock.mockRejectedValue(
           new Error('Test execution failed')
         )
         const strategyStub = {
@@ -306,6 +315,7 @@ describe('ApexTestRunner', () => {
         await expect(
           sut.getTestMethodsPerLines(['TestClass'], strategyStub)
         ).rejects.toThrow('Test execution failed')
+        expect(runTestAsynchronousMock).not.toHaveBeenCalled()
       })
     })
   })
@@ -313,13 +323,14 @@ describe('ApexTestRunner', () => {
   describe('when running tests', () => {
     describe('given the test execution is successful', () => {
       it('then should return the test result', async () => {
-        // Arrange
+        // Arrange — a single-method, single-class id set routes through the
+        // synchronous transport
         const mockTestResult = {
           summary: {
             outcome: 'Passed',
           },
         }
-        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
+        runTestSynchronousMock.mockResolvedValue(mockTestResult)
 
         // Act
         const result = await sut.runTestMethods(
@@ -327,23 +338,74 @@ describe('ApexTestRunner', () => {
         )
 
         // Assert — a single-class id set reproduces the byte-identical
-        // single-element payload
+        // single-element payload, with no `testLevel` key
         expect(result).toEqual(mockTestResult)
-        expect(runTestAsynchronousMock).toHaveBeenCalledWith(
+        expect(runTestSynchronousMock).toHaveBeenCalledWith(
           {
             tests: [{ className: 'TestClass', testMethods: ['testMethod'] }],
-            testLevel: TestLevel.RunSpecifiedTests,
             skipCodeCoverage: true,
             maxFailedTests: 0,
           },
           false
         )
+        expect(runTestAsynchronousMock).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('given a single-class id set spanning multiple methods', () => {
+      it('then should fold every method into one synchronous test entry', async () => {
+        // Arrange
+        const mockTestResult = { summary: { outcome: 'Passed' } }
+        runTestSynchronousMock.mockResolvedValue(mockTestResult)
+
+        // Act
+        await sut.runTestMethods(new Set<TestMethodId>(['A.m1', 'A.m2']))
+
+        // Assert
+        expect(runTestSynchronousMock).toHaveBeenCalledWith(
+          {
+            tests: [{ className: 'A', testMethods: ['m1', 'm2'] }],
+            skipCodeCoverage: true,
+            maxFailedTests: 0,
+          },
+          false
+        )
+        expect(runTestAsynchronousMock).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('given a single-class id set with no method cap', () => {
+      it('then should route every one of forty methods through the synchronous transport in one item', async () => {
+        // Arrange
+        const mockTestResult = { summary: { outcome: 'Passed' } }
+        runTestSynchronousMock.mockResolvedValue(mockTestResult)
+        const methodNames = Array.from(
+          { length: 40 },
+          (_, index) => `m${index + 1}`
+        )
+        const ids = methodNames.map(
+          methodName => `A.${methodName}` as TestMethodId
+        )
+
+        // Act
+        await sut.runTestMethods(new Set<TestMethodId>(ids))
+
+        // Assert — there is no payload cap; every method travels in one item
+        expect(runTestSynchronousMock).toHaveBeenCalledWith(
+          {
+            tests: [{ className: 'A', testMethods: methodNames }],
+            skipCodeCoverage: true,
+            maxFailedTests: 0,
+          },
+          false
+        )
+        expect(runTestAsynchronousMock).not.toHaveBeenCalled()
       })
     })
 
     describe('given a mixed-class id set', () => {
       it('then should fold the ids into one test entry per declaring class', async () => {
-        // Arrange
+        // Arrange — two classes stay on the asynchronous transport
         const mockTestResult = { summary: { outcome: 'Passed' } }
         runTestAsynchronousMock.mockResolvedValue(mockTestResult)
 
@@ -365,13 +427,14 @@ describe('ApexTestRunner', () => {
           },
           false
         )
+        expect(runTestSynchronousMock).not.toHaveBeenCalled()
       })
     })
 
     describe('given the test execution fails', () => {
       it('then should throw an error', async () => {
-        // Arrange
-        runTestAsynchronousMock.mockRejectedValue(
+        // Arrange — a single class routes through the synchronous transport
+        runTestSynchronousMock.mockRejectedValue(
           new Error('Test execution failed')
         )
 
@@ -379,6 +442,7 @@ describe('ApexTestRunner', () => {
         await expect(
           sut.runTestMethods(new Set<TestMethodId>(['TestClass.testMethod']))
         ).rejects.toThrow('Test execution failed')
+        expect(runTestAsynchronousMock).not.toHaveBeenCalled()
       })
     })
   })

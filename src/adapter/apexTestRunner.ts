@@ -69,6 +69,14 @@ const partitionOutcomes = (
   }
 }
 
+// module-local, not exported — keeps the class's public surface unchanged
+type TestItems = { className: string; testMethods?: string[] }[]
+
+// the synchronous Tooling resource accepts exactly one Apex class per payload
+const SYNC_ELIGIBLE_TEST_CLASS_COUNT = 1
+// stop the run at the first failure, on both transports
+const MAX_FAILED_TESTS = 0
+
 export class ApexTestRunner {
   protected readonly testService: TestService
   constructor(connection: Connection) {
@@ -79,7 +87,7 @@ export class ApexTestRunner {
     apexTestClassNames: string[],
     coverageStrategy: CoverageStrategy
   ): Promise<BaselineTestResult> {
-    const testResult = await this.runTestAsynchronous(
+    const testResult = await this.runTests(
       apexTestClassNames.map(className => ({ className })),
       false
     )
@@ -99,19 +107,38 @@ export class ApexTestRunner {
   }
 
   public async runTestMethods(testMethods: Set<TestMethodId>) {
-    return this.runTestAsynchronous(toTestItems(testMethods))
+    return this.runTests(toTestItems(testMethods), true)
+  }
+
+  private async runTests(
+    tests: TestItems,
+    skipCodeCoverage: boolean
+  ): Promise<TestResult> {
+    return tests.length === SYNC_ELIGIBLE_TEST_CLASS_COUNT
+      ? this.runTestSynchronous(tests, skipCodeCoverage)
+      : this.runTestAsynchronous(tests, skipCodeCoverage)
+  }
+
+  private async runTestSynchronous(
+    tests: TestItems,
+    skipCodeCoverage: boolean
+  ): Promise<TestResult> {
+    return (await this.testService.runTestSynchronous(
+      { tests, skipCodeCoverage, maxFailedTests: MAX_FAILED_TESTS },
+      !skipCodeCoverage
+    )) as TestResult
   }
 
   private async runTestAsynchronous(
-    tests: { className: string; testMethods?: string[] }[],
-    skipCodeCoverage: boolean = true
-  ) {
+    tests: TestItems,
+    skipCodeCoverage: boolean
+  ): Promise<TestResult> {
     return (await this.testService.runTestAsynchronous(
       {
         tests,
         testLevel: TestLevel.RunSpecifiedTests,
         skipCodeCoverage,
-        maxFailedTests: 0,
+        maxFailedTests: MAX_FAILED_TESTS,
       },
       !skipCodeCoverage
     )) as TestResult
