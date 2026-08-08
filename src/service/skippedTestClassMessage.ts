@@ -9,16 +9,20 @@ const REASON_KEY: Record<UnusableReason, string> = {
 }
 
 // Each pair is an inclusive [start, end] code point range folded by
-// isControlCharacter: C0 controls + DEL/C1, zero-width characters (space,
-// joiners, LRM/RLM), line/paragraph separators, bidi embedding/override
-// controls, bidi isolate controls, and the zero-width no-break space (BOM).
+// isControlCharacter: C0 controls + DEL/C1, the Arabic letter mark, zero-width
+// characters (space, joiners, LRM/RLM), line/paragraph separators, bidi
+// embedding/override controls, the word joiner through the bidi isolate
+// controls, and the zero-width no-break space (BOM). Together these cover
+// every Unicode bidi control, so a suite name cannot visually reorder the
+// sentence around it.
 const CONTROL_CHARACTER_RANGES: ReadonlyArray<readonly [number, number]> = [
   [0x00, 0x1f],
   [0x7f, 0x9f],
+  [0x061c, 0x061c],
   [0x200b, 0x200f],
   [0x2028, 0x2029],
   [0x202a, 0x202e],
-  [0x2066, 0x2069],
+  [0x2060, 0x2069],
   [0xfeff, 0xfeff],
 ]
 

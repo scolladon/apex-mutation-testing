@@ -467,15 +467,27 @@ export class MutationTestingService {
     )
   }
 
+  // Stops the same spinner without claiming a pass, for the path where every
+  // class failed to compile: no test ran, so there is nothing to have passed.
+  private abandonBaselineSpinner(): void {
+    this.spinner.stop()
+  }
+
   // The two drops and the guard, in order: a class that cannot compile never
   // ran a test, so it is dropped before zero-contribution is even computed.
   // If every class drops here, error.noUsableTestClass is the truthful
   // failure — error.noCoverage would name a perimeter that simply never
-  // compiled, not one that ran and covered nothing. The "Original tests
-  // passed" spinner text is deliberately printed only after this guard: an
-  // all-CompileFail baseline reports otherFailureCount === 0 and
-  // testsRan > 0 (CompileFail rows count toward testsRan), so printing it
-  // any earlier would claim a pass that never happened.
+  // compiled, not one that ran and covered nothing.
+  //
+  // Three constraints pin the spinner handling, and they only reconcile if the
+  // TEXT is conditional rather than the ordering. The notices must precede the
+  // throw, or an all-CompileFail run never says which classes broke. The
+  // spinner must stop before the notices, because announcing stops it too and
+  // stopping an already-stopped spinner renders nothing — that would swallow
+  // the pass line whenever only some classes failed. And the pass text must
+  // not appear when nothing survived: an all-CompileFail baseline reports
+  // otherFailureCount === 0 and testsRan > 0, since CompileFail rows count
+  // toward testsRan, so it would claim a pass that never happened.
   private reducePerimeterFromBaseline(
     baseline: BaselineTestResult,
     testMethodsPerLine: Map<number, Set<TestMethodId>>,
@@ -486,15 +498,17 @@ export class MutationTestingService {
       compileSkips,
       this.messages
     )
-    this.announceSkips(compileSentences)
     const compiling = reducePerimeter(this.apexTestClassNames, compileSkips)
     if (compiling.length === 0) {
+      this.abandonBaselineSpinner()
+      this.announceSkips(compileSentences)
       throw this.messages.createError('error.noUsableTestClass', [
         this.apexClassName,
         compileSentences.join('\n'),
       ])
     }
     this.stopBaselineSpinner(coverageStrategy)
+    this.announceSkips(compileSentences)
 
     const silent =
       coverageStrategy.fidelity === 'per-test'

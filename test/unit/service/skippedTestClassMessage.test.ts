@@ -286,6 +286,25 @@ describe('formatSkippedTestClass', () => {
     )
   })
 
+  it('Given a suite name carrying the remaining invisible bidi and joiner characters, When formatted, Then they are folded to spaces', () => {
+    // Arrange — U+061C (ARABIC LETTER MARK) is the one Unicode bidi control
+    // outside the U+200E..U+2069 span, and U+2060 (WORD JOINER) is the
+    // non-deprecated twin of U+FEFF. Both render invisibly.
+    const skipped: SkippedTestClass = {
+      className: 'BadTest',
+      reason: 'not-found',
+      suiteNames: ['Smoke؜Suite⁠A'],
+    }
+
+    // Act
+    const sut = formatSkippedTestClass(skipped, messages)
+
+    // Assert
+    expect(sut).toBe(
+      "Skipping test class 'BadTest' (contributed by test suite 'Smoke Suite A'): it could not be found on this org."
+    )
+  })
+
   it('Given a suite name carrying zero-width characters, When formatted, Then they are folded to spaces', () => {
     // Arrange — U+200B (ZERO WIDTH SPACE) and U+FEFF (BOM) render invisibly
     // but are not whitespace, so `.trim()` alone would not remove them.

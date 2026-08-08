@@ -1998,6 +1998,9 @@ describe('MutationTestingService', () => {
           undefined,
           { stdout: true }
         )
+        // No test ran, so nothing passed. Hoisting the pass text above the
+        // guard would print it immediately before the abort.
+        expect(spinner.stop).not.toHaveBeenCalledWith('Original tests passed')
       })
 
       it('Given aggregate-only fidelity and one class fails to compile, When processing, Then that class is still warned and dropped while a silent class is not', async () => {
@@ -2045,6 +2048,14 @@ describe('MutationTestingService', () => {
           "Skipping test class 'SilentTest': it contributed no covered lines.",
           undefined,
           { stdout: true }
+        )
+        // The baseline genuinely passed here — only one class failed to
+        // compile. Announcing a skip stops the spinner, and stopping an
+        // already-stopped spinner renders nothing, so announcing before the
+        // pass text would silently swallow this confirmation. Aggregate
+        // fidelity appends its own caveat, hence the partial match.
+        expect(spinner.stop).toHaveBeenCalledWith(
+          expect.stringContaining('Original tests passed')
         )
         expect(result.testFiles).toEqual(['GoodTest', 'SilentTest'])
       })
