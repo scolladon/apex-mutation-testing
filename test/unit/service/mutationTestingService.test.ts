@@ -199,7 +199,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -237,7 +236,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -293,7 +291,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -459,16 +456,15 @@ describe('MutationTestingService', () => {
               })
               update = vi.fn().mockImplementation(() => {
                 updateCallCount++
-                // Call 1: baseline verify compile passes (test class verify
-                // now runs on updateMany); call 2: mutation deploy may fail
-                // (updateError); call 3+ (rollback) must succeed so the
-                // rollback-failure propagation isn't what the test is asserting.
+                // Call 1: baseline verify compile passes; call 2: mutation
+                // deploy may fail (updateError); call 3+ (rollback) must
+                // succeed so the rollback-failure propagation isn't what the
+                // test is asserting.
                 if (updateCallCount <= 1) return Promise.resolve({})
                 if (updateCallCount === 2 && updateError)
                   return Promise.reject(updateError)
                 return Promise.resolve({})
               })
-              updateMany = vi.fn().mockResolvedValue({})
               getApexClassDependencies = vi.fn().mockResolvedValue([
                 {
                   Id: 'dep1',
@@ -551,8 +547,8 @@ describe('MutationTestingService', () => {
               })
               update = vi.fn().mockImplementation(() => {
                 updateCallCount++
-                // Call 1: baseline verify (test class verify now runs on
-                // updateMany); call 2: mutation deploy.
+                // Call 1: baseline verify compile passes; call 2: mutation
+                // deploy.
                 if (updateCallCount <= 1) return Promise.resolve({})
                 if (updateCallCount === 2 && updateError)
                   return Promise.reject(updateError)
@@ -560,7 +556,6 @@ describe('MutationTestingService', () => {
                 // Call 3 = rollback — always fails in this variant.
                 return Promise.reject(new Error('rollback network down'))
               })
-              updateMany = vi.fn().mockResolvedValue({})
               getApexClassDependencies = vi
                 .fn()
                 .mockResolvedValue([] as MetadataComponentDependency[])
@@ -620,7 +615,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = mockUpdateFn
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -704,7 +698,7 @@ describe('MutationTestingService', () => {
         // toHaveBeenCalledWith('Done') would still pass if only one regressed.
         expect(
           vi.mocked(spinner.stop).mock.calls.filter(([text]) => text === 'Done')
-        ).toHaveLength(4)
+        ).toHaveLength(3)
         // The breakdown line must be built from real arguments — dropping them
         // still yields a string containing 'Deploy:', just full of `undefined`.
         const breakdown = vi
@@ -726,7 +720,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -775,7 +768,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -831,7 +823,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -863,7 +854,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -905,7 +895,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -934,23 +923,17 @@ describe('MutationTestingService', () => {
     })
 
     describe('Given a three-class perimeter', () => {
-      it('When verifying test class compilation, Then updateMany is called once with every perimeter body and update never deploys the perimeter', async () => {
+      it('When processing, Then the perimeter classes are never read or redeployed to verify compilation', async () => {
         // Arrange
-        const testClassA = { Id: 'A1', Name: 'A', Body: 'class A {}' }
-        const testClassB = { Id: 'B1', Name: 'B', Body: 'class B {}' }
-        const testClassC = { Id: 'C1', Name: 'C', Body: 'class C {}' }
+        const readMock = vi.fn().mockImplementation((name: string) => {
+          if (name === 'TestClass') return Promise.resolve(mockApexClass)
+          return Promise.resolve(mockTestClass)
+        })
         const updateMock = vi.fn().mockResolvedValue({})
-        const updateManyMock = vi.fn().mockResolvedValue({})
         vi.mocked(ApexClassRepository).mockImplementation(
           class {
-            read = vi.fn().mockImplementation((name: string) => {
-              if (name === 'TestClass') return Promise.resolve(mockApexClass)
-              if (name === 'A') return Promise.resolve(testClassA)
-              if (name === 'B') return Promise.resolve(testClassB)
-              return Promise.resolve(testClassC)
-            })
+            read = readMock
             update = updateMock
-            updateMany = updateManyMock
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -986,13 +969,10 @@ describe('MutationTestingService', () => {
         await expect(threeClassSut.process()).rejects.toThrow(
           'Original tests failed! Cannot proceed with mutation testing.'
         )
-        expect(updateManyMock).toHaveBeenCalledTimes(1)
-        expect(updateManyMock).toHaveBeenCalledWith([
-          testClassA,
-          testClassB,
-          testClassC,
-        ])
+        expect(readMock).toHaveBeenCalledTimes(1)
+        expect(readMock).toHaveBeenCalledWith('TestClass')
         expect(updateMock).toHaveBeenCalledTimes(1)
+        expect(updateMock).toHaveBeenCalledWith(mockApexClass)
       })
     })
 
@@ -1007,7 +987,6 @@ describe('MutationTestingService', () => {
                 return Promise.resolve(mockTestClass)
               })
               update = vi.fn().mockResolvedValue({})
-              updateMany = vi.fn().mockResolvedValue({})
               getApexClassDependencies = vi
                 .fn()
                 .mockResolvedValue([] as MetadataComponentDependency[])
@@ -1065,8 +1044,8 @@ describe('MutationTestingService', () => {
         const threeClassCallCount = vi.mocked(timeExecution).mock.calls.length
 
         // Assert — timeExecution wraps only the target-class deploy and the
-        // baseline run; the batched updateMany runs outside it, so widening
-        // the perimeter must never change how many calls are timed.
+        // baseline run, so widening the perimeter must never change how many
+        // calls are timed.
         expect(threeClassCallCount).toBe(singleClassCallCount)
       })
     })
@@ -1097,7 +1076,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -1156,7 +1134,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -1222,7 +1199,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -1280,7 +1256,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -1338,7 +1313,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -1396,7 +1370,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -1452,7 +1425,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -1512,7 +1484,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -1577,7 +1548,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -1633,7 +1603,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -1688,7 +1657,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -1761,7 +1729,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -1808,7 +1775,6 @@ describe('MutationTestingService', () => {
             update = vi
               .fn()
               .mockRejectedValue(new Error('Deployment failed: compile error'))
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -1818,58 +1784,6 @@ describe('MutationTestingService', () => {
         // Act & Assert
         await expect(sut.process()).rejects.toThrow(
           "The Apex class 'TestClass' does not compile on the target org."
-        )
-      })
-    })
-
-    describe('When test class compilability check fails', () => {
-      it('then should throw an error with compilability message', async () => {
-        // Arrange
-        vi.mocked(ApexClassRepository).mockImplementation(
-          class {
-            read = vi.fn().mockImplementation((name: string) => {
-              if (name === 'TestClass') return Promise.resolve(mockApexClass)
-              return Promise.resolve(mockTestClass)
-            })
-            update = vi.fn().mockResolvedValue({})
-            updateMany = vi
-              .fn()
-              .mockRejectedValue(
-                new Error('Deployment failed: test class compile error')
-              )
-            getApexClassDependencies = vi
-              .fn()
-              .mockResolvedValue([] as MetadataComponentDependency[])
-          }
-        )
-
-        // Act & Assert
-        await expect(sut.process()).rejects.toThrow(
-          "The Apex class 'TestClassTest' does not compile on the target org."
-        )
-      })
-    })
-
-    describe('When test class compilability check fails with non-Error', () => {
-      it('then should throw an error with string error message', async () => {
-        // Arrange
-        vi.mocked(ApexClassRepository).mockImplementation(
-          class {
-            read = vi.fn().mockImplementation((name: string) => {
-              if (name === 'TestClass') return Promise.resolve(mockApexClass)
-              return Promise.resolve(mockTestClass)
-            })
-            update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockRejectedValue('plain string deploy error')
-            getApexClassDependencies = vi
-              .fn()
-              .mockResolvedValue([] as MetadataComponentDependency[])
-          }
-        )
-
-        // Act & Assert
-        await expect(sut.process()).rejects.toThrow(
-          "The Apex class 'TestClassTest' does not compile on the target org."
         )
       })
     })
@@ -1884,7 +1798,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockRejectedValue('plain string deploy error')
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -1908,7 +1821,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -1969,7 +1881,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -2024,7 +1935,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -2096,7 +2006,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -2167,7 +2076,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -2238,7 +2146,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -2320,7 +2227,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -2384,7 +2290,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -2448,7 +2353,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -2506,7 +2410,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -2584,7 +2487,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -2759,7 +2661,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue(dependencies)
           }
         )
@@ -2948,7 +2849,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -3006,7 +2906,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -3066,13 +2965,11 @@ describe('MutationTestingService', () => {
             })
             update = vi.fn().mockImplementation(() => {
               updateCallCount++
-              // Baseline verify (1st, compile verification — test class
-              // verify now runs on updateMany) and mutation deployment
-              // (2nd) succeed. Rollback (last) fails.
+              // Baseline verify (1st, compile verification) and mutation
+              // deployment (2nd) succeed. Rollback (last) fails.
               if (updateCallCount <= 2) return Promise.resolve({})
               return Promise.reject(new Error('Rollback failed'))
             })
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -3131,13 +3028,11 @@ describe('MutationTestingService', () => {
             })
             update = vi.fn().mockImplementation(() => {
               updateCallCount++
-              // Baseline verify (1st) and mutation deployment (2nd) succeed;
-              // test class verify now runs on updateMany.
+              // Baseline verify (1st) and mutation deployment (2nd) succeed.
               if (updateCallCount <= 2) return Promise.resolve({})
               // rollback path — rejects with a string, not Error
               return Promise.reject('plain string rollback failure')
             })
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -3190,7 +3085,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -3242,7 +3136,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -3309,13 +3202,12 @@ describe('MutationTestingService', () => {
             })
             update = vi.fn().mockImplementation(() => {
               updateCallCount++
-              // Baseline verify (1st) succeeds — test class verify now runs
-              // on updateMany; mutation deployment (2nd) fails.
+              // Baseline verify (1st) succeeds; mutation deployment (2nd)
+              // fails.
               if (updateCallCount <= 1) return Promise.resolve({})
               if (updateCallCount === 2) return Promise.reject(updateError)
               return Promise.resolve({})
             })
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -3368,7 +3260,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -3418,7 +3309,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -3474,7 +3364,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -3564,21 +3453,6 @@ describe('MutationTestingService', () => {
         // Assert
         expect(spinner.start).toHaveBeenCalledWith(
           'Verifying "TestClass" apex class compilation',
-          undefined,
-          { stdout: true }
-        )
-      })
-
-      it('Given successful process, When processing, Then spinner shows test class compilation verification message', async () => {
-        // Arrange
-        buildStandardMocks()
-
-        // Act
-        await sut.process()
-
-        // Assert
-        expect(spinner.start).toHaveBeenCalledWith(
-          'Verifying "TestClassTest" apex test class compilation',
           undefined,
           { stdout: true }
         )
@@ -3679,7 +3553,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -3811,16 +3684,14 @@ describe('MutationTestingService', () => {
             })
             update = vi.fn().mockImplementation(() => {
               updateCallCount++
-              // Baseline verify (1st) succeeds — test class verify now runs
-              // on updateMany; rollback (call 3) must succeed; only the
-              // mutation deploy (call 2) fails.
+              // Baseline verify (1st) succeeds; rollback (call 3) must
+              // succeed; only the mutation deploy (call 2) fails.
               if (updateCallCount <= 1) return Promise.resolve({})
               if (updateCallCount >= 3) return Promise.resolve({})
               return Promise.reject(
                 new Error('Deployment failed: Invalid syntax')
               )
             })
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -3881,7 +3752,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -3942,7 +3812,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -4003,7 +3872,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -4065,7 +3933,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -4142,7 +4009,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -4207,7 +4073,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -4264,7 +4129,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -4308,7 +4172,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -4366,7 +4229,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -4439,16 +4301,14 @@ describe('MutationTestingService', () => {
             })
             update = vi.fn().mockImplementation(() => {
               updateCallCount++
-              // Baseline verify (1st) succeeds — test class verify now runs
-              // on updateMany; rollback (call 3) must succeed; only the
-              // mutation deploy (call 2) fails.
+              // Baseline verify (1st) succeeds; rollback (call 3) must
+              // succeed; only the mutation deploy (call 2) fails.
               if (updateCallCount <= 1) return Promise.resolve({})
               if (updateCallCount >= 3) return Promise.resolve({})
               return Promise.reject(
                 new Error('Deployment failed: syntax error')
               )
             })
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -4498,7 +4358,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -4560,7 +4419,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -4597,7 +4455,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -4636,7 +4493,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -4681,16 +4537,14 @@ describe('MutationTestingService', () => {
             })
             update = vi.fn().mockImplementation(() => {
               updateCallCount++
-              // Baseline verify (1st) succeeds — test class verify now runs
-              // on updateMany; rollback (call 3) must succeed; only the
-              // mutation deploy (call 2) fails.
+              // Baseline verify (1st) succeeds; rollback (call 3) must
+              // succeed; only the mutation deploy (call 2) fails.
               if (updateCallCount <= 1) return Promise.resolve({})
               if (updateCallCount >= 3) return Promise.resolve({})
               return Promise.reject(
                 new Error('Deployment failed: Invalid syntax')
               )
             })
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -4745,7 +4599,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -4806,7 +4659,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -4868,7 +4720,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -4921,7 +4772,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -4977,7 +4827,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -5038,7 +4887,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -5102,7 +4950,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -5154,16 +5001,14 @@ describe('MutationTestingService', () => {
             })
             update = vi.fn().mockImplementation(() => {
               updateCallCount++
-              // Baseline verify (1st) succeeds — test class verify now runs
-              // on updateMany; rollback (call 3) must succeed; only the
-              // mutation deploy (call 2) fails.
+              // Baseline verify (1st) succeeds; rollback (call 3) must
+              // succeed; only the mutation deploy (call 2) fails.
               if (updateCallCount <= 1) return Promise.resolve({})
               if (updateCallCount >= 3) return Promise.resolve({})
               return Promise.reject(
                 new Error('Deployment failed: type mismatch')
               )
             })
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -5215,7 +5060,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -5279,7 +5123,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -5349,7 +5192,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -5457,7 +5299,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -5564,7 +5405,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -5687,7 +5527,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -5767,7 +5606,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -5842,7 +5680,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -5913,7 +5750,6 @@ describe('MutationTestingService', () => {
               }
               return Promise.resolve({})
             })
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -5959,7 +5795,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -6010,7 +5845,6 @@ describe('MutationTestingService', () => {
               return Promise.resolve(mockTestClass)
             })
             update = vi.fn().mockResolvedValue({})
-            updateMany = vi.fn().mockResolvedValue({})
             getApexClassDependencies = vi.fn().mockResolvedValue([])
           }
         )
@@ -6107,7 +5941,6 @@ describe('MutationTestingService', () => {
 
       const buildGroupedSut = (overrides: {
         update?: (...args: unknown[]) => Promise<unknown>
-        updateMany?: (...args: unknown[]) => Promise<unknown>
         runTestMethods?: (...args: unknown[]) => Promise<unknown>
         mutateMany?: (mutations: ApexMutation[]) => string
         // Leaves `mutationGrouping` off the parameter object entirely, so the
@@ -6122,9 +5955,6 @@ describe('MutationTestingService', () => {
             })
             update =
               overrides.update ??
-              vi.fn().mockResolvedValue({} as Record<string, unknown>)
-            updateMany =
-              overrides.updateMany ??
               vi.fn().mockResolvedValue({} as Record<string, unknown>)
             getApexClassDependencies = vi
               .fn()
@@ -6213,11 +6043,11 @@ describe('MutationTestingService', () => {
           .mocked(progress.update)
           .mock.calls.map(([position]) => position)
         expect(positions[positions.length - 1]).toBe(2)
-        // Four phases close with 'Done' on the way in, plus the rollback at the
-        // end; counting them pins each site individually.
+        // Three phases close with 'Done' on the way in, plus the rollback at
+        // the end; counting them pins each site individually.
         expect(
           vi.mocked(spinner.stop).mock.calls.filter(([t]) => t === 'Done')
-        ).toHaveLength(5)
+        ).toHaveLength(4)
         groupSpy.mockRestore()
       })
 
@@ -6239,7 +6069,6 @@ describe('MutationTestingService', () => {
       it('given two disjoint mutations and all tests pass when running with grouping then both mutants are Survived in input order', async () => {
         // Arrange
         const updateMock = vi.fn().mockResolvedValue({})
-        const updateManyMock = vi.fn().mockResolvedValue({})
         const runMock = vi.fn().mockResolvedValue({
           summary: { outcome: 'Passed', passing: 2, failing: 0, testsRan: 2 },
           tests: [
@@ -6257,7 +6086,6 @@ describe('MutationTestingService', () => {
         } as unknown as TestResult)
         const localSut = buildGroupedSut({
           update: updateMock,
-          updateMany: updateManyMock,
           runTestMethods: runMock,
         })
 
@@ -6265,10 +6093,8 @@ describe('MutationTestingService', () => {
         const result = await localSut.process()
 
         // Assert — one batched deploy (plus baseline + rollback) and one batched test run
-        // update calls: baseline verify (1) + grouped deploy (1) + rollback (1) = 3;
-        // test class verify moved off update onto one updateMany call.
+        // update calls: baseline verify (1) + grouped deploy (1) + rollback (1) = 3.
         expect(updateMock).toHaveBeenCalledTimes(3)
-        expect(updateManyMock).toHaveBeenCalledTimes(1)
         expect(runMock).toHaveBeenCalledTimes(1)
         expect(result.mutants).toHaveLength(2)
         expect(result.mutants[0]).toEqual(
@@ -6308,10 +6134,9 @@ describe('MutationTestingService', () => {
       })
 
       it('given a grouped batch deploy that fails when running then falls back to per-mutant evaluation', async () => {
-        // Arrange — the FIRST update call is the baseline verifyCompilation
-        // (test-class verify now runs on updateMany); the SECOND is the
-        // grouped deploy which should throw; the next two are per-mutant
-        // fallback deploys; final is rollback.
+        // Arrange — the FIRST update call is the baseline verifyCompilation;
+        // the SECOND is the grouped deploy which should throw; the next two
+        // are per-mutant fallback deploys; final is rollback.
         let updateCallCount = 0
         const updateMock = vi.fn().mockImplementation(() => {
           ++updateCallCount

@@ -58,6 +58,18 @@ const matchesFilter = (id: TestMethodId, filterSet: Set<string>): boolean =>
 // Stryker disable next-line ConditionalExpression: no null slots remain.
 const isPresent = <T>(value: T | null): value is T => value !== null
 
+interface MutationLoopContext {
+  apexClass: ApexClass
+  mutations: ApexMutation[]
+  groups: MutationGroup[]
+  mutantGenerator: MutantGenerator
+  tokenStream: CommonTokenStream
+  testMethodsPerLine: Map<number, Set<TestMethodId>>
+  apexTestRunner: ApexTestRunner
+  apexClassRepository: ApexClassRepository
+  retainedTestClassNames: string[]
+}
+
 export class MutationTestingService {
   protected readonly apexClassName: string
   protected readonly apexTestClassNames: string[]
@@ -124,7 +136,6 @@ export class MutationTestingService {
       apexClass,
       apexClassRepository
     )
-    await this.verifyTestClassCompilation(apexClassRepository)
 
     const coverageStrategy = await this.selectCoverageStrategy(
       apexSettingsRepository
@@ -160,7 +171,7 @@ export class MutationTestingService {
       groups.length
     )
 
-    const result = await this.executeMutationLoop(
+    const result = await this.executeMutationLoop({
       apexClass,
       mutations,
       groups,
@@ -169,8 +180,8 @@ export class MutationTestingService {
       testMethodsPerLine,
       apexTestRunner,
       apexClassRepository,
-      retainedTestClassNames
-    )
+      retainedTestClassNames,
+    })
     await this.rollback(apexClass, apexClassRepository)
     return result
   }
@@ -373,33 +384,6 @@ export class MutationTestingService {
       throw new Error(
         this.messages.getMessage('error.compilabilityCheckFailed', [
           this.apexClassName,
-          errorMessage,
-        ])
-      )
-    }
-  }
-
-  private async verifyTestClassCompilation(
-    apexClassRepository: ApexClassRepository
-  ): Promise<void> {
-    this.spinner.start(
-      `Verifying "${this.testClassPerimeter}" apex test class compilation`,
-      undefined,
-      { stdout: true }
-    )
-    try {
-      const apexTestClasses = (await Promise.all(
-        this.apexTestClassNames.map(name => apexClassRepository.read(name))
-      )) as unknown as ApexClass[]
-      await apexClassRepository.updateMany(apexTestClasses)
-      this.spinner.stop('Done')
-    } catch (error: unknown) {
-      this.spinner.stop()
-      const errorMessage =
-        error instanceof Error ? error.message : String(error)
-      throw new Error(
-        this.messages.getMessage('error.compilabilityCheckFailed', [
-          this.testClassPerimeter,
           errorMessage,
         ])
       )
@@ -613,16 +597,20 @@ export class MutationTestingService {
   }
 
   private async executeMutationLoop(
-    apexClass: ApexClass,
-    mutations: ApexMutation[],
-    groups: MutationGroup[],
-    mutantGenerator: MutantGenerator,
-    tokenStream: CommonTokenStream,
-    testMethodsPerLine: Map<number, Set<TestMethodId>>,
-    apexTestRunner: ApexTestRunner,
-    apexClassRepository: ApexClassRepository,
-    retainedTestClassNames: string[]
+    context: MutationLoopContext
   ): Promise<ApexMutationTestResult> {
+    const {
+      apexClass,
+      mutations,
+      groups,
+      mutantGenerator,
+      tokenStream,
+      testMethodsPerLine,
+      apexTestRunner,
+      apexClassRepository,
+      retainedTestClassNames,
+    } = context
+
     this.progress.start(
       mutations.length,
       { info: 'Starting mutation testing' },

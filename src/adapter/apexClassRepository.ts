@@ -115,19 +115,15 @@ export class ApexClassRepository {
   }
 
   public async update(apexClass: ApexClass) {
-    return this.deployToContainer([apexClass])
+    return this.deployToContainer(apexClass)
   }
 
-  public async updateMany(apexClasses: ApexClass[]) {
-    return this.deployToContainer(apexClasses)
-  }
-
-  // Shared by update/updateMany so a single-class and a batched deploy run
-  // the exact same container → members → request → poll → cleanup cycle.
-  private async deployToContainer(apexClasses: ApexClass[]) {
+  // The container → member → request → poll → cleanup cycle a single class
+  // deploy runs to verify compilation and pick up its coverage.
+  private async deployToContainer(apexClass: ApexClass) {
     const containerId = await this.createContainer()
     try {
-      await this.addMembers(containerId, apexClasses)
+      await this.addMembers(containerId, apexClass)
       const requestId = await this.createDeployRequest(containerId)
       return await this.awaitSuccessfulDeploy(requestId)
     } finally {
@@ -153,15 +149,13 @@ export class ApexClassRepository {
 
   private async addMembers(
     containerId: string,
-    apexClasses: ApexClass[]
+    apexClass: ApexClass
   ): Promise<void> {
-    for (const apexClass of apexClasses) {
-      await this.connection.tooling.sobject('ApexClassMember').create({
-        MetadataContainerId: containerId,
-        ContentEntityId: apexClass.Id,
-        Body: apexClass.Body,
-      })
-    }
+    await this.connection.tooling.sobject('ApexClassMember').create({
+      MetadataContainerId: containerId,
+      ContentEntityId: apexClass.Id,
+      Body: apexClass.Body,
+    })
   }
 
   private async createDeployRequest(containerId: string): Promise<string> {
