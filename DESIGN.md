@@ -99,12 +99,21 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │            CLI classes first, then the suites in flag
 │            order, each suite's members by class name
 │
-├─ 3. VALIDATE
-│     ApexClassValidator
-│       ├─ read(MyClass) → exists?
-│       └─ read(name) for every class in the -t perimeter
-│            → exists + @IsTest? (Promise.all; every failure across
-│              the whole perimeter collected into one \n-joined error)
+├─ 3. VALIDATE + REDUCE THE PERIMETER
+│     ApexClassValidator.validate(MyClass)
+│       → exists? (fatal: error.apexClassNotFound)
+│     ApexClassValidator.assessPerimeter(-t perimeter)
+│       → ONE batched Tooling query, Name IN (…), projecting only
+│         Name + NamespacePrefix — no perimeter class body is ever
+│         fetched
+│       ├─ name absent from the query result    → "not found"      · drop
+│       └─ every row for the name is namespaced → "not accessible" · drop
+│     Each drop renders as a warning naming the class, the reason, and
+│       the contributing test suite when the class arrived via
+│       --test-suite
+│     GUARD: perimeter empty after this reduction?
+│       → error.noUsableTestClass, before any org write, restating
+│         every dropped class and its reason
 │
 ├─ 4. FETCH SOURCE
 │     ApexClassRepository.read(MyClass) → { Id, Body }
@@ -125,25 +134,24 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │       → tree + tokenStream are threaded into step 9 so
 │         MutantGenerator skips its own parse (see Perf-3).
 │
-├─ 7. COMPILABILITY VERIFICATION
+├─ 7. COMPILABILITY VERIFICATION (target class only)
 │     Deploy main class back to org via
 │       ApexClassRepository.update(apexClass)
 │       → wrapped in timeExecution() → deployTime
 │       → validates class compiles (catches broken deps)
-│       → on failure: throw with Salesforce error details
-│     Fetch + deploy the whole test-class perimeter in ONE batched
-│       deploy via ApexClassRepository.updateMany(apexTestClasses)
-│       → one MetadataContainer, N ApexClassMembers, one
-│         ContainerAsyncRequest, one poll — O(1) deploy cycles
-│         regardless of how many test classes are in the perimeter
-│       → validates every test class compiles
-│       → on failure: throw with Salesforce error details naming
-│         each failing class (allComponentMessages, per file)
+│       → on failure: throw error.compilabilityCheckFailed with
+│         Salesforce error details
 │     Rationale: Salesforce only checks compilation of
 │       the deployed element, not its dependents. A class
 │       can be broken if a dependency changed after last
 │       deploy. Without this check, all mutants would get
 │       CompileError → misleading 100% score.
+│     The test-class perimeter is NOT deployed here to prove it
+│       compiles — that pre-flight is deleted. Compilation of the
+│       perimeter is a documented prerequisite; a class that fails
+│       to compile is instead reported by the baseline test run
+│       itself (step 8) and dropped with a warning, rather than
+│       aborting the whole command
 │
 ├─ 8. BASELINE TEST RUN
 │     selectCoverageStrategy(apexSettingsRepository)
@@ -157,17 +165,31 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │       → ONE async run for the whole perimeter — apex-node's
 │         tests: TestItem[] takes every class natively, so an
 │         N-class perimeter costs no extra deploy or run cycle
+│       → partitions the returned rows: a CompileFail row names its
+│         class and the platform's own message and is excluded from
+│         coverage extraction; any other non-Pass row aborts the run
+│         exactly as before ("Original tests failed! Cannot proceed
+│         with mutation testing.")
 │       → testMethodsPerLine: Map<line, Set<TestMethodId>>
 │         (TestMethodId = "ClassName.methodName", minted here via
 │          qualifyTestMethod so identically-named methods in
 │          different perimeter classes never collide; shaped by
 │          the injected coverageStrategy; union across the
-│          perimeter under PerTestCoverageStrategy)
-│       ✓ All tests must pass (green baseline)
-│     Any perimeter class contributing zero covered lines is named
-│       in a non-fatal warning — per-test fidelity only, since
-│       AggregateCoverageStrategy has no per-test attribution to
-│       compute it from
+│          perimeter under PerTestCoverageStrategy; CompileFail rows
+│          never reach it)
+│       ✓ Every executed test must pass (green baseline) — a class
+│         that never executed a test contributes nothing to that
+│         evidence
+│     A class reported CompileFail is named in a warning ("it does
+│       not compile", with the platform's diagnosis) and dropped
+│       from the perimeter; the run proceeds on the remainder
+│     GUARD: perimeter empty after the compile drops?
+│       → error.noUsableTestClass, before coverage is extracted,
+│         restating every compile-failed class
+│     Any remaining perimeter class contributing zero covered lines
+│       is named in a non-fatal warning and dropped — per-test
+│       fidelity only, since AggregateCoverageStrategy has no
+│       per-test attribution to compute it from
 │
 ├─ 8b. FILTER TEST METHODS (if configured)
 │     buildTestMethodFilter() → predicate (or undefined)
@@ -284,9 +306,8 @@ process()
 ├── createAdapters()            → step 3 (adapters)
 ├── fetchApexClass()            → step 4
 ├── discoverTypes()             → steps 5-6
-├── verifyCompilation()         → step 7 (main class)
-├── verifyTestClassCompilation()→ step 7 (test class)
-├── runBaselineTests()          → step 8
+├── verifyCompilation()         → step 7 (target class)
+├── runBaselineTests()          → step 8 (baseline + compile/no-coverage drops)
 ├── extractCoveredLines()       → step 8b (filtering + coverage)
 ├── generateMutations()         → step 9
 ├── displayTimeEstimate()       → step 10
@@ -1134,7 +1155,7 @@ reaches the Tooling API through jsforce's `.find()`, whose string-literal builde
 single quotes but leaves backslashes raw: a name ending in a backslash escapes its own
 closing quote, so the literal runs on into the rest of the `WHERE` clause and the org
 answers `MALFORMED_QUERY`. Constraining the name to the Apex identifier grammar keeps every
-such character out of the query text, and covers the four `read()` call sites at once
+such character out of the query text, and covers every `read()` call site at once
 rather than one.
 
 Suite names are deliberately excluded from this rule: they name a different field

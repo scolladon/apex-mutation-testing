@@ -97,15 +97,13 @@ In both normal and dry-run modes, the plugin displays a time estimate before sta
 
 ### Compilability Verification
 
-Before running mutation tests, the plugin deploys the target class, then deploys every test
-class in the perimeter together in a single batched deployment, to verify everything compiles
-correctly. This step is necessary because Salesforce only validates compilation of the element
-being deployed, not its dependents. A class can exist on the org in a broken state if one of
-its dependencies was modified after it was last deployed.
+Before running mutation tests, the plugin deploys the target class to verify it compiles correctly. This step is necessary because Salesforce only validates compilation of the element being deployed, not its dependents. A class can exist on the org in a broken state if one of its dependencies was modified after it was last deployed.
 
-Without this check, all mutants would result in `CompileError`, producing a misleading 100% mutation score. If the target class or any test class fails to compile, the process stops early with a clear error message naming each failing class and its compilation details. The batched deployment costs a single deploy cycle no matter how many test classes are in the perimeter.
+Without this check, all mutants would result in `CompileError`, producing a misleading 100% mutation score. If the target class fails to compile, the process stops early with a clear error message with its compilation details.
 
 This verification also serves as a baseline to measure deployment time, which is used to estimate the total mutation testing duration.
+
+The test-class perimeter is not pre-verified this way: the plugin no longer deploys it up front to prove it compiles. That your test classes compile is a prerequisite you're expected to satisfy — a class that doesn't is instead reported by the baseline test run itself and skipped, rather than aborting the whole command. See [Unusable Test Classes](#unusable-test-classes).
 
 ### Multiple Test Classes
 
@@ -116,9 +114,9 @@ sf apex mutation test run --apex-class MyClass --test-class MyClassTest --test-c
 sf apex mutation test run --apex-class MyClass --test-class MyClassTest,MyClassTest2
 ```
 
-Every class in the perimeter must exist and be marked `@IsTest`, or the command fails naming every offending class. Names are trimmed, blank entries are rejected, and duplicates are removed case-insensitively (keeping the first spelling you used) before the org is contacted.
+Names are trimmed, blank entries are rejected, and duplicates are removed case-insensitively (keeping the first spelling you used) before the org is contacted.
 
-Coverage is the union of every class in the perimeter: a mutation only runs the test methods — from any class — that actually cover its line, and kill/survive results are attributed correctly even when two classes declare a method with the same name. If a class in the perimeter never contributes covered lines, the plugin names it in a warning and continues.
+Coverage is the union of every class in the perimeter: a mutation only runs the test methods — from any class — that actually cover its line, and kill/survive results are attributed correctly even when two classes declare a method with the same name. A class in the perimeter that can't be used is named in a warning and dropped rather than aborting the run — see [Unusable Test Classes](#unusable-test-classes).
 
 ### Test Suites
 
@@ -129,7 +127,22 @@ sf apex mutation test run --apex-class MyClass --test-suite MyTestSuite
 sf apex mutation test run --apex-class MyClass --test-class MyClassTest --test-suite MyTestSuite
 ```
 
-`--test-class` and `--test-suite` union into one perimeter, and at least one of them is required — passing neither is an error naming both flags. Unlike class names, suite names are case-sensitive: the org matches them exactly, so a wrong-case name fails as "not found". An empty suite (no member classes) and an unknown suite are told apart, and both fail before any deploy or test run. Perimeter order is the `--test-class` entries first, then the suites in the order you named them, each suite's members ordered by class name. A suite member that isn't `@IsTest`, or that lives in a managed package and can't be read, fails the same class validation as a `--test-class` entry, naming the class.
+`--test-class` and `--test-suite` union into one perimeter, and at least one of them is required — passing neither is an error naming both flags. Unlike class names, suite names are case-sensitive: the org matches them exactly, so a wrong-case name fails as "not found". An empty suite (no member classes) and an unknown suite are told apart, and both fail before any deploy or test run. Perimeter order is the `--test-class` entries first, then the suites in the order you named them, each suite's members ordered by class name. A suite member that can't be used goes through the same reduction as a `--test-class` entry — see [Unusable Test Classes](#unusable-test-classes) — and its warning additionally names the contributing suite(s).
+
+### Unusable Test Classes
+
+A perimeter test class that can't be used doesn't abort the run: it's named in a warning and dropped from the perimeter, and the run proceeds with whatever remains. Four reasons are told apart:
+
+| Reason                          | Discovered by                                        |
+| -------------------------------- | ----------------------------------------------------- |
+| it could not be found on this org | one batched pre-run query                             |
+| it is not accessible on this org (e.g. it lives in a managed package) | the same pre-run query |
+| it does not compile               | the baseline test run                                 |
+| it contributed no covered lines   | the baseline test run (per-test coverage only)        |
+
+Each warning names the class, the reason, and — when the class was contributed by `--test-suite` rather than typed directly via `--test-class` — the suite(s) it came from.
+
+This means a mistyped `--test-class` or `--test-suite` member no longer fails the command by itself: `-t NotATestClass`, or a typo like `-t MyClasTest`, now warns and continues instead of aborting. The run fails only once the reduction leaves no usable test class at all, and that failure restates every class that was skipped and why — so a perimeter that's entirely mistyped still surfaces as a clear error rather than a confusing "no coverage" message.
 
 ### Configuration
 
