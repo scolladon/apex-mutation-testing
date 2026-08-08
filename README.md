@@ -144,6 +144,16 @@ Each warning names the class, the reason, and — when the class was contributed
 
 This means a mistyped `--test-class` or `--test-suite` member no longer fails the command by itself: `-t NotATestClass`, or a typo like `-t MyClasTest`, now warns and continues instead of aborting. The run fails only once the reduction leaves no usable test class at all, and that failure restates every class that was skipped and why — so a perimeter that's entirely mistyped still surfaces as a clear error rather than a confusing "no coverage" message.
 
+### Synchronous Test Execution
+
+Asynchronous test runs draw on the org's `DailyAsyncApexTests` limit (500 per rolling 24h). A mutation testing campaign is inherently test-run-heavy — one run per mutation group, plus the baseline — so a perimeter scoped to a single Apex class can exhaust that limit within a single run. There is no synchronous counterpart limit, and while the async limit is exhausted, `sf apex run test` fails **org-wide**, for every class, with `UNKNOWN_EXCEPTION` — a failure mode that reads as a plugin bug, not a quota.
+
+To avoid that, a run whose payload names exactly one Apex class — including the baseline, whenever the mutation perimeter resolves to a single class — goes through the synchronous Tooling resource instead of the asynchronous one, always. A perimeter naming two or more classes stays asynchronous. Class count is the whole predicate: there's no method-count cap and no duration estimate, and no flag to turn this on or off.
+
+On a class covered by a single test class, this means the **entire** run — baseline and every mutant — costs **zero** `DailyAsyncApexTests` units. Measured against a real org: 12 synchronous runs consumed zero async units, while 3 asynchronous runs consumed exactly 3.
+
+Synchronous execution requires the **View Setup** user permission, which the asynchronous path never needed. If your org user lacks it, every single-class test run — the baseline and each mutant — pays one wasted synchronous round-trip before falling back to the asynchronous transport. The plugin reports the reason only once, the first time it happens, rather than on every fallback: extra latency for the campaign, not a broken one.
+
 ### Configuration
 
 The plugin supports configuration through a JSON file and CLI flags. CLI flags always take precedence over config file values.
@@ -361,6 +371,8 @@ Each mutant is assigned a status after evaluation:
 
 A **Killed** mutant means your tests detected the mutation and failed as a result. This is the ideal outcome. It proves your tests are actively verifying the behavior that was changed. For example, if `subTotal + tax` is mutated to `subTotal - tax` and your test fails, the mutant is killed.
 
+A governor-limit exception (e.g. too many SOQL queries) is also reported as Killed. It's recognized by the org's structured error code rather than by scanning the error message, so recognition doesn't depend on the org user's language.
+
 **What to look for:** A high number of killed mutants indicates strong, assertion-rich tests that validate actual logic and branch coverage rather than just executing code paths.
 
 #### Survived
@@ -381,7 +393,7 @@ A **CompileError** mutant means the mutated code failed to compile during deploy
 
 #### RuntimeError
 
-A **RuntimeError** means an unexpected error occurred during the mutation evaluation. These errors are the result of networking issues, authorization issues, or other issues not directly related to your code.
+A **RuntimeError** means an unexpected error occurred during the mutation evaluation. These errors are the result of networking issues, authorization issues, or other issues not directly related to your code. Any error the plugin can't specifically recognize — as a compile failure or a governor-limit kill — falls into this status; it still counts as a kill in the score (see [Mutation Score](#mutation-score) below), only the reported label and reason differ from Killed.
 
 **What to look for:** A high number of runtime errors may indicate connectivity or org stability issues. If you see many runtime errors, consider re-running the mutation test when the environment is more stable to get more accurate results.
 
