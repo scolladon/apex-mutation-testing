@@ -2210,6 +2210,29 @@ describe('NonVoidMethodCallMutator', () => {
         expect(sut._mutations).toHaveLength(1)
         expect(sut._mutations[0].replacement).toBe('new List<String>()')
       })
+
+      it('Given a variable typed Constructor via enterAssignExpression, When assigning, Then replaces with null rather than resolving Object.prototype.constructor', () => {
+        // Arrange — Constructor is a legal Apex identifier. A Record-based
+        // lookup table resolves the inherited Object.prototype.constructor
+        // function for this key instead of falling through to the null
+        // default, which would then be interpolated into mutated Apex source.
+        const typeRegistry = createTypeRegistryWithVars(
+          'testMethod',
+          new Map([['thing', 'Constructor']])
+        )
+        const sut = new NonVoidMethodCallMutator(typeRegistry)
+        sut._mutations = []
+        const methodCall = createMethodCallExpression('buildThing()')
+        const assignCtx = createAssignExpression('thing', methodCall)
+        setEnclosingMethod(assignCtx, 'testMethod')
+
+        // Act
+        sut.enterAssignExpression(assignCtx)
+
+        // Assert
+        expect(sut._mutations).toHaveLength(1)
+        expect(sut._mutations[0].replacement).toBe('null')
+      })
     })
   })
 })

@@ -74,6 +74,20 @@ describe('ApexClassValidator', () => {
       expect(readMock).toHaveBeenCalledTimes(1)
     })
 
+    it('should read only a minimal projection rather than every ApexClass field', async () => {
+      // Arrange — the existence check only needs `!apexClass`; a wildcard
+      // read would drag Body and SymbolTable for no reason, and
+      // fetchApexClass re-reads the class in full when mutation starts.
+      const mockApexClass = { Id: '123' }
+      readMock.mockResolvedValueOnce(mockApexClass as ApexClass)
+
+      // Act
+      await sut.validate(params)
+
+      // Assert
+      expect(readMock).toHaveBeenCalledWith('TestClass', ['Id'])
+    })
+
     it('should reject naming only the target class when the target class is unreadable and a perimeter class is independently unusable', async () => {
       // Arrange
       readMock.mockResolvedValueOnce(null)

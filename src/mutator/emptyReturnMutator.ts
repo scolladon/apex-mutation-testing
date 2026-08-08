@@ -86,15 +86,18 @@ export class EmptyReturnMutator extends BaseListener {
   public isEmptyValue(type: string, expressionText: string): boolean {
     const lowerType = type.toLowerCase()
 
-    const emptyValuePatterns: Record<string, (expr: string) => boolean> = {
-      string: expr => expr === "''",
-      integer: expr => expr === '0',
+    // A Map, not a Record: an Apex type named `Constructor` folds to the key
+    // `constructor`, which a plain-object lookup resolves to
+    // `Object.prototype.constructor` instead of `undefined`.
+    const emptyValuePatterns = new Map<string, (expr: string) => boolean>([
+      ['string', expr => expr === "''"],
+      ['integer', expr => expr === '0'],
       // `0.0` is already covered by the /^0\.0+$/ pattern, so it needs no
       // separate comparison.
-      double: expr => expr === '0' || !!expr.match(/^0\.0+$/),
-      decimal: expr => expr === '0' || !!expr.match(/^0\.0+$/),
-      long: expr => expr === '0' || expr === '0L',
-    }
+      ['double', expr => expr === '0' || !!expr.match(/^0\.0+$/)],
+      ['decimal', expr => expr === '0' || !!expr.match(/^0\.0+$/)],
+      ['long', expr => expr === '0' || expr === '0L'],
+    ])
 
     if (lowerType.startsWith('list<') || lowerType.endsWith('[]')) {
       return (
@@ -117,7 +120,7 @@ export class EmptyReturnMutator extends BaseListener {
       return true
     }
 
-    const checkPattern = emptyValuePatterns[lowerType]
+    const checkPattern = emptyValuePatterns.get(lowerType)
     if (checkPattern) {
       return checkPattern(expressionText)
     }

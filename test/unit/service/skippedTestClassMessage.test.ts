@@ -192,8 +192,9 @@ describe('formatSkippedTestClass', () => {
   })
 
   it('Given a suite name carrying control characters, When formatted, Then they are folded to single spaces and the sentence stays on one line', () => {
-    // Arrange — suite names come from the org and are not constrained by the
-    // class name grammar, unlike className.
+    // Arrange — suite names are user-typed and not constrained by the class
+    // name grammar the way className is, but are sanitized the same way as
+    // defense in depth.
     const skipped: SkippedTestClass = {
       className: 'BadTest',
       reason: 'not-found',
@@ -226,6 +227,80 @@ describe('formatSkippedTestClass', () => {
     // Assert
     expect(sut).toBe(
       "Skipping test class 'BadTest' (contributed by test suite 'Smoke Suite'): it could not be found on this org."
+    )
+  })
+
+  it('Given a suite name carrying a leading unit separator (0x1F) and a trailing DEL (0x7F), When formatted, Then both boundary characters are folded and trimmed away', () => {
+    // Arrange — closes three mutants at once: `code <= 0x1f` → `< 0x1f` would
+    // leave the leading 0x1F untouched, `code >= 0x7f` → `> 0x7f` would leave
+    // the trailing 0x7F untouched, and deleting `.trim()` would leave the
+    // fold-induced spaces at both ends.
+    const skipped: SkippedTestClass = {
+      className: 'BadTest',
+      reason: 'not-found',
+      suiteNames: ['\u001FSmokeSuite\u007F'],
+    }
+
+    // Act
+    const sut = formatSkippedTestClass(skipped, messages)
+
+    // Assert
+    expect(sut).toBe(
+      "Skipping test class 'BadTest' (contributed by test suite 'SmokeSuite'): it could not be found on this org."
+    )
+  })
+
+  it('Given a suite name carrying a line separator and a paragraph separator, When formatted, Then both are folded to spaces and the sentence stays on one line', () => {
+    // Arrange — U+2028/U+2029 are not covered by the C0/C1/DEL ranges.
+    const skipped: SkippedTestClass = {
+      className: 'BadTest',
+      reason: 'not-found',
+      suiteNames: ['Smoke\u2028Suite\u2029A'],
+    }
+
+    // Act
+    const sut = formatSkippedTestClass(skipped, messages)
+
+    // Assert
+    expect(sut).toBe(
+      "Skipping test class 'BadTest' (contributed by test suite 'Smoke Suite A'): it could not be found on this org."
+    )
+  })
+
+  it('Given a suite name carrying bidi override and isolate control characters, When formatted, Then they are folded to spaces', () => {
+    // Arrange — U+202E (RIGHT-TO-LEFT OVERRIDE) and U+2066 (LEFT-TO-RIGHT
+    // ISOLATE) can otherwise reorder the rendered sentence visually
+    // (Trojan-Source style).
+    const skipped: SkippedTestClass = {
+      className: 'BadTest',
+      reason: 'not-found',
+      suiteNames: ['Smoke\u202ESuite\u2066A'],
+    }
+
+    // Act
+    const sut = formatSkippedTestClass(skipped, messages)
+
+    // Assert
+    expect(sut).toBe(
+      "Skipping test class 'BadTest' (contributed by test suite 'Smoke Suite A'): it could not be found on this org."
+    )
+  })
+
+  it('Given a suite name carrying zero-width characters, When formatted, Then they are folded to spaces', () => {
+    // Arrange — U+200B (ZERO WIDTH SPACE) and U+FEFF (BOM) render invisibly
+    // but are not whitespace, so `.trim()` alone would not remove them.
+    const skipped: SkippedTestClass = {
+      className: 'BadTest',
+      reason: 'not-found',
+      suiteNames: ['Smoke\u200BSuite\uFEFFA'],
+    }
+
+    // Act
+    const sut = formatSkippedTestClass(skipped, messages)
+
+    // Assert
+    expect(sut).toBe(
+      "Skipping test class 'BadTest' (contributed by test suite 'Smoke Suite A'): it could not be found on this org."
     )
   })
 })

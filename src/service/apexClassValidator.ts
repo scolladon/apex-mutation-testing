@@ -25,7 +25,12 @@ export class ApexClassValidator {
   public async validate({
     apexClassName,
   }: ApexMutationParameter): Promise<void> {
-    const apexClass = await this.apexClassRepository.read(apexClassName)
+    // Existence-only check: a minimal projection avoids the `*` field list
+    // jsforce resolves for an unprojected find (a describe$ round-trip
+    // pulling every ApexClass field, including Body and SymbolTable).
+    // fetchApexClass re-reads the same class in full when mutation actually
+    // starts, so that full read is deliberately left alone.
+    const apexClass = await this.apexClassRepository.read(apexClassName, ['Id'])
     if (!apexClass) {
       throw new ApexClassNotFoundError(apexClassName)
     }

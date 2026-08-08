@@ -8,17 +8,39 @@ const REASON_KEY: Record<UnusableReason, string> = {
   'no-coverage': 'info.reasonNoCoverage',
 }
 
+// Each pair is an inclusive [start, end] code point range folded by
+// isControlCharacter: C0 controls + DEL/C1, zero-width characters (space,
+// joiners, LRM/RLM), line/paragraph separators, bidi embedding/override
+// controls, bidi isolate controls, and the zero-width no-break space (BOM).
+const CONTROL_CHARACTER_RANGES: ReadonlyArray<readonly [number, number]> = [
+  [0x00, 0x1f],
+  [0x7f, 0x9f],
+  [0x200b, 0x200f],
+  [0x2028, 0x2029],
+  [0x202a, 0x202e],
+  [0x2066, 0x2069],
+  [0xfeff, 0xfeff],
+]
+
 const isControlCharacter = (character: string): boolean => {
   const code = character.charCodeAt(0)
-  return code <= 0x1f || (code >= 0x7f && code <= 0x9f)
+  return CONTROL_CHARACTER_RANGES.some(
+    ([start, end]) => code >= start && code <= end
+  )
 }
 
-// Org-supplied text reaches the terminal here: suite names are unconstrained
-// by the class name grammar. A character-class regex would trip a lint rule
-// meant to catch accidental control bytes, so this walks the string instead,
-// folding each run of control characters to a single space — which is also
-// what keeps a newline-joined skip sentence on one line. Class names need no
-// folding: they are pinned to the identifier grammar before any org call.
+// The compile diagnosis is the genuinely org-supplied text reaching the
+// terminal here — the platform's own line/column diagnostics, unconstrained
+// by any grammar. Suite names are user-typed (the requested suite name the
+// CLI/config passes through, not the org's `member.suiteName` — see
+// testSuiteResolver.expandSuites) but are sanitized the same way as defense
+// in depth. A character-class regex would trip a lint rule meant to catch
+// accidental control bytes, so this walks the string instead, folding each
+// run of control characters (including line/paragraph separators, bidi
+// controls and zero-width characters, which could otherwise break a
+// newline-joined sentence onto multiple lines or reorder it visually) to a
+// single space. Class names need no folding: they are pinned to the
+// identifier grammar before any org call.
 const sanitizeForDisplay = (value: string): string =>
   Array.from(value)
     .reduce((folded, character) => {

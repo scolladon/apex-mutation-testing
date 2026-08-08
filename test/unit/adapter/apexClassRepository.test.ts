@@ -108,6 +108,23 @@ describe('ApexClassRepository', () => {
         )
       })
     })
+
+    describe('given a fields projection is requested', () => {
+      it('then issues the find call with the projection as a second argument', async () => {
+        // Arrange
+        findMock.mockResolvedValue([{ Id: '123' }])
+
+        // Act
+        const result = await sut.read('TestClass', ['Id'])
+
+        // Assert
+        expect(result).toEqual({ Id: '123' })
+        expect(findArgsMock).toHaveBeenCalledWith(
+          { Name: 'TestClass', NamespacePrefix: '' },
+          ['Id']
+        )
+      })
+    })
   })
 
   describe('when reading ApexClass identities', () => {
@@ -176,6 +193,61 @@ describe('ApexClassRepository', () => {
 
         // Assert
         expect(findArgsMock).toHaveBeenCalledTimes(1)
+      })
+    })
+
+    describe('given an empty perimeter', () => {
+      it('then resolves with an empty array and issues no find call', async () => {
+        // Act
+        const result = await sut.readIdentities([])
+
+        // Assert
+        expect(result).toEqual([])
+        expect(findArgsMock).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('given the sink is invoked directly with no names', () => {
+      it('then it resolves with an empty array without building an unfiltered $in query', async () => {
+        // Arrange — chunk([]) already yields zero chunks, so readIdentities([])
+        // never reaches this private sink through the public API. This exercises
+        // the guard directly since it exists as defense-in-depth against a
+        // future change to chunk's emptiness semantics.
+        const queryIdentities = (
+          sut as unknown as {
+            queryIdentities(names: string[]): Promise<unknown[]>
+          }
+        ).queryIdentities.bind(sut)
+
+        // Act
+        const result = await queryIdentities([])
+
+        // Assert
+        expect(result).toEqual([])
+        expect(findArgsMock).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('given a perimeter large enough to produce more chunks than the concurrency cap', () => {
+      it('then never issues more than 25 concurrent find calls', async () => {
+        // Arrange — 30 chunks (6000 names) against a cap of 25 concurrent queries
+        const names = Array.from({ length: 30 * 200 }, (_, i) => `Name${i}`)
+        let inFlight = 0
+        let maxInFlight = 0
+        findMock.mockImplementation(async () => {
+          inFlight++
+          maxInFlight = Math.max(maxInFlight, inFlight)
+          await Promise.resolve()
+          inFlight--
+          return []
+        })
+
+        // Act
+        await sut.readIdentities(names)
+
+        // Assert
+        expect(findArgsMock).toHaveBeenCalledTimes(30)
+        expect(maxInFlight).toBeLessThanOrEqual(25)
       })
     })
   })

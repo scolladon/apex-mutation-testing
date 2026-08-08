@@ -165,19 +165,22 @@ export class NonVoidMethodCallMutator extends BaseListener {
       return `new ${typeName}()`
     }
 
-    const defaultValues: Record<string, string> = {
-      string: "''",
-      id: "''",
-      integer: '0',
-      int: '0',
-      long: '0L',
-      double: '0.0',
-      decimal: '0.0',
-      boolean: 'false',
-      blob: "Blob.valueOf('')",
-    }
+    // A Map, not a Record: an Apex type named `Constructor` folds to the key
+    // `constructor`, which a plain-object lookup resolves to
+    // `Object.prototype.constructor` instead of `undefined`.
+    const defaultValues = new Map<string, string>([
+      ['string', "''"],
+      ['id', "''"],
+      ['integer', '0'],
+      ['int', '0'],
+      ['long', '0L'],
+      ['double', '0.0'],
+      ['decimal', '0.0'],
+      ['boolean', 'false'],
+      ['blob', "Blob.valueOf('')"],
+    ])
 
-    const defaultValue = defaultValues[lowerType]
+    const defaultValue = defaultValues.get(lowerType)
     if (defaultValue !== undefined) {
       return defaultValue
     }
