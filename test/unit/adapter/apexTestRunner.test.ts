@@ -266,6 +266,200 @@ describe('ApexTestRunner', () => {
       })
     })
 
+    describe('given a synchronous baseline carrying every compile-failure marker', () => {
+      // Captured from a live org: a class made non-compiling by deleting a
+      // dependency, run through the synchronous Tooling resource.
+      const syncCompileFailureRow = {
+        id: '01pdL00000Z2WSfQAN',
+        apexClass: { fullName: 'AmtSyncDepTest' },
+        methodName: null,
+        outcome: ApexTestResultOutcome.Fail,
+        message: 'line 5, column 37: Variable does not exist: AmtSyncDep',
+        runTime: -1,
+      }
+      const syncCompileFailureResult = {
+        summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 0 },
+        tests: [syncCompileFailureRow],
+      }
+
+      it('then should normalise the row to a CompileFail naming the class with the platform message', async () => {
+        // Arrange — a single class routes through the synchronous transport
+        runTestSynchronousMock.mockResolvedValue(syncCompileFailureResult)
+        const strategyStub = {
+          fidelity: 'aggregate' as const,
+          getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
+        }
+
+        // Act
+        const result = await sut.getTestMethodsPerLines(
+          ['AmtSyncDepTest'],
+          strategyStub
+        )
+
+        // Assert — reported as a compile failure, not an aborting test
+        // failure, and the strategy never sees the non-executed row
+        expect(result.compileFailures).toEqual([
+          {
+            className: 'AmtSyncDepTest',
+            message: 'line 5, column 37: Variable does not exist: AmtSyncDep',
+          },
+        ])
+        expect(result.otherFailureCount).toBe(0)
+        expect(strategyStub.getTestMethodsPerLine).toHaveBeenCalledWith(
+          expect.objectContaining({ tests: [] })
+        )
+      })
+
+      it('then should set testsRan to the normalised row count instead of the raw zero', async () => {
+        // Arrange — without this, assertUsableBaseline's second guard throws
+        // 'No tests were executed!' before the compile diagnostic is ever seen
+        runTestSynchronousMock.mockResolvedValue(syncCompileFailureResult)
+        const strategyStub = {
+          fidelity: 'aggregate' as const,
+          getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
+        }
+
+        // Act
+        const result = await sut.getTestMethodsPerLines(
+          ['AmtSyncDepTest'],
+          strategyStub
+        )
+
+        // Assert
+        expect(result.testsRan).toBe(1)
+      })
+    })
+
+    describe('given a synchronous result missing one compile-failure marker', () => {
+      const markedRow = {
+        id: '01pdL00000Z2WSfQAN',
+        apexClass: { fullName: 'AmtSyncDepTest' },
+        methodName: null,
+        outcome: ApexTestResultOutcome.Fail,
+        message: 'line 5, column 37: Variable does not exist: AmtSyncDep',
+        runTime: -1,
+      }
+      const markedSummary = {
+        outcome: 'Failed',
+        passing: 0,
+        failing: 1,
+        testsRan: 0,
+      }
+
+      const runSyncBaseline = async (mockTestResult: {
+        summary: unknown
+        tests: unknown[]
+      }) => {
+        runTestSynchronousMock.mockResolvedValue(mockTestResult)
+        const strategyStub = {
+          fidelity: 'aggregate' as const,
+          getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
+        }
+        return sut.getTestMethodsPerLines(['AmtSyncDepTest'], strategyStub)
+      }
+
+      it('then should stay a plain Fail when methodName names a real method', async () => {
+        // Act
+        const result = await runSyncBaseline({
+          summary: markedSummary,
+          tests: [{ ...markedRow, methodName: 'someTestMethod' }],
+        })
+
+        // Assert — fails closed: not every marker matched, so it aborts
+        expect(result.compileFailures).toEqual([])
+        expect(result.otherFailureCount).toBe(1)
+      })
+
+      it('then should stay a plain Fail when runTime is not -1', async () => {
+        // Act
+        const result = await runSyncBaseline({
+          summary: markedSummary,
+          tests: [{ ...markedRow, runTime: 0.05 }],
+        })
+
+        // Assert
+        expect(result.compileFailures).toEqual([])
+        expect(result.otherFailureCount).toBe(1)
+      })
+
+      it('then should stay a plain Fail when summary.testsRan is not 0', async () => {
+        // Act
+        const result = await runSyncBaseline({
+          summary: { ...markedSummary, testsRan: 1 },
+          tests: [markedRow],
+        })
+
+        // Assert
+        expect(result.compileFailures).toEqual([])
+        expect(result.otherFailureCount).toBe(1)
+      })
+
+      it('then should stay a plain Fail when summary.failing is not 1', async () => {
+        // Act
+        const result = await runSyncBaseline({
+          summary: { ...markedSummary, failing: 2 },
+          tests: [markedRow],
+        })
+
+        // Assert
+        expect(result.compileFailures).toEqual([])
+        expect(result.otherFailureCount).toBe(1)
+      })
+
+      it('then should stay plain Fail rows when a second row also carries every marker', async () => {
+        // Arrange — the fingerprint requires exactly one row
+        const secondMarkedRow = {
+          ...markedRow,
+          apexClass: { fullName: 'AnotherSyncDepTest' },
+        }
+
+        // Act
+        const result = await runSyncBaseline({
+          summary: { ...markedSummary, failing: 2 },
+          tests: [markedRow, secondMarkedRow],
+        })
+
+        // Assert — neither row is normalised
+        expect(result.compileFailures).toEqual([])
+        expect(result.otherFailureCount).toBe(2)
+        expect(runTestAsynchronousMock).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('given an asynchronous result whose single row matches every compile-failure marker', () => {
+      it('then should leave the row unnormalised because normalisation is scoped to the synchronous transport', async () => {
+        // Arrange — two classes in the perimeter stay on the asynchronous
+        // transport, even though this row happens to match every marker
+        const asyncMatchingRow = {
+          apexClass: { fullName: 'AmtSyncDepTest' },
+          methodName: null,
+          outcome: ApexTestResultOutcome.Fail,
+          message: 'line 5, column 37: Variable does not exist: AmtSyncDep',
+          runTime: -1,
+        }
+        const mockTestResult = {
+          summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 0 },
+          tests: [asyncMatchingRow],
+        }
+        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
+        const strategyStub = {
+          fidelity: 'per-test' as const,
+          getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
+        }
+
+        // Act
+        const result = await sut.getTestMethodsPerLines(
+          ['AmtSyncDepTest', 'GoodTest'],
+          strategyStub
+        )
+
+        // Assert
+        expect(result.compileFailures).toEqual([])
+        expect(result.otherFailureCount).toBe(1)
+        expect(runTestSynchronousMock).not.toHaveBeenCalled()
+      })
+    })
+
     describe('given multiple test classes', () => {
       it('then should build one test entry per class in perimeter order', async () => {
         // Arrange — two classes stay on the asynchronous transport

@@ -69,6 +69,58 @@ const partitionOutcomes = (
   }
 }
 
+const SYNC_COMPILE_FAILURE_RUN_TIME = -1
+const SYNC_COMPILE_FAILURE_TESTS_RAN = 0
+const SYNC_COMPILE_FAILURE_ROW_COUNT = 1
+const ASYNC_COMPILE_METHOD_NAME = '<compile>' // the token the async path emits
+
+// The synchronous Tooling resource never throws on a non-compiling test
+// class and never reports a CompileFail outcome — apex-node maps the
+// failure to a plain Fail row with no method name. Every marker below must
+// match: getting this wrong in the permissive direction would silently
+// reclassify a real test failure as a compile skip.
+const isSyncCompileFailureFingerprint = (testResult: TestResult): boolean => {
+  const tests = testResult.tests ?? []
+  if (tests.length !== SYNC_COMPILE_FAILURE_ROW_COUNT) return false
+  const [row] = tests
+  return (
+    row.methodName === null &&
+    row.runTime === SYNC_COMPILE_FAILURE_RUN_TIME &&
+    testResult.summary.testsRan === SYNC_COMPILE_FAILURE_TESTS_RAN &&
+    // one failing row is the same invariant as the row-count check above
+    testResult.summary.failing === SYNC_COMPILE_FAILURE_ROW_COUNT
+  )
+}
+
+// Rewrites a fingerprint-matching result into the shape the async transport
+// already produces for the same failure, so partitionOutcomes treats both
+// transports identically. Anything not matching every marker is returned
+// untouched — fail closed, never reclassify on a partial match. A
+// CompileFail row is non-Pass either way, so a mutant run scores identically
+// through either shape.
+const normalizeSyncCompileFailure = (testResult: TestResult): TestResult => {
+  if (!isSyncCompileFailureFingerprint(testResult)) return testResult
+  const [row] = testResult.tests
+  const tests = [
+    {
+      ...row,
+      outcome: ApexTestResultOutcome.CompileFail,
+      methodName: ASYNC_COMPILE_METHOD_NAME,
+    },
+  ]
+  return {
+    ...testResult,
+    tests,
+    summary: {
+      ...testResult.summary,
+      testsRan: tests.length,
+      // summary.failing has no reader in src/; reset for shape parity with
+      // the asynchronous CompileFail fixture only, not for any behaviour.
+      failing: 0,
+    },
+  }
+}
+
 // module-local, not exported — keeps the class's public surface unchanged
 type TestItems = { className: string; testMethods?: string[] }[]
 
@@ -160,10 +212,11 @@ export class ApexTestRunner {
     tests: TestItems,
     skipCodeCoverage: boolean
   ): Promise<TestResult> {
-    return (await this.testService.runTestSynchronous(
+    const testResult = (await this.testService.runTestSynchronous(
       { tests, skipCodeCoverage, maxFailedTests: MAX_FAILED_TESTS },
       !skipCodeCoverage
     )) as TestResult
+    return normalizeSyncCompileFailure(testResult)
   }
 
   private async runTestAsynchronous(

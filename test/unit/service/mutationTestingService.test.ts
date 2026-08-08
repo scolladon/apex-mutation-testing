@@ -382,6 +382,51 @@ describe('MutationTestingService', () => {
       })
     })
 
+    describe('When the baseline reports otherFailureCount alongside a non-empty coverage map', () => {
+      it('then should abort before the map reaches the mutant generator or the progress bar', async () => {
+        // Arrange — AggregateCoverageStrategy mints a TestMethodId from every
+        // result row, so a poisoned map reaching filterTestMethods or
+        // reducePerimeterFromBaseline would score every mutant Killed. The
+        // map must carry a synthetic entry: an empty one would pass this test
+        // for the wrong reason.
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi
+              .fn()
+              .mockResolvedValue([] as MetadataComponentDependency[])
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            getTestMethodsPerLines = vi.fn().mockResolvedValue(
+              baselineResult({
+                outcome: 'Failed',
+                otherFailureCount: 1,
+                failing: 1,
+                testMethodsPerLine: new Map([[1, new Set(['Ghost.row'])]]),
+              })
+            )
+          }
+        )
+
+        // Act & Assert
+        await expect(sut.process()).rejects.toThrow(
+          'Original tests failed! Cannot proceed with mutation testing.'
+        )
+        // Pins the abort ordering: assertUsableBaseline must run ahead of
+        // filterTestMethods/reducePerimeterFromBaseline and of mutant
+        // generation, or the poisoned map would reach a live consumer.
+        expect(spinner.stop).not.toHaveBeenCalledWith('Original tests passed')
+        expect(vi.mocked(MutantGenerator)).not.toHaveBeenCalled()
+        expect(progress.start).not.toHaveBeenCalled()
+      })
+    })
+
     describe('When test class does not have any test methods', () => {
       it('then should throw an error', async () => {
         // Arrange
