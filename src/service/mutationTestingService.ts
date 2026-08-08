@@ -293,9 +293,24 @@ export class MutationTestingService {
   private createAdapters() {
     return {
       apexClassRepository: new ApexClassRepository(this.connection),
-      apexTestRunner: new ApexTestRunner(this.connection),
+      apexTestRunner: new ApexTestRunner(this.connection, {
+        onSyncFallback: error => this.warnSyncFallback(error),
+      }),
       apexSettingsRepository: new ApexSettingsRepository(this.connection),
     }
+  }
+
+  // Uses spinner.pause, not the start/stop pair announceSkips relies on:
+  // oclif's stop() no-ops when no task is running, and start() replaces the
+  // current task without stopping it, so that idiom would silently swallow a
+  // later 'Original tests passed'. pause() is safe whether or not a task is
+  // active.
+  private warnSyncFallback(error: Error): void {
+    this.spinner.pause(() => {
+      process.stdout.write(
+        `${this.messages.getMessage('info.syncTransportFallback', [error.message])}\n`
+      )
+    })
   }
 
   private async selectCoverageStrategy(

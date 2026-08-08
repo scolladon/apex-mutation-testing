@@ -142,6 +142,9 @@ describe('MutationTestingService', () => {
     spinner = {
       start: vi.fn(),
       stop: vi.fn(),
+      // Models oclif's real pause(): invokes the callback synchronously and
+      // (unlike stop()) never no-ops when no task is running.
+      pause: vi.fn((fn: () => void) => fn()),
     } as unknown as Spinner
 
     connection = {} as Connection
@@ -160,6 +163,7 @@ describe('MutationTestingService', () => {
         'info.reasonNoCoverage': 'it contributed no covered lines',
         'info.reasonDoesNotCompile': `it does not compile${args?.[0] ?? ''}`,
         'error.noUsableTestClass': `No usable Apex test class remains in the perimeter for '${args?.[0]}'. The following test class(es) were skipped:\n${args?.[1]}`,
+        'info.syncTransportFallback': `Synchronous test execution is unavailable (${args?.[0]}). Falling back to the asynchronous transport for the rest of this run.`,
       }
       return templates[key] || key
     }
@@ -251,6 +255,63 @@ describe('MutationTestingService', () => {
         // stopBaselineSpinner would print "Original tests passed" before the
         // abort throws.
         expect(spinner.stop).not.toHaveBeenCalledWith('Original tests passed')
+      })
+    })
+
+    describe('When the adapter reports a synchronous transport fallback', () => {
+      it('then should wire onSyncFallback into the adapter and announce the reason through the spinner-pause channel', async () => {
+        // Arrange — the baseline aborts; only the constructor wiring and the
+        // callback's own behaviour are under test here.
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = vi.fn().mockResolvedValue({})
+            getApexClassDependencies = vi
+              .fn()
+              .mockResolvedValue([] as MetadataComponentDependency[])
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            getTestMethodsPerLines = vi.fn().mockResolvedValue(
+              baselineResult({
+                outcome: 'Failed',
+                otherFailureCount: 1,
+                failing: 1,
+                testsRan: 1,
+              })
+            )
+          }
+        )
+        const stdoutWriteSpy = vi
+          .spyOn(process.stdout, 'write')
+          .mockImplementation(() => true)
+
+        // Act
+        await expect(sut.process()).rejects.toThrow(
+          'Original tests failed! Cannot proceed with mutation testing.'
+        )
+
+        // Assert — createAdapters passed an onSyncFallback function as the
+        // constructor's second argument
+        const [, options] = vi.mocked(ApexTestRunner).mock.calls[0] as [
+          unknown,
+          { onSyncFallback?: (error: Error) => void },
+        ]
+        expect(options.onSyncFallback).toBeInstanceOf(Function)
+
+        // Invoking it directly proves the wiring and gives createAdapters'
+        // arrow its function coverage.
+        options.onSyncFallback?.(new Error('View Setup permission required'))
+        expect(spinner.pause).toHaveBeenCalled()
+        expect(stdoutWriteSpy).toHaveBeenCalledWith(
+          expect.stringContaining('View Setup permission required')
+        )
+
+        stdoutWriteSpy.mockRestore()
       })
     })
 

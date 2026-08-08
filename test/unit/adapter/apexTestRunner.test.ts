@@ -300,22 +300,51 @@ describe('ApexTestRunner', () => {
       })
     })
 
-    describe('given the test execution fails', () => {
-      it('then should throw an error', async () => {
-        // Arrange — a single class routes through the synchronous transport
+    describe('given the synchronous test execution throws', () => {
+      it('then should fall back to the asynchronous transport preserving skipCodeCoverage: false', async () => {
+        // Arrange — a single class prefers the synchronous transport, but it rejects
         runTestSynchronousMock.mockRejectedValue(
-          new Error('Test execution failed')
+          new Error('View Setup permission required')
         )
+        const mockTestResult = {
+          summary: { outcome: 'Passed', passing: 1, failing: 0, testsRan: 1 },
+        }
+        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
+        const strategyStub = {
+          fidelity: 'per-test' as const,
+          getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
+        }
+
+        // Act
+        await sut.getTestMethodsPerLines(['TestClass'], strategyStub)
+
+        // Assert — the retry carries the same payload and the same coverage flag
+        expect(runTestAsynchronousMock).toHaveBeenCalledWith(
+          {
+            tests: [{ className: 'TestClass' }],
+            testLevel: TestLevel.RunSpecifiedTests,
+            skipCodeCoverage: false,
+            maxFailedTests: 0,
+          },
+          true
+        )
+      })
+
+      it('then should propagate the asynchronous error when the fallback also fails', async () => {
+        // Arrange
+        runTestSynchronousMock.mockRejectedValue(new Error('sync down'))
+        const asyncError = new Error('Test execution failed')
+        runTestAsynchronousMock.mockRejectedValue(asyncError)
         const strategyStub = {
           fidelity: 'per-test' as const,
           getTestMethodsPerLine: vi.fn(),
         }
 
-        // Act & Assert
+        // Act & Assert — identity, not message equality: classifyError reads
+        // properties off the propagated object itself.
         await expect(
           sut.getTestMethodsPerLines(['TestClass'], strategyStub)
-        ).rejects.toThrow('Test execution failed')
-        expect(runTestAsynchronousMock).not.toHaveBeenCalled()
+        ).rejects.toBe(asyncError)
       })
     })
   })
@@ -431,18 +460,107 @@ describe('ApexTestRunner', () => {
       })
     })
 
-    describe('given the test execution fails', () => {
-      it('then should throw an error', async () => {
-        // Arrange — a single class routes through the synchronous transport
-        runTestSynchronousMock.mockRejectedValue(
-          new Error('Test execution failed')
+    describe('given the synchronous test execution throws', () => {
+      it('then should fall back to the asynchronous transport with the same payload and resolve with its result', async () => {
+        // Arrange
+        const syncError = new Error('View Setup permission required')
+        runTestSynchronousMock.mockRejectedValue(syncError)
+        const mockTestResult = { summary: { outcome: 'Passed' } }
+        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
+
+        // Act
+        const result = await sut.runTestMethods(
+          new Set<TestMethodId>(['TestClass.testMethod'])
         )
+
+        // Assert
+        expect(result).toEqual(mockTestResult)
+        expect(runTestAsynchronousMock).toHaveBeenCalledWith(
+          {
+            tests: [{ className: 'TestClass', testMethods: ['testMethod'] }],
+            testLevel: TestLevel.RunSpecifiedTests,
+            skipCodeCoverage: true,
+            maxFailedTests: 0,
+          },
+          false
+        )
+      })
+
+      it('then should propagate the asynchronous error identity when the fallback also fails', async () => {
+        // Arrange
+        runTestSynchronousMock.mockRejectedValue(new Error('sync down'))
+        const asyncError = new Error('Test execution failed')
+        runTestAsynchronousMock.mockRejectedValue(asyncError)
 
         // Act & Assert
         await expect(
           sut.runTestMethods(new Set<TestMethodId>(['TestClass.testMethod']))
-        ).rejects.toThrow('Test execution failed')
-        expect(runTestAsynchronousMock).not.toHaveBeenCalled()
+        ).rejects.toBe(asyncError)
+      })
+
+      it('then should report the fallback reason exactly once across two consecutive synchronous rejections', async () => {
+        // Arrange — bounded to one retry per attempt, but reported only once
+        // per adapter instance, however many groups hit it in the session.
+        const onSyncFallback = vi.fn()
+        const fallbackSut = new ApexTestRunner(connectionStub, {
+          onSyncFallback,
+        })
+        runTestSynchronousMock.mockRejectedValue(
+          new Error('View Setup permission required')
+        )
+        runTestAsynchronousMock.mockResolvedValue({
+          summary: { outcome: 'Passed' },
+        })
+
+        // Act
+        await fallbackSut.runTestMethods(
+          new Set<TestMethodId>(['TestClass.testMethod'])
+        )
+        await fallbackSut.runTestMethods(
+          new Set<TestMethodId>(['TestClass.testMethod'])
+        )
+
+        // Assert — both calls still fall back, the reason is reported once
+        expect(onSyncFallback).toHaveBeenCalledTimes(1)
+        expect(runTestAsynchronousMock).toHaveBeenCalledTimes(2)
+      })
+
+      it('then should normalise a non-Error rejection into an Error before reporting it', async () => {
+        // Arrange
+        const onSyncFallback = vi.fn()
+        const fallbackSut = new ApexTestRunner(connectionStub, {
+          onSyncFallback,
+        })
+        runTestSynchronousMock.mockRejectedValue('plain string rejection')
+        runTestAsynchronousMock.mockResolvedValue({
+          summary: { outcome: 'Passed' },
+        })
+
+        // Act
+        await fallbackSut.runTestMethods(
+          new Set<TestMethodId>(['TestClass.testMethod'])
+        )
+
+        // Assert
+        expect(onSyncFallback).toHaveBeenCalledTimes(1)
+        const [reportedError] = onSyncFallback.mock.calls[0] as [Error]
+        expect(reportedError).toBeInstanceOf(Error)
+        expect(reportedError.message).toBe('plain string rejection')
+      })
+
+      it('then should fall back without throwing when no callback is supplied', async () => {
+        // Arrange — the shared sut is constructed with no onSyncFallback
+        runTestSynchronousMock.mockRejectedValue(
+          new Error('View Setup permission required')
+        )
+        runTestAsynchronousMock.mockResolvedValue({
+          summary: { outcome: 'Passed' },
+        })
+
+        // Act & Assert
+        await expect(
+          sut.runTestMethods(new Set<TestMethodId>(['TestClass.testMethod']))
+        ).resolves.toEqual({ summary: { outcome: 'Passed' } })
       })
     })
   })

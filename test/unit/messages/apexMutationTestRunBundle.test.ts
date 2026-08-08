@@ -115,6 +115,19 @@ describe('apex.mutation.test.run message bundle', () => {
     )
   })
 
+  it('Given a fallback reason, When info.syncTransportFallback is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
+    // Arrange
+    const reason = 'View Setup permission required'
+
+    // Act
+    const sut = messages.getMessage('info.syncTransportFallback', [reason])
+
+    // Assert
+    expect(sut).toBe(
+      'Synchronous test execution is unavailable (View Setup permission required). Falling back to the asynchronous transport for the rest of this run.'
+    )
+  })
+
   it('Given a class name, When error.apexClassNotFound is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
     // Arrange
     const className = 'MyClass'
