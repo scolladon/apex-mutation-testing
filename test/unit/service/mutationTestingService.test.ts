@@ -2001,6 +2001,30 @@ describe('MutationTestingService', () => {
         // No test ran, so nothing passed. Hoisting the pass text above the
         // guard would print it immediately before the abort.
         expect(spinner.stop).not.toHaveBeenCalledWith('Original tests passed')
+        // The baseline spinner is closed in the window between opening it and
+        // the first skip notice. Without that close it stays running
+        // underneath the notices, so the window — not a call count, and not
+        // merely "some earlier stop exists" — is what pins it.
+        const startCalls = vi.mocked(spinner.start).mock.calls
+        const startOrder = vi.mocked(spinner.start).mock.invocationCallOrder
+        const baselineStart =
+          startOrder[
+            startCalls.findIndex(([text]) =>
+              String(text).includes('tests to get coverage')
+            )
+          ]
+        const firstSkipStart =
+          startOrder[
+            startCalls.findIndex(([text]) =>
+              String(text).startsWith('Skipping test class')
+            )
+          ]
+        const closedInWindow = vi
+          .mocked(spinner.stop)
+          .mock.invocationCallOrder.some(
+            order => order > baselineStart && order < firstSkipStart
+          )
+        expect(closedInWindow).toBe(true)
       })
 
       it('Given aggregate-only fidelity and one class fails to compile, When processing, Then that class is still warned and dropped while a silent class is not', async () => {
