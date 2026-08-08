@@ -1,7 +1,10 @@
 import { TestResult } from '@salesforce/apex-node'
 import { Connection, Messages } from '@salesforce/core'
 import { Progress, Spinner } from '@salesforce/sf-plugins-core'
-import { ApexClassRepository } from '../../../src/adapter/apexClassRepository.js'
+import {
+  ApexClassRepository,
+  DeploymentFailedError,
+} from '../../../src/adapter/apexClassRepository.js'
 import { ApexSettingsRepository } from '../../../src/adapter/apexSettingsRepository.js'
 import { ApexTestRunner } from '../../../src/adapter/apexTestRunner.js'
 import { SObjectDescribeRepository } from '../../../src/adapter/sObjectDescribeRepository.js'
@@ -23,7 +26,16 @@ import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult
 import { MetadataComponentDependency } from '../../../src/type/MetadataComponentDependency.js'
 import { TestClassOrigins } from '../../../src/type/TestClassOrigin.js'
 
-vi.mock('../../../src/adapter/apexClassRepository.js')
+// Partial mock — a full automock replaces DeploymentFailedError with a stub
+// that no longer extends Error, breaking every fixture that constructs one to
+// carry a real `.message`. Keep the error classes real; only the repository
+// class itself is a mock, same as every other collaborator here.
+vi.mock('../../../src/adapter/apexClassRepository.js', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../../src/adapter/apexClassRepository.js')
+  >('../../../src/adapter/apexClassRepository.js')
+  return { ...actual, ApexClassRepository: vi.fn() }
+})
 vi.mock('../../../src/adapter/apexSettingsRepository.js')
 vi.mock('../../../src/adapter/apexTestRunner.js')
 vi.mock('../../../src/adapter/sObjectDescribeRepository.js')
@@ -68,6 +80,12 @@ const baselineResult = (overrides: Record<string, unknown> = {}) => ({
   testMethodsPerLine: new Map(),
   ...overrides,
 })
+
+// A governor-limit rejection as the org actually throws it: an Error whose
+// `errorCode` carries the untranslated platform code alongside a message the
+// org may have localised.
+const limitUsageError = (message: string): Error =>
+  Object.assign(new Error(message), { errorCode: 'LIMIT_USAGE_FOR_NS' })
 
 describe('MutationTestingService', () => {
   let sut: MutationTestingService
@@ -407,7 +425,7 @@ describe('MutationTestingService', () => {
           description: 'when test runner throws governor limit exception',
           testResult: null,
           expectedStatus: 'Killed',
-          error: new Error(
+          error: limitUsageError(
             'System.LimitException: LIMIT_USAGE_FOR_NS : Too many SOQL queries'
           ),
           updateError: null,
@@ -448,7 +466,7 @@ describe('MutationTestingService', () => {
           } as TestResult,
           expectedStatus: 'CompileError',
           error: null,
-          updateError: new Error(
+          updateError: new DeploymentFailedError(
             'Deployment failed:\n[TestClass.cls:1:50] Invalid syntax'
           ),
           expectedMutants: [
@@ -2194,7 +2212,9 @@ describe('MutationTestingService', () => {
             })
             update = vi
               .fn()
-              .mockRejectedValue(new Error('Deployment failed: compile error'))
+              .mockRejectedValue(
+                new DeploymentFailedError('Deployment failed: compile error')
+              )
             getApexClassDependencies = vi
               .fn()
               .mockResolvedValue([] as MetadataComponentDependency[])
@@ -3641,7 +3661,9 @@ describe('MutationTestingService', () => {
       it('Given error message starting with "Deployment failed:", When evaluating mutation, Then status is CompileError', async () => {
         // Arrange
         buildMocksWithUpdateError(
-          new Error('Deployment failed: [MyClass.cls:5:10] Invalid syntax')
+          new DeploymentFailedError(
+            'Deployment failed: [MyClass.cls:5:10] Invalid syntax'
+          )
         )
 
         // Act
@@ -3677,7 +3699,9 @@ describe('MutationTestingService', () => {
             runTestMethods = vi
               .fn()
               .mockRejectedValue(
-                new Error('LIMIT_USAGE_FOR_NS : Too many SOQL queries: 101')
+                limitUsageError(
+                  'LIMIT_USAGE_FOR_NS : Too many SOQL queries: 101'
+                )
               )
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -4086,7 +4110,7 @@ describe('MutationTestingService', () => {
               if (updateCallCount <= 1) return Promise.resolve({})
               if (updateCallCount >= 3) return Promise.resolve({})
               return Promise.reject(
-                new Error('Deployment failed: Invalid syntax')
+                new DeploymentFailedError('Deployment failed: Invalid syntax')
               )
             })
             getApexClassDependencies = vi
@@ -4166,7 +4190,7 @@ describe('MutationTestingService', () => {
             runTestMethods = vi
               .fn()
               .mockRejectedValue(
-                new Error('LIMIT_USAGE_FOR_NS : Too many queries')
+                limitUsageError('LIMIT_USAGE_FOR_NS : Too many queries')
               )
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -4693,7 +4717,7 @@ describe('MutationTestingService', () => {
               if (updateCallCount <= 1) return Promise.resolve({})
               if (updateCallCount >= 3) return Promise.resolve({})
               return Promise.reject(
-                new Error('Deployment failed: syntax error')
+                new DeploymentFailedError('Deployment failed: syntax error')
               )
             })
             getApexClassDependencies = vi
@@ -4973,7 +4997,7 @@ describe('MutationTestingService', () => {
               if (updateCallCount <= 1) return Promise.resolve({})
               if (updateCallCount >= 3) return Promise.resolve({})
               return Promise.reject(
-                new Error('Deployment failed: Invalid syntax')
+                new DeploymentFailedError('Deployment failed: Invalid syntax')
               )
             })
             getApexClassDependencies = vi
@@ -5047,7 +5071,7 @@ describe('MutationTestingService', () => {
             runTestMethods = vi
               .fn()
               .mockRejectedValue(
-                new Error('LIMIT_USAGE_FOR_NS : Too many queries')
+                limitUsageError('LIMIT_USAGE_FOR_NS : Too many queries')
               )
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -5390,7 +5414,7 @@ describe('MutationTestingService', () => {
             runTestMethods = vi
               .fn()
               .mockRejectedValue(
-                new Error('LIMIT_USAGE_FOR_NS : Too many SOQL queries')
+                limitUsageError('LIMIT_USAGE_FOR_NS : Too many SOQL queries')
               )
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -5429,7 +5453,7 @@ describe('MutationTestingService', () => {
               if (updateCallCount <= 1) return Promise.resolve({})
               if (updateCallCount >= 3) return Promise.resolve({})
               return Promise.reject(
-                new Error('Deployment failed: type mismatch')
+                new DeploymentFailedError('Deployment failed: type mismatch')
               )
             })
             getApexClassDependencies = vi.fn().mockResolvedValue([])
@@ -6157,7 +6181,7 @@ describe('MutationTestingService', () => {
               updateCallCount++
               if (updateCallCount === 2) {
                 return Promise.reject(
-                  new Error(
+                  new DeploymentFailedError(
                     'Deployment failed: [MyClass.cls:5:10] Invalid syntax'
                   )
                 )
@@ -6224,7 +6248,9 @@ describe('MutationTestingService', () => {
             runTestMethods = vi
               .fn()
               .mockRejectedValue(
-                new Error('LIMIT_USAGE_FOR_NS : Too many SOQL queries: 101')
+                limitUsageError(
+                  'LIMIT_USAGE_FOR_NS : Too many SOQL queries: 101'
+                )
               )
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -6551,7 +6577,9 @@ describe('MutationTestingService', () => {
         const updateMock = vi.fn().mockImplementation(() => {
           ++updateCallCount
           if (updateCallCount === 2) {
-            return Promise.reject(new Error('Deployment failed: poison batch'))
+            return Promise.reject(
+              new DeploymentFailedError('Deployment failed: poison batch')
+            )
           }
           return Promise.resolve({})
         })

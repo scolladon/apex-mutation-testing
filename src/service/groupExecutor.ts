@@ -2,7 +2,10 @@ import { TestResult } from '@salesforce/apex-node'
 import { Messages } from '@salesforce/core'
 import { Progress } from '@salesforce/sf-plugins-core'
 import type { CommonTokenStream } from 'apex-parser'
-import { ApexClassRepository } from '../adapter/apexClassRepository.js'
+import {
+  ApexClassRepository,
+  DeploymentFailedError,
+} from '../adapter/apexClassRepository.js'
 import { ApexTestRunner } from '../adapter/apexTestRunner.js'
 import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
@@ -24,10 +27,31 @@ const PASS_OUTCOME = 'Pass'
 // Stryker disable next-line StringLiteral: any non-pass value behaves the same.
 const NON_PASS_OUTCOME = 'Fail'
 
+// Salesforce's org-thrown limit exception carries this code untranslated,
+// even though its message is localised to the org user's language.
+const LIMIT_USAGE_ERROR_CODE = 'LIMIT_USAGE_FOR_NS'
+
+// Reads the structured `errorCode` a jsforce/org error carries, without
+// trusting its (possibly localised) message text. Not exported: callers
+// outside this module have no need for it.
+const readErrorCode = (error: unknown): string | undefined => {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'errorCode' in error &&
+    typeof error.errorCode === 'string'
+  ) {
+    return error.errorCode
+  }
+  return undefined
+}
+
 // Classify a deploy/test-run error into a per-mutant outcome plus a progress
 // message. The three branches match Salesforce-side failure modes: a compile
 // error from the Tooling API deploy, a governor-limit kill (which is a real
-// kill, not a runtime error), and any other thrown error.
+// kill, not a runtime error), and any other thrown error. Both structural
+// checks read typed signals (error class, errorCode) rather than message
+// text, which Salesforce localises to the org user's language.
 const classifyError = (
   error: unknown,
   mutation: ApexMutation
@@ -37,14 +61,14 @@ const classifyError = (
   progressMessage: string
 } => {
   const message = error instanceof Error ? error.message : String(error)
-  if (message.startsWith('Deployment failed:')) {
+  if (error instanceof DeploymentFailedError) {
     return {
       status: 'CompileError',
       statusReason: message,
       progressMessage: `Mutation result: compile error at line ${mutation.target.startToken.line}`,
     }
   }
-  if (message.includes('LIMIT_USAGE_FOR_NS')) {
+  if (readErrorCode(error) === LIMIT_USAGE_ERROR_CODE) {
     return {
       status: 'Killed',
       progressMessage: `Mutation result: mutant killed (${message})`,

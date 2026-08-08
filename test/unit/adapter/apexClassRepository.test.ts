@@ -1,6 +1,7 @@
 import { Connection } from '@salesforce/core'
 import {
   ApexClassRepository,
+  DeploymentFailedError,
   PollTimeoutError,
 } from '../../../src/adapter/apexClassRepository.js'
 
@@ -359,6 +360,46 @@ describe('ApexClassRepository', () => {
         await expect(sut.update(mockApexClass)).rejects.toThrow(
           'Deployment failed:\n[TestClass.cls:1:10] Missing semicolon'
         )
+      })
+
+      it('then throws a DeploymentFailedError whose message still starts with "Deployment failed:"', async () => {
+        // Arrange
+        const mockApexClass = {
+          Id: '123',
+          Body: 'public class TestClass {}',
+        }
+
+        createMock
+          .mockResolvedValueOnce({ id: 'container123' })
+          .mockResolvedValueOnce({ id: 'member123' })
+          .mockResolvedValueOnce({ id: 'request123' })
+
+        retrieveMock.mockResolvedValue({
+          State: 'Failed',
+          ErrorMsg: 'Compilation error',
+          DeployDetails: {
+            allComponentMessages: [
+              {
+                fileName: 'TestClass.cls',
+                lineNumber: 1,
+                columnNumber: 10,
+                problem: 'Missing semicolon',
+              },
+            ],
+          },
+        })
+
+        // Act
+        let thrown: unknown
+        try {
+          await sut.update(mockApexClass)
+        } catch (error) {
+          thrown = error
+        }
+
+        // Assert
+        expect(thrown).toBeInstanceOf(DeploymentFailedError)
+        expect((thrown as Error).message).toMatch(/^Deployment failed:/)
       })
     })
 
