@@ -14,6 +14,15 @@ export interface BaselineCompileFailure {
   message: string
 }
 
+export interface BaselineTestResult {
+  outcome: string
+  testsRan: number
+  failing: number
+  compileFailures: BaselineCompileFailure[]
+  otherFailureCount: number
+  testMethodsPerLine: Map<number, Set<TestMethodId>>
+}
+
 const recordCompileFailure = (
   compileFailuresByClass: Map<string, BaselineCompileFailure>,
   test: ApexTestResultData
@@ -26,9 +35,13 @@ const recordCompileFailure = (
   })
 }
 
-// One pass, one place: this is the only thing in the codebase that reads a
-// test outcome. A CompileFail row never ran a test method, so it is excluded
-// from executedTests rather than counted as a failure.
+// One pass, one place: this is the only thing in the codebase that classifies
+// a *baseline* test outcome into compile-fail vs. executed. Per-mutant
+// attribution reads outcomes on a separate path — GroupExecutor.attributeOutcomes
+// reads each test's `outcome` and falls back to `testResult.summary.outcome`
+// (see src/service/groupExecutor.ts). A CompileFail row never ran a test
+// method, so it is excluded from executedTests rather than counted as a
+// failure.
 const partitionOutcomes = (
   tests: ApexTestResultData[]
 ): {
@@ -65,7 +78,7 @@ export class ApexTestRunner {
   public async getTestMethodsPerLines(
     apexTestClassNames: string[],
     coverageStrategy: CoverageStrategy
-  ) {
+  ): Promise<BaselineTestResult> {
     const testResult = await this.runTestAsynchronous(
       apexTestClassNames.map(className => ({ className })),
       false
