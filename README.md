@@ -144,6 +144,10 @@ Each warning names the class, the reason, and — when the class was contributed
 
 This means a mistyped `--test-class` or `--test-suite` member no longer fails the command by itself: `-t NotATestClass`, or a typo like `-t MyClasTest`, now warns and continues instead of aborting. The run fails only once the reduction leaves no usable test class at all, and that failure restates every class that was skipped and why — so a perimeter that's entirely mistyped still surfaces as a clear error rather than a confusing "no coverage" message.
 
+### Test Setup Methods
+
+A `@TestSetup` method can't be re-run on its own — Salesforce only executes it as part of a full test class run — so the plugin never targets it as an individually re-runnable test. It's excluded from the baseline's test-method inventory and never receives its own coverage or mutant attribution; its side effects still run normally as part of every other test method's setup.
+
 ### Synchronous Test Execution
 
 Asynchronous test runs draw on the org's `DailyAsyncApexTests` limit (500 per rolling 24h). A mutation testing campaign is inherently test-run-heavy — one run per mutation group, plus the baseline — so a perimeter scoped to a single Apex class can exhaust that limit within a single run. There is no synchronous counterpart limit, and while the async limit is exhausted, `sf apex run test` fails **org-wide**, for every class, with `UNKNOWN_EXCEPTION` — a failure mode that reads as a plugin bug, not a quota.

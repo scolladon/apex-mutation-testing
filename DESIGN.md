@@ -168,6 +168,12 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │         cost; two or more classes run asynchronously. Either way
 │         apex-node's tests: TestItem[] takes every class natively,
 │         so an N-class perimeter costs no extra deploy or run cycle
+│       → a @TestSetup row is excluded before any classification
+│         runs — cross-referenced against the async transport's own
+│         `TestResult.setup` array (the synchronous transport never
+│         reports a setup row at all) rather than trusted by its
+│         absence from `tests` — so it never becomes a TestMethodId,
+│         never contributes coverage, and is never re-run per mutant
 │       → partitions the returned rows: a CompileFail row names its
 │         class and the platform's own message and is excluded from
 │         coverage extraction; any other non-Pass row aborts the run
@@ -347,7 +353,7 @@ When grouping is disabled, `planGroups` builds singleton groups inline, skipping
 
 - `MutantGenerator.mutateMany` applies all replacements on a single `TokenStreamRewriter`.
 - `ApexTestRunner.runTestMethods` runs the union of covering test methods, through the same synchronous/asynchronous transport predicate as the baseline (see Transport Selection).
-- For `k = 1`, status comes from `testResult.summary.outcome` (legacy semantics).
+- For `k = 1`, status comes from `testResult.outcome` (legacy semantics).
 - For `k > 1`, per-method outcomes from `testResult.tests[]` are reverse-mapped to mutations via `testMethodsPerLine`: a mutation is `Killed` iff at least one of its covering test methods has outcome ≠ `Pass`. The grouping invariant (no test covers two mutations in the same group) makes this attribution unambiguous.
 - On a deploy or runtime error: for `k = 1`, classify the error directly (`CompileError` / `RuntimeError`); for `k > 1`, fall back by recursing — each mutation becomes its own `k = 1` singleton group, and the leaf path classifies any error. A governor-limit exception never reaches this classification: the org reports it as an ordinary failing test row rather than throwing, so it is scored `Killed` through the normal per-method attribution above.
 
@@ -405,26 +411,40 @@ if (error instanceof DeploymentFailedError) return 'CompileError'
 return 'RuntimeError'
 ```
 
-The check reads the error's type, not its message text, because **Salesforce localizes platform API error messages to the org user's language** — a message match observed on an English-locale org silently stops matching on any other. `DeploymentFailedError` (`src/adapter/apexClassRepository.ts`, mirroring the existing `PollTimeoutError`) is a typed error the plugin itself throws when a mutated deploy lands in `Failed`. A live-org probe found this localisation risk does *not* extend to Apex runtime exception text: a `System.LimitException` came back in English from a French-locale org in the same session where a platform API error came back in French, so the two are localised independently — only the platform-API-facing `DeploymentFailedError` path needs the structural guard. Message text is still used for *reporting* — `progressMessage` and `statusReason` quote it verbatim so the user sees the org's own diagnosis — just never for *classification*. A governor-limit exception (e.g. too many SOQL queries) never reaches this function at all: the same probe found the org reports it as an ordinary failing test row over HTTP 200, with no distinguishing error code anywhere in the row, message, or stack trace — the existing per-method attribution in `attributeOutcomes` already scores it `Killed` because the row's outcome is non-`Pass`.
+The check reads the error's type, not its message text, because **Salesforce localizes platform API error messages to the org user's language** — a message match observed on an English-locale org silently stops matching on any other. `DeploymentFailedError` (`src/adapter/apexClassRepository.ts`, mirroring the existing `PollTimeoutError`) is a typed error the plugin itself throws when a mutated deploy lands in `Failed`. A live-org probe found this localization risk does *not* extend to Apex runtime exception text: a `System.LimitException` came back in English from a French-locale org in the same session where a platform API error came back in French, so the two are localized independently — only the platform-API-facing `DeploymentFailedError` path needs the structural guard. Message text is still used for *reporting* — `progressMessage` and `statusReason` quote it verbatim so the user sees the org's own diagnosis — just never for *classification*. A governor-limit exception (e.g. too many SOQL queries) never reaches this function at all: the same probe found the org reports it as an ordinary failing test row over HTTP 200, with no distinguishing error code anywhere in the row, message, or stack trace — the existing per-method attribution in `attributeOutcomes` already scores it `Killed` because the row's outcome is non-`Pass`.
+
+### Domain Test Result Mapping
+
+`ApexTestRunner` (`src/adapter/apexTestRunner.ts`) is the only file in `src/` that imports `@salesforce/apex-node`. Both transports return the vendor SDK's own `TestResult` shape; before either public method returns, the adapter maps that SDK DTO into `ApexTestRunResult` (`src/type/ApexTestRunResult.ts`) — a shape owned by this plugin, not mirrored from the vendor:
+
+```typescript
+const toApexTestRunResult = (testResult: TestResult): ApexTestRunResult => ({
+  outcome: testResult.summary.outcome,
+  tests: (testResult.tests ?? []).map(toApexTestMethodResult),
+  classCoverage: testResult.codecoverage?.map(toApexClassCoverage),
+})
+```
+
+Field names track what `src/service/` actually reads — `className`, `methodName`, `outcome`, `coverage`, `detail.coveredLines` — rather than the SDK's own vocabulary (`apexClass.fullName`, `perClassCoverage`, `codecoverage`). `CoverageStrategy` and `GroupExecutor` both consume `ApexTestRunResult` exclusively, so neither knows or cares which transport produced a result, and a future transport (or a breaking `@salesforce/apex-node` upgrade) only touches the mapping functions in `apexTestRunner.ts`.
 
 ### Strategy Pattern — Coverage Fidelity
 
-Most orgs record per-test code coverage, but an org with **"Store Only Aggregated Code Coverage"** enabled (Setup → Apex Test Execution → Options) never populates it — only the cumulative, org-wide `ApexCodeCoverageAggregate` rollup is available. `src/service/coverageStrategy.ts` models the two coverage shapes as a `CoverageStrategy` interface with two implementations:
+Most orgs record per-test code coverage, but an org with **"Store Only Aggregated Code Coverage"** enabled (Setup → Apex Test Execution → Options) never populates it — only the cumulative, org-wide `ApexCodeCoverageAggregate` rollup is available. `src/service/coverageStrategy.ts` models the two coverage shapes as a `CoverageStrategy` interface with two implementations, both consuming the domain `ApexTestRunResult` (see Domain Test Result Mapping):
 
 ```typescript
 interface CoverageStrategy {
   readonly fidelity: 'per-test' | 'aggregate'
-  getTestMethodsPerLine(testResult: TestResult): Map<number, Set<TestMethodId>>
+  getTestMethodsPerLine(testResult: ApexTestRunResult): Map<number, Set<TestMethodId>>
 }
 
 class PerTestCoverageStrategy implements CoverageStrategy   // fidelity: 'per-test'
 class AggregateCoverageStrategy implements CoverageStrategy // fidelity: 'aggregate'
 ```
 
-`TestMethodId` (`src/type/TestMethodId.ts`) is a `ClassName.methodName` string, minted by `qualifyTestMethod(test.apexClass.fullName, methodName)`. Both strategies qualify at this boundary — the one place a test method's declaring class is known — so a method name that exists in more than one perimeter class never collides downstream.
+`TestMethodId` (`src/type/TestMethodId.ts`) is a `ClassName.methodName` string, minted by `qualifyTestMethod(test.className, methodName)`. Both strategies qualify at this boundary — the one place a test method's declaring class is known — so a method name that exists in more than one perimeter class never collides downstream.
 
-- `PerTestCoverageStrategy` filters each test's `perClassCoverage` down to the target class and maps each covered line to the set of qualified test-method ids that actually covered it, combining the contributions of every class in the perimeter.
-- `AggregateCoverageStrategy` reads the target class's entry from `testResult.codecoverage` and assigns **every** covered line the full set of qualified ids of every executed test method across the perimeter — an over-approximation, since the aggregate rollup does not distinguish which test covered which line. This is the accepted "every test method runs per mutant" degradation.
+- `PerTestCoverageStrategy` filters each test's `coverage` entries down to the target class and maps each covered line to the set of qualified test-method ids that actually covered it, combining the contributions of every class in the perimeter.
+- `AggregateCoverageStrategy` reads the target class's entry from `testResult.classCoverage` and assigns **every** covered line the full set of qualified ids of every executed test method across the perimeter — an over-approximation, since the aggregate rollup does not distinguish which test covered which line. This is the accepted "every test method runs per mutant" degradation.
 - Both strategies lower-case the target class name once in their constructor for case-insensitive matching.
 
 **Selection is knowledge, not inference.** `MutationTestingService.selectCoverageStrategy` queries `ApexSettingsRepository.isAggregateCoverageOnly()` (a Tooling API read of `ApexSettings.IsAggregateCodeCoverageOnlyEnabled`) up front in `process()`, before the baseline test run, and picks the strategy accordingly:
@@ -445,12 +465,15 @@ The chosen strategy is injected into `ApexTestRunner.getTestMethodsPerLines(apex
 ```typescript
 const SYNC_ELIGIBLE_TEST_CLASS_COUNT = 1
 
-private async runTests(tests: TestItems, skipCodeCoverage: boolean) {
-  return tests.length === SYNC_ELIGIBLE_TEST_CLASS_COUNT
-    ? this.runPreferringSync(tests, skipCodeCoverage)
-    : this.runTestAsynchronous(tests, skipCodeCoverage)
+private async runTests(tests: TestItems, coverage: CoverageRequest) {
+  return tests.length === SYNC_ELIGIBLE_TEST_CLASS_COUNT &&
+    !this.syncTransportDisabled
+    ? this.runPreferringSync(tests, coverage)
+    : this.runTestAsynchronous(tests, coverage)
 }
 ```
+
+`coverage` is a named `CoverageRequest` (`'with-coverage' | 'without-coverage'`) rather than a negated `skipCodeCoverage` boolean threaded through the call chain — the vendor SDK asks for the same intent twice per call (a `skipCodeCoverage` payload field and a separately negated positional argument), so both are derived once, at the transport methods, from this single domain value.
 
 **Why it exists.** The asynchronous transport draws on the org's `DailyAsyncApexTests` limit (500 per rolling 24h) on every kickoff; there is no synchronous counterpart limit. A mutation testing campaign is inherently test-run-heavy — one run per mutation group, plus the baseline — so a single-class perimeter can exhaust the async limit inside a single run. While exhausted, `sf apex run test` fails **org-wide**, for every class, with `UNKNOWN_EXCEPTION` — a failure mode that reads as a plugin defect rather than a quota.
 
