@@ -2,6 +2,22 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [1.8.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.7.4...v1.8.0) (2026-08-09)
+
+
+### Features
+
+* accept apex test suites as the mutation perimeter ([#144](https://github.com/scolladon/apex-mutation-testing/issues/144)) ([b257c8b](https://github.com/scolladon/apex-mutation-testing/commit/b257c8b21bdcd79a69ec8df9ac427e58dfe4b434))
+* accept multiple apex test classes in the mutation perimeter ([#141](https://github.com/scolladon/apex-mutation-testing/issues/141)) ([2f7ea80](https://github.com/scolladon/apex-mutation-testing/commit/2f7ea8082132f946873fd595015bb7c7c24997dc))
+* run single-class test payloads through the synchronous tooling resource ([#150](https://github.com/scolladon/apex-mutation-testing/issues/150)) ([2b737f3](https://github.com/scolladon/apex-mutation-testing/commit/2b737f3370d44c7e8fe7f10f1d1c14ee95ce7cde))
+* skip unusable test classes with a reason instead of aborting the run ([#148](https://github.com/scolladon/apex-mutation-testing/issues/148)) ([103c335](https://github.com/scolladon/apex-mutation-testing/commit/103c335bb2e5c35670c97a848a6630a6cf6b80ee))
+
+
+### Bug Fixes
+
+* roll back the mutated apex class when the mutation loop fails ([#151](https://github.com/scolladon/apex-mutation-testing/issues/151)) ([bd77dcd](https://github.com/scolladon/apex-mutation-testing/commit/bd77dcdd004c42e0cf095e666b1a16ba3e5974b7))
+* validate apex class names against the identifier grammar before any org call ([#146](https://github.com/scolladon/apex-mutation-testing/issues/146)) ([0c1f51a](https://github.com/scolladon/apex-mutation-testing/commit/0c1f51a554c69f9e59448140f5dea424b0ef2371))
+
 ## [1.7.4](https://github.com/scolladon/apex-mutation-testing/compare/v1.7.3...v1.7.4) (2026-07-15)
 
 
