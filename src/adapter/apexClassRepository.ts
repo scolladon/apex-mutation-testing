@@ -15,6 +15,19 @@ const TERMINAL_STATES = new Set([
   'Aborted',
 ]) as ReadonlySet<string>
 
+// Whether a container deploy asks the org to run tests. Named rather than a
+// bare boolean so the call sites read as intent instead of a flag.
+// Neither literal value is itself observable: the only consumer tests
+// `testPolicy === RUN_TESTS` (createDeployRequest below), so RUN_TESTS can
+// change freely as long as the default parameter — which reads RUN_TESTS
+// itself — changes with it, and SKIP_TESTS can be any value distinct from
+// RUN_TESTS and still produce the same `!== RUN_TESTS` outcome.
+// Stryker disable next-line StringLiteral: value is never itself observed — see above.
+export const RUN_TESTS = 'run-tests'
+// Stryker disable next-line StringLiteral: value is never itself observed — see above.
+export const SKIP_TESTS = 'skip-tests'
+export type DeployTestPolicy = typeof RUN_TESTS | typeof SKIP_TESTS
+
 // SOQL caps statement length, so a large perimeter must be queried in
 // batches.
 const IDENTITY_QUERY_CHUNK_SIZE = 200
@@ -138,17 +151,28 @@ export class ApexClassRepository {
       .execute()) as MetadataComponentDependency[]
   }
 
-  public async update(apexClass: ApexClass) {
-    return this.deployToContainer(apexClass)
+  // Deploys ask the org to run the class's tests, which is what leaves the
+  // org's stored coverage matching the body just deployed. Callers that are
+  // abandoning a run pass SKIP_TESTS: the org is then often out of test quota,
+  // which makes a test-running deploy the request most likely to be refused,
+  // and a restore that is refused is one that leaves a mutant behind.
+  public async update(
+    apexClass: ApexClass,
+    testPolicy: DeployTestPolicy = RUN_TESTS
+  ) {
+    return this.deployToContainer(apexClass, testPolicy)
   }
 
   // The container → member → request → poll → cleanup cycle a single class
   // deploy runs to verify compilation and pick up its coverage.
-  private async deployToContainer(apexClass: ApexClass) {
+  private async deployToContainer(
+    apexClass: ApexClass,
+    testPolicy: DeployTestPolicy
+  ) {
     const containerId = await this.createContainer()
     try {
       await this.addMembers(containerId, apexClass)
-      const requestId = await this.createDeployRequest(containerId)
+      const requestId = await this.createDeployRequest(containerId, testPolicy)
       return await this.awaitSuccessfulDeploy(requestId)
     } finally {
       // Fire-and-forget cleanup: awaiting this would add a full Tooling API
@@ -182,13 +206,16 @@ export class ApexClassRepository {
     })
   }
 
-  private async createDeployRequest(containerId: string): Promise<string> {
+  private async createDeployRequest(
+    containerId: string,
+    testPolicy: DeployTestPolicy
+  ): Promise<string> {
     const asyncRequest = await this.connection.tooling
       .sobject('ContainerAsyncRequest')
       .create({
         IsCheckOnly: false,
         MetadataContainerId: containerId,
-        IsRunTests: true,
+        IsRunTests: testPolicy === RUN_TESTS,
       })
 
     if (!asyncRequest.id) {

@@ -3,6 +3,8 @@ import { Progress, Spinner } from '@salesforce/sf-plugins-core'
 import {
   ApexClassRepository,
   DeploymentFailedError,
+  RUN_TESTS,
+  SKIP_TESTS,
 } from '../../../src/adapter/apexClassRepository.js'
 import { ApexSettingsRepository } from '../../../src/adapter/apexSettingsRepository.js'
 import { ApexTestRunner } from '../../../src/adapter/apexTestRunner.js'
@@ -131,6 +133,7 @@ describe('MutationTestingService', () => {
       start: vi.fn(),
       update: vi.fn(),
       finish: vi.fn(),
+      stop: vi.fn(),
     } as unknown as Progress
 
     spinner = {
@@ -3481,6 +3484,199 @@ describe('MutationTestingService', () => {
         await expect(sut.process()).rejects.toThrow(
           /plain string rollback failure/
         )
+      })
+    })
+
+    describe('When the mutation loop fails', () => {
+      const loopFailure = new Error('token rewrite exploded')
+
+      const arrangeRepositoryAndRunner = (
+        updateSpy: ReturnType<typeof vi.fn>
+      ) => {
+        vi.mocked(ApexClassRepository).mockImplementation(
+          class {
+            read = vi.fn().mockImplementation((name: string) => {
+              if (name === 'TestClass') return Promise.resolve(mockApexClass)
+              return Promise.resolve(mockTestClass)
+            })
+            update = updateSpy
+            getApexClassDependencies = vi.fn().mockResolvedValue([])
+          }
+        )
+        vi.mocked(ApexTestRunner).mockImplementation(
+          class {
+            runTestMethods = vi
+              .fn()
+              .mockResolvedValue({ outcome: 'Failed', tests: [] })
+            getTestMethodsPerLines = vi.fn().mockResolvedValue(
+              baselineResult({
+                outcome: 'Passed',
+                testsRan: 1,
+                testMethodsPerLine: new Map([
+                  [1, new Set(['TestClassTest.testMethodA'])],
+                ]),
+              })
+            )
+          }
+        )
+      }
+
+      // Two mutations, so group A genuinely deploys a mutant before group B's
+      // mutateMany throws — mutateMany runs before the deploy, so a
+      // single-mutation fixture would roll back with nothing to undo.
+      const arrangeLoopFailure = (
+        updateSpy: ReturnType<typeof vi.fn>,
+        thrown: unknown = loopFailure
+      ) => {
+        arrangeRepositoryAndRunner(updateSpy)
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi.fn().mockReturnValue({
+              mutations: [{ ...mockMutation }, { ...mockMutation }],
+              tokenStream: {},
+            })
+            mutateMany = vi
+              .fn()
+              .mockReturnValueOnce('mutated code')
+              .mockImplementation(() => {
+                throw thrown
+              })
+          }
+        )
+      }
+
+      it('Given the mutation loop throws, When processing, Then the original class is redeployed and the loop failure surfaces', async () => {
+        // Arrange
+        const updateSpy = vi.fn().mockResolvedValue({})
+        arrangeLoopFailure(updateSpy)
+
+        // Act & Assert
+        await expect(sut.process()).rejects.toBe(loopFailure)
+        expect(updateSpy).toHaveBeenCalledTimes(3)
+        expect(updateSpy).toHaveBeenNthCalledWith(2, {
+          Id: '123',
+          Body: 'mutated code',
+        })
+        // The restore redeploys the original body and skips its tests
+        expect(updateSpy).toHaveBeenNthCalledWith(3, mockApexClass, SKIP_TESTS)
+        expect(spinner.start).toHaveBeenCalledWith(
+          'Rolling back "TestClass" ApexClass to its original state',
+          undefined,
+          { stdout: true }
+        )
+      })
+
+      it('Given the mutation loop throws an Error and rollback fails, When processing, Then both failures surface and the loop failure is the cause', async () => {
+        // Arrange — the compile probe (1) and the mutant deploy (2) succeed;
+        // the rollback (3) is what fails.
+        const updateSpy = vi
+          .fn()
+          .mockResolvedValueOnce({})
+          .mockResolvedValueOnce({})
+          .mockRejectedValue(new Error('rollback network down'))
+        arrangeLoopFailure(updateSpy)
+
+        // Act
+        const caught = await sut.process().catch((error: unknown) => error)
+
+        // Assert
+        expect((caught as Error).message).toBe(
+          "token rewrite exploded\nError: Rollback of 'TestClass' failed. Underlying cause: rollback network down. The class on the target org is still in a mutated state. Redeploy manually."
+        )
+        expect((caught as Error).cause).toBe(loopFailure)
+        expect(spinner.stop).toHaveBeenCalledWith(
+          expect.stringContaining('Rollback FAILED')
+        )
+      })
+
+      it('Given the progress teardown throws, When the mutation loop fails, Then the original class is still redeployed and the teardown failure is reported', async () => {
+        // Arrange — tearing the bar down writes to stdout, which can fail; it
+        // must not pre-empt the restore.
+        const updateSpy = vi.fn().mockResolvedValue({})
+        arrangeLoopFailure(updateSpy)
+        progress.stop = vi.fn(() => {
+          throw new Error('stdout\nis gone')
+        })
+
+        // Act & Assert
+        await expect(sut.process()).rejects.toBe(loopFailure)
+        expect(updateSpy).toHaveBeenCalledTimes(3)
+        // The restore redeploys the original body and skips its tests
+        expect(updateSpy).toHaveBeenNthCalledWith(3, mockApexClass, SKIP_TESTS)
+        expect(outputSinkStub).toHaveBeenCalledWith(
+          'Warning: could not tear down the progress display. Cause: Error: stdout is gone\n'
+        )
+      })
+
+      it('Given rollback fails with an unbounded org detail, When processing, Then the cause is folded and bounded and the instruction survives', async () => {
+        // Arrange — jsforce sets error.message to the whole response body, so
+        // the cause is org-controlled and can carry control bytes.
+        const updateSpy = vi
+          .fn()
+          .mockResolvedValueOnce({})
+          .mockResolvedValueOnce({})
+          .mockRejectedValue(new Error(`net\ndown ${'a'.repeat(250)}`))
+        arrangeLoopFailure(updateSpy)
+
+        // Act
+        const caught = await sut.process().catch((error: unknown) => error)
+
+        // Assert
+        expect((caught as Error).message).toBe(
+          `token rewrite exploded\nError: Rollback of 'TestClass' failed. Underlying cause: net down ${'a'.repeat(191)}…. The class on the target org is still in a mutated state. Redeploy manually.`
+        )
+      })
+
+      it('Given the mutation loop throws a non-Error and rollback fails, When processing, Then the coerced loop failure leads the message', async () => {
+        // Arrange
+        const updateSpy = vi
+          .fn()
+          .mockResolvedValueOnce({})
+          .mockResolvedValueOnce({})
+          .mockRejectedValue(new Error('rollback network down'))
+        arrangeLoopFailure(updateSpy, 'plain string loop failure')
+
+        // Act
+        const caught = await sut.process().catch((error: unknown) => error)
+
+        // Assert
+        expect((caught as Error).message).toBe(
+          "plain string loop failure\nError: Rollback of 'TestClass' failed. Underlying cause: rollback network down. The class on the target org is still in a mutated state. Redeploy manually."
+        )
+      })
+
+      it('Given rollback fails on the success path, When processing, Then rollback is attempted once and its failure is not combined', async () => {
+        // Arrange — one mutation; the compile probe (1) and the mutant deploy
+        // (2) succeed, the rollback (3) fails. The loop itself never throws.
+        const updateSpy = vi
+          .fn()
+          .mockResolvedValueOnce({})
+          .mockResolvedValueOnce({})
+          .mockRejectedValue(new Error('Rollback failed'))
+        arrangeRepositoryAndRunner(updateSpy)
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutateMany = vi.fn().mockReturnValue('mutated code')
+          }
+        )
+
+        // Act
+        const caught = await sut.process().catch((error: unknown) => error)
+
+        // Assert — exactly one restore deploy, and the rollback failure
+        // propagates unwrapped
+        expect(updateSpy).toHaveBeenCalledTimes(3)
+        // The success-path restore keeps running the tests, so the org's
+        // stored coverage ends up matching the real class rather than the
+        // last mutant. Only the failure path trades that away for speed.
+        expect(updateSpy).toHaveBeenNthCalledWith(3, mockApexClass, RUN_TESTS)
+        expect((caught as Error).message).toBe(
+          "Rollback of 'TestClass' failed. Underlying cause: Rollback failed. The class on the target org is still in a mutated state. Redeploy manually."
+        )
+        expect((caught as Error).cause).toBeUndefined()
       })
     })
 
