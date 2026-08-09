@@ -208,7 +208,7 @@ describe('HTMLReporter', () => {
       vi.mocked(realpath).mockImplementation(async (p: unknown) => {
         const s = String(p)
         if (s === cwd) return cwd
-        return `${cwd}/actual-reports`
+        return require('path').join(cwd, 'actual-reports')
       })
 
       // Act

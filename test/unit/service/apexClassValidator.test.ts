@@ -11,7 +11,7 @@ describe('ApexClassValidator', () => {
   let sut: ApexClassValidator
   const params = {
     apexClassName: 'TestClass',
-    apexTestClassName: 'TestClassTest',
+    apexTestClassNames: ['TestClassTest'],
     reportDir: 'reports',
   }
 
@@ -83,6 +83,17 @@ describe('ApexClassValidator', () => {
       await expect(sut.validate(params)).rejects.toThrow(
         'Apex class TestClass not found\nApex test class TestClassTest not found'
       )
+    })
+
+    it('should handle undefined apexTestClassNames gracefully', async () => {
+      // Arrange
+      const mockApexClass = { Body: 'class TestClass {}' }
+      readMock.mockResolvedValueOnce(mockApexClass as ApexClass)
+
+      // Act & Assert
+      await expect(
+        sut.validate({ apexClassName: 'TestClass', reportDir: 'reports' })
+      ).resolves.not.toThrow()
     })
   })
 })

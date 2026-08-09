@@ -14,7 +14,7 @@ Apex class name to mutate
 
 # flags.test-class.summary
 
-Apex test class name to validate mutations
+Apex test class names (comma separated) to validate mutations
 
 # flags.report-dir.summary
 
@@ -24,7 +24,7 @@ Path to the directory where mutation test reports will be generated
 
 - Run mutation testing on a class with its test file:
 
-  <%= config.bin %> <%= command.id %> --apex-class MyClass --test-class MyClassTest
+  <%= config.bin %> <%= command.id %> --apex-class MyClass --test-class MyClassTest,AnotherTest
 
 - Preview mutations without running them:
 
@@ -36,11 +36,11 @@ Report has been generated at this location: %s
 
 # info.CommandIsRunning
 
-Running mutation testing for "%s" with "%s" test class
+Running mutation testing for "%s" with provided tests
 
 # info.DryRunCommandIsRunning
 
-Running dry run mutation testing for "%s" with "%s" test class
+Running dry run mutation testing for "%s" with provided tests
 
 # info.CommandSuccess
 
@@ -58,7 +58,7 @@ Become a sponsor: https://github.com/sponsors/scolladon 💙
 
 # error.noCoverage
 
-No test coverage found for '%s'. Ensure '%s' tests exercise the code you want to mutation test.
+No test coverage found for '%s'. Ensure provided tests exercise the code you want to mutation test.
 
 # error.noMutations
 

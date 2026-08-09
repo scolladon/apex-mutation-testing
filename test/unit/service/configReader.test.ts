@@ -25,7 +25,7 @@ describe('ConfigReader', () => {
   let sut: ConfigReader
   const baseParameter: ApexMutationParameter = {
     apexClassName: 'MyClass',
-    apexTestClassName: 'MyClassTest',
+    apexTestClassNames: ['MyClassTest'],
     reportDir: 'reports',
   }
 

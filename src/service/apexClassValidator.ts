@@ -18,17 +18,19 @@ export class ApexClassValidator {
     return errors
   }
 
-  private async validateApexTestClass(apexTestClassName: string) {
+  private async validateApexTestClasses(apexTestClassNames: string[]) {
     const errors: string[] = []
-    const apexTestClass: ApexClass = (await this.apexClassRepository.read(
-      apexTestClassName
-    )) as unknown as ApexClass
-    if (!apexTestClass) {
-      errors.push(`Apex test class ${apexTestClassName} not found`)
-    } else if (!apexTestClass.Body.toLowerCase().includes('@istest')) {
-      errors.push(
-        `Apex test class ${apexTestClassName} is not annotated with @isTest`
-      )
+    for (const apexTestClassName of apexTestClassNames) {
+      const apexTestClass: ApexClass = (await this.apexClassRepository.read(
+        apexTestClassName
+      )) as unknown as ApexClass
+      if (!apexTestClass) {
+        errors.push(`Apex test class ${apexTestClassName} not found`)
+      } else if (!apexTestClass.Body.toLowerCase().includes('@istest')) {
+        errors.push(
+          `Apex test class ${apexTestClassName} is not annotated with @isTest`
+        )
+      }
     }
 
     return errors
@@ -36,11 +38,11 @@ export class ApexClassValidator {
 
   public async validate({
     apexClassName,
-    apexTestClassName,
+    apexTestClassNames,
   }: ApexMutationParameter) {
     const [apexErrors, testErrors] = await Promise.all([
       this.validateApexClass(apexClassName),
-      this.validateApexTestClass(apexTestClassName),
+      this.validateApexTestClasses(apexTestClassNames || []),
     ])
     const errors: string[] = [...apexErrors, ...testErrors]
     if (errors.length > 0) {

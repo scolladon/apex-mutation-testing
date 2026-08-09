@@ -27,7 +27,7 @@ import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
 
 export class MutationTestingService {
   protected readonly apexClassName: string
-  protected readonly apexTestClassName: string
+  protected readonly apexTestClassNames: string[]
   protected readonly dryRun: boolean
   protected readonly includeMutators: string[] | undefined
   protected readonly excludeMutators: string[] | undefined
@@ -44,7 +44,7 @@ export class MutationTestingService {
     protected readonly connection: Connection,
     {
       apexClassName,
-      apexTestClassName,
+      apexTestClassNames,
       dryRun,
       includeMutators,
       excludeMutators,
@@ -57,7 +57,7 @@ export class MutationTestingService {
     protected readonly messages: Messages<string>
   ) {
     this.apexClassName = apexClassName
-    this.apexTestClassName = apexTestClassName
+    this.apexTestClassNames = apexTestClassNames || []
     this.dryRun = dryRun ?? false
     this.includeMutators = includeMutators
     this.excludeMutators = excludeMutators
@@ -70,6 +70,11 @@ export class MutationTestingService {
 
   public async process(): Promise<ApexMutationTestResult> {
     const { apexClassRepository, apexTestRunner } = this.createAdapters()
+    if (!this.apexTestClassNames || this.apexTestClassNames.length === 0) {
+      throw new Error('At least one apexTestClassName must be provided')
+    }
+    const resolvedTestClassNames = Array.from(new Set(this.apexTestClassNames))
+
     const apexClass = await this.fetchApexClass(apexClassRepository)
     const typeAnalysis = await this.discoverTypes(
       apexClass,
@@ -80,10 +85,15 @@ export class MutationTestingService {
       apexClass,
       apexClassRepository
     )
-    await this.verifyTestClassCompilation(apexClassRepository)
+    await this.verifyTestClassCompilation(
+      resolvedTestClassNames,
+      apexClassRepository
+    )
 
-    const { testMethodsPerLine, testTime } =
-      await this.runBaselineTests(apexTestRunner)
+    const { testMethodsPerLine, testTime } = await this.runBaselineTests(
+      resolvedTestClassNames,
+      apexTestRunner
+    )
     const coveredLines = this.extractCoveredLines(testMethodsPerLine)
     const { mutations, mutantGenerator, tokenStream } = this.generateMutations(
       apexClass,
@@ -98,7 +108,11 @@ export class MutationTestingService {
         mutations.length,
         mutations.length
       )
-      return this.buildDryRunResult(apexClass, mutations)
+      return this.buildDryRunResult(
+        apexClass,
+        mutations,
+        resolvedTestClassNames
+      )
     }
 
     const groups = await this.planGroups(mutations, testMethodsPerLine)
@@ -117,7 +131,8 @@ export class MutationTestingService {
       tokenStream,
       testMethodsPerLine,
       apexTestRunner,
-      apexClassRepository
+      apexClassRepository,
+      resolvedTestClassNames
     )
     await this.rollback(apexClass, apexClassRepository)
     return result
@@ -318,45 +333,52 @@ export class MutationTestingService {
   }
 
   private async verifyTestClassCompilation(
+    testClassNames: string[],
     apexClassRepository: ApexClassRepository
   ): Promise<void> {
-    this.spinner.start(
-      `Verifying "${this.apexTestClassName}" apex test class compilation`,
-      undefined,
-      { stdout: true }
-    )
-    try {
-      const apexTestClass = (await apexClassRepository.read(
-        this.apexTestClassName
-      )) as unknown as ApexClass
-      await apexClassRepository.update(apexTestClass)
-      this.spinner.stop('Done')
-    } catch (error: unknown) {
-      this.spinner.stop()
-      const errorMessage =
-        error instanceof Error ? error.message : String(error)
-      throw new Error(
-        this.messages.getMessage('error.compilabilityCheckFailed', [
-          this.apexTestClassName,
-          errorMessage,
-        ])
+    for (let i = 0; i < testClassNames.length; i++) {
+      const testClassName = testClassNames[i]
+      this.spinner.start(
+        `Verifying ${testClassName} apex test class compilation, ${i + 1}/${testClassNames.length}`,
+        undefined,
+        { stdout: true }
       )
+      try {
+        const apexTestClass = (await apexClassRepository.read(
+          testClassName
+        )) as unknown as ApexClass
+        await apexClassRepository.update(apexTestClass)
+        this.spinner.stop('Done')
+      } catch (error: unknown) {
+        this.spinner.stop()
+        const errorMessage =
+          error instanceof Error ? error.message : String(error)
+        throw new Error(
+          this.messages.getMessage('error.compilabilityCheckFailed', [
+            testClassName,
+            errorMessage,
+          ])
+        )
+      }
     }
   }
 
-  private async runBaselineTests(apexTestRunner: ApexTestRunner): Promise<{
+  private async runBaselineTests(
+    testClassNames: string[],
+    apexTestRunner: ApexTestRunner
+  ): Promise<{
     testMethodsPerLine: Map<number, Set<string>>
     testTime: number
   }> {
     this.spinner.start(
-      `Executing "${this.apexTestClassName}" tests to get coverage`,
-      undefined,
+      `Executing tests to get coverage`,
+      testClassNames.join(', '),
       { stdout: true }
     )
 
     const { result: baselineResult, durationMs: testTime } =
       await timeExecution(() =>
-        apexTestRunner.getTestMethodsPerLines(this.apexTestClassName)
+        apexTestRunner.getTestMethodsPerLines(testClassNames)
       )
     const { outcome, testsRan, failing, testMethodsPerLine } = baselineResult
 
@@ -373,9 +395,9 @@ export class MutationTestingService {
       this.spinner.stop()
       throw new Error(
         `No tests were executed! Check that:\n` +
-          `- Test class '${this.apexTestClassName}' exists\n` +
+          `- Test classes exist\n` +
           `- Test methods have @IsTest annotation\n` +
-          `- Test class is properly deployed`
+          `- Test classes are properly deployed`
       )
     }
 
@@ -390,10 +412,7 @@ export class MutationTestingService {
     const coveredLines = new Set(testMethodsPerLine.keys())
     if (coveredLines.size === 0) {
       throw new Error(
-        this.messages.getMessage('error.noCoverage', [
-          this.apexClassName,
-          this.apexTestClassName,
-        ])
+        this.messages.getMessage('error.noCoverage', [this.apexClassName])
       )
     }
     return coveredLines
@@ -474,12 +493,13 @@ export class MutationTestingService {
 
   private buildDryRunResult(
     apexClass: ApexClass,
-    mutations: ApexMutation[]
+    mutations: ApexMutation[],
+    testClassNames: string[]
   ): ApexMutationTestResult {
     return {
       sourceFile: this.apexClassName,
       sourceFileContent: apexClass.Body,
-      testFile: this.apexTestClassName,
+      testFile: testClassNames.join(','),
       mutants: mutations.map(mutation => ({
         id: `${this.apexClassName}-${mutation.target.startToken.line}-${mutation.target.startToken.charPositionInLine}-${mutation.target.startToken.tokenIndex}-${Date.now()}`,
         mutatorName: mutation.mutationName,
@@ -499,7 +519,8 @@ export class MutationTestingService {
     tokenStream: CommonTokenStream,
     testMethodsPerLine: Map<number, Set<string>>,
     apexTestRunner: ApexTestRunner,
-    apexClassRepository: ApexClassRepository
+    apexClassRepository: ApexClassRepository,
+    testClassNames: string[]
   ): Promise<ApexMutationTestResult> {
     this.progress.start(
       mutations.length,
@@ -513,7 +534,6 @@ export class MutationTestingService {
     const executor = new GroupExecutor(
       apexClass,
       this.apexClassName,
-      this.apexTestClassName,
       this.apexClassContent,
       tokenStream,
       testMethodsPerLine,
@@ -549,7 +569,7 @@ export class MutationTestingService {
     return {
       sourceFile: this.apexClassName,
       sourceFileContent: apexClass.Body,
-      testFile: this.apexTestClassName,
+      testFile: testClassNames.join(','),
       mutants: orderedResults.filter(
         (r): r is ApexMutationTestResult['mutants'][number] => r !== null
       ),

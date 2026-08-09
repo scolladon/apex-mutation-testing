@@ -58,7 +58,6 @@ export class GroupExecutor {
   constructor(
     private readonly apexClass: ApexClass,
     private readonly apexClassName: string,
-    private readonly apexTestClassName: string,
     private readonly apexClassContent: string,
     private readonly tokenStream: CommonTokenStream,
     private readonly testMethodsPerLine: Map<number, Set<string>>,
@@ -144,10 +143,7 @@ export class GroupExecutor {
         Id: this.apexClass.Id as string,
         Body: mutated,
       })
-      testResult = await this.apexTestRunner.runTestMethods(
-        this.apexTestClassName,
-        group.testMethods
-      )
+      testResult = await this.apexTestRunner.runTestMethods(group.testMethods)
     } catch (error: unknown) {
       batchError = error
     }
@@ -202,7 +198,10 @@ export class GroupExecutor {
     // attribution); fall back to summary-derived outcome when the test
     // runner did not report per-method data (legacy behaviour for k=1).
     const outcomeByMethod = new Map<string, string>(
-      (testResult!.tests ?? []).map(t => [t.methodName, t.outcome])
+      (testResult!.tests ?? []).map(t => [
+        `${t.apexClass?.name}.${t.methodName}`,
+        t.outcome,
+      ])
     )
     const summaryFallback =
       testResult!.summary.outcome === 'Passed' ? 'Pass' : 'Fail'
@@ -232,7 +231,9 @@ export class GroupExecutor {
     testResult: TestResult,
     expectedMethods: Set<string>
   ): boolean {
-    const reported = new Set(testResult.tests.map(t => t.methodName))
+    const reported = new Set(
+      testResult.tests.map(t => `${t.apexClass?.name}.${t.methodName}`)
+    )
     for (const name of expectedMethods) {
       if (!reported.has(name)) return true
     }

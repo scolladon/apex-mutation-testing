@@ -179,7 +179,7 @@ describe('apex mutation test run NUT', () => {
       expect(validatorInstance.validate).toHaveBeenCalledWith(
         expect.objectContaining({
           apexClassName: 'MyClass',
-          apexTestClassName: 'MyClassTest',
+          apexTestClassNames: ['MyClassTest'],
         })
       )
     })
@@ -191,7 +191,7 @@ describe('apex mutation test run NUT', () => {
         mockConnection,
         expect.objectContaining({
           apexClassName: 'MyClass',
-          apexTestClassName: 'MyClassTest',
+          apexTestClassNames: ['MyClassTest'],
           reportDir: 'mutations',
         }),
         expect.anything()
@@ -210,7 +210,7 @@ describe('apex mutation test run NUT', () => {
       expect(mockConfigReaderResolve).toHaveBeenCalledWith(
         expect.objectContaining({
           apexClassName: 'MyClass',
-          apexTestClassName: 'MyClassTest',
+          apexTestClassNames: ['MyClassTest'],
         })
       )
     })
@@ -348,7 +348,7 @@ describe('apex mutation test run NUT', () => {
           mockConnection,
           expect.objectContaining({
             apexClassName: 'MyClass',
-            apexTestClassName: 'MyClassTest',
+            apexTestClassNames: ['MyClassTest'],
             dryRun: true,
           }),
           expect.anything()
