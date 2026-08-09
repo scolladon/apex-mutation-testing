@@ -1,6 +1,7 @@
 import { Connection } from '@salesforce/core'
 import {
   ApexClassRepository,
+  DeploymentFailedError,
   PollTimeoutError,
 } from '../../../src/adapter/apexClassRepository.js'
 
@@ -297,6 +298,18 @@ describe('ApexClassRepository', () => {
         })
         expect(createMock).toHaveBeenCalledTimes(3)
         expect(retrieveMock).toHaveBeenCalledWith('request123')
+        // The container/member/request sequence must hit the right sObject
+        // type at each step — the shared createMock alone cannot tell them
+        // apart, only the recorded sobject() argument can.
+        expect(sobjectMock).toHaveBeenNthCalledWith(1, 'MetadataContainer')
+        expect(sobjectMock).toHaveBeenNthCalledWith(2, 'ApexClassMember')
+        expect(sobjectMock).toHaveBeenNthCalledWith(3, 'ContainerAsyncRequest')
+        // The member payload must link the container, the class and its body.
+        expect(createMock).toHaveBeenNthCalledWith(2, {
+          MetadataContainerId: 'container123',
+          ContentEntityId: '123',
+          Body: 'public class TestClass {}',
+        })
         // IsCheckOnly must stay false — true would validate-only and never
         // actually deploy the mutated body.
         expect(createMock).toHaveBeenNthCalledWith(3, {
@@ -358,6 +371,91 @@ describe('ApexClassRepository', () => {
         // Act & Assert
         await expect(sut.update(mockApexClass)).rejects.toThrow(
           'Deployment failed:\n[TestClass.cls:1:10] Missing semicolon'
+        )
+      })
+
+      it('then throws a DeploymentFailedError whose message still starts with "Deployment failed:"', async () => {
+        // Arrange
+        const mockApexClass = {
+          Id: '123',
+          Body: 'public class TestClass {}',
+        }
+
+        createMock
+          .mockResolvedValueOnce({ id: 'container123' })
+          .mockResolvedValueOnce({ id: 'member123' })
+          .mockResolvedValueOnce({ id: 'request123' })
+
+        retrieveMock.mockResolvedValue({
+          State: 'Failed',
+          ErrorMsg: 'Compilation error',
+          DeployDetails: {
+            allComponentMessages: [
+              {
+                fileName: 'TestClass.cls',
+                lineNumber: 1,
+                columnNumber: 10,
+                problem: 'Missing semicolon',
+              },
+            ],
+          },
+        })
+
+        // Act
+        let thrown: unknown
+        try {
+          await sut.update(mockApexClass)
+        } catch (error) {
+          thrown = error
+        }
+
+        // Assert
+        expect(thrown).toBeInstanceOf(DeploymentFailedError)
+        expect((thrown as Error).message).toMatch(/^Deployment failed:/)
+        // oclif prints an uncaught error's `name`, so it is externally
+        // observable — not just an internal implementation detail.
+        expect((thrown as Error).name).toBe('DeploymentFailedError')
+      })
+    })
+
+    describe('given the deployment fails with multiple component messages', () => {
+      it('then should join them with a newline separator', async () => {
+        // Arrange — a single message cannot distinguish a newline separator
+        // from an empty one; two messages can.
+        const mockApexClass = {
+          Id: '123',
+          Body: 'public class TestClass {}',
+        }
+
+        createMock
+          .mockResolvedValueOnce({ id: 'container123' })
+          .mockResolvedValueOnce({ id: 'member123' })
+          .mockResolvedValueOnce({ id: 'request123' })
+
+        retrieveMock.mockResolvedValue({
+          State: 'Failed',
+          ErrorMsg: 'Compilation error',
+          DeployDetails: {
+            allComponentMessages: [
+              {
+                fileName: 'TestClass.cls',
+                lineNumber: 1,
+                columnNumber: 10,
+                problem: 'Missing semicolon',
+              },
+              {
+                fileName: 'TestClass.cls',
+                lineNumber: 5,
+                columnNumber: 3,
+                problem: 'Unexpected token',
+              },
+            ],
+          },
+        })
+
+        // Act & Assert
+        await expect(sut.update(mockApexClass)).rejects.toThrow(
+          'Deployment failed:\n[TestClass.cls:1:10] Missing semicolon\n[TestClass.cls:5:3] Unexpected token'
         )
       })
     })

@@ -1,12 +1,15 @@
-import { TestResult } from '@salesforce/apex-node'
 import { Messages } from '@salesforce/core'
 import { Progress } from '@salesforce/sf-plugins-core'
 import type { CommonTokenStream } from 'apex-parser'
-import { ApexClassRepository } from '../adapter/apexClassRepository.js'
+import {
+  ApexClassRepository,
+  DeploymentFailedError,
+} from '../adapter/apexClassRepository.js'
 import { ApexTestRunner } from '../adapter/apexTestRunner.js'
 import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
+import type { ApexTestRunResult } from '../type/ApexTestRunResult.js'
 import { qualifyTestMethod, type TestMethodId } from '../type/TestMethodId.js'
 import { MutantGenerator } from './mutantGenerator.js'
 import { MutationGroup } from './mutationGrouper.js'
@@ -25,29 +28,32 @@ const PASS_OUTCOME = 'Pass'
 const NON_PASS_OUTCOME = 'Fail'
 
 // Classify a deploy/test-run error into a per-mutant outcome plus a progress
-// message. The three branches match Salesforce-side failure modes: a compile
-// error from the Tooling API deploy, a governor-limit kill (which is a real
-// kill, not a runtime error), and any other thrown error.
+// message. DeploymentFailedError — a compile error from the Tooling API
+// deploy — is matched by type rather than message text, because Salesforce
+// localises *platform API* error text to the org user's language: a message
+// match observed on an English-locale org would silently stop matching on
+// any other. Apex runtime exception text is not at the same risk — a
+// live-org probe found a System.LimitException coming back in English from
+// a French-locale org, in the same session as a platform API error that came
+// back in French, so the two are localised independently. A governor-limit
+// exception never reaches this function at all: the org reports it as an
+// ordinary failing test row (HTTP 200, no throw), which attributeOutcomes
+// already scores as Killed through the row's non-Pass outcome. Any other
+// thrown error is reported as a RuntimeError.
 const classifyError = (
   error: unknown,
   mutation: ApexMutation
 ): {
-  status: 'CompileError' | 'Killed' | 'RuntimeError'
+  status: 'CompileError' | 'RuntimeError'
   statusReason?: string
   progressMessage: string
 } => {
   const message = error instanceof Error ? error.message : String(error)
-  if (message.startsWith('Deployment failed:')) {
+  if (error instanceof DeploymentFailedError) {
     return {
       status: 'CompileError',
       statusReason: message,
       progressMessage: `Mutation result: compile error at line ${mutation.target.startToken.line}`,
-    }
-  }
-  if (message.includes('LIMIT_USAGE_FOR_NS')) {
-    return {
-      status: 'Killed',
-      progressMessage: `Mutation result: mutant killed (${message})`,
     }
   }
   return {
@@ -145,7 +151,7 @@ export class GroupExecutor {
       group.mutations,
       this.tokenStream
     )
-    let testResult: TestResult | undefined
+    let testResult: ApexTestRunResult | undefined
     let batchError: unknown
     try {
       await this.apexClassRepository.update({
@@ -230,16 +236,16 @@ export class GroupExecutor {
   // did not report per-method data (legacy behaviour for k=1).
   private attributeOutcomes(
     group: MutationGroup,
-    testResult: TestResult
+    testResult: ApexTestRunResult
   ): ApexMutationTestResult['mutants'] {
     const outcomeByMethod = new Map<TestMethodId, string>(
       (testResult.tests ?? []).map(t => [
-        qualifyTestMethod(t.apexClass.fullName, t.methodName),
+        qualifyTestMethod(t.className, t.methodName),
         t.outcome,
       ])
     )
     const summaryFallback =
-      testResult.summary.outcome === 'Passed' ? PASS_OUTCOME : NON_PASS_OUTCOME
+      testResult.outcome === 'Passed' ? PASS_OUTCOME : NON_PASS_OUTCOME
     return group.mutations.map(mutation =>
       this.buildAttributedResult(mutation, outcomeByMethod, summaryFallback)
     )
@@ -285,13 +291,11 @@ export class GroupExecutor {
   }
 
   private hasCoverageGap(
-    testResult: TestResult,
+    testResult: ApexTestRunResult,
     expectedMethods: Set<TestMethodId>
   ): boolean {
     const reported = new Set(
-      testResult.tests.map(t =>
-        qualifyTestMethod(t.apexClass.fullName, t.methodName)
-      )
+      testResult.tests.map(t => qualifyTestMethod(t.className, t.methodName))
     )
     for (const name of expectedMethods) {
       if (!reported.has(name)) return true

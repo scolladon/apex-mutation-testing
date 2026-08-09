@@ -51,6 +51,16 @@ export class PollTimeoutError extends Error {
   }
 }
 
+// Distinguishes a plugin-authored deploy failure from an org-thrown error
+// structurally, so callers never have to match on this message's text (which
+// is never localised, but is not a reliable discriminator either).
+export class DeploymentFailedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'DeploymentFailedError'
+  }
+}
+
 export class ApexClassRepository {
   constructor(
     protected readonly connection: Connection,
@@ -201,7 +211,7 @@ export class ApexClassRepository {
             .join('\n')
         : result['ErrorMsg'] || 'Unknown error'
 
-      throw new Error(`Deployment failed:\n${formattedErrors}`)
+      throw new DeploymentFailedError(`Deployment failed:\n${formattedErrors}`)
     }
 
     return result

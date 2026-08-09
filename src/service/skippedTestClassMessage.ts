@@ -45,7 +45,7 @@ const isControlCharacter = (character: string): boolean => {
 // newline-joined sentence onto multiple lines or reorder it visually) to a
 // single space. Class names need no folding: they are pinned to the
 // identifier grammar before any org call.
-const sanitizeForDisplay = (value: string): string =>
+export const sanitizeForDisplay = (value: string): string =>
   Array.from(value)
     .reduce((folded, character) => {
       if (!isControlCharacter(character)) {

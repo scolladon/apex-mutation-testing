@@ -142,7 +142,22 @@ A perimeter test class that can't be used doesn't abort the run: it's named in a
 
 Each warning names the class, the reason, and — when the class was contributed by `--test-suite` rather than typed directly via `--test-class` — the suite(s) it came from.
 
+<!-- cspell:ignore MyClasTest -- a deliberately misspelled class name; it is the example -->
 This means a mistyped `--test-class` or `--test-suite` member no longer fails the command by itself: `-t NotATestClass`, or a typo like `-t MyClasTest`, now warns and continues instead of aborting. The run fails only once the reduction leaves no usable test class at all, and that failure restates every class that was skipped and why — so a perimeter that's entirely mistyped still surfaces as a clear error rather than a confusing "no coverage" message.
+
+### Test Setup Methods
+
+A `@TestSetup` method can't be re-run on its own — Salesforce only executes it as part of a full test class run — so the plugin never targets it as an individually re-runnable test. It's excluded from the baseline's test-method inventory and never receives its own coverage or mutant attribution; its side effects still run normally as part of every other test method's setup.
+
+### Synchronous Test Execution
+
+Asynchronous test runs draw on the org's `DailyAsyncApexTests` limit (500 per rolling 24h). A mutation testing campaign is inherently test-run-heavy — one run per mutation group, plus the baseline — so a perimeter scoped to a single Apex class can exhaust that limit within a single run. There is no synchronous counterpart limit, and while the async limit is exhausted, `sf apex run test` fails **org-wide**, for every class, with `UNKNOWN_EXCEPTION` — a failure mode that reads as a plugin bug, not a quota.
+
+To avoid that, a run whose payload names exactly one Apex class — including the baseline, whenever the mutation perimeter resolves to a single class — goes through the synchronous Tooling resource instead of the asynchronous one, always. A perimeter naming two or more classes stays asynchronous. Class count is the whole predicate: there's no method-count cap and no duration estimate, and no flag to turn this on or off.
+
+On a class covered by a single test class, this means the **entire** run — baseline and every mutant — costs **zero** `DailyAsyncApexTests` units. Measured against a real org: 12 synchronous runs consumed zero async units, while 3 asynchronous runs consumed exactly 3.
+
+Synchronous execution requires the **View Setup** user permission, which the asynchronous path never needed. If your org user permanently lacks it, the plugin pays exactly one wasted synchronous round-trip for the whole campaign, then skips the synchronous attempt for every later single-class run — the baseline and each mutant — falling back straight to the asynchronous transport. A transient failure (a lock contention, a momentary 503) is retried on the synchronous transport on the next call instead, since it can recover on its own. Either way, the plugin reports the reason only once, the first time it happens, rather than on every fallback.
 
 ### Configuration
 
@@ -361,6 +376,8 @@ Each mutant is assigned a status after evaluation:
 
 A **Killed** mutant means your tests detected the mutation and failed as a result. This is the ideal outcome. It proves your tests are actively verifying the behavior that was changed. For example, if `subTotal + tax` is mutated to `subTotal - tax` and your test fails, the mutant is killed.
 
+A governor-limit exception (e.g. too many SOQL queries) is also reported as Killed. The org reports it as an ordinary failing test row rather than throwing, so it is scored through the same attribution as any other failing test — no special-casing needed.
+
 **What to look for:** A high number of killed mutants indicates strong, assertion-rich tests that validate actual logic and branch coverage rather than just executing code paths.
 
 #### Survived
@@ -381,7 +398,7 @@ A **CompileError** mutant means the mutated code failed to compile during deploy
 
 #### RuntimeError
 
-A **RuntimeError** means an unexpected error occurred during the mutation evaluation. These errors are the result of networking issues, authorization issues, or other issues not directly related to your code.
+A **RuntimeError** means an unexpected error occurred during the mutation evaluation. These errors are the result of networking issues, authorization issues, or other issues not directly related to your code. Any thrown error the plugin can't specifically recognize as a compile failure falls into this status; it still counts as a kill in the score (see [Mutation Score](#mutation-score) below), only the reported label and reason differ from Killed.
 
 **What to look for:** A high number of runtime errors may indicate connectivity or org stability issues. If you see many runtime errors, consider re-running the mutation test when the environment is more stable to get more accurate results.
 

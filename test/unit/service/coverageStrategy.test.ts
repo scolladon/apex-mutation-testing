@@ -1,8 +1,8 @@
-import type { TestResult } from '@salesforce/apex-node'
 import {
   AggregateCoverageStrategy,
   PerTestCoverageStrategy,
 } from '../../../src/service/coverageStrategy.js'
+import type { ApexTestRunResult } from '../../../src/type/ApexTestRunResult.js'
 
 const declaringClass = {
   name: 'ApexClassTest',
@@ -25,26 +25,26 @@ describe('PerTestCoverageStrategy', () => {
           tests: [
             {
               methodName: 'testMethodA',
-              apexClass: declaringClass,
-              perClassCoverage: [
+              className: declaringClass.fullName,
+              coverage: [
                 {
-                  apexClassOrTriggerName: 'ApexClass',
-                  apexTestMethodName: 'testMethodA',
-                  coverage: {
+                  className: 'ApexClass',
+                  testMethodName: 'testMethodA',
+                  detail: {
                     coveredLines: [1, 2, 3],
                   },
                 },
                 {
-                  apexClassOrTriggerName: 'ApexClass',
-                  apexTestMethodName: 'testMethodB',
-                  coverage: {
+                  className: 'ApexClass',
+                  testMethodName: 'testMethodB',
+                  detail: {
                     coveredLines: [4, 5],
                   },
                 },
               ],
             },
           ],
-        } as unknown as TestResult
+        } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
@@ -65,7 +65,7 @@ describe('PerTestCoverageStrategy', () => {
     describe('given tests is null', () => {
       it('then should return an empty map', () => {
         // Arrange
-        const mockTestResult = { tests: null } as unknown as TestResult
+        const mockTestResult = { tests: null } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
@@ -82,11 +82,11 @@ describe('PerTestCoverageStrategy', () => {
           tests: [
             {
               methodName: 'testMethod',
-              apexClass: declaringClass,
-              perClassCoverage: null,
+              className: declaringClass.fullName,
+              coverage: null,
             },
           ],
-        } as unknown as TestResult
+        } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
@@ -103,17 +103,17 @@ describe('PerTestCoverageStrategy', () => {
           tests: [
             {
               methodName: 'testMethod',
-              apexClass: declaringClass,
-              perClassCoverage: [
+              className: declaringClass.fullName,
+              coverage: [
                 {
-                  apexClassOrTriggerName: 'SomeOtherClass',
-                  apexTestMethodName: 'testMethod',
-                  coverage: { coveredLines: [1, 2] },
+                  className: 'SomeOtherClass',
+                  testMethodName: 'testMethod',
+                  detail: { coveredLines: [1, 2] },
                 },
               ],
             },
           ],
-        } as unknown as TestResult
+        } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
@@ -130,17 +130,17 @@ describe('PerTestCoverageStrategy', () => {
           tests: [
             {
               methodName: 'testMethod',
-              apexClass: declaringClass,
-              perClassCoverage: [
+              className: declaringClass.fullName,
+              coverage: [
                 {
-                  apexClassOrTriggerName: 'ApexClass',
-                  apexTestMethodName: 'testMethod',
-                  coverage: null,
+                  className: 'ApexClass',
+                  testMethodName: 'testMethod',
+                  detail: null,
                 },
               ],
             },
           ],
-        } as unknown as TestResult
+        } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
@@ -157,17 +157,17 @@ describe('PerTestCoverageStrategy', () => {
           tests: [
             {
               methodName: 'testMethod',
-              apexClass: declaringClass,
-              perClassCoverage: [
+              className: declaringClass.fullName,
+              coverage: [
                 {
-                  apexClassOrTriggerName: 'ApexClass',
-                  apexTestMethodName: 'testMethod',
-                  coverage: { coveredLines: null },
+                  className: 'ApexClass',
+                  testMethodName: 'testMethod',
+                  detail: { coveredLines: null },
                 },
               ],
             },
           ],
-        } as unknown as TestResult
+        } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
@@ -184,28 +184,28 @@ describe('PerTestCoverageStrategy', () => {
           tests: [
             {
               methodName: 'testMethodA',
-              apexClass: declaringClass,
-              perClassCoverage: [
+              className: declaringClass.fullName,
+              coverage: [
                 {
-                  apexClassOrTriggerName: 'ApexClass',
-                  apexTestMethodName: 'testMethodA',
-                  coverage: { coveredLines: [1, 2] },
+                  className: 'ApexClass',
+                  testMethodName: 'testMethodA',
+                  detail: { coveredLines: [1, 2] },
                 },
               ],
             },
             {
               methodName: 'testMethodB',
-              apexClass: declaringClass,
-              perClassCoverage: [
+              className: declaringClass.fullName,
+              coverage: [
                 {
-                  apexClassOrTriggerName: 'ApexClass',
-                  apexTestMethodName: 'testMethodB',
-                  coverage: { coveredLines: [1, 3] },
+                  className: 'ApexClass',
+                  testMethodName: 'testMethodB',
+                  detail: { coveredLines: [1, 3] },
                 },
               ],
             },
           ],
-        } as unknown as TestResult
+        } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
@@ -220,7 +220,7 @@ describe('PerTestCoverageStrategy', () => {
     describe('given tests is empty', () => {
       it('then should return an empty map', () => {
         // Arrange
-        const mockTestResult = { tests: [] } as unknown as TestResult
+        const mockTestResult = { tests: [] } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
@@ -238,17 +238,17 @@ describe('PerTestCoverageStrategy', () => {
           tests: [
             {
               methodName: 't',
-              apexClass: declaringClass,
-              perClassCoverage: [
+              className: declaringClass.fullName,
+              coverage: [
                 {
-                  apexClassOrTriggerName: 'AccountService',
-                  apexTestMethodName: 't',
-                  coverage: { coveredLines: [1] },
+                  className: 'AccountService',
+                  testMethodName: 't',
+                  detail: { coveredLines: [1] },
                 },
               ],
             },
           ],
-        } as unknown as TestResult
+        } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
@@ -265,36 +265,28 @@ describe('PerTestCoverageStrategy', () => {
           tests: [
             {
               methodName: 'testA',
-              apexClass: {
-                name: 'FooTest',
-                namespacePrefix: '',
-                fullName: 'FooTest',
-              },
-              perClassCoverage: [
+              className: 'FooTest',
+              coverage: [
                 {
-                  apexClassOrTriggerName: 'ApexClass',
-                  apexTestMethodName: 'testA',
-                  coverage: { coveredLines: [1] },
+                  className: 'ApexClass',
+                  testMethodName: 'testA',
+                  detail: { coveredLines: [1] },
                 },
               ],
             },
             {
               methodName: 'testB',
-              apexClass: {
-                name: 'BarTest',
-                namespacePrefix: '',
-                fullName: 'BarTest',
-              },
-              perClassCoverage: [
+              className: 'BarTest',
+              coverage: [
                 {
-                  apexClassOrTriggerName: 'ApexClass',
-                  apexTestMethodName: 'testB',
-                  coverage: { coveredLines: [1] },
+                  className: 'ApexClass',
+                  testMethodName: 'testB',
+                  detail: { coveredLines: [1] },
                 },
               ],
             },
           ],
-        } as unknown as TestResult
+        } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
@@ -313,36 +305,28 @@ describe('PerTestCoverageStrategy', () => {
           tests: [
             {
               methodName: 'testA',
-              apexClass: {
-                name: 'FooTest',
-                namespacePrefix: '',
-                fullName: 'FooTest',
-              },
-              perClassCoverage: [
+              className: 'FooTest',
+              coverage: [
                 {
-                  apexClassOrTriggerName: 'ApexClass',
-                  apexTestMethodName: 'testA',
-                  coverage: { coveredLines: [1] },
+                  className: 'ApexClass',
+                  testMethodName: 'testA',
+                  detail: { coveredLines: [1] },
                 },
               ],
             },
             {
               methodName: 'testA',
-              apexClass: {
-                name: 'BarTest',
-                namespacePrefix: '',
-                fullName: 'BarTest',
-              },
-              perClassCoverage: [
+              className: 'BarTest',
+              coverage: [
                 {
-                  apexClassOrTriggerName: 'ApexClass',
-                  apexTestMethodName: 'testA',
-                  coverage: { coveredLines: [2] },
+                  className: 'ApexClass',
+                  testMethodName: 'testA',
+                  detail: { coveredLines: [2] },
                 },
               ],
             },
           ],
-        } as unknown as TestResult
+        } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
@@ -364,21 +348,17 @@ describe('PerTestCoverageStrategy', () => {
           tests: [
             {
               methodName: 'testA',
-              apexClass: {
-                name: 'FooTest',
-                namespacePrefix: 'ns',
-                fullName: 'ns.FooTest',
-              },
-              perClassCoverage: [
+              className: 'ns.FooTest',
+              coverage: [
                 {
-                  apexClassOrTriggerName: 'ApexClass',
-                  apexTestMethodName: 'testA',
-                  coverage: { coveredLines: [1] },
+                  className: 'ApexClass',
+                  testMethodName: 'testA',
+                  detail: { coveredLines: [1] },
                 },
               ],
             },
           ],
-        } as unknown as TestResult
+        } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
@@ -410,11 +390,11 @@ describe('AggregateCoverageStrategy', () => {
         // Arrange
         const mockTestResult = {
           tests: [
-            { methodName: 'testMethodA', apexClass: declaringClass },
-            { methodName: 'testMethodB', apexClass: declaringClass },
+            { methodName: 'testMethodA', className: declaringClass.fullName },
+            { methodName: 'testMethodB', className: declaringClass.fullName },
           ],
-          codecoverage: [{ name: 'ApexClass', coveredLines: [10, 20] }],
-        } as unknown as TestResult
+          classCoverage: [{ className: 'ApexClass', coveredLines: [10, 20] }],
+        } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
@@ -445,9 +425,13 @@ describe('AggregateCoverageStrategy', () => {
       it('then should return an empty map', () => {
         // Arrange
         const mockTestResult = {
-          tests: [{ methodName: 'testMethodA', apexClass: declaringClass }],
-          codecoverage: [{ name: 'SomeOtherClass', coveredLines: [7, 8] }],
-        } as unknown as TestResult
+          tests: [
+            { methodName: 'testMethodA', className: declaringClass.fullName },
+          ],
+          classCoverage: [
+            { className: 'SomeOtherClass', coveredLines: [7, 8] },
+          ],
+        } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
@@ -461,12 +445,14 @@ describe('AggregateCoverageStrategy', () => {
       it('then should use only the target class covered lines', () => {
         // Arrange
         const mockTestResult = {
-          tests: [{ methodName: 'testMethodA', apexClass: declaringClass }],
-          codecoverage: [
-            { name: 'SomeOtherClass', coveredLines: [7, 8] },
-            { name: 'ApexClass', coveredLines: [10] },
+          tests: [
+            { methodName: 'testMethodA', className: declaringClass.fullName },
           ],
-        } as unknown as TestResult
+          classCoverage: [
+            { className: 'SomeOtherClass', coveredLines: [7, 8] },
+            { className: 'ApexClass', coveredLines: [10] },
+          ],
+        } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
@@ -483,8 +469,8 @@ describe('AggregateCoverageStrategy', () => {
         // Arrange
         const mockTestResult = {
           tests: null,
-          codecoverage: [{ name: 'ApexClass', coveredLines: [10] }],
-        } as unknown as TestResult
+          classCoverage: [{ className: 'ApexClass', coveredLines: [10] }],
+        } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
@@ -498,9 +484,11 @@ describe('AggregateCoverageStrategy', () => {
       it('then should return an empty map', () => {
         // Arrange
         const mockTestResult = {
-          tests: [{ methodName: 'testMethodA', apexClass: declaringClass }],
-          codecoverage: [{ name: 'ApexClass', coveredLines: null }],
-        } as unknown as TestResult
+          tests: [
+            { methodName: 'testMethodA', className: declaringClass.fullName },
+          ],
+          classCoverage: [{ className: 'ApexClass', coveredLines: null }],
+        } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
@@ -514,8 +502,10 @@ describe('AggregateCoverageStrategy', () => {
       it('then should return an empty map', () => {
         // Arrange
         const mockTestResult = {
-          tests: [{ methodName: 'testMethodA', apexClass: declaringClass }],
-        } as unknown as TestResult
+          tests: [
+            { methodName: 'testMethodA', className: declaringClass.fullName },
+          ],
+        } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
@@ -530,9 +520,9 @@ describe('AggregateCoverageStrategy', () => {
         // Arrange
         sut = new AggregateCoverageStrategy('accountService')
         const mockTestResult = {
-          tests: [{ methodName: 't', apexClass: declaringClass }],
-          codecoverage: [{ name: 'AccountService', coveredLines: [10] }],
-        } as unknown as TestResult
+          tests: [{ methodName: 't', className: declaringClass.fullName }],
+          classCoverage: [{ className: 'AccountService', coveredLines: [10] }],
+        } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
@@ -549,23 +539,15 @@ describe('AggregateCoverageStrategy', () => {
           tests: [
             {
               methodName: 'testA',
-              apexClass: {
-                name: 'FooTest',
-                namespacePrefix: '',
-                fullName: 'FooTest',
-              },
+              className: 'FooTest',
             },
             {
               methodName: 'testB',
-              apexClass: {
-                name: 'BarTest',
-                namespacePrefix: '',
-                fullName: 'BarTest',
-              },
+              className: 'BarTest',
             },
           ],
-          codecoverage: [{ name: 'ApexClass', coveredLines: [10] }],
-        } as unknown as TestResult
+          classCoverage: [{ className: 'ApexClass', coveredLines: [10] }],
+        } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
