@@ -3555,7 +3555,12 @@ describe('MutationTestingService', () => {
           Id: '123',
           Body: 'mutated code',
         })
-        expect(updateSpy).toHaveBeenNthCalledWith(3, mockApexClass)
+        // The restore redeploys the original body and skips its tests
+        expect(updateSpy).toHaveBeenNthCalledWith(
+          3,
+          mockApexClass,
+          'skip-tests'
+        )
         expect(spinner.start).toHaveBeenCalledWith(
           'Rolling back "TestClass" ApexClass to its original state',
           undefined,
@@ -3598,7 +3603,12 @@ describe('MutationTestingService', () => {
         // Act & Assert
         await expect(sut.process()).rejects.toBe(loopFailure)
         expect(updateSpy).toHaveBeenCalledTimes(3)
-        expect(updateSpy).toHaveBeenNthCalledWith(3, mockApexClass)
+        // The restore redeploys the original body and skips its tests
+        expect(updateSpy).toHaveBeenNthCalledWith(
+          3,
+          mockApexClass,
+          'skip-tests'
+        )
         expect(outputSinkStub).toHaveBeenCalledWith(
           'Warning: could not tear down the progress display. Cause: Error: stdout is gone\n'
         )

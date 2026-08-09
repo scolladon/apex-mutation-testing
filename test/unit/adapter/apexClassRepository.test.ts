@@ -320,6 +320,38 @@ describe('ApexClassRepository', () => {
       })
     })
 
+    describe('given the caller asks to skip the tests', () => {
+      it('then should deploy without running them', async () => {
+        // Arrange — restoring the original body needs no coverage, and on a
+        // quota-exhausted org a test-running deploy is the request most likely
+        // to be refused.
+        const mockApexClass = {
+          Id: '123',
+          Body: 'public class TestClass {}',
+        }
+
+        createMock
+          .mockResolvedValueOnce({ id: 'container123' })
+          .mockResolvedValueOnce({ id: 'member123' })
+          .mockResolvedValueOnce({ id: 'request123' })
+
+        retrieveMock.mockResolvedValue({
+          State: 'Completed',
+          Id: 'request123',
+        })
+
+        // Act
+        await sut.update(mockApexClass, 'skip-tests')
+
+        // Assert
+        expect(createMock).toHaveBeenNthCalledWith(3, {
+          IsCheckOnly: false,
+          MetadataContainerId: 'container123',
+          IsRunTests: false,
+        })
+      })
+    })
+
     describe('given the ContainerAsyncRequest creation fails', () => {
       it('then should throw an error about missing ID', async () => {
         // Arrange

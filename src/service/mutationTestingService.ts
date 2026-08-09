@@ -1,7 +1,10 @@
 import { Connection, Messages } from '@salesforce/core'
 import { Progress, Spinner } from '@salesforce/sf-plugins-core'
 import type { CommonTokenStream } from 'apex-parser'
-import { ApexClassRepository } from '../adapter/apexClassRepository.js'
+import {
+  ApexClassRepository,
+  SKIP_TESTS,
+} from '../adapter/apexClassRepository.js'
 import { ApexSettingsRepository } from '../adapter/apexSettingsRepository.js'
 import {
   ApexTestRunner,
@@ -887,7 +890,7 @@ export class MutationTestingService {
       { stdout: true }
     )
     try {
-      await apexClassRepository.update(apexClass)
+      await apexClassRepository.update(apexClass, SKIP_TESTS)
       this.spinner.stop('Done')
     } catch (error: unknown) {
       this.spinner.stop(

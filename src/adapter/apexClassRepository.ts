@@ -15,6 +15,12 @@ const TERMINAL_STATES = new Set([
   'Aborted',
 ]) as ReadonlySet<string>
 
+// Whether a container deploy asks the org to run tests. Named rather than a
+// bare boolean so the call sites read as intent instead of a flag.
+const RUN_TESTS = 'run-tests'
+export const SKIP_TESTS = 'skip-tests'
+export type DeployTestPolicy = typeof RUN_TESTS | typeof SKIP_TESTS
+
 // SOQL caps statement length, so a large perimeter must be queried in
 // batches.
 const IDENTITY_QUERY_CHUNK_SIZE = 200
@@ -138,17 +144,30 @@ export class ApexClassRepository {
       .execute()) as MetadataComponentDependency[]
   }
 
-  public async update(apexClass: ApexClass) {
-    return this.deployToContainer(apexClass)
+  // Deploys run the class's tests by default, because that is how a mutant
+  // deploy picks up its coverage. Putting the original body back is the
+  // exception: it compiled and was covered before the run started, so
+  // re-running its tests buys nothing — and the restore matters most exactly
+  // when the org has run out of test quota, which is when a test-running
+  // deploy is the request most likely to be refused. Callers restoring a body
+  // pass SKIP_TESTS to make it the cheapest call the plugin makes.
+  public async update(
+    apexClass: ApexClass,
+    testPolicy: DeployTestPolicy = RUN_TESTS
+  ) {
+    return this.deployToContainer(apexClass, testPolicy)
   }
 
   // The container → member → request → poll → cleanup cycle a single class
   // deploy runs to verify compilation and pick up its coverage.
-  private async deployToContainer(apexClass: ApexClass) {
+  private async deployToContainer(
+    apexClass: ApexClass,
+    testPolicy: DeployTestPolicy
+  ) {
     const containerId = await this.createContainer()
     try {
       await this.addMembers(containerId, apexClass)
-      const requestId = await this.createDeployRequest(containerId)
+      const requestId = await this.createDeployRequest(containerId, testPolicy)
       return await this.awaitSuccessfulDeploy(requestId)
     } finally {
       // Fire-and-forget cleanup: awaiting this would add a full Tooling API
@@ -182,13 +201,16 @@ export class ApexClassRepository {
     })
   }
 
-  private async createDeployRequest(containerId: string): Promise<string> {
+  private async createDeployRequest(
+    containerId: string,
+    testPolicy: DeployTestPolicy
+  ): Promise<string> {
     const asyncRequest = await this.connection.tooling
       .sobject('ContainerAsyncRequest')
       .create({
         IsCheckOnly: false,
         MetadataContainerId: containerId,
-        IsRunTests: true,
+        IsRunTests: testPolicy === RUN_TESTS,
       })
 
     if (!asyncRequest.id) {
