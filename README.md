@@ -142,6 +142,7 @@ A perimeter test class that can't be used doesn't abort the run: it's named in a
 
 Each warning names the class, the reason, and — when the class was contributed by `--test-suite` rather than typed directly via `--test-class` — the suite(s) it came from.
 
+<!-- cspell:ignore MyClasTest -- a deliberately misspelled class name; it is the example -->
 This means a mistyped `--test-class` or `--test-suite` member no longer fails the command by itself: `-t NotATestClass`, or a typo like `-t MyClasTest`, now warns and continues instead of aborting. The run fails only once the reduction leaves no usable test class at all, and that failure restates every class that was skipped and why — so a perimeter that's entirely mistyped still surfaces as a clear error rather than a confusing "no coverage" message.
 
 ### Test Setup Methods
