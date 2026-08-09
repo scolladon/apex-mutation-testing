@@ -36,6 +36,12 @@ describe('ApexTestRunner', () => {
     describe('given the test execution is successful', () => {
       it('then should delegate coverage shaping to the injected strategy and return the trimmed result', async () => {
         // Arrange
+        const passRow = {
+          apexClass: { fullName: 'TestClass' },
+          methodName: 'testMethodA',
+          outcome: ApexTestResultOutcome.Pass,
+          message: null,
+        }
         const mockTestResult = {
           summary: {
             outcome: 'Passed',
@@ -43,6 +49,7 @@ describe('ApexTestRunner', () => {
             failing: 0,
             testsRan: 1,
           },
+          tests: [passRow],
         }
         runTestSynchronousMock.mockResolvedValue(mockTestResult)
         const strategyStub = {
@@ -70,7 +77,7 @@ describe('ApexTestRunner', () => {
         })
         expect(strategyStub.getTestMethodsPerLine).toHaveBeenCalledWith({
           ...mockTestResult,
-          tests: [],
+          tests: [passRow],
         })
         expect(runTestSynchronousMock).toHaveBeenCalledWith(
           {
@@ -81,6 +88,126 @@ describe('ApexTestRunner', () => {
           true
         )
         expect(runTestAsynchronousMock).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('given the baseline includes a @TestSetup method', () => {
+      // A setup method cannot be re-run alone, so it must never surface as
+      // an executable test — not a TestMethodId, not covering-test
+      // attribution, not a counted execution.
+      const setupTestClass = { fullName: 'AmtSetupTest' }
+      const firstRealRow = {
+        apexClass: setupTestClass,
+        methodName: 'itDoesSomething',
+        outcome: ApexTestResultOutcome.Pass,
+        message: null,
+      }
+      const secondRealRow = {
+        apexClass: { fullName: 'OtherTest' },
+        methodName: 'itDoesSomethingElse',
+        outcome: ApexTestResultOutcome.Pass,
+        message: null,
+      }
+      const setupEntry = {
+        apexClass: setupTestClass,
+        methodName: 'setUpData',
+        testSetupTime: 12,
+      }
+
+      it('then should exclude a setup method reported through TestResult.setup from coverage and the executed-test count', async () => {
+        // Arrange — two classes in the perimeter stay on the asynchronous
+        // transport, where a modern org already keeps the setup row out of
+        // `tests` and reports it through `setup` instead
+        const mockTestResult = {
+          summary: { outcome: 'Passed', passing: 2, failing: 0, testsRan: 3 },
+          tests: [firstRealRow, secondRealRow],
+          setup: [setupEntry],
+        }
+        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
+        const strategyStub = {
+          fidelity: 'aggregate' as const,
+          getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
+        }
+
+        // Act
+        const result = await sut.getTestMethodsPerLines(
+          ['AmtSetupTest', 'OtherTest'],
+          strategyStub
+        )
+
+        // Assert — testsRan reflects the two re-runnable methods only, and
+        // the strategy is never handed the setup row
+        expect(result.testsRan).toBe(2)
+        expect(strategyStub.getTestMethodsPerLine).toHaveBeenCalledWith({
+          ...mockTestResult,
+          tests: [firstRealRow, secondRealRow],
+        })
+      })
+
+      it('then should exclude a row appearing in both tests and setup, matching identity case-insensitively', async () => {
+        // Arrange — defends against a row surfacing in both places: cross-
+        // referencing TestResult.setup rather than trusting a row's mere
+        // absence from `tests` keeps the exclusion correct regardless of the
+        // org's API version or any SDK quirk that leaves a setup row mixed
+        // into `tests`
+        const duplicatedSetupRow = {
+          apexClass: { fullName: 'amtsetuptest' },
+          methodName: 'SETUPDATA',
+          outcome: ApexTestResultOutcome.Pass,
+          message: null,
+        }
+        const mockTestResult = {
+          summary: { outcome: 'Passed', passing: 2, failing: 0, testsRan: 3 },
+          tests: [duplicatedSetupRow, firstRealRow, secondRealRow],
+          setup: [setupEntry],
+        }
+        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
+        const strategyStub = {
+          fidelity: 'aggregate' as const,
+          getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
+        }
+
+        // Act
+        const result = await sut.getTestMethodsPerLines(
+          ['AmtSetupTest', 'OtherTest'],
+          strategyStub
+        )
+
+        // Assert
+        expect(result.testsRan).toBe(2)
+        expect(strategyStub.getTestMethodsPerLine).toHaveBeenCalledWith({
+          ...mockTestResult,
+          tests: [firstRealRow, secondRealRow],
+        })
+      })
+
+      it('then should derive testsRan from the row count rather than trusting summary.testsRan on the synchronous transport too', async () => {
+        // Arrange — a single-class perimeter stays on the synchronous
+        // transport. summary.testsRan is deliberately stale here, the same
+        // way the asynchronous summary above over-counts by including the
+        // setup row: testsRan must come from the rows actually kept, on
+        // either transport, not from the org-reported summary field.
+        runTestSynchronousMock.mockResolvedValue({
+          summary: { outcome: 'Passed', passing: 2, failing: 0, testsRan: 99 },
+          tests: [firstRealRow, secondRealRow],
+        })
+        const strategyStub = {
+          fidelity: 'per-test' as const,
+          getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
+        }
+
+        // Act
+        const syncResult = await sut.getTestMethodsPerLines(
+          ['AmtSetupTest'],
+          strategyStub
+        )
+
+        // Assert — the same testsRan the asynchronous fixture above reports
+        // for the identical two re-runnable methods, even though that
+        // fixture also carries a third, excluded setup row: neither
+        // transport's count is thrown off by the setup method or by a stale
+        // summary field.
+        expect(syncResult.testsRan).toBe(2)
       })
     })
 

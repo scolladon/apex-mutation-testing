@@ -1,6 +1,7 @@
 import {
   type ApexTestResultData,
   ApexTestResultOutcome,
+  type ApexTestSetupData,
   TestLevel,
   TestResult,
   TestService,
@@ -35,25 +36,54 @@ const recordCompileFailure = (
   })
 }
 
+// Apex identifiers are case-insensitive, matching the class-name folding
+// `recordCompileFailure` already uses for its own dedup key.
+const testMethodIdentity = (className: string, methodName: string): string =>
+  `${className}.${methodName}`.toLowerCase()
+
+// A @TestSetup method cannot be re-run on its own, so it must never surface
+// as an executable test. The synchronous transport never reports one as a
+// row at all; the asynchronous transport reports it through
+// `TestResult.setup` whenever the org's API version supports the
+// distinction. Cross-referencing that array — rather than trusting a row's
+// mere absence from `tests` — keeps the exclusion correct even if a row
+// ever ended up in both places.
+const setupIdentities = (setup: ApexTestSetupData[]): Set<string> =>
+  new Set(
+    setup.map(row => testMethodIdentity(row.apexClass.fullName, row.methodName))
+  )
+
 // One pass, one place: this is the only thing in the codebase that classifies
-// a *baseline* test outcome into compile-fail vs. executed. Per-mutant
+// a *baseline* test outcome into compile-fail vs. executed vs. ignored. Per-mutant
 // attribution reads outcomes on a separate path — GroupExecutor.attributeOutcomes
 // reads each test's `outcome` and falls back to `testResult.summary.outcome`
 // (see src/service/groupExecutor.ts). A CompileFail row never ran a test
 // method, so it is excluded from executedTests rather than counted as a
-// failure.
+// failure. A @TestSetup row is excluded before that classification even
+// runs: it never becomes a TestMethodId, never contributes coverage, and
+// never adds to testsRan.
 const partitionOutcomes = (
-  tests: ApexTestResultData[]
+  tests: ApexTestResultData[],
+  setup: ApexTestSetupData[] = []
 ): {
   compileFailures: BaselineCompileFailure[]
   otherFailureCount: number
   executedTests: ApexTestResultData[]
+  testsRan: number
 } => {
   const compileFailuresByClass = new Map<string, BaselineCompileFailure>()
   const executedTests: ApexTestResultData[] = []
+  const setupIds = setupIdentities(setup)
   let otherFailureCount = 0
+  let testsRan = 0
 
   for (const test of tests) {
+    if (
+      setupIds.has(testMethodIdentity(test.apexClass.fullName, test.methodName))
+    ) {
+      continue
+    }
+    testsRan++
     if (test.outcome === ApexTestResultOutcome.CompileFail) {
       recordCompileFailure(compileFailuresByClass, test)
       continue
@@ -66,6 +96,7 @@ const partitionOutcomes = (
     compileFailures: [...compileFailuresByClass.values()],
     otherFailureCount,
     executedTests,
+    testsRan,
   }
 }
 
@@ -113,9 +144,10 @@ const normalizeSyncCompileFailure = (testResult: TestResult): TestResult => {
     tests,
     summary: {
       ...testResult.summary,
-      testsRan: tests.length,
       // summary.failing has no reader in src/; reset for shape parity with
       // the asynchronous CompileFail fixture only, not for any behaviour.
+      // summary.testsRan is left as-is for the same reason — partitionOutcomes
+      // derives testsRan from the row count directly and never reads it.
       failing: 0,
     },
   }
@@ -156,11 +188,11 @@ export class ApexTestRunner {
       apexTestClassNames.map(className => ({ className })),
       false
     )
-    const { compileFailures, otherFailureCount, executedTests } =
-      partitionOutcomes(testResult.tests ?? [])
+    const { compileFailures, otherFailureCount, executedTests, testsRan } =
+      partitionOutcomes(testResult.tests ?? [], testResult.setup)
     return {
       outcome: testResult.summary.outcome,
-      testsRan: testResult.summary.testsRan,
+      testsRan,
       failing: testResult.summary.failing,
       compileFailures,
       otherFailureCount,
