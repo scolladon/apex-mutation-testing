@@ -2,12 +2,20 @@ import {
   type ApexTestResultData,
   ApexTestResultOutcome,
   type ApexTestSetupData,
+  type CodeCoverageResult,
+  type PerClassCoverage,
   TestLevel,
   TestResult,
   TestService,
 } from '@salesforce/apex-node'
 import { Connection } from '@salesforce/core'
 import type { CoverageStrategy } from '../service/coverageStrategy.js'
+import type {
+  ApexClassCoverage,
+  ApexTestMethodCoverage,
+  ApexTestMethodResult,
+  ApexTestRunResult,
+} from '../type/ApexTestRunResult.js'
 import { type TestMethodId, toTestItems } from '../type/TestMethodId.js'
 
 export interface BaselineCompileFailure {
@@ -22,6 +30,39 @@ export interface BaselineTestResult {
   otherFailureCount: number
   testMethodsPerLine: Map<number, Set<TestMethodId>>
 }
+
+// Maps each transport's own SDK DTO into the domain shape src/service/
+// consumes, so neither transport's coverage/outcome layout leaks past this
+// adapter. Field-for-field translation only — no behavioural decision here.
+const toApexTestMethodCoverage = (
+  coverage: PerClassCoverage
+): ApexTestMethodCoverage => ({
+  className: coverage.apexClassOrTriggerName,
+  testMethodName: coverage.apexTestMethodName,
+  detail: coverage.coverage && { coveredLines: coverage.coverage.coveredLines },
+})
+
+const toApexTestMethodResult = (
+  test: ApexTestResultData
+): ApexTestMethodResult => ({
+  className: test.apexClass.fullName,
+  methodName: test.methodName,
+  outcome: test.outcome,
+  coverage: test.perClassCoverage?.map(toApexTestMethodCoverage),
+})
+
+const toApexClassCoverage = (
+  coverage: CodeCoverageResult
+): ApexClassCoverage => ({
+  className: coverage.name,
+  coveredLines: coverage.coveredLines,
+})
+
+const toApexTestRunResult = (testResult: TestResult): ApexTestRunResult => ({
+  outcome: testResult.summary.outcome,
+  tests: (testResult.tests ?? []).map(toApexTestMethodResult),
+  classCoverage: testResult.codecoverage?.map(toApexClassCoverage),
+})
 
 const recordCompileFailure = (
   compileFailuresByClass: Map<string, BaselineCompileFailure>,
@@ -238,15 +279,17 @@ export class ApexTestRunner {
       testsRan,
       compileFailures,
       otherFailureCount,
-      testMethodsPerLine: coverageStrategy.getTestMethodsPerLine({
-        ...testResult,
-        tests: executedTests,
-      }),
+      testMethodsPerLine: coverageStrategy.getTestMethodsPerLine(
+        toApexTestRunResult({ ...testResult, tests: executedTests })
+      ),
     }
   }
 
-  public async runTestMethods(testMethods: Set<TestMethodId>) {
-    return this.runTests(toTestItems(testMethods), true)
+  public async runTestMethods(
+    testMethods: Set<TestMethodId>
+  ): Promise<ApexTestRunResult> {
+    const testResult = await this.runTests(toTestItems(testMethods), true)
+    return toApexTestRunResult(testResult)
   }
 
   private async runTests(

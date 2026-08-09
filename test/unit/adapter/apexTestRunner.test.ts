@@ -6,6 +6,35 @@ import type { TestMethodId } from '../../../src/type/TestMethodId.js'
 const runTestAsynchronousMock = vi.fn()
 const runTestSynchronousMock = vi.fn()
 
+// Mirrors ApexTestRunner's own SDK-DTO-to-domain mapping, so an assertion on
+// what the adapter hands the injected coverage strategy stays in lockstep
+// with a raw SDK row fixture without duplicating the mapping by hand.
+const mappedCoverage = (row: {
+  apexClassOrTriggerName: string
+  apexTestMethodName: string
+  coverage?: { coveredLines: number[] }
+}) => ({
+  className: row.apexClassOrTriggerName,
+  testMethodName: row.apexTestMethodName,
+  detail: row.coverage && { coveredLines: row.coverage.coveredLines },
+})
+
+const mappedTest = (row: {
+  apexClass: { fullName: string }
+  methodName: string | null
+  outcome: string
+  perClassCoverage?: Array<{
+    apexClassOrTriggerName: string
+    apexTestMethodName: string
+    coverage?: { coveredLines: number[] }
+  }>
+}) => ({
+  className: row.apexClass.fullName,
+  methodName: row.methodName,
+  outcome: row.outcome,
+  coverage: row.perClassCoverage?.map(mappedCoverage),
+})
+
 vi.mock('@salesforce/apex-node', async importOriginal => {
   const actual = await importOriginal<typeof import('@salesforce/apex-node')>()
   return {
@@ -41,6 +70,13 @@ describe('ApexTestRunner', () => {
           methodName: 'testMethodA',
           outcome: ApexTestResultOutcome.Pass,
           message: null,
+          perClassCoverage: [
+            {
+              apexClassOrTriggerName: 'TestClass',
+              apexTestMethodName: 'testMethodA',
+              coverage: { coveredLines: [1] },
+            },
+          ],
         }
         const mockTestResult = {
           summary: {
@@ -50,6 +86,7 @@ describe('ApexTestRunner', () => {
             testsRan: 1,
           },
           tests: [passRow],
+          codecoverage: [{ name: 'TestClass', coveredLines: [1] }],
         }
         runTestSynchronousMock.mockResolvedValue(mockTestResult)
         const strategyStub = {
@@ -75,8 +112,9 @@ describe('ApexTestRunner', () => {
           testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
         })
         expect(strategyStub.getTestMethodsPerLine).toHaveBeenCalledWith({
-          ...mockTestResult,
-          tests: [passRow],
+          outcome: mockTestResult.summary.outcome,
+          tests: [mappedTest(passRow)],
+          classCoverage: [{ className: 'TestClass', coveredLines: [1] }],
         })
         expect(runTestSynchronousMock).toHaveBeenCalledWith(
           {
@@ -138,8 +176,8 @@ describe('ApexTestRunner', () => {
         // the strategy is never handed the setup row
         expect(result.testsRan).toBe(2)
         expect(strategyStub.getTestMethodsPerLine).toHaveBeenCalledWith({
-          ...mockTestResult,
-          tests: [firstRealRow, secondRealRow],
+          outcome: mockTestResult.summary.outcome,
+          tests: [mappedTest(firstRealRow), mappedTest(secondRealRow)],
         })
       })
 
@@ -175,8 +213,8 @@ describe('ApexTestRunner', () => {
         // Assert
         expect(result.testsRan).toBe(2)
         expect(strategyStub.getTestMethodsPerLine).toHaveBeenCalledWith({
-          ...mockTestResult,
-          tests: [firstRealRow, secondRealRow],
+          outcome: mockTestResult.summary.outcome,
+          tests: [mappedTest(firstRealRow), mappedTest(secondRealRow)],
         })
       })
 
@@ -256,8 +294,8 @@ describe('ApexTestRunner', () => {
         ])
         expect(result.otherFailureCount).toBe(0)
         expect(strategyStub.getTestMethodsPerLine).toHaveBeenCalledWith({
-          ...mockTestResult,
-          tests: [passRow],
+          outcome: mockTestResult.summary.outcome,
+          tests: [mappedTest(passRow)],
         })
         expect(runTestSynchronousMock).not.toHaveBeenCalled()
       })
@@ -719,7 +757,7 @@ describe('ApexTestRunner', () => {
 
         // Assert — a single-class id set reproduces the byte-identical
         // single-element payload, with no `testLevel` key
-        expect(result).toEqual(mockTestResult)
+        expect(result).toEqual({ outcome: 'Passed', tests: [] })
         expect(runTestSynchronousMock).toHaveBeenCalledWith(
           {
             tests: [{ className: 'TestClass', testMethods: ['testMethod'] }],
@@ -823,7 +861,7 @@ describe('ApexTestRunner', () => {
         )
 
         // Assert
-        expect(result).toEqual(mockTestResult)
+        expect(result).toEqual({ outcome: 'Passed', tests: [] })
         expect(runTestAsynchronousMock).toHaveBeenCalledWith(
           {
             tests: [{ className: 'TestClass', testMethods: ['testMethod'] }],
@@ -915,7 +953,7 @@ describe('ApexTestRunner', () => {
           fallbackSut.runTestMethods(
             new Set<TestMethodId>(['TestClass.testMethod'])
           )
-        ).resolves.toEqual(mockTestResult)
+        ).resolves.toEqual({ outcome: 'Passed', tests: [] })
         expect(onSyncFallback).toHaveBeenCalledTimes(1)
         const [reportedError] = onSyncFallback.mock.calls[0] as [Error]
         expect(reportedError).toBeInstanceOf(Error)
@@ -933,7 +971,7 @@ describe('ApexTestRunner', () => {
         // Act & Assert
         await expect(
           sut.runTestMethods(new Set<TestMethodId>(['TestClass.testMethod']))
-        ).resolves.toEqual({ summary: { outcome: 'Passed' } })
+        ).resolves.toEqual({ outcome: 'Passed', tests: [] })
       })
 
       it('then should preserve the rejected Error object identity when reporting it', async () => {

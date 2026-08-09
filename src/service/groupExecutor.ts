@@ -1,4 +1,3 @@
-import { TestResult } from '@salesforce/apex-node'
 import { Messages } from '@salesforce/core'
 import { Progress } from '@salesforce/sf-plugins-core'
 import type { CommonTokenStream } from 'apex-parser'
@@ -10,6 +9,7 @@ import { ApexTestRunner } from '../adapter/apexTestRunner.js'
 import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
+import type { ApexTestRunResult } from '../type/ApexTestRunResult.js'
 import { qualifyTestMethod, type TestMethodId } from '../type/TestMethodId.js'
 import { MutantGenerator } from './mutantGenerator.js'
 import { MutationGroup } from './mutationGrouper.js'
@@ -151,7 +151,7 @@ export class GroupExecutor {
       group.mutations,
       this.tokenStream
     )
-    let testResult: TestResult | undefined
+    let testResult: ApexTestRunResult | undefined
     let batchError: unknown
     try {
       await this.apexClassRepository.update({
@@ -236,16 +236,16 @@ export class GroupExecutor {
   // did not report per-method data (legacy behaviour for k=1).
   private attributeOutcomes(
     group: MutationGroup,
-    testResult: TestResult
+    testResult: ApexTestRunResult
   ): ApexMutationTestResult['mutants'] {
     const outcomeByMethod = new Map<TestMethodId, string>(
       (testResult.tests ?? []).map(t => [
-        qualifyTestMethod(t.apexClass.fullName, t.methodName),
+        qualifyTestMethod(t.className, t.methodName),
         t.outcome,
       ])
     )
     const summaryFallback =
-      testResult.summary.outcome === 'Passed' ? PASS_OUTCOME : NON_PASS_OUTCOME
+      testResult.outcome === 'Passed' ? PASS_OUTCOME : NON_PASS_OUTCOME
     return group.mutations.map(mutation =>
       this.buildAttributedResult(mutation, outcomeByMethod, summaryFallback)
     )
@@ -291,13 +291,11 @@ export class GroupExecutor {
   }
 
   private hasCoverageGap(
-    testResult: TestResult,
+    testResult: ApexTestRunResult,
     expectedMethods: Set<TestMethodId>
   ): boolean {
     const reported = new Set(
-      testResult.tests.map(t =>
-        qualifyTestMethod(t.apexClass.fullName, t.methodName)
-      )
+      testResult.tests.map(t => qualifyTestMethod(t.className, t.methodName))
     )
     for (const name of expectedMethods) {
       if (!reported.has(name)) return true

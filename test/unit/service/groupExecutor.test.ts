@@ -1,4 +1,3 @@
-import { TestResult } from '@salesforce/apex-node'
 import { Messages } from '@salesforce/core'
 import { Progress } from '@salesforce/sf-plugins-core'
 import type { CommonTokenStream } from 'apex-parser'
@@ -11,6 +10,7 @@ import { GroupExecutor } from '../../../src/service/groupExecutor.js'
 import { MutantGenerator } from '../../../src/service/mutantGenerator.js'
 import { MutationGroup } from '../../../src/service/mutationGrouper.js'
 import { ApexMutation } from '../../../src/type/ApexMutation.js'
+import type { ApexTestRunResult } from '../../../src/type/ApexTestRunResult.js'
 import type { TestMethodId } from '../../../src/type/TestMethodId.js'
 
 const CLASS_ID = 'class-id'
@@ -44,7 +44,7 @@ const mutationAt = (line: number, replacement: string): ApexMutation =>
   }) as unknown as ApexMutation
 
 const testOf = (methodName: string, outcome: string) => ({
-  apexClass: { fullName: 'FooTest' },
+  className: 'FooTest',
   methodName,
   outcome,
 })
@@ -111,13 +111,13 @@ describe('GroupExecutor', () => {
       // mutant survives) — an asymmetric 2/1 split so counting the wrong side
       // of the partition is visible.
       runTestMethodsMock = vi.fn().mockResolvedValue({
-        summary: { outcome: 'Failed' },
+        outcome: 'Failed',
         tests: [
           testOf('testA', 'Fail'),
           testOf('testB', 'Pass'),
           testOf('testC', 'Fail'),
         ],
-      } as unknown as TestResult)
+      } as unknown as ApexTestRunResult)
     })
 
     it('When evaluating, Then each mutation is attributed to its own covering test', async () => {
@@ -225,9 +225,9 @@ describe('GroupExecutor', () => {
     it('When the mutation survives, Then the singleton summary is used rather than the group summary', async () => {
       // Arrange
       runTestMethodsMock = vi.fn().mockResolvedValue({
-        summary: { outcome: 'Passed' },
+        outcome: 'Passed',
         tests: [testOf('testZ', 'Pass')],
-      } as unknown as TestResult)
+      } as unknown as ApexTestRunResult)
       const sut = buildSut(testMethodsPerLine)
 
       // Act

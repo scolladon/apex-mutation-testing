@@ -1,11 +1,13 @@
-import type { TestResult } from '@salesforce/apex-node'
+import type { ApexTestRunResult } from '../type/ApexTestRunResult.js'
 import { qualifyTestMethod, type TestMethodId } from '../type/TestMethodId.js'
 
 type CoverageFidelity = 'per-test' | 'aggregate'
 
 export interface CoverageStrategy {
   readonly fidelity: CoverageFidelity
-  getTestMethodsPerLine(testResult: TestResult): Map<number, Set<TestMethodId>>
+  getTestMethodsPerLine(
+    testResult: ApexTestRunResult
+  ): Map<number, Set<TestMethodId>>
 }
 
 export class PerTestCoverageStrategy implements CoverageStrategy {
@@ -15,25 +17,21 @@ export class PerTestCoverageStrategy implements CoverageStrategy {
     this.targetClassNameLower = apexClassName.toLowerCase()
   }
   public getTestMethodsPerLine(
-    testResult: TestResult
+    testResult: ApexTestRunResult
   ): Map<number, Set<TestMethodId>> {
     const testMethodsPerLine = new Map<number, Set<TestMethodId>>()
     testResult.tests?.forEach(test => {
-      test.perClassCoverage
+      test.coverage
         ?.filter(
           coverage =>
-            coverage.apexClassOrTriggerName.toLowerCase() ===
-            this.targetClassNameLower
+            coverage.className.toLowerCase() === this.targetClassNameLower
         )
         .forEach(coverage => {
-          coverage.coverage?.coveredLines?.forEach(line => {
+          coverage.detail?.coveredLines?.forEach(line => {
             const testMethods =
               testMethodsPerLine.get(line) ?? new Set<TestMethodId>()
             testMethods.add(
-              qualifyTestMethod(
-                test.apexClass.fullName,
-                coverage.apexTestMethodName
-              )
+              qualifyTestMethod(test.className, coverage.testMethodName)
             )
             testMethodsPerLine.set(line, testMethods)
           })
@@ -50,15 +48,15 @@ export class AggregateCoverageStrategy implements CoverageStrategy {
     this.targetClassNameLower = apexClassName.toLowerCase()
   }
   public getTestMethodsPerLine(
-    testResult: TestResult
+    testResult: ApexTestRunResult
   ): Map<number, Set<TestMethodId>> {
     const testMethodNames = new Set(
       testResult.tests?.map(test =>
-        qualifyTestMethod(test.apexClass.fullName, test.methodName)
+        qualifyTestMethod(test.className, test.methodName)
       ) ?? []
     )
-    const aggregateCoverage = testResult.codecoverage?.find(
-      coverage => coverage.name.toLowerCase() === this.targetClassNameLower
+    const aggregateCoverage = testResult.classCoverage?.find(
+      coverage => coverage.className.toLowerCase() === this.targetClassNameLower
     )
     const testMethodsPerLine = new Map<number, Set<TestMethodId>>()
     aggregateCoverage?.coveredLines?.forEach(line =>

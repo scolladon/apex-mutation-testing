@@ -1,4 +1,3 @@
-import { TestResult } from '@salesforce/apex-node'
 import { Connection, Messages } from '@salesforce/core'
 import { Progress, Spinner } from '@salesforce/sf-plugins-core'
 import {
@@ -23,6 +22,7 @@ import {
 import { ApexMutation } from '../../../src/type/ApexMutation.js'
 import { ApexMutationParameter } from '../../../src/type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult.js'
+import { ApexTestRunResult } from '../../../src/type/ApexTestRunResult.js'
 import { MetadataComponentDependency } from '../../../src/type/MetadataComponentDependency.js'
 import { TestClassOrigins } from '../../../src/type/TestClassOrigin.js'
 
@@ -414,12 +414,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Passed',
-                passing: 1,
-                failing: 0,
-                testsRan: 1,
-              },
+              outcome: 'Passed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -541,13 +536,8 @@ describe('MutationTestingService', () => {
         {
           description: 'when test is failing',
           testResult: {
-            summary: {
-              outcome: 'Failed',
-              passing: 0,
-              failing: 1,
-              testsRan: 1,
-            },
-          } as TestResult,
+            outcome: 'Failed',
+          } as ApexTestRunResult,
           expectedStatus: 'Killed',
           error: null,
           updateError: null,
@@ -563,13 +553,8 @@ describe('MutationTestingService', () => {
         {
           description: 'when test is passing',
           testResult: {
-            summary: {
-              outcome: 'Passed',
-              passing: 1,
-              failing: 0,
-              testsRan: 1,
-            },
-          } as TestResult,
+            outcome: 'Passed',
+          } as ApexTestRunResult,
           expectedStatus: 'Survived',
           error: null,
           updateError: null,
@@ -620,13 +605,8 @@ describe('MutationTestingService', () => {
         {
           description: 'when deployment fails with compile error',
           testResult: {
-            summary: {
-              outcome: 'Passed',
-              passing: 1,
-              failing: 0,
-              testsRan: 1,
-            },
-          } as TestResult,
+            outcome: 'Passed',
+          } as ApexTestRunResult,
           expectedStatus: 'CompileError',
           error: null,
           updateError: new DeploymentFailedError(
@@ -1196,12 +1176,7 @@ describe('MutationTestingService', () => {
           vi.mocked(ApexTestRunner).mockImplementation(
             class {
               runTestMethods = vi.fn().mockResolvedValue({
-                summary: {
-                  outcome: 'Passed',
-                  passing: 1,
-                  failing: 0,
-                  testsRan: 1,
-                },
+                outcome: 'Passed',
               })
               getTestMethodsPerLines = vi.fn().mockResolvedValue(
                 baselineResult({
@@ -1282,12 +1257,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -1339,12 +1309,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -1403,12 +1368,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -1459,12 +1419,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -1515,12 +1470,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -1571,12 +1521,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -1625,12 +1570,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -1683,12 +1623,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -1746,12 +1681,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -1853,12 +1783,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -1944,12 +1869,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -1984,12 +1904,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -2024,12 +1939,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -2059,12 +1969,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -2101,12 +2006,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -2219,12 +2119,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -2438,12 +2333,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -2497,12 +2387,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -2551,12 +2436,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -2619,7 +2499,7 @@ describe('MutationTestingService', () => {
           }
         )
         const mockRunTestMethods = vi.fn().mockResolvedValue({
-          summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
+          outcome: 'Failed',
         })
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
@@ -2688,7 +2568,7 @@ describe('MutationTestingService', () => {
           }
         )
         const mockRunTestMethods = vi.fn().mockResolvedValue({
-          summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
+          outcome: 'Failed',
         })
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
@@ -2759,12 +2639,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -2836,7 +2711,7 @@ describe('MutationTestingService', () => {
           }
         )
         const mockRunTestMethods = vi.fn().mockResolvedValue({
-          summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 2 },
+          outcome: 'Failed',
         })
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
@@ -2898,7 +2773,7 @@ describe('MutationTestingService', () => {
           }
         )
         const mockRunTestMethods = vi.fn().mockResolvedValue({
-          summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
+          outcome: 'Failed',
         })
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
@@ -2954,12 +2829,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 2,
-                testsRan: 2,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -3019,12 +2889,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -3095,12 +2960,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -3267,12 +3127,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -3452,7 +3307,7 @@ describe('MutationTestingService', () => {
           }
         )
         const mockRunTestMethods = vi.fn().mockResolvedValue({
-          summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
+          outcome: 'Failed',
         })
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
@@ -3573,12 +3428,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -3635,12 +3485,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -3684,7 +3529,7 @@ describe('MutationTestingService', () => {
           }
         )
         const mockRunTestMethods = vi.fn().mockResolvedValue({
-          summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
+          outcome: 'Failed',
         })
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
@@ -3737,12 +3582,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -3916,12 +3756,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -4104,12 +3939,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: testOutcome,
-                passing: testOutcome === 'Passed' ? 1 : 0,
-                failing: testOutcome === 'Failed' ? 1 : 0,
-                testsRan: 1,
-              },
+              outcome: testOutcome,
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -4360,12 +4190,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -4420,12 +4245,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -4495,12 +4315,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -4559,12 +4374,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -4655,12 +4465,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -4707,7 +4512,7 @@ describe('MutationTestingService', () => {
           }
         )
         const mockRunTestMethods = vi.fn().mockResolvedValue({
-          summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
+          outcome: 'Failed',
         })
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
@@ -5181,12 +4986,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Passed',
-                passing: 1,
-                failing: 0,
-                testsRan: 1,
-              },
+              outcome: 'Passed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -5232,12 +5032,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -5286,12 +5081,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Passed',
-                passing: 1,
-                failing: 0,
-                testsRan: 1,
-              },
+              outcome: 'Passed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -5345,12 +5135,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -5407,15 +5192,15 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: { outcome: 'Failed' },
+              outcome: 'Failed',
               tests: [
                 {
-                  apexClass: { fullName: 'TestClassTest' },
+                  className: 'TestClassTest',
                   methodName: 'testMethodA',
                   outcome: 'Fail',
                 },
               ],
-            } as unknown as TestResult)
+            } as unknown as ApexTestRunResult)
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
                 outcome: 'Passed',
@@ -5518,7 +5303,7 @@ describe('MutationTestingService', () => {
           }
         )
         const mockRunTestMethods = vi.fn().mockResolvedValue({
-          summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
+          outcome: 'Failed',
         })
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
@@ -5583,12 +5368,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -5651,12 +5431,7 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
             })
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
@@ -5756,25 +5531,20 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 2,
-              },
+              outcome: 'Failed',
               tests: [
                 {
-                  apexClass: { fullName: 'FooTest' },
+                  className: 'FooTest',
                   methodName: 'testA',
                   outcome: 'Pass',
                 },
                 {
-                  apexClass: { fullName: 'BarTest' },
+                  className: 'BarTest',
                   methodName: 'testA',
                   outcome: 'Fail',
                 },
               ],
-            } as unknown as TestResult)
+            } as unknown as ApexTestRunResult)
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
                 outcome: 'Passed',
@@ -5866,52 +5636,42 @@ describe('MutationTestingService', () => {
           if (runCallCount === 1) {
             // Grouped run — BarTest.testA never reports: a genuine gap.
             return Promise.resolve({
-              summary: {
-                outcome: 'Failed',
-                passing: 1,
-                failing: 0,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
               tests: [
                 {
-                  apexClass: { fullName: 'FooTest' },
+                  className: 'FooTest',
                   methodName: 'testA',
                   outcome: 'Pass',
                 },
               ],
-            } as unknown as TestResult)
+            } as unknown as ApexTestRunResult)
           }
           if (runCallCount === 2) {
             // Fallback singleton for the FooTest-covered mutant.
             return Promise.resolve({
-              summary: {
-                outcome: 'Passed',
-                passing: 1,
-                failing: 0,
-                testsRan: 1,
-              },
+              outcome: 'Passed',
               tests: [
                 {
-                  apexClass: { fullName: 'FooTest' },
+                  className: 'FooTest',
                   methodName: 'testA',
                   outcome: 'Pass',
                 },
               ],
-            } as unknown as TestResult)
+            } as unknown as ApexTestRunResult)
           }
           // Fallback singleton for the BarTest-covered mutant. The summary
           // reports Failed even though BarTest.testA itself passed — only a
           // class-qualified lookup recovers the true per-method outcome.
           return Promise.resolve({
-            summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
+            outcome: 'Failed',
             tests: [
               {
-                apexClass: { fullName: 'BarTest' },
+                className: 'BarTest',
                 methodName: 'testA',
                 outcome: 'Pass',
               },
             ],
-          } as unknown as TestResult)
+          } as unknown as ApexTestRunResult)
         })
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
@@ -5982,25 +5742,20 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Passed',
-                passing: 2,
-                failing: 0,
-                testsRan: 2,
-              },
+              outcome: 'Passed',
               tests: [
                 {
-                  apexClass: { fullName: 'FooTest' },
+                  className: 'FooTest',
                   methodName: 'testA',
                   outcome: 'Pass',
                 },
                 {
-                  apexClass: { fullName: 'BarTest' },
+                  className: 'BarTest',
                   methodName: 'testA',
                   outcome: 'Pass',
                 },
               ],
-            } as unknown as TestResult)
+            } as unknown as ApexTestRunResult)
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
                 outcome: 'Passed',
@@ -6060,20 +5815,15 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
               tests: [
                 {
-                  apexClass: { fullName: 'FooTest' },
+                  className: 'FooTest',
                   methodName: 'testA',
                   outcome: 'Fail',
                 },
               ],
-            } as unknown as TestResult)
+            } as unknown as ApexTestRunResult)
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
                 outcome: 'Passed',
@@ -6133,14 +5883,9 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Failed',
-                passing: 0,
-                failing: 1,
-                testsRan: 1,
-              },
+              outcome: 'Failed',
               tests: [],
-            } as unknown as TestResult)
+            } as unknown as ApexTestRunResult)
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
                 outcome: 'Passed',
@@ -6247,20 +5992,15 @@ describe('MutationTestingService', () => {
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
             runTestMethods = vi.fn().mockResolvedValue({
-              summary: {
-                outcome: 'Passed',
-                passing: 1,
-                failing: 0,
-                testsRan: 1,
-              },
+              outcome: 'Passed',
               tests: [
                 {
-                  apexClass: { fullName: 'TestClassTest' },
+                  className: 'TestClassTest',
                   methodName: 'testMethodA',
                   outcome: 'Pass',
                 },
               ],
-            } as unknown as TestResult)
+            } as unknown as ApexTestRunResult)
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
                 outcome: 'Passed',
@@ -6365,25 +6105,20 @@ describe('MutationTestingService', () => {
             runTestMethods =
               overrides.runTestMethods ??
               vi.fn().mockResolvedValue({
-                summary: {
-                  outcome: 'Passed',
-                  passing: 2,
-                  failing: 0,
-                  testsRan: 2,
-                },
+                outcome: 'Passed',
                 tests: [
                   {
                     methodName: 'testA',
-                    apexClass: { fullName: 'TestClassTest' },
+                    className: 'TestClassTest',
                     outcome: 'Pass',
                   },
                   {
                     methodName: 'testB',
-                    apexClass: { fullName: 'TestClassTest' },
+                    className: 'TestClassTest',
                     outcome: 'Pass',
                   },
                 ],
-              } as unknown as TestResult)
+              } as unknown as ApexTestRunResult)
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
                 outcome: 'Passed',
@@ -6456,20 +6191,20 @@ describe('MutationTestingService', () => {
         // Arrange
         const updateMock = vi.fn().mockResolvedValue({})
         const runMock = vi.fn().mockResolvedValue({
-          summary: { outcome: 'Passed', passing: 2, failing: 0, testsRan: 2 },
+          outcome: 'Passed',
           tests: [
             {
               methodName: 'testA',
-              apexClass: { fullName: 'TestClassTest' },
+              className: 'TestClassTest',
               outcome: 'Pass',
             },
             {
               methodName: 'testB',
-              apexClass: { fullName: 'TestClassTest' },
+              className: 'TestClassTest',
               outcome: 'Pass',
             },
           ],
-        } as unknown as TestResult)
+        } as unknown as ApexTestRunResult)
         const localSut = buildGroupedSut({
           update: updateMock,
           runTestMethods: runMock,
@@ -6495,20 +6230,20 @@ describe('MutationTestingService', () => {
         // Arrange
         const localSut = buildGroupedSut({
           runTestMethods: vi.fn().mockResolvedValue({
-            summary: { outcome: 'Failed', passing: 1, failing: 1, testsRan: 2 },
+            outcome: 'Failed',
             tests: [
               {
                 methodName: 'testA',
-                apexClass: { fullName: 'TestClassTest' },
+                className: 'TestClassTest',
                 outcome: 'Pass',
               },
               {
                 methodName: 'testB',
-                apexClass: { fullName: 'TestClassTest' },
+                className: 'TestClassTest',
                 outcome: 'Fail',
               },
             ],
-          } as unknown as TestResult),
+          } as unknown as ApexTestRunResult),
         })
 
         // Act
@@ -6534,15 +6269,15 @@ describe('MutationTestingService', () => {
           return Promise.resolve({})
         })
         const runMock = vi.fn().mockResolvedValue({
-          summary: { outcome: 'Passed', passing: 1, failing: 0, testsRan: 1 },
+          outcome: 'Passed',
           tests: [
             {
               methodName: 'testA',
-              apexClass: { fullName: 'TestClassTest' },
+              className: 'TestClassTest',
               outcome: 'Pass',
             },
           ],
-        } as unknown as TestResult)
+        } as unknown as ApexTestRunResult)
         const localSut = buildGroupedSut({
           update: updateMock,
           runTestMethods: runMock,
@@ -6567,37 +6302,27 @@ describe('MutationTestingService', () => {
           // First call: grouped run — missing testB outcome
           if (runCallCount === 1) {
             return Promise.resolve({
-              summary: {
-                outcome: 'Passed',
-                passing: 1,
-                failing: 0,
-                testsRan: 1,
-              },
+              outcome: 'Passed',
               tests: [
                 {
                   methodName: 'testA',
-                  apexClass: { fullName: 'TestClassTest' },
+                  className: 'TestClassTest',
                   outcome: 'Pass',
                 },
               ],
-            } as unknown as TestResult)
+            } as unknown as ApexTestRunResult)
           }
           // Subsequent calls (per-mutant fallback): both pass
           return Promise.resolve({
-            summary: {
-              outcome: 'Passed',
-              passing: 1,
-              failing: 0,
-              testsRan: 1,
-            },
+            outcome: 'Passed',
             tests: [
               {
                 methodName: 'testA',
-                apexClass: { fullName: 'TestClassTest' },
+                className: 'TestClassTest',
                 outcome: 'Pass',
               },
             ],
-          } as unknown as TestResult)
+          } as unknown as ApexTestRunResult)
         })
         const localSut = buildGroupedSut({ runTestMethods: runMock })
 
