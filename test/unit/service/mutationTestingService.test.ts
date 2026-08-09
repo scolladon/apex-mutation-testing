@@ -340,10 +340,31 @@ describe('MutationTestingService', () => {
         // Act
         await invokeOnSyncFallback(new Error(unboundedReason))
 
-        // Assert — the written line is nowhere near the raw 5000-character
-        // reason
+        // Assert — the written line carries exactly the first 200 code
+        // points followed by an ellipsis, not just "some short string": a
+        // bare length check alone cannot tell a real truncation apart from
+        // the reason collapsing to nothing.
         const [written] = outputSinkStub.mock.calls[0] as [string]
+        expect(written).toContain(`${'x'.repeat(200)}…`)
         expect(written.length).toBeLessThan(500)
+      })
+
+      it('then should not truncate a reason exactly at the length boundary', async () => {
+        // Arrange — pins the `<=` boundary in truncateForDisplay: a reason
+        // of exactly 200 code points must pass through untouched, with no
+        // ellipsis appended.
+        arrangeAbortingBaseline()
+        const boundaryReason = 'x'.repeat(200)
+
+        // Act
+        await invokeOnSyncFallback(new Error(boundaryReason))
+
+        // Assert — the full reason survives, verbatim, with no truncation
+        // marker
+        const [written] = outputSinkStub.mock.calls[0] as [string]
+        expect(written).toBe(
+          `Synchronous test execution is unavailable (${boundaryReason}). Falling back to the asynchronous transport.\n`
+        )
       })
 
       it('then should default to writing through the real stdout when no output sink is injected', async () => {

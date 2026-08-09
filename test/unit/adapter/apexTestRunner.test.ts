@@ -74,7 +74,10 @@ describe('ApexTestRunner', () => {
             {
               apexClassOrTriggerName: 'TestClass',
               apexTestMethodName: 'testMethodA',
-              coverage: { coveredLines: [1] },
+              // uncoveredLines is real SDK shape the adapter must trim away —
+              // a coverage fixture with no other field could not tell a
+              // dropped field apart from an unwrapped passthrough.
+              coverage: { coveredLines: [1], uncoveredLines: [2, 3] },
             },
           ],
         }
@@ -474,6 +477,10 @@ describe('ApexTestRunner', () => {
           },
         ])
         expect(result.otherFailureCount).toBe(0)
+        // The reshaped summary must still carry the org-reported outcome —
+        // only `failing` is normalised away for shape parity with the
+        // asynchronous fixture, every other summary field survives.
+        expect(result.outcome).toBe('Failed')
         expect(strategyStub.getTestMethodsPerLine).toHaveBeenCalledWith(
           expect.objectContaining({ tests: [] })
         )
@@ -1091,6 +1098,33 @@ describe('ApexTestRunner', () => {
         // round-trip rather than one per group.
         const fallbackSut = new ApexTestRunner(connectionStub, {})
         runTestSynchronousMock.mockRejectedValue(permanentSyncError)
+        runTestAsynchronousMock.mockResolvedValue({
+          summary: { outcome: 'Passed' },
+        })
+
+        // Act
+        await fallbackSut.runTestMethods(
+          new Set<TestMethodId>(['TestClass.testMethod'])
+        )
+        await fallbackSut.runTestMethods(
+          new Set<TestMethodId>(['TestClass.testMethod'])
+        )
+
+        // Assert — one synchronous attempt total, two asynchronous ones
+        expect(runTestSynchronousMock).toHaveBeenCalledTimes(1)
+        expect(runTestAsynchronousMock).toHaveBeenCalledTimes(2)
+      })
+
+      it('then should also latch on the sibling permanent error code', async () => {
+        // Arrange — PERMANENT_SYNC_ERROR_CODES carries two codes; the
+        // capability-gap test above only exercises the first
+        // (INSUFFICIENT_ACCESS_OR_READONLY). This pins the second.
+        const siblingPermanentError = Object.assign(
+          new Error('Insufficient access rights'),
+          { errorCode: 'INSUFFICIENT_ACCESS' }
+        )
+        const fallbackSut = new ApexTestRunner(connectionStub, {})
+        runTestSynchronousMock.mockRejectedValue(siblingPermanentError)
         runTestAsynchronousMock.mockResolvedValue({
           summary: { outcome: 'Passed' },
         })
