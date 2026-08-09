@@ -17,7 +17,14 @@ const TERMINAL_STATES = new Set([
 
 // Whether a container deploy asks the org to run tests. Named rather than a
 // bare boolean so the call sites read as intent instead of a flag.
+// Neither literal value is itself observable: the only consumer tests
+// `testPolicy === RUN_TESTS` (createDeployRequest below), so RUN_TESTS can
+// change freely as long as the default parameter — which reads RUN_TESTS
+// itself — changes with it, and SKIP_TESTS can be any value distinct from
+// RUN_TESTS and still produce the same `!== RUN_TESTS` outcome.
+// Stryker disable next-line StringLiteral: value is never itself observed — see above.
 export const RUN_TESTS = 'run-tests'
+// Stryker disable next-line StringLiteral: value is never itself observed — see above.
 export const SKIP_TESTS = 'skip-tests'
 export type DeployTestPolicy = typeof RUN_TESTS | typeof SKIP_TESTS
 
