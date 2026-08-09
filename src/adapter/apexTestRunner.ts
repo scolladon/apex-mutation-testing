@@ -96,7 +96,7 @@ const setupIdentities = (setup: ApexTestSetupData[]): Set<string> =>
 // One pass, one place: this is the only thing in the codebase that classifies
 // a *baseline* test outcome into compile-fail vs. executed vs. ignored. Per-mutant
 // attribution reads outcomes on a separate path — GroupExecutor.attributeOutcomes
-// reads each test's `outcome` and falls back to `testResult.summary.outcome`
+// reads each test's `outcome` and falls back to `testResult.outcome`
 // (see src/service/groupExecutor.ts). A CompileFail row never ran a test
 // method, so it is excluded from executedTests rather than counted as a
 // failure. A @TestSetup row is excluded before that classification even
