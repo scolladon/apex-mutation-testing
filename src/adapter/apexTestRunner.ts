@@ -201,6 +201,23 @@ const normalizeSyncCompileFailure = (testResult: TestResult): TestResult => {
 // module-local, not exported — keeps the class's public surface unchanged
 type TestItems = { className: string; testMethods?: string[] }[]
 
+// Named for the caller's intent rather than the vendor payload's inverted
+// `skipCodeCoverage` field, so a call site reads as what it asks for, not as
+// a negation someone has to flip in their head.
+type CoverageRequest = 'with-coverage' | 'without-coverage'
+
+// The vendor SDK asks for the same intent twice per call — once as
+// `skipCodeCoverage` in the payload, once as the positional `codeCoverage`
+// argument, negated — so both are derived here, once, from the one domain
+// value threaded through the call chain above. Neither transport method
+// below re-derives or re-negates either flag itself.
+const toCoverageOptions = (
+  coverage: CoverageRequest
+): { skipCodeCoverage: boolean; collectCoverage: boolean } => {
+  const collectCoverage = coverage === 'with-coverage'
+  return { skipCodeCoverage: !collectCoverage, collectCoverage }
+}
+
 // the synchronous Tooling resource accepts exactly one Apex class per payload
 const SYNC_ELIGIBLE_TEST_CLASS_COUNT = 1
 // stop the run at the first failure, on both transports — named for what it
@@ -270,7 +287,7 @@ export class ApexTestRunner {
   ): Promise<BaselineTestResult> {
     const testResult = await this.runTests(
       apexTestClassNames.map(className => ({ className })),
-      false
+      'with-coverage'
     )
     const { compileFailures, otherFailureCount, executedTests, testsRan } =
       partitionOutcomes(testResult.tests ?? [], testResult.setup)
@@ -288,18 +305,21 @@ export class ApexTestRunner {
   public async runTestMethods(
     testMethods: Set<TestMethodId>
   ): Promise<ApexTestRunResult> {
-    const testResult = await this.runTests(toTestItems(testMethods), true)
+    const testResult = await this.runTests(
+      toTestItems(testMethods),
+      'without-coverage'
+    )
     return toApexTestRunResult(testResult)
   }
 
   private async runTests(
     tests: TestItems,
-    skipCodeCoverage: boolean
+    coverage: CoverageRequest
   ): Promise<TestResult> {
     return tests.length === SYNC_ELIGIBLE_TEST_CLASS_COUNT &&
       !this.syncTransportDisabled
-      ? this.runPreferringSync(tests, skipCodeCoverage)
-      : this.runTestAsynchronous(tests, skipCodeCoverage)
+      ? this.runPreferringSync(tests, coverage)
+      : this.runTestAsynchronous(tests, coverage)
   }
 
   // runTestsSynchronous requires the View Setup user permission, which the
@@ -311,16 +331,16 @@ export class ApexTestRunner {
   // concern) never preempts the fallback attempt itself.
   private async runPreferringSync(
     tests: TestItems,
-    skipCodeCoverage: boolean
+    coverage: CoverageRequest
   ): Promise<TestResult> {
     try {
-      return await this.runTestSynchronous(tests, skipCodeCoverage)
+      return await this.runTestSynchronous(tests, coverage)
     } catch (error: unknown) {
       const reportableError = toReportableError(error)
       if (isPermanentSyncFailure(reportableError)) {
         this.syncTransportDisabled = true
       }
-      const fallback = this.runTestAsynchronous(tests, skipCodeCoverage)
+      const fallback = this.runTestAsynchronous(tests, coverage)
       // Attach a handler before the report below can throw: the report is
       // the caller's own callback (a stdout write in production) and can
       // reject `runPreferringSync` before `return fallback` ever runs,
@@ -350,19 +370,21 @@ export class ApexTestRunner {
   // it infers RunSpecifiedTests from the payload shape alone.
   private async runTestSynchronous(
     tests: TestItems,
-    skipCodeCoverage: boolean
+    coverage: CoverageRequest
   ): Promise<TestResult> {
+    const { skipCodeCoverage, collectCoverage } = toCoverageOptions(coverage)
     const testResult = (await this.testService.runTestSynchronous(
       { tests, skipCodeCoverage, maxFailedTests: STOP_AT_FIRST_FAILURE },
-      !skipCodeCoverage
+      collectCoverage
     )) as TestResult
     return normalizeSyncCompileFailure(testResult)
   }
 
   private async runTestAsynchronous(
     tests: TestItems,
-    skipCodeCoverage: boolean
+    coverage: CoverageRequest
   ): Promise<TestResult> {
+    const { skipCodeCoverage, collectCoverage } = toCoverageOptions(coverage)
     return (await this.testService.runTestAsynchronous(
       {
         tests,
@@ -370,7 +392,7 @@ export class ApexTestRunner {
         skipCodeCoverage,
         maxFailedTests: STOP_AT_FIRST_FAILURE,
       },
-      !skipCodeCoverage
+      collectCoverage
     )) as TestResult
   }
 }
