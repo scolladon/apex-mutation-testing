@@ -204,7 +204,7 @@ export class MutationTestingService {
       groups.length
     )
 
-    const result = await this.executeMutationLoop({
+    return this.executeMutationLoopWithRollback({
       apexClass,
       mutations,
       groups,
@@ -215,8 +215,6 @@ export class MutationTestingService {
       apexClassRepository,
       retainedTestClassNames,
     })
-    await this.rollback(apexClass, apexClassRepository)
-    return result
   }
 
   private async planGroups(
@@ -803,6 +801,50 @@ export class MutationTestingService {
       // Stryker disable next-line MethodExpression: no null slots remain, so
       // filtering and not filtering yield the same array — see `isPresent`.
       mutants: orderedResults.filter(isPresent),
+    }
+  }
+
+  // The org holds a mutated body from the first group deploy until rollback
+  // redeploys the original, so the restore must survive every exit of the loop,
+  // not only the resolving one. Not a `finally`: a finally that raises replaces
+  // the loop's rejection with its own, destroying the root cause.
+  private async executeMutationLoopWithRollback(
+    context: MutationLoopContext
+  ): Promise<ApexMutationTestResult> {
+    let result: ApexMutationTestResult
+    try {
+      result = await this.executeMutationLoop(context)
+    } catch (loopError: unknown) {
+      throw await this.rollbackAfterLoopFailure(loopError, context)
+    }
+    await this.rollback(context.apexClass, context.apexClassRepository)
+    return result
+  }
+
+  // Returns the error for the caller to throw rather than throwing itself, so
+  // the `throw` stays at the call site and the method keeps a nameable return
+  // type instead of a `never` that TypeScript does not narrow through `await`.
+  private async rollbackAfterLoopFailure(
+    loopError: unknown,
+    context: MutationLoopContext
+  ): Promise<unknown> {
+    // The bar stopped moving when the loop died; tearing it down before the
+    // rollback spinner starts leaves one renderer on stdout.
+    this.progress.stop()
+    try {
+      await this.rollback(context.apexClass, context.apexClassRepository)
+      return loopError
+    } catch (rollbackError: unknown) {
+      // The loop failure is the root cause and leads the message; the rollback
+      // failure is appended so "the class is still mutated on the org" reaches
+      // stderr as well as --json. String(rollbackError) is deliberately
+      // unguarded: rollback only ever raises the Error it builds itself, so an
+      // instanceof guard would add an arm no test could reach.
+      const loopMessage =
+        loopError instanceof Error ? loopError.message : String(loopError)
+      return new Error(`${loopMessage}\n${String(rollbackError)}`, {
+        cause: loopError,
+      })
     }
   }
 
