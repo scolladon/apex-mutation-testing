@@ -1,4 +1,4 @@
-import { readFile, realpath, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import * as path from 'path'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
@@ -29,6 +29,7 @@ export class ApexMutationHTMLReporter {
     //   1. string-level resolve rejects `../` traversal;
     //   2. realpath rejects an existing symlink whose target is outside cwd.
     const resolvedDir = resolveSafeOutputDir(outputDir)
+    await mkdir(resolvedDir, { recursive: true })
     await assertRealPathWithinCwd(resolvedDir, outputDir)
     const reportData = this.transformApexResults(apexMutationTestResult)
     const bundle = await loadMutationTestElements()

@@ -1,6 +1,7 @@
 import { Connection } from '@salesforce/core'
 import { ApexClass } from '../type/ApexClass.js'
 import { MetadataComponentDependency } from '../type/MetadataComponentDependency.js'
+import { AerAdapter } from './aerAdapter.js'
 
 const DEFAULT_POLL_INITIAL_INTERVAL_MS = 100
 const DEFAULT_POLL_MAX_INTERVAL_MS = 2000
@@ -32,10 +33,17 @@ export class PollTimeoutError extends Error {
 }
 
 export class ApexClassRepository {
+  private readonly filePaths = new Map<string, string>()
+
   constructor(
-    protected readonly connection: Connection,
-    private readonly pollOptions: PollOptions = {}
+    protected readonly connection: Connection | undefined,
+    private readonly pollOptions: PollOptions = {},
+    private readonly useAer = false,
+    private readonly aerSfProjectPath?: string
   ) {
+    if (this.useAer) {
+      return
+    }
     // Validate poll configuration eagerly so misconfiguration fails fast
     // at construction rather than mid-deploy with non-deterministic behaviour.
     const { initialIntervalMs, maxIntervalMs, timeoutMs } = pollOptions
@@ -59,6 +67,15 @@ export class ApexClassRepository {
   }
 
   public async read(name: string) {
+    if (this.useAer) {
+      if (!this.aerSfProjectPath) {
+        throw new Error('aerSfProjectPath is required for AER mode')
+      }
+      return AerAdapter.readClass(this.aerSfProjectPath, name, this.filePaths)
+    }
+    if (!this.connection) {
+      throw new Error('Connection is required when not running in AER mode')
+    }
     return (
       await this.connection.tooling
         .sobject('ApexClass')
@@ -70,6 +87,12 @@ export class ApexClassRepository {
   public async getApexClassDependencies(
     classId: string
   ): Promise<MetadataComponentDependency[]> {
+    if (this.useAer) {
+      return []
+    }
+    if (!this.connection) {
+      throw new Error('Connection is required when not running in AER mode')
+    }
     return (await this.connection.tooling
       .sobject('MetadataComponentDependency')
       .find({ MetadataComponentId: classId })
@@ -77,6 +100,19 @@ export class ApexClassRepository {
   }
 
   public async update(apexClass: ApexClass) {
+    if (this.useAer) {
+      if (!this.aerSfProjectPath) {
+        throw new Error('aerSfProjectPath is required for AER mode')
+      }
+      return AerAdapter.updateClass(
+        this.aerSfProjectPath,
+        apexClass,
+        this.filePaths
+      )
+    }
+    if (!this.connection) {
+      throw new Error('Connection is required when not running in AER mode')
+    }
     const container = await this.connection.tooling
       .sobject('MetadataContainer')
       .create({
@@ -132,6 +168,9 @@ export class ApexClassRepository {
   }
 
   private deleteContainer(containerId: string): void {
+    if (!this.connection) {
+      return
+    }
     this.connection.tooling
       .sobject('MetadataContainer')
       .delete(containerId)
@@ -150,7 +189,7 @@ export class ApexClassRepository {
     const deadline = Date.now() + timeoutMs
 
     let intervalMs = initialIntervalMs
-    let result = await this.connection.tooling
+    let result = await this.connection!.tooling
       .sobject('ContainerAsyncRequest')
       .retrieve(requestId)
 
@@ -163,7 +202,7 @@ export class ApexClassRepository {
         Math.floor(intervalMs * POLL_BACKOFF_FACTOR),
         maxIntervalMs
       )
-      result = await this.connection.tooling
+      result = await this.connection!.tooling
         .sobject('ContainerAsyncRequest')
         .retrieve(requestId)
     }

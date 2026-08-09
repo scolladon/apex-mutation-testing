@@ -86,13 +86,33 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
     'mutation-grouping': Flags.boolean({
       summary: messages.getMessage('flags.mutation-grouping.summary'),
     }),
-    'target-org': Flags.requiredOrg(),
+    'use-aer': Flags.boolean({
+      char: 'a',
+      summary: 'Run mutation tests locally using AER',
+      default: false,
+    }),
+    'aer-sf-project-path': Flags.string({
+      summary: 'Directory containing Apex source code for AER',
+      default: 'force-app',
+    }),
+    'aer-flags': Flags.string({
+      summary: 'Additional flags to pass to AER execution',
+    }),
+    'target-org': Flags.optionalOrg({
+      required: false,
+    }),
     'api-version': Flags.orgApiVersion(),
   }
 
   public async run(): Promise<ApexMutationTestResult> {
     const { flags } = await this.parse(ApexMutationTest)
-    const connection = flags['target-org'].getConnection(flags['api-version'])
+
+    if (!flags['use-aer'] && !flags['target-org']) {
+      throw new Error('Either --target-org or --use-aer must be specified')
+    }
+
+    const connection = flags['target-org']?.getConnection(flags['api-version'])
+
 
     const parameters: ApexMutationParameter = {
       apexClassName: flags['apex-class'],
@@ -108,6 +128,9 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       lines: flags['lines'],
       configFile: flags['config-file'],
       mutationGrouping: flags['mutation-grouping'],
+      useAer: flags['use-aer'],
+      aerSfProjectPath: flags['aer-sf-project-path'],
+      aerFlags: flags['aer-flags'],
     }
 
     const configReader = new ConfigReader()
@@ -122,7 +145,11 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       )
     )
 
-    const apexClassValidator = new ApexClassValidator(connection)
+    const apexClassValidator = new ApexClassValidator(
+      connection,
+      resolvedParameters.useAer,
+      resolvedParameters.aerSfProjectPath
+    )
     await apexClassValidator.validate(resolvedParameters)
 
     const mutationTestingService = new MutationTestingService(

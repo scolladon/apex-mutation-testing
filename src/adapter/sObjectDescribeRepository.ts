@@ -28,15 +28,20 @@ const MAX_CONCURRENT_DESCRIBE_CALLS = 25
 export class SObjectDescribeRepository {
   private readonly fieldTypes: SObjectFieldTypes = new Map()
 
-  constructor(private readonly connection: Connection) {}
+  constructor(private readonly connection: Connection | undefined) {}
 
   public async describe(sObjectNames: string[]): Promise<void> {
+    const conn = this.connection
+    if (!conn) {
+      return
+    }
+
     await mapLimit(
       sObjectNames,
       MAX_CONCURRENT_DESCRIBE_CALLS,
       async (name: string) => {
         try {
-          const describeResult = await this.connection.describe(name)
+          const describeResult = await conn.describe(name)
           const fieldMap = new Map<string, ApexType>()
           for (const field of describeResult.fields) {
             fieldMap.set(

@@ -5,8 +5,17 @@ import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 
 export class ApexClassValidator {
   private readonly apexClassRepository: ApexClassRepository
-  constructor(protected readonly connection: Connection) {
-    this.apexClassRepository = new ApexClassRepository(this.connection)
+  constructor(
+    protected readonly connection: Connection | undefined,
+    useAer = false,
+    aerSfProjectPath?: string
+  ) {
+    this.apexClassRepository = new ApexClassRepository(
+      this.connection,
+      {},
+      useAer,
+      aerSfProjectPath
+    )
   }
 
   private async validateApexClass(apexClassName: string) {

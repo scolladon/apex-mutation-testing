@@ -58,6 +58,7 @@ vi.mock('@salesforce/sf-plugins-core', () => {
       integer: vi.fn().mockReturnValue({}),
       file: vi.fn().mockReturnValue({}),
       requiredOrg: vi.fn().mockReturnValue({}),
+      optionalOrg: vi.fn().mockReturnValue({}),
       orgApiVersion: vi.fn().mockReturnValue({}),
     },
   }
@@ -173,7 +174,11 @@ describe('apex mutation test run NUT', () => {
     })
 
     it('Then validates classes', () => {
-      expect(ApexClassValidator).toHaveBeenCalledWith(mockConnection)
+      expect(ApexClassValidator).toHaveBeenCalledWith(
+        mockConnection,
+        undefined,
+        undefined
+      )
       const validatorInstance = vi.mocked(ApexClassValidator).mock.results[0]
         .value as { validate: ReturnType<typeof vi.fn> }
       expect(validatorInstance.validate).toHaveBeenCalledWith(

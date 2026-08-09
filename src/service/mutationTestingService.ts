@@ -36,12 +36,15 @@ export class MutationTestingService {
   private readonly skipPatterns: RE2Instance[]
   private readonly allowedLines: Set<number> | undefined
   private readonly mutationGroupingEnabled: boolean
+  protected readonly useAer: boolean
+  protected readonly aerSfProjectPath: string | undefined
+  protected readonly aerFlags: string | undefined
   private apexClassContent: string = ''
 
   constructor(
     protected readonly progress: Progress,
     protected readonly spinner: Spinner,
-    protected readonly connection: Connection,
+    protected readonly connection: Connection | undefined,
     {
       apexClassName,
       apexTestClassName,
@@ -53,6 +56,9 @@ export class MutationTestingService {
       skipPatterns,
       lines,
       mutationGrouping,
+      useAer,
+      aerSfProjectPath,
+      aerFlags,
     }: ApexMutationParameter,
     protected readonly messages: Messages<string>
   ) {
@@ -66,6 +72,9 @@ export class MutationTestingService {
     this.skipPatterns = ConfigReader.compileSkipPatterns(skipPatterns)
     this.allowedLines = ConfigReader.parseLineRanges(lines)
     this.mutationGroupingEnabled = mutationGrouping ?? false
+    this.useAer = useAer ?? false
+    this.aerSfProjectPath = aerSfProjectPath
+    this.aerFlags = aerFlags
   }
 
   public async process(): Promise<ApexMutationTestResult> {
@@ -109,17 +118,24 @@ export class MutationTestingService {
       groups.length
     )
 
-    const result = await this.executeMutationLoop(
-      apexClass,
-      mutations,
-      groups,
-      mutantGenerator,
-      tokenStream,
-      testMethodsPerLine,
-      apexTestRunner,
-      apexClassRepository
-    )
-    await this.rollback(apexClass, apexClassRepository)
+    const result = await (async () => {
+      try {
+        await apexTestRunner.startWatch()
+        return await this.executeMutationLoop(
+          apexClass,
+          mutations,
+          groups,
+          mutantGenerator,
+          tokenStream,
+          testMethodsPerLine,
+          apexTestRunner,
+          apexClassRepository
+        )
+      } finally {
+        await apexTestRunner.destroy()
+        await this.rollback(apexClass, apexClassRepository)
+      }
+    })()
     return result
   }
 
@@ -225,8 +241,20 @@ export class MutationTestingService {
 
   private createAdapters() {
     return {
-      apexClassRepository: new ApexClassRepository(this.connection),
-      apexTestRunner: new ApexTestRunner(this.connection),
+      apexClassRepository: new ApexClassRepository(
+        this.connection,
+        {},
+        this.useAer,
+        this.aerSfProjectPath
+      ),
+      apexTestRunner: new ApexTestRunner(
+        this.connection,
+        this.useAer,
+        this.aerSfProjectPath,
+        this.apexClassName,
+        this.aerFlags,
+        this.apexTestClassName
+      ),
     }
   }
 

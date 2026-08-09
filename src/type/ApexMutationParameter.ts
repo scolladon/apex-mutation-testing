@@ -12,4 +12,7 @@ export interface ApexMutationParameter {
   skipPatterns?: string[]
   lines?: string[]
   mutationGrouping?: boolean
+  useAer?: boolean
+  aerSfProjectPath?: string
+  aerFlags?: string
 }

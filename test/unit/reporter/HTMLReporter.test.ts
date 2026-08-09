@@ -1,4 +1,5 @@
 import { readFile, realpath, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { ApexMutationHTMLReporter } from '../../../src/reporter/HTMLReporter.js'
 import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult.js'
 
@@ -208,7 +209,7 @@ describe('HTMLReporter', () => {
       vi.mocked(realpath).mockImplementation(async (p: unknown) => {
         const s = String(p)
         if (s === cwd) return cwd
-        return `${cwd}/actual-reports`
+        return join(cwd, 'actual-reports')
       })
 
       // Act
