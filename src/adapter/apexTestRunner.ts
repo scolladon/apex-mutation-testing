@@ -18,7 +18,6 @@ export interface BaselineCompileFailure {
 export interface BaselineTestResult {
   outcome: string
   testsRan: number
-  failing: number
   compileFailures: BaselineCompileFailure[]
   otherFailureCount: number
   testMethodsPerLine: Map<number, Set<TestMethodId>>
@@ -102,7 +101,13 @@ const partitionOutcomes = (
 
 const SYNC_COMPILE_FAILURE_RUN_TIME = -1
 const SYNC_COMPILE_FAILURE_TESTS_RAN = 0
+// Rows the synchronous resource returned — a fact about the payload shape.
 const SYNC_COMPILE_FAILURE_ROW_COUNT = 1
+// Failures the org itself reported in summary.failing — a fact about the
+// org's own count. Both happen to be 1 for this fingerprint, but they are
+// independent invariants checked against independent fields; a future
+// fingerprint revision could change one without the other.
+const SYNC_COMPILE_FAILURE_FAILING_COUNT = 1
 const ASYNC_COMPILE_METHOD_NAME = '<compile>' // the token the async path emits
 
 // The synchronous Tooling resource never throws on a non-compiling test
@@ -118,8 +123,7 @@ const isSyncCompileFailureFingerprint = (testResult: TestResult): boolean => {
     row.methodName === null &&
     row.runTime === SYNC_COMPILE_FAILURE_RUN_TIME &&
     testResult.summary.testsRan === SYNC_COMPILE_FAILURE_TESTS_RAN &&
-    // one failing row is the same invariant as the row-count check above
-    testResult.summary.failing === SYNC_COMPILE_FAILURE_ROW_COUNT
+    testResult.summary.failing === SYNC_COMPILE_FAILURE_FAILING_COUNT
   )
 }
 
@@ -158,8 +162,9 @@ type TestItems = { className: string; testMethods?: string[] }[]
 
 // the synchronous Tooling resource accepts exactly one Apex class per payload
 const SYNC_ELIGIBLE_TEST_CLASS_COUNT = 1
-// stop the run at the first failure, on both transports
-const MAX_FAILED_TESTS = 0
+// stop the run at the first failure, on both transports — named for what it
+// does, not for the vendor field (maxFailedTests) it is assigned into below
+const STOP_AT_FIRST_FAILURE = 0
 
 // Preserves identity for a real Error — including any structured errorCode,
 // name and stack the org attached — and only wraps a non-Error rejection.
@@ -231,7 +236,6 @@ export class ApexTestRunner {
     return {
       outcome: testResult.summary.outcome,
       testsRan,
-      failing: testResult.summary.failing,
       compileFailures,
       otherFailureCount,
       testMethodsPerLine: coverageStrategy.getTestMethodsPerLine({
@@ -285,12 +289,15 @@ export class ApexTestRunner {
     this.onSyncFallback?.(error)
   }
 
+  // No `testLevel` key here, unlike the asynchronous payload below: the
+  // synchronous resource always runs exactly the tests named in `tests`, so
+  // it infers RunSpecifiedTests from the payload shape alone.
   private async runTestSynchronous(
     tests: TestItems,
     skipCodeCoverage: boolean
   ): Promise<TestResult> {
     const testResult = (await this.testService.runTestSynchronous(
-      { tests, skipCodeCoverage, maxFailedTests: MAX_FAILED_TESTS },
+      { tests, skipCodeCoverage, maxFailedTests: STOP_AT_FIRST_FAILURE },
       !skipCodeCoverage
     )) as TestResult
     return normalizeSyncCompileFailure(testResult)
@@ -305,7 +312,7 @@ export class ApexTestRunner {
         tests,
         testLevel: TestLevel.RunSpecifiedTests,
         skipCodeCoverage,
-        maxFailedTests: MAX_FAILED_TESTS,
+        maxFailedTests: STOP_AT_FIRST_FAILURE,
       },
       !skipCodeCoverage
     )) as TestResult

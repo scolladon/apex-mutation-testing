@@ -400,6 +400,9 @@ describe('ApexClassRepository', () => {
         // Assert
         expect(thrown).toBeInstanceOf(DeploymentFailedError)
         expect((thrown as Error).message).toMatch(/^Deployment failed:/)
+        // oclif prints an uncaught error's `name`, so it is externally
+        // observable — not just an internal implementation detail.
+        expect((thrown as Error).name).toBe('DeploymentFailedError')
       })
     })
 

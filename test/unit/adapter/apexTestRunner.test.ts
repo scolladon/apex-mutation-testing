@@ -70,7 +70,6 @@ describe('ApexTestRunner', () => {
         expect(result).toEqual({
           outcome: 'Passed',
           testsRan: 1,
-          failing: 0,
           compileFailures: [],
           otherFailureCount: 0,
           testMethodsPerLine: new Map([[1, new Set(['testMethodA'])]]),
@@ -394,8 +393,13 @@ describe('ApexTestRunner', () => {
     })
 
     describe('given a synchronous baseline carrying every compile-failure marker', () => {
-      // Captured from a live org: a class made non-compiling by deleting a
-      // dependency, run through the synchronous Tooling resource.
+      // Captured from a live org against @salesforce/apex-node@9.0.2: a
+      // class made non-compiling by deleting a dependency, run through the
+      // synchronous Tooling resource. `methodName: null` is impossible per
+      // the SDK's `ApexTestResultData.methodName: string` type — this is
+      // the actual runtime shape, not a typo; there is no automated drift
+      // detector, so re-verify against a live org if this ever needs to
+      // change.
       const syncCompileFailureRow = {
         id: '01pdL00000Z2WSfQAN',
         apexClass: { fullName: 'AmtSyncDepTest' },
@@ -551,6 +555,32 @@ describe('ApexTestRunner', () => {
         expect(result.otherFailureCount).toBe(2)
         expect(runTestAsynchronousMock).not.toHaveBeenCalled()
       })
+
+      it('then should stay plain Fail rows when a second row is present even though summary.failing alone already matches the fingerprint', async () => {
+        // Arrange — unlike the fixture above (failing: 2, which the
+        // `failing` conjunct alone already rejects regardless of row count),
+        // this keeps failing: 1 so only the row-count conjunct can reject a
+        // two-row result. Relaxing `tests.length !== 1` to `< 1` would let
+        // this fingerprint match, collapsing both rows into a single
+        // CompileFail and silently discarding the second one.
+        const secondRow = {
+          apexClass: { fullName: 'OtherSyncDepTest' },
+          methodName: 'itFails',
+          outcome: ApexTestResultOutcome.Fail,
+          message: 'System.AssertException: Assertion Failed',
+          runTime: 0.02,
+        }
+
+        // Act
+        const result = await runSyncBaseline({
+          summary: markedSummary,
+          tests: [markedRow, secondRow],
+        })
+
+        // Assert — neither row is normalised
+        expect(result.compileFailures).toEqual([])
+        expect(result.otherFailureCount).toBe(2)
+      })
     })
 
     describe('given an asynchronous result whose single row matches every compile-failure marker', () => {
@@ -704,7 +734,8 @@ describe('ApexTestRunner', () => {
 
     describe('given a single-class id set spanning multiple methods', () => {
       it('then should fold every method into one synchronous test entry', async () => {
-        // Arrange
+        // Arrange — no payload cap: every method travels in one item,
+        // however many there are.
         const mockTestResult = { summary: { outcome: 'Passed' } }
         runTestSynchronousMock.mockResolvedValue(mockTestResult)
 
@@ -715,35 +746,6 @@ describe('ApexTestRunner', () => {
         expect(runTestSynchronousMock).toHaveBeenCalledWith(
           {
             tests: [{ className: 'A', testMethods: ['m1', 'm2'] }],
-            skipCodeCoverage: true,
-            maxFailedTests: 0,
-          },
-          false
-        )
-        expect(runTestAsynchronousMock).not.toHaveBeenCalled()
-      })
-    })
-
-    describe('given a single-class id set with no method cap', () => {
-      it('then should route every one of forty methods through the synchronous transport in one item', async () => {
-        // Arrange
-        const mockTestResult = { summary: { outcome: 'Passed' } }
-        runTestSynchronousMock.mockResolvedValue(mockTestResult)
-        const methodNames = Array.from(
-          { length: 40 },
-          (_, index) => `m${index + 1}`
-        )
-        const ids = methodNames.map(
-          methodName => `A.${methodName}` as TestMethodId
-        )
-
-        // Act
-        await sut.runTestMethods(new Set<TestMethodId>(ids))
-
-        // Assert — there is no payload cap; every method travels in one item
-        expect(runTestSynchronousMock).toHaveBeenCalledWith(
-          {
-            tests: [{ className: 'A', testMethods: methodNames }],
             skipCodeCoverage: true,
             maxFailedTests: 0,
           },
@@ -771,6 +773,32 @@ describe('ApexTestRunner', () => {
               { className: 'A', testMethods: ['testOne', 'testTwo'] },
               { className: 'B', testMethods: ['testThree'] },
             ],
+            testLevel: TestLevel.RunSpecifiedTests,
+            skipCodeCoverage: true,
+            maxFailedTests: 0,
+          },
+          false
+        )
+        expect(runTestSynchronousMock).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('given an empty test method set', () => {
+      it('then should route through the asynchronous transport with an empty payload', async () => {
+        // Arrange — the zero boundary of the transport predicate: 0 must not
+        // satisfy `tests.length === SYNC_ELIGIBLE_TEST_CLASS_COUNT`. Relaxing
+        // `===` to `<=` would route an empty payload to the synchronous
+        // transport instead.
+        const mockTestResult = { summary: { outcome: 'Passed' } }
+        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
+
+        // Act
+        await sut.runTestMethods(new Set<TestMethodId>())
+
+        // Assert
+        expect(runTestAsynchronousMock).toHaveBeenCalledWith(
+          {
+            tests: [],
             testLevel: TestLevel.RunSpecifiedTests,
             skipCodeCoverage: true,
             maxFailedTests: 0,
@@ -867,6 +895,30 @@ describe('ApexTestRunner', () => {
         const [reportedError] = onSyncFallback.mock.calls[0] as [Error]
         expect(reportedError).toBeInstanceOf(Error)
         expect(reportedError.message).toBe('plain string rejection')
+      })
+
+      it('then should fall back gracefully rather than throwing a TypeError when the rejection is null', async () => {
+        // Arrange — a null rejection must not reach the permanent-failure
+        // classification unguarded: readErrorCode reads a property off the
+        // normalised Error toReportableError produces, never off the raw
+        // rejection, so `null.errorCode` never has a chance to throw.
+        const onSyncFallback = vi.fn()
+        const fallbackSut = new ApexTestRunner(connectionStub, {
+          onSyncFallback,
+        })
+        runTestSynchronousMock.mockRejectedValue(null)
+        const mockTestResult = { summary: { outcome: 'Passed' } }
+        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
+
+        // Act & Assert — resolves via the asynchronous fallback, no throw
+        await expect(
+          fallbackSut.runTestMethods(
+            new Set<TestMethodId>(['TestClass.testMethod'])
+          )
+        ).resolves.toEqual(mockTestResult)
+        expect(onSyncFallback).toHaveBeenCalledTimes(1)
+        const [reportedError] = onSyncFallback.mock.calls[0] as [Error]
+        expect(reportedError).toBeInstanceOf(Error)
       })
 
       it('then should fall back without throwing when no callback is supplied', async () => {

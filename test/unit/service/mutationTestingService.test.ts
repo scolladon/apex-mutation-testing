@@ -455,11 +455,11 @@ describe('MutationTestingService', () => {
 
     describe('When the baseline reports otherFailureCount alongside a non-empty coverage map', () => {
       it('then should abort before the map reaches the mutant generator or the progress bar', async () => {
-        // Arrange — AggregateCoverageStrategy mints a TestMethodId from every
-        // result row, so a poisoned map reaching filterTestMethods or
-        // reducePerimeterFromBaseline would score every mutant Killed. The
-        // map must carry a synthetic entry: an empty one would pass this test
-        // for the wrong reason.
+        // Arrange — AggregateCoverageStrategy would mint a TestMethodId from
+        // every result row a poisoned map exposed to filterTestMethods or
+        // reducePerimeterFromBaseline, scoring every mutant Killed. The
+        // Ghost.row entry illustrates that real-world risk, but it is not
+        // what makes this test failing-capable — see the note below.
         vi.mocked(ApexClassRepository).mockImplementation(
           class {
             read = vi.fn().mockImplementation((name: string) => {
@@ -491,7 +491,10 @@ describe('MutationTestingService', () => {
         )
         // Pins the abort ordering: assertUsableBaseline must run ahead of
         // filterTestMethods/reducePerimeterFromBaseline and of mutant
-        // generation, or the poisoned map would reach a live consumer.
+        // generation. The exact 'Original tests passed' string below — not
+        // the map's contents — is what makes this failing-capable: a
+        // reordered implementation still fails this same assertion even
+        // with an empty testMethodsPerLine.
         expect(spinner.stop).not.toHaveBeenCalledWith('Original tests passed')
         expect(vi.mocked(MutantGenerator)).not.toHaveBeenCalled()
         expect(progress.start).not.toHaveBeenCalled()
