@@ -81,8 +81,8 @@ const writeToStdout: OutputSink = text => {
 // needs a bound because its inputs are already short.
 const MAX_SYNC_FALLBACK_REASON_LENGTH = 200
 
-// Truncates by code point, not by UTF-16 index, so a surrogate pair or a
-// combining sequence is never split.
+// Truncates by code point, not by UTF-16 index, so a surrogate pair is
+// never split.
 const truncateForDisplay = (value: string, maxLength: number): string => {
   const codePoints = Array.from(value)
   return codePoints.length <= maxLength

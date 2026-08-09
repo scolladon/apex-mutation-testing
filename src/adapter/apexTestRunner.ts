@@ -278,6 +278,19 @@ export class ApexTestRunner {
         this.syncTransportDisabled = true
       }
       const fallback = this.runTestAsynchronous(tests, skipCodeCoverage)
+      // Attach a handler before the report below can throw: the report is
+      // the caller's own callback (a stdout write in production) and can
+      // reject `runPreferringSync` before `return fallback` ever runs,
+      // leaving `fallback` referenced by nothing. A rejected promise with
+      // no handler by the next tick surfaces as a Node `unhandledRejection`
+      // and, under the default `--unhandled-rejections=throw`, terminates
+      // the process. The no-op below only silences that dangling listener —
+      // it does not consume `fallback` itself, so the `return fallback`
+      // below still hands the caller a promise that rejects with the exact
+      // same reason whenever the report does not throw.
+      void fallback.catch(() => {
+        // Intentional no-op: only silences the unhandled-rejection listener.
+      })
       this.reportSyncFallback(reportableError)
       return fallback
     }

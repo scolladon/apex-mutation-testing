@@ -990,6 +990,55 @@ describe('ApexTestRunner', () => {
         ).rejects.toBe(reportingError)
         expect(runTestAsynchronousMock).toHaveBeenCalledTimes(1)
       })
+
+      it('then should not leave the fallback promise unhandled when the reporter throws and the asynchronous retry also rejects', async () => {
+        // Arrange — the two failure modes are correlated, not independent:
+        // the org/network trouble that broke the synchronous call is the
+        // same condition most likely to also break the asynchronous retry.
+        // A `fallback` promise created but never given a handler before the
+        // reporter throws would surface as a Node `unhandledRejection` and,
+        // under the default `--unhandled-rejections=throw`, terminate the
+        // process. A process-wide listener is the only vantage point that
+        // can observe that absence of a handler.
+        const capturedRejections: unknown[] = []
+        const onUnhandledRejection = (reason: unknown): void => {
+          capturedRejections.push(reason)
+        }
+        process.on('unhandledRejection', onUnhandledRejection)
+
+        const reportingError = new Error('EPIPE')
+        const onSyncFallback = vi.fn(() => {
+          throw reportingError
+        })
+        const fallbackSut = new ApexTestRunner(connectionStub, {
+          onSyncFallback,
+        })
+        runTestSynchronousMock.mockRejectedValue(
+          new Error('View Setup permission required')
+        )
+        const asyncError = new Error('Test execution failed')
+        runTestAsynchronousMock.mockRejectedValue(asyncError)
+
+        try {
+          // Act — the reporter's own throw is still what the caller
+          // observes, exactly as the sibling test above pins; the
+          // asynchronous retry's rejection must be handled quietly rather
+          // than crash the process.
+          await expect(
+            fallbackSut.runTestMethods(
+              new Set<TestMethodId>(['TestClass.testMethod'])
+            )
+          ).rejects.toBe(reportingError)
+          expect(runTestAsynchronousMock).toHaveBeenCalledTimes(1)
+
+          // Assert — give Node's rejection tracking a turn of the event
+          // loop; an unhandled `fallback` would have surfaced by now.
+          await new Promise(resolve => setImmediate(resolve))
+          expect(capturedRejections).toEqual([])
+        } finally {
+          process.off('unhandledRejection', onUnhandledRejection)
+        }
+      })
     })
 
     describe('given a permanent capability gap on the synchronous transport', () => {
