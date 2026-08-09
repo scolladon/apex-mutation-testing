@@ -49,7 +49,12 @@ vi.mock('@salesforce/core', () => ({
 
 vi.mock('@salesforce/sf-plugins-core', () => {
   class FakeSfCommand {
-    progress = { start: vi.fn(), update: vi.fn(), finish: vi.fn() }
+    progress = {
+      start: vi.fn(),
+      update: vi.fn(),
+      finish: vi.fn(),
+      stop: vi.fn(),
+    }
     spinner = { start: vi.fn(), stop: vi.fn() }
     log = vi.fn()
     info = vi.fn()
@@ -201,7 +206,12 @@ describe('apex mutation test run NUT', () => {
     vi.spyOn(cmd, 'log').mockImplementation(vi.fn() as never)
     vi.spyOn(cmd, 'info').mockImplementation(vi.fn() as never)
     Object.defineProperty(cmd, 'progress', {
-      value: { start: vi.fn(), update: vi.fn(), finish: vi.fn() },
+      value: {
+        start: vi.fn(),
+        update: vi.fn(),
+        finish: vi.fn(),
+        stop: vi.fn(),
+      },
     })
     Object.defineProperty(cmd, 'spinner', {
       value: { start: vi.fn(), stop: vi.fn() },

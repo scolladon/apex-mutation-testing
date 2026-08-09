@@ -76,10 +76,16 @@ const writeToStdout: OutputSink = text => {
 
 // @jsforce/jsforce-node sets `error.message` to the entire raw response body
 // when it is neither a parseable JSON error nor text/html (see
-// http-api.js), so a synchronous-transport failure reason is org/network-
-// controlled and unbounded. The sibling compile-diagnosis sanitizer never
-// needs a bound because its inputs are already short.
-const MAX_SYNC_FALLBACK_REASON_LENGTH = 200
+// http-api.js), so any org/network failure detail is unbounded. Bounds every
+// such detail this service renders — the sync-transport fallback reason and
+// the rollback failure cause alike. The sibling compile-diagnosis sanitizer
+// never needs a bound because its inputs are already short.
+const MAX_ORG_ERROR_DETAIL_LENGTH = 200
+
+// Emitted when the progress bar cannot be torn down on the failure path. The
+// rollback that follows matters more, so this is reported and stepped over.
+const PROGRESS_TEARDOWN_WARNING =
+  'Warning: could not tear down the progress display. Cause:'
 
 // Truncates by code point, not by UTF-16 index, so a surrogate pair is
 // never split.
@@ -338,7 +344,7 @@ export class MutationTestingService {
     this.spinner.pause(() => {
       const reason = truncateForDisplay(
         sanitizeForDisplay(error.message),
-        MAX_SYNC_FALLBACK_REASON_LENGTH
+        MAX_ORG_ERROR_DETAIL_LENGTH
       )
       this.outputSink(
         `${this.messages.getMessage('info.syncTransportFallback', [reason])}\n`
@@ -815,10 +821,29 @@ export class MutationTestingService {
     try {
       result = await this.executeMutationLoop(context)
     } catch (loopError: unknown) {
+      // The bar the loop owns stopped moving when the loop died. Tearing it
+      // down here, next to the failure it answers, leaves a single renderer on
+      // stdout before the rollback spinner starts.
+      this.stopProgress()
       throw await this.rollbackAfterLoopFailure(loopError, context)
     }
     await this.rollback(context.apexClass, context.apexClassRepository)
     return result
+  }
+
+  // Reaching the restore is the whole point of the guard, so nothing between
+  // the loop's rejection and the restore attempt may pre-empt it. Tearing the
+  // bar down writes to stdout, which can fail when the stream is gone, so the
+  // failure is reported through the same sink as the other non-fatal warnings
+  // instead of propagating and skipping the restore.
+  private stopProgress(): void {
+    try {
+      this.progress.stop()
+    } catch (error: unknown) {
+      this.outputSink(
+        `${PROGRESS_TEARDOWN_WARNING} ${sanitizeForDisplay(String(error))}\n`
+      )
+    }
   }
 
   // Returns the error for the caller to throw rather than throwing itself, so
@@ -828,9 +853,6 @@ export class MutationTestingService {
     loopError: unknown,
     context: MutationLoopContext
   ): Promise<unknown> {
-    // The bar stopped moving when the loop died; tearing it down before the
-    // rollback spinner starts leaves one renderer on stdout.
-    this.progress.stop()
     try {
       await this.rollback(context.apexClass, context.apexClassRepository)
       return loopError
@@ -840,6 +862,13 @@ export class MutationTestingService {
       // stderr as well as --json. String(rollbackError) is deliberately
       // unguarded: rollback only ever raises the Error it builds itself, so an
       // instanceof guard would add an arm no test could reach.
+      //
+      // Flattening to a plain Error drops any name/code/actions the loop error
+      // carried, which SfCommandError.from reads off the thrown error rather
+      // than the cause chain. That is safe only because org errors never escape
+      // the loop — GroupExecutor classifies deploy and test failures per mutant
+      // and rethrows nothing — so a future throw of a structured error out of
+      // the loop breaks this assumption.
       const loopMessage =
         loopError instanceof Error ? loopError.message : String(loopError)
       return new Error(`${loopMessage}\n${String(rollbackError)}`, {
@@ -864,9 +893,18 @@ export class MutationTestingService {
       this.spinner.stop(
         `Rollback FAILED — '${this.apexClassName}' remains in a mutated state on the target org. Redeploy the original class manually.`
       )
-      const cause = error instanceof Error ? error.message : String(error)
+      // The cause is the raw org/network failure, so it is unbounded and can
+      // carry control bytes — folded and length-bounded like every other
+      // org-supplied detail this service renders. The actionable sentence goes
+      // last so no amount of org text can push it off screen.
+      const cause = truncateForDisplay(
+        sanitizeForDisplay(
+          error instanceof Error ? error.message : String(error)
+        ),
+        MAX_ORG_ERROR_DETAIL_LENGTH
+      )
       throw new Error(
-        `Rollback of '${this.apexClassName}' failed. The class on the target org is still in a mutated state. Redeploy manually. Underlying cause: ${cause}`
+        `Rollback of '${this.apexClassName}' failed. Underlying cause: ${cause}. The class on the target org is still in a mutated state. Redeploy manually.`
       )
     }
   }
