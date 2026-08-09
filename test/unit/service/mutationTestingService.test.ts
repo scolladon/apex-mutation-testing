@@ -3,6 +3,8 @@ import { Progress, Spinner } from '@salesforce/sf-plugins-core'
 import {
   ApexClassRepository,
   DeploymentFailedError,
+  RUN_TESTS,
+  SKIP_TESTS,
 } from '../../../src/adapter/apexClassRepository.js'
 import { ApexSettingsRepository } from '../../../src/adapter/apexSettingsRepository.js'
 import { ApexTestRunner } from '../../../src/adapter/apexTestRunner.js'
@@ -3556,11 +3558,7 @@ describe('MutationTestingService', () => {
           Body: 'mutated code',
         })
         // The restore redeploys the original body and skips its tests
-        expect(updateSpy).toHaveBeenNthCalledWith(
-          3,
-          mockApexClass,
-          'skip-tests'
-        )
+        expect(updateSpy).toHaveBeenNthCalledWith(3, mockApexClass, SKIP_TESTS)
         expect(spinner.start).toHaveBeenCalledWith(
           'Rolling back "TestClass" ApexClass to its original state',
           undefined,
@@ -3597,18 +3595,14 @@ describe('MutationTestingService', () => {
         const updateSpy = vi.fn().mockResolvedValue({})
         arrangeLoopFailure(updateSpy)
         progress.stop = vi.fn(() => {
-          throw new Error('stdout is gone')
+          throw new Error('stdout\nis gone')
         })
 
         // Act & Assert
         await expect(sut.process()).rejects.toBe(loopFailure)
         expect(updateSpy).toHaveBeenCalledTimes(3)
         // The restore redeploys the original body and skips its tests
-        expect(updateSpy).toHaveBeenNthCalledWith(
-          3,
-          mockApexClass,
-          'skip-tests'
-        )
+        expect(updateSpy).toHaveBeenNthCalledWith(3, mockApexClass, SKIP_TESTS)
         expect(outputSinkStub).toHaveBeenCalledWith(
           'Warning: could not tear down the progress display. Cause: Error: stdout is gone\n'
         )
@@ -3621,7 +3615,7 @@ describe('MutationTestingService', () => {
           .fn()
           .mockResolvedValueOnce({})
           .mockResolvedValueOnce({})
-          .mockRejectedValue(new Error(`net down ${'a'.repeat(250)}`))
+          .mockRejectedValue(new Error(`net\ndown ${'a'.repeat(250)}`))
         arrangeLoopFailure(updateSpy)
 
         // Act
@@ -3675,6 +3669,10 @@ describe('MutationTestingService', () => {
         // Assert — exactly one restore deploy, and the rollback failure
         // propagates unwrapped
         expect(updateSpy).toHaveBeenCalledTimes(3)
+        // The success-path restore keeps running the tests, so the org's
+        // stored coverage ends up matching the real class rather than the
+        // last mutant. Only the failure path trades that away for speed.
+        expect(updateSpy).toHaveBeenNthCalledWith(3, mockApexClass, RUN_TESTS)
         expect((caught as Error).message).toBe(
           "Rollback of 'TestClass' failed. Underlying cause: Rollback failed. The class on the target org is still in a mutated state. Redeploy manually."
         )

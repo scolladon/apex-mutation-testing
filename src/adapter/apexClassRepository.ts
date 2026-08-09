@@ -17,7 +17,7 @@ const TERMINAL_STATES = new Set([
 
 // Whether a container deploy asks the org to run tests. Named rather than a
 // bare boolean so the call sites read as intent instead of a flag.
-const RUN_TESTS = 'run-tests'
+export const RUN_TESTS = 'run-tests'
 export const SKIP_TESTS = 'skip-tests'
 export type DeployTestPolicy = typeof RUN_TESTS | typeof SKIP_TESTS
 
@@ -144,13 +144,11 @@ export class ApexClassRepository {
       .execute()) as MetadataComponentDependency[]
   }
 
-  // Deploys run the class's tests by default, because that is how a mutant
-  // deploy picks up its coverage. Putting the original body back is the
-  // exception: it compiled and was covered before the run started, so
-  // re-running its tests buys nothing — and the restore matters most exactly
-  // when the org has run out of test quota, which is when a test-running
-  // deploy is the request most likely to be refused. Callers restoring a body
-  // pass SKIP_TESTS to make it the cheapest call the plugin makes.
+  // Deploys ask the org to run the class's tests, which is what leaves the
+  // org's stored coverage matching the body just deployed. Callers that are
+  // abandoning a run pass SKIP_TESTS: the org is then often out of test quota,
+  // which makes a test-running deploy the request most likely to be refused,
+  // and a restore that is refused is one that leaves a mutant behind.
   public async update(
     apexClass: ApexClass,
     testPolicy: DeployTestPolicy = RUN_TESTS

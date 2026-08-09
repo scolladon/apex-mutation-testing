@@ -3,6 +3,7 @@ import {
   ApexClassRepository,
   DeploymentFailedError,
   PollTimeoutError,
+  SKIP_TESTS,
 } from '../../../src/adapter/apexClassRepository.js'
 
 describe('ApexClassRepository', () => {
@@ -341,7 +342,7 @@ describe('ApexClassRepository', () => {
         })
 
         // Act
-        await sut.update(mockApexClass, 'skip-tests')
+        await sut.update(mockApexClass, SKIP_TESTS)
 
         // Assert
         expect(createMock).toHaveBeenNthCalledWith(3, {

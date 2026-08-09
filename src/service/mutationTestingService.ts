@@ -3,6 +3,8 @@ import { Progress, Spinner } from '@salesforce/sf-plugins-core'
 import type { CommonTokenStream } from 'apex-parser'
 import {
   ApexClassRepository,
+  type DeployTestPolicy,
+  RUN_TESTS,
   SKIP_TESTS,
 } from '../adapter/apexClassRepository.js'
 import { ApexSettingsRepository } from '../adapter/apexSettingsRepository.js'
@@ -825,8 +827,8 @@ export class MutationTestingService {
       result = await this.executeMutationLoop(context)
     } catch (loopError: unknown) {
       // The bar the loop owns stopped moving when the loop died. Tearing it
-      // down here, next to the failure it answers, leaves a single renderer on
-      // stdout before the rollback spinner starts.
+      // down here, next to the failure it answers, leaves a single renderer
+      // drawing while the rollback spinner runs.
       this.stopProgress()
       throw await this.rollbackAfterLoopFailure(loopError, context)
     }
@@ -834,11 +836,13 @@ export class MutationTestingService {
     return result
   }
 
-  // Reaching the restore is the whole point of the guard, so nothing between
-  // the loop's rejection and the restore attempt may pre-empt it. Tearing the
-  // bar down writes to stdout, which can fail when the stream is gone, so the
-  // failure is reported through the same sink as the other non-fatal warnings
-  // instead of propagating and skipping the restore.
+  // Reaching the restore is the whole point of the guard, so a renderer
+  // teardown failure must not pre-empt it — hence reported, not propagated.
+  // The two channels are deliberately different file descriptors: cli-progress
+  // draws the bar on stderr, while the sink writes to stdout, so whatever
+  // broke the bar cannot also swallow the report. Keep them apart; routing
+  // this warning to stderr to "match" the bar would couple them and let a dead
+  // stream skip the restore after all.
   private stopProgress(): void {
     try {
       this.progress.stop()
@@ -857,7 +861,16 @@ export class MutationTestingService {
     context: MutationLoopContext
   ): Promise<unknown> {
     try {
-      await this.rollback(context.apexClass, context.apexClassRepository)
+      // The run is already lost, and this restore is often attempted against
+      // an org that has just exhausted its test quota — so it skips the test
+      // run, making it the cheapest request the plugin can issue. The success
+      // path keeps the default and leaves the org's coverage recomputed for
+      // the real class.
+      await this.rollback(
+        context.apexClass,
+        context.apexClassRepository,
+        SKIP_TESTS
+      )
       return loopError
     } catch (rollbackError: unknown) {
       // The loop failure is the root cause and leads the message; the rollback
@@ -868,10 +881,12 @@ export class MutationTestingService {
       //
       // Flattening to a plain Error drops any name/code/actions the loop error
       // carried, which SfCommandError.from reads off the thrown error rather
-      // than the cause chain. That is safe only because org errors never escape
-      // the loop — GroupExecutor classifies deploy and test failures per mutant
-      // and rethrows nothing — so a future throw of a structured error out of
-      // the loop breaks this assumption.
+      // than the cause chain. That is safe only because nothing org-derived
+      // escapes the loop: GroupExecutor wraps its only two org calls, the
+      // mutant deploy and the test run, and classifies their failures per
+      // mutant. What does escape — a mutateMany throw, a progress update — is
+      // plugin-local and carries no name/code/actions. Throwing a structured
+      // error out of the loop would break this.
       const loopMessage =
         loopError instanceof Error ? loopError.message : String(loopError)
       return new Error(`${loopMessage}\n${String(rollbackError)}`, {
@@ -882,7 +897,8 @@ export class MutationTestingService {
 
   private async rollback(
     apexClass: ApexClass,
-    apexClassRepository: ApexClassRepository
+    apexClassRepository: ApexClassRepository,
+    testPolicy: DeployTestPolicy = RUN_TESTS
   ): Promise<void> {
     this.spinner.start(
       `Rolling back "${this.apexClassName}" ApexClass to its original state`,
@@ -890,7 +906,7 @@ export class MutationTestingService {
       { stdout: true }
     )
     try {
-      await apexClassRepository.update(apexClass, SKIP_TESTS)
+      await apexClassRepository.update(apexClass, testPolicy)
       this.spinner.stop('Done')
     } catch (error: unknown) {
       this.spinner.stop(
