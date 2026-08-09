@@ -101,14 +101,17 @@ const truncateForDisplay = (value: string, maxLength: number): string => {
     : `${codePoints.slice(0, maxLength).join('')}…`
 }
 
-// Every org-supplied detail this service renders goes through this same
-// policy: jsforce sets `error.message` to the entire raw response body when
-// it is neither parseable JSON nor text/html, so the text is unbounded and
-// may contain control bytes. Sanitizing must run before truncating, never
-// after — sanitizing can only fold characters away, never add any, so once
-// it has run the string cannot grow back past the length bound. Applying
-// only the sanitize step, or only the length bound, leaves the other half
-// of the hazard in place.
+// How every org-supplied detail this service renders is prepared: jsforce
+// sets `error.message` to the entire raw response body when it is neither
+// parseable JSON nor text/html (see http-api.js), so the text is unbounded
+// and may contain control bytes. Sanitizing runs first so the length budget
+// is spent on characters a human can read — truncating first can spend the
+// whole bound on control bytes that then fold away to nothing, erasing the
+// diagnostic entirely. Applying only one of the two steps leaves the other
+// half of the hazard in place.
+//
+// Errors raised by this process rather than by the org — the renderer
+// teardown in stopProgress — are not org-supplied and need only the fold.
 const renderOrgDetail = (detail: string): string =>
   truncateForDisplay(sanitizeForDisplay(detail), MAX_ORG_ERROR_DETAIL_LENGTH)
 
