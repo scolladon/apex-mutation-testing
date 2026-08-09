@@ -161,6 +161,37 @@ const SYNC_ELIGIBLE_TEST_CLASS_COUNT = 1
 // stop the run at the first failure, on both transports
 const MAX_FAILED_TESTS = 0
 
+// Preserves identity for a real Error — including any structured errorCode,
+// name and stack the org attached — and only wraps a non-Error rejection.
+// The permanent-failure classification below reads `errorCode` off this
+// same normalized value, so a naive `new Error(String(error))` rewrite here
+// would silently blind that classification too.
+const toReportableError = (error: unknown): Error =>
+  error instanceof Error ? error : new Error(String(error))
+
+// Error codes the org returns when the *capability* itself is unavailable —
+// the calling user permanently lacks the View Setup permission
+// runTestsSynchronous requires — rather than a transient failure a later
+// call could recover from. Sourced from Salesforce's REST/Tooling API error
+// code reference (a stable, versioned platform contract, not something that
+// varies call to call): both denote a permission/authorization gap.
+// Deliberately excludes retryable codes such as UNABLE_TO_LOCK_ROW,
+// ALREADY_IN_PROCESS, or a bare HTTP 503 — those recover on a later group.
+const PERMANENT_SYNC_ERROR_CODES: ReadonlySet<string> = new Set([
+  'INSUFFICIENT_ACCESS_OR_READONLY',
+  'INSUFFICIENT_ACCESS',
+])
+
+const readErrorCode = (error: Error): string | undefined => {
+  const code = (error as { errorCode?: unknown }).errorCode
+  return typeof code === 'string' ? code : undefined
+}
+
+const isPermanentSyncFailure = (error: Error): boolean => {
+  const code = readErrorCode(error)
+  return code !== undefined && PERMANENT_SYNC_ERROR_CODES.has(code)
+}
+
 // module-local, not exported — keeps the class's public surface unchanged.
 // The adapter reports that it fell back; the caller decides how that looks.
 interface ApexTestRunnerOptions {
@@ -174,6 +205,13 @@ export class ApexTestRunner {
   // per run, so this latch is session-scoped and stops a permission-less org
   // from emitting the same warning once per test group.
   private syncFallbackReported = false
+  // Set once a permanent capability gap is observed (a missing View Setup
+  // permission never grants itself mid-campaign) — skips the synchronous
+  // attempt on every later single-class call for the rest of this adapter's
+  // session, so a permanently unavailable transport costs exactly one
+  // wasted round-trip per campaign. A transient error code leaves this
+  // false, so the synchronous transport is retried on the next call.
+  private syncTransportDisabled = false
 
   constructor(connection: Connection, options: ApexTestRunnerOptions = {}) {
     this.testService = new TestService(connection)
@@ -211,7 +249,8 @@ export class ApexTestRunner {
     tests: TestItems,
     skipCodeCoverage: boolean
   ): Promise<TestResult> {
-    return tests.length === SYNC_ELIGIBLE_TEST_CLASS_COUNT
+    return tests.length === SYNC_ELIGIBLE_TEST_CLASS_COUNT &&
+      !this.syncTransportDisabled
       ? this.runPreferringSync(tests, skipCodeCoverage)
       : this.runTestAsynchronous(tests, skipCodeCoverage)
   }
@@ -219,7 +258,10 @@ export class ApexTestRunner {
   // runTestsSynchronous requires the View Setup user permission, which the
   // asynchronous path never needed. A thrown sync error is reported once,
   // then the exact same payload is retried on the asynchronous transport —
-  // bounded to one retry, and whatever the retry throws propagates untouched.
+  // bounded to one retry per call, and whatever the retry throws propagates
+  // untouched. The asynchronous call is issued before reporting so a
+  // throwing report callback (the caller's stdout write, not this adapter's
+  // concern) never preempts the fallback attempt itself.
   private async runPreferringSync(
     tests: TestItems,
     skipCodeCoverage: boolean
@@ -227,17 +269,20 @@ export class ApexTestRunner {
     try {
       return await this.runTestSynchronous(tests, skipCodeCoverage)
     } catch (error: unknown) {
-      this.reportSyncFallback(error)
-      return this.runTestAsynchronous(tests, skipCodeCoverage)
+      const reportableError = toReportableError(error)
+      if (isPermanentSyncFailure(reportableError)) {
+        this.syncTransportDisabled = true
+      }
+      const fallback = this.runTestAsynchronous(tests, skipCodeCoverage)
+      this.reportSyncFallback(reportableError)
+      return fallback
     }
   }
 
-  private reportSyncFallback(error: unknown): void {
+  private reportSyncFallback(error: Error): void {
     if (this.syncFallbackReported) return
     this.syncFallbackReported = true
-    this.onSyncFallback?.(
-      error instanceof Error ? error : new Error(String(error))
-    )
+    this.onSyncFallback?.(error)
   }
 
   private async runTestSynchronous(

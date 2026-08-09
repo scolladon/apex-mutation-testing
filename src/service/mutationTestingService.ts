@@ -43,7 +43,10 @@ import {
   extractMutationOriginalText,
 } from './mutationLocation.js'
 import type { SkipPattern } from './skipPattern.js'
-import { formatSkippedTestClasses } from './skippedTestClassMessage.js'
+import {
+  formatSkippedTestClasses,
+  sanitizeForDisplay,
+} from './skippedTestClassMessage.js'
 import { formatDuration, timeExecution } from './timeUtils.js'
 import { type TypeAnalysisResult, TypeDiscoverer } from './typeDiscoverer.js'
 import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
@@ -61,6 +64,31 @@ const matchesFilter = (id: TestMethodId, filterSet: Set<string>): boolean =>
 // type guard for the compiler rather than a runtime narrowing.
 // Stryker disable next-line ConditionalExpression: no null slots remain.
 const isPresent = <T>(value: T | null): value is T => value !== null
+
+// A single-purpose write port so a caller can inject a stub in tests instead
+// of spying on the process-global stdout stream. Defaults to the real
+// stdout, so run.ts needs no change to keep its current behaviour.
+export type OutputSink = (text: string) => void
+
+const writeToStdout: OutputSink = text => {
+  process.stdout.write(text)
+}
+
+// @jsforce/jsforce-node sets `error.message` to the entire raw response body
+// when it is neither a parseable JSON error nor text/html (see
+// http-api.js), so a synchronous-transport failure reason is org/network-
+// controlled and unbounded. The sibling compile-diagnosis sanitizer never
+// needs a bound because its inputs are already short.
+const MAX_SYNC_FALLBACK_REASON_LENGTH = 200
+
+// Truncates by code point, not by UTF-16 index, so a surrogate pair or a
+// combining sequence is never split.
+const truncateForDisplay = (value: string, maxLength: number): string => {
+  const codePoints = Array.from(value)
+  return codePoints.length <= maxLength
+    ? value
+    : `${codePoints.slice(0, maxLength).join('')}…`
+}
 
 interface MutationLoopContext {
   apexClass: ApexClass
@@ -106,7 +134,8 @@ export class MutationTestingService {
       mutationGrouping,
       testClassOrigins,
     }: ApexMutationParameter,
-    protected readonly messages: Messages<string>
+    protected readonly messages: Messages<string>,
+    private readonly outputSink: OutputSink = writeToStdout
   ) {
     this.apexClassName = apexClassName
     this.apexTestClassNames = apexTestClassNames
@@ -304,11 +333,17 @@ export class MutationTestingService {
   // oclif's stop() no-ops when no task is running, and start() replaces the
   // current task without stopping it, so that idiom would silently swallow a
   // later 'Original tests passed'. pause() is safe whether or not a task is
-  // active.
+  // active. The reason is org/network-controlled and unbounded — sanitized
+  // the same way as the compile-diagnosis path, then length-bounded, before
+  // it reaches the injected output sink.
   private warnSyncFallback(error: Error): void {
     this.spinner.pause(() => {
-      process.stdout.write(
-        `${this.messages.getMessage('info.syncTransportFallback', [error.message])}\n`
+      const reason = truncateForDisplay(
+        sanitizeForDisplay(error.message),
+        MAX_SYNC_FALLBACK_REASON_LENGTH
+      )
+      this.outputSink(
+        `${this.messages.getMessage('info.syncTransportFallback', [reason])}\n`
       )
     })
   }

@@ -883,6 +883,117 @@ describe('ApexTestRunner', () => {
           sut.runTestMethods(new Set<TestMethodId>(['TestClass.testMethod']))
         ).resolves.toEqual({ summary: { outcome: 'Passed' } })
       })
+
+      it('then should preserve the rejected Error object identity when reporting it', async () => {
+        // Arrange — the non-Error branch was already pinned; this pins the
+        // Error branch, which an unconditional `new Error(String(error))`
+        // rewrite would also satisfy on message text alone while discarding
+        // the original object's errorCode, name and stack.
+        const onSyncFallback = vi.fn()
+        const fallbackSut = new ApexTestRunner(connectionStub, {
+          onSyncFallback,
+        })
+        const syncError = Object.assign(
+          new Error('View Setup permission required'),
+          { errorCode: 'INSUFFICIENT_ACCESS_OR_READONLY' }
+        )
+        runTestSynchronousMock.mockRejectedValue(syncError)
+        runTestAsynchronousMock.mockResolvedValue({
+          summary: { outcome: 'Passed' },
+        })
+
+        // Act
+        await fallbackSut.runTestMethods(
+          new Set<TestMethodId>(['TestClass.testMethod'])
+        )
+
+        // Assert — identity, not just message equality
+        expect(onSyncFallback.mock.calls[0][0]).toBe(syncError)
+      })
+
+      it('then should still issue the asynchronous call when the fallback report throws', async () => {
+        // Arrange — the reporting channel is entirely the caller's (it wraps
+        // a stdout write in production), so a throw from it must not preempt
+        // the asynchronous attempt: the async call is issued first, and
+        // reporting happens only once it is already in flight.
+        const reportingError = new Error('EPIPE')
+        const onSyncFallback = vi.fn(() => {
+          throw reportingError
+        })
+        const fallbackSut = new ApexTestRunner(connectionStub, {
+          onSyncFallback,
+        })
+        runTestSynchronousMock.mockRejectedValue(
+          new Error('View Setup permission required')
+        )
+        runTestAsynchronousMock.mockResolvedValue({
+          summary: { outcome: 'Passed' },
+        })
+
+        // Act & Assert — the reporting error is not swallowed either
+        await expect(
+          fallbackSut.runTestMethods(
+            new Set<TestMethodId>(['TestClass.testMethod'])
+          )
+        ).rejects.toBe(reportingError)
+        expect(runTestAsynchronousMock).toHaveBeenCalledTimes(1)
+      })
+    })
+
+    describe('given a permanent capability gap on the synchronous transport', () => {
+      const permanentSyncError = Object.assign(
+        new Error('View Setup permission required'),
+        { errorCode: 'INSUFFICIENT_ACCESS_OR_READONLY' }
+      )
+
+      it('then should skip the synchronous attempt on every later single-class call in the same session', async () => {
+        // Arrange — a capability gap (missing View Setup permission) cannot
+        // resolve itself mid-campaign, so it costs exactly one wasted
+        // round-trip rather than one per group.
+        const fallbackSut = new ApexTestRunner(connectionStub, {})
+        runTestSynchronousMock.mockRejectedValue(permanentSyncError)
+        runTestAsynchronousMock.mockResolvedValue({
+          summary: { outcome: 'Passed' },
+        })
+
+        // Act
+        await fallbackSut.runTestMethods(
+          new Set<TestMethodId>(['TestClass.testMethod'])
+        )
+        await fallbackSut.runTestMethods(
+          new Set<TestMethodId>(['TestClass.testMethod'])
+        )
+
+        // Assert — one synchronous attempt total, two asynchronous ones
+        expect(runTestSynchronousMock).toHaveBeenCalledTimes(1)
+        expect(runTestAsynchronousMock).toHaveBeenCalledTimes(2)
+      })
+
+      it('then should keep retrying the synchronous transport on a transient error code', async () => {
+        // Arrange — UNABLE_TO_LOCK_ROW is a contention error a later group
+        // can recover from; it must not trip the permanent latch.
+        const transientSyncError = Object.assign(
+          new Error('unable to obtain exclusive access to this record'),
+          { errorCode: 'UNABLE_TO_LOCK_ROW' }
+        )
+        const fallbackSut = new ApexTestRunner(connectionStub, {})
+        runTestSynchronousMock.mockRejectedValue(transientSyncError)
+        runTestAsynchronousMock.mockResolvedValue({
+          summary: { outcome: 'Passed' },
+        })
+
+        // Act
+        await fallbackSut.runTestMethods(
+          new Set<TestMethodId>(['TestClass.testMethod'])
+        )
+        await fallbackSut.runTestMethods(
+          new Set<TestMethodId>(['TestClass.testMethod'])
+        )
+
+        // Assert — both calls still attempt the synchronous transport first
+        expect(runTestSynchronousMock).toHaveBeenCalledTimes(2)
+        expect(runTestAsynchronousMock).toHaveBeenCalledTimes(2)
+      })
     })
   })
 })

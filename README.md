@@ -152,7 +152,7 @@ To avoid that, a run whose payload names exactly one Apex class — including th
 
 On a class covered by a single test class, this means the **entire** run — baseline and every mutant — costs **zero** `DailyAsyncApexTests` units. Measured against a real org: 12 synchronous runs consumed zero async units, while 3 asynchronous runs consumed exactly 3.
 
-Synchronous execution requires the **View Setup** user permission, which the asynchronous path never needed. If your org user lacks it, every single-class test run — the baseline and each mutant — pays one wasted synchronous round-trip before falling back to the asynchronous transport. The plugin reports the reason only once, the first time it happens, rather than on every fallback: extra latency for the campaign, not a broken one.
+Synchronous execution requires the **View Setup** user permission, which the asynchronous path never needed. If your org user permanently lacks it, the plugin pays exactly one wasted synchronous round-trip for the whole campaign, then skips the synchronous attempt for every later single-class run — the baseline and each mutant — falling back straight to the asynchronous transport. A transient failure (a lock contention, a momentary 503) is retried on the synchronous transport on the next call instead, since it can recover on its own. Either way, the plugin reports the reason only once, the first time it happens, rather than on every fallback.
 
 ### Configuration
 

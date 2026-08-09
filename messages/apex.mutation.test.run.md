@@ -78,7 +78,7 @@ Per-test coverage unavailable on this org due to "Store Only Aggregated Code Cov
 
 # info.syncTransportFallback
 
-Synchronous test execution is unavailable (%s). Falling back to the asynchronous transport for the rest of this run.
+Synchronous test execution is unavailable (%s). Falling back to the asynchronous transport.
 
 # error.blankTestClass
 

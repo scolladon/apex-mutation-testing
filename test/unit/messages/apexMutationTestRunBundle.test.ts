@@ -124,7 +124,7 @@ describe('apex.mutation.test.run message bundle', () => {
 
     // Assert
     expect(sut).toBe(
-      'Synchronous test execution is unavailable (View Setup permission required). Falling back to the asynchronous transport for the rest of this run.'
+      'Synchronous test execution is unavailable (View Setup permission required). Falling back to the asynchronous transport.'
     )
   })
 

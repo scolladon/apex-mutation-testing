@@ -93,6 +93,7 @@ describe('MutationTestingService', () => {
   let spinner: Spinner
   let connection: Connection
   let messagesMock: Messages<string>
+  let outputSinkStub: ReturnType<typeof vi.fn>
 
   const mockApexClass = {
     Id: '123',
@@ -163,7 +164,7 @@ describe('MutationTestingService', () => {
         'info.reasonNoCoverage': 'it contributed no covered lines',
         'info.reasonDoesNotCompile': `it does not compile${args?.[0] ?? ''}`,
         'error.noUsableTestClass': `No usable Apex test class remains in the perimeter for '${args?.[0]}'. The following test class(es) were skipped:\n${args?.[1]}`,
-        'info.syncTransportFallback': `Synchronous test execution is unavailable (${args?.[0]}). Falling back to the asynchronous transport for the rest of this run.`,
+        'info.syncTransportFallback': `Synchronous test execution is unavailable (${args?.[0]}). Falling back to the asynchronous transport.`,
       }
       return templates[key] || key
     }
@@ -205,6 +206,8 @@ describe('MutationTestingService', () => {
       }
     )
 
+    outputSinkStub = vi.fn()
+
     sut = new MutationTestingService(
       progress,
       spinner,
@@ -213,7 +216,8 @@ describe('MutationTestingService', () => {
         apexClassName: 'TestClass',
         apexTestClassNames: ['TestClassTest'],
       } as ApexMutationParameter,
-      messagesMock
+      messagesMock,
+      outputSinkStub
     )
   })
 
@@ -259,9 +263,7 @@ describe('MutationTestingService', () => {
     })
 
     describe('When the adapter reports a synchronous transport fallback', () => {
-      it('then should wire onSyncFallback into the adapter and announce the reason through the spinner-pause channel', async () => {
-        // Arrange — the baseline aborts; only the constructor wiring and the
-        // callback's own behaviour are under test here.
+      const arrangeAbortingBaseline = (): void => {
         vi.mocked(ApexClassRepository).mockImplementation(
           class {
             read = vi.fn().mockImplementation((name: string) => {
@@ -286,27 +288,102 @@ describe('MutationTestingService', () => {
             )
           }
         )
-        const stdoutWriteSpy = vi
-          .spyOn(process.stdout, 'write')
-          .mockImplementation(() => true)
+      }
 
-        // Act
+      const invokeOnSyncFallback = async (error: Error): Promise<void> => {
         await expect(sut.process()).rejects.toThrow(
           'Original tests failed! Cannot proceed with mutation testing.'
         )
-
-        // Assert — createAdapters passed an onSyncFallback function as the
-        // constructor's second argument
+        // createAdapters passed an onSyncFallback function as the
+        // constructor's second argument; invoking it directly proves the
+        // wiring and gives createAdapters' arrow its function coverage.
         const [, options] = vi.mocked(ApexTestRunner).mock.calls[0] as [
           unknown,
           { onSyncFallback?: (error: Error) => void },
         ]
         expect(options.onSyncFallback).toBeInstanceOf(Function)
+        options.onSyncFallback?.(error)
+      }
 
-        // Invoking it directly proves the wiring and gives createAdapters'
-        // arrow its function coverage.
-        options.onSyncFallback?.(new Error('View Setup permission required'))
+      it('then should wire onSyncFallback into the adapter and announce the reason through the injected output sink after pausing the spinner', async () => {
+        // Arrange — the baseline aborts; only the constructor wiring and the
+        // callback's own behaviour are under test here.
+        arrangeAbortingBaseline()
+
+        // Act
+        await invokeOnSyncFallback(new Error('View Setup permission required'))
+
+        // Assert — the reporting channel is an injected sink, not a spy on
+        // the process-global stdout stream
         expect(spinner.pause).toHaveBeenCalled()
+        expect(outputSinkStub).toHaveBeenCalledWith(
+          expect.stringContaining('View Setup permission required')
+        )
+      })
+
+      it('then should sanitize control characters out of the reported reason before writing it', async () => {
+        // Arrange — the org/network-controlled message can carry a newline
+        // or a bidi override character; the reason portion of the written
+        // line must stay on one line and carry no such character through.
+        // The write itself still ends in exactly one trailing newline —
+        // that terminator is this call site's own, not part of the reason.
+        arrangeAbortingBaseline()
+
+        // Act
+        await invokeOnSyncFallback(new Error('View Setup‮required\nsecond line'))
+
+        // Assert
+        const [written] = outputSinkStub.mock.calls[0] as [string]
+        expect(written).toContain('View Setup required second line')
+        expect(written).not.toContain('‮')
+        expect(written.indexOf('\n')).toBe(written.length - 1)
+      })
+
+      it('then should bound the length of an unbounded reason before writing it', async () => {
+        // Arrange — @jsforce/jsforce-node sets `error.message` to the entire
+        // raw response body when it cannot be parsed as a JSON error or
+        // text/html, so it is not bounded upstream.
+        arrangeAbortingBaseline()
+        const unboundedReason = 'x'.repeat(5000)
+
+        // Act
+        await invokeOnSyncFallback(new Error(unboundedReason))
+
+        // Assert — the written line is nowhere near the raw 5000-character
+        // reason
+        const [written] = outputSinkStub.mock.calls[0] as [string]
+        expect(written.length).toBeLessThan(500)
+      })
+
+      it('then should default to writing through the real stdout when no output sink is injected', async () => {
+        // Arrange — run.ts constructs the service with no sink argument;
+        // the default must still reach the real terminal.
+        arrangeAbortingBaseline()
+        const defaultSinkSut = new MutationTestingService(
+          progress,
+          spinner,
+          connection,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassNames: ['TestClassTest'],
+          } as ApexMutationParameter,
+          messagesMock
+        )
+        const stdoutWriteSpy = vi
+          .spyOn(process.stdout, 'write')
+          .mockImplementation(() => true)
+
+        // Act
+        await expect(defaultSinkSut.process()).rejects.toThrow(
+          'Original tests failed! Cannot proceed with mutation testing.'
+        )
+        const [, options] = vi.mocked(ApexTestRunner).mock.calls.at(-1) as [
+          unknown,
+          { onSyncFallback?: (error: Error) => void },
+        ]
+        options.onSyncFallback?.(new Error('View Setup permission required'))
+
+        // Assert
         expect(stdoutWriteSpy).toHaveBeenCalledWith(
           expect.stringContaining('View Setup permission required')
         )
