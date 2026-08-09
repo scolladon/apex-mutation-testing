@@ -81,12 +81,6 @@ const baselineResult = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
-// A governor-limit rejection as the org actually throws it: an Error whose
-// `errorCode` carries the untranslated platform code alongside a message the
-// org may have localised.
-const limitUsageError = (message: string): Error =>
-  Object.assign(new Error(message), { errorCode: 'LIMIT_USAGE_FOR_NS' })
-
 describe('MutationTestingService', () => {
   let sut: MutationTestingService
   let progress: Progress
@@ -599,23 +593,6 @@ describe('MutationTestingService', () => {
               status: 'RuntimeError',
               statusReason:
                 'Unable to refresh session due to: Error authenticating with the refresh token due to: expired access/refresh token',
-              replacement: '0',
-              original: '42',
-            }),
-          ],
-        },
-        {
-          description: 'when test runner throws governor limit exception',
-          testResult: null,
-          expectedStatus: 'Killed',
-          error: limitUsageError(
-            'System.LimitException: LIMIT_USAGE_FOR_NS : Too many SOQL queries'
-          ),
-          updateError: null,
-          expectedMutants: [
-            expect.objectContaining({
-              mutatorName: 'TestMutation',
-              status: 'Killed',
               replacement: '0',
               original: '42',
             }),
@@ -3857,56 +3834,6 @@ describe('MutationTestingService', () => {
         expect(result.mutants[0].statusReason).toContain('Deployment failed:')
       })
 
-      it('Given error message containing "LIMIT_USAGE_FOR_NS", When evaluating mutation via test runner throw, Then status is Killed', async () => {
-        // Arrange
-        vi.mocked(ApexClassRepository).mockImplementation(
-          class {
-            read = vi.fn().mockImplementation((name: string) => {
-              if (name === 'TestClass') return Promise.resolve(mockApexClass)
-              return Promise.resolve(mockTestClass)
-            })
-            update = vi.fn().mockResolvedValue({})
-            getApexClassDependencies = vi.fn().mockResolvedValue([])
-          }
-        )
-        vi.mocked(MutantGenerator).mockImplementation(
-          class {
-            compute = vi
-              .fn()
-              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
-            mutate = vi.fn().mockReturnValue('mutated code')
-          }
-        )
-        vi.mocked(ApexTestRunner).mockImplementation(
-          class {
-            runTestMethods = vi
-              .fn()
-              .mockRejectedValue(
-                limitUsageError(
-                  'LIMIT_USAGE_FOR_NS : Too many SOQL queries: 101'
-                )
-              )
-            getTestMethodsPerLines = vi.fn().mockResolvedValue(
-              baselineResult({
-                outcome: 'Passed',
-                failing: 0,
-                testsRan: 1,
-                testMethodsPerLine: new Map([
-                  [1, new Set(['TestClassTest.testMethodA'])],
-                ]),
-              })
-            )
-          }
-        )
-
-        // Act
-        const result = await sut.process()
-
-        // Assert
-        expect(result.mutants[0].status).toBe('Killed')
-        expect(result.mutants[0].statusReason).toBeUndefined()
-      })
-
       it('Given error not matching any specific pattern, When evaluating mutation, Then status is RuntimeError with message', async () => {
         // Arrange
         vi.mocked(ApexClassRepository).mockImplementation(
@@ -4342,65 +4269,6 @@ describe('MutationTestingService', () => {
         expect(
           allInfos.some((info: string) =>
             info.includes('compile error at line 1')
-          )
-        ).toBe(true)
-      })
-
-      it('Given governor limit exception during mutation test, When processing, Then progress update shows killed message with exception', async () => {
-        // Arrange
-        vi.mocked(ApexClassRepository).mockImplementation(
-          class {
-            read = vi.fn().mockImplementation((name: string) => {
-              if (name === 'TestClass') return Promise.resolve(mockApexClass)
-              return Promise.resolve(mockTestClass)
-            })
-            update = vi.fn().mockResolvedValue({})
-            getApexClassDependencies = vi
-              .fn()
-              .mockResolvedValue([] as MetadataComponentDependency[])
-          }
-        )
-        vi.mocked(MutantGenerator).mockImplementation(
-          class {
-            compute = vi
-              .fn()
-              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
-            mutate = vi.fn().mockReturnValue('mutated code')
-          }
-        )
-        vi.mocked(ApexTestRunner).mockImplementation(
-          class {
-            runTestMethods = vi
-              .fn()
-              .mockRejectedValue(
-                limitUsageError('LIMIT_USAGE_FOR_NS : Too many queries')
-              )
-            getTestMethodsPerLines = vi.fn().mockResolvedValue(
-              baselineResult({
-                outcome: 'Passed',
-                failing: 0,
-                testsRan: 1,
-                testMethodsPerLine: new Map([
-                  [1, new Set(['TestClassTest.testMethodA'])],
-                ]),
-              })
-            )
-          }
-        )
-
-        // Act
-        await sut.process()
-
-        // Assert
-        const updateCalls = vi.mocked(progress.update).mock.calls
-        const allInfos = updateCalls.map(
-          (call: [number, { info: string }]) => call[1].info
-        )
-        expect(
-          allInfos.some(
-            (info: string) =>
-              info.includes('mutant killed') &&
-              info.includes('LIMIT_USAGE_FOR_NS')
           )
         ).toBe(true)
       })
@@ -5227,65 +5095,6 @@ describe('MutationTestingService', () => {
         ).toBe(true)
       })
 
-      it('Given governor limit exception, When processing, Then progress message contains "(msg)" wrapper around exception', async () => {
-        // Arrange — kills StringLiteral mutant that removes the "(${msg})" suffix from progress message
-        vi.mocked(ApexClassRepository).mockImplementation(
-          class {
-            read = vi.fn().mockImplementation((name: string) => {
-              if (name === 'TestClass') return Promise.resolve(mockApexClass)
-              return Promise.resolve(mockTestClass)
-            })
-            update = vi.fn().mockResolvedValue({})
-            getApexClassDependencies = vi
-              .fn()
-              .mockResolvedValue([] as MetadataComponentDependency[])
-          }
-        )
-        vi.mocked(MutantGenerator).mockImplementation(
-          class {
-            compute = vi
-              .fn()
-              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
-            mutate = vi.fn().mockReturnValue('mutated code')
-          }
-        )
-        vi.mocked(ApexTestRunner).mockImplementation(
-          class {
-            runTestMethods = vi
-              .fn()
-              .mockRejectedValue(
-                limitUsageError('LIMIT_USAGE_FOR_NS : Too many queries')
-              )
-            getTestMethodsPerLines = vi.fn().mockResolvedValue(
-              baselineResult({
-                outcome: 'Passed',
-                failing: 0,
-                testsRan: 1,
-                testMethodsPerLine: new Map([
-                  [1, new Set(['TestClassTest.testMethodA'])],
-                ]),
-              })
-            )
-          }
-        )
-
-        // Act
-        await sut.process()
-
-        // Assert — progress message must be "Mutation result: mutant killed (LIMIT_USAGE_FOR_NS : Too many queries)"
-        const updateCalls = vi.mocked(progress.update).mock.calls
-        const allInfos = updateCalls.map(
-          (call: [number, { info: string }]) => call[1].info
-        )
-        expect(
-          allInfos.some((info: string) =>
-            info.includes(
-              'Mutation result: mutant killed (LIMIT_USAGE_FOR_NS : Too many queries)'
-            )
-          )
-        ).toBe(true)
-      })
-
       it('Given runtime error, When processing, Then progress message contains "(msg)" wrapper around error message', async () => {
         // Arrange — kills StringLiteral mutant that removes the "(${msg})" suffix from runtime error progress message
         vi.mocked(ApexClassRepository).mockImplementation(
@@ -5571,7 +5380,7 @@ describe('MutationTestingService', () => {
     })
 
     describe('When evaluateMutation conditional statusReason spread is verified', () => {
-      it('Given LIMIT_USAGE_FOR_NS error (Killed), When processing, Then statusReason is absent from mutant result', async () => {
+      it('Given an ordinary Killed mutant with no thrown error, When processing, Then statusReason is absent from mutant result', async () => {
         // Arrange — kills LogicalOperator mutant: classification.statusReason && {...} → || {...}
         // With ||, even when statusReason is undefined/falsy, the spread would still include it
         vi.mocked(ApexClassRepository).mockImplementation(
@@ -5594,11 +5403,16 @@ describe('MutationTestingService', () => {
         )
         vi.mocked(ApexTestRunner).mockImplementation(
           class {
-            runTestMethods = vi
-              .fn()
-              .mockRejectedValue(
-                limitUsageError('LIMIT_USAGE_FOR_NS : Too many SOQL queries')
-              )
+            runTestMethods = vi.fn().mockResolvedValue({
+              summary: { outcome: 'Failed' },
+              tests: [
+                {
+                  apexClass: { fullName: 'TestClassTest' },
+                  methodName: 'testMethodA',
+                  outcome: 'Fail',
+                },
+              ],
+            } as unknown as TestResult)
             getTestMethodsPerLines = vi.fn().mockResolvedValue(
               baselineResult({
                 outcome: 'Passed',
@@ -5615,7 +5429,7 @@ describe('MutationTestingService', () => {
         // Act
         const result = await sut.process()
 
-        // Assert — Killed via governor limit must NOT have statusReason property
+        // Assert — Killed via ordinary attribution must NOT have statusReason property
         expect(result.mutants[0].status).toBe('Killed')
         expect(Object.hasOwn(result.mutants[0], 'statusReason')).toBe(false)
       })
@@ -6403,56 +6217,6 @@ describe('MutationTestingService', () => {
 
         // Assert
         expect(result.mutants[0].status).toBe('CompileError')
-        expect(result.mutants[0].attribution).toBeUndefined()
-      })
-
-      it('Given a governor-limit error during test run, When processing, Then the mutant is Killed with no attribution', async () => {
-        // Arrange
-        vi.mocked(ApexClassRepository).mockImplementation(
-          class {
-            read = vi.fn().mockImplementation((name: string) => {
-              if (name === 'TestClass') return Promise.resolve(mockApexClass)
-              return Promise.resolve(mockTestClass)
-            })
-            update = vi.fn().mockResolvedValue({})
-            getApexClassDependencies = vi.fn().mockResolvedValue([])
-          }
-        )
-        vi.mocked(MutantGenerator).mockImplementation(
-          class {
-            compute = vi
-              .fn()
-              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
-            mutate = vi.fn().mockReturnValue('mutated code')
-          }
-        )
-        vi.mocked(ApexTestRunner).mockImplementation(
-          class {
-            runTestMethods = vi
-              .fn()
-              .mockRejectedValue(
-                limitUsageError(
-                  'LIMIT_USAGE_FOR_NS : Too many SOQL queries: 101'
-                )
-              )
-            getTestMethodsPerLines = vi.fn().mockResolvedValue(
-              baselineResult({
-                outcome: 'Passed',
-                failing: 0,
-                testsRan: 1,
-                testMethodsPerLine: new Map([
-                  [1, new Set(['TestClassTest.testMethodA'])],
-                ]),
-              })
-            )
-          }
-        )
-
-        // Act
-        const result = await sut.process()
-
-        // Assert
-        expect(result.mutants[0].status).toBe('Killed')
         expect(result.mutants[0].attribution).toBeUndefined()
       })
 

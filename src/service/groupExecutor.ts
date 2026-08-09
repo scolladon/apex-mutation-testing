@@ -27,36 +27,24 @@ const PASS_OUTCOME = 'Pass'
 // Stryker disable next-line StringLiteral: any non-pass value behaves the same.
 const NON_PASS_OUTCOME = 'Fail'
 
-// Salesforce's org-thrown limit exception carries this code untranslated,
-// even though its message is localised to the org user's language.
-const LIMIT_USAGE_ERROR_CODE = 'LIMIT_USAGE_FOR_NS'
-
-// Reads the structured `errorCode` a jsforce/org error carries, without
-// trusting its (possibly localised) message text. Not exported: callers
-// outside this module have no need for it.
-const readErrorCode = (error: unknown): string | undefined => {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'errorCode' in error &&
-    typeof error.errorCode === 'string'
-  ) {
-    return error.errorCode
-  }
-  return undefined
-}
-
 // Classify a deploy/test-run error into a per-mutant outcome plus a progress
-// message. The three branches match Salesforce-side failure modes: a compile
-// error from the Tooling API deploy, a governor-limit kill (which is a real
-// kill, not a runtime error), and any other thrown error. Both structural
-// checks read typed signals (error class, errorCode) rather than message
-// text, which Salesforce localises to the org user's language.
+// message. DeploymentFailedError — a compile error from the Tooling API
+// deploy — is matched by type rather than message text, because Salesforce
+// localises *platform API* error text to the org user's language: a message
+// match observed on an English-locale org would silently stop matching on
+// any other. Apex runtime exception text is not at the same risk — a
+// live-org probe found a System.LimitException coming back in English from
+// a French-locale org, in the same session as a platform API error that came
+// back in French, so the two are localised independently. A governor-limit
+// exception never reaches this function at all: the org reports it as an
+// ordinary failing test row (HTTP 200, no throw), which attributeOutcomes
+// already scores as Killed through the row's non-Pass outcome. Any other
+// thrown error is reported as a RuntimeError.
 const classifyError = (
   error: unknown,
   mutation: ApexMutation
 ): {
-  status: 'CompileError' | 'Killed' | 'RuntimeError'
+  status: 'CompileError' | 'RuntimeError'
   statusReason?: string
   progressMessage: string
 } => {
@@ -66,12 +54,6 @@ const classifyError = (
       status: 'CompileError',
       statusReason: message,
       progressMessage: `Mutation result: compile error at line ${mutation.target.startToken.line}`,
-    }
-  }
-  if (readErrorCode(error) === LIMIT_USAGE_ERROR_CODE) {
-    return {
-      status: 'Killed',
-      progressMessage: `Mutation result: mutant killed (${message})`,
     }
   }
   return {

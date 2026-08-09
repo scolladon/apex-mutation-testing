@@ -275,29 +275,7 @@ describe('GroupExecutor', () => {
       expect(results.map(r => r.status)).toEqual(['CompileError'])
     })
 
-    it('Given a test-run rejection whose message is French but whose errorCode is LIMIT_USAGE_FOR_NS, When evaluating, Then the status is Killed and the progress line quotes the original message', async () => {
-      // Arrange
-      const frenchMessage = 'Trop de requêtes SOQL exécutées'
-      runTestMethodsMock = vi.fn().mockRejectedValue(
-        Object.assign(new Error(frenchMessage), {
-          errorCode: 'LIMIT_USAGE_FOR_NS',
-        })
-      )
-      const sut = buildSut(testMethodsPerLine)
-
-      // Act
-      const results = await sut.evaluate(group, 0, performance.now(), 1)
-
-      // Assert
-      expect(results.map(r => r.status)).toEqual(['Killed'])
-      expect(infoMessages()).toContainEqual(
-        expect.stringContaining(
-          `Mutation result: mutant killed (${frenchMessage})`
-        )
-      )
-    })
-
-    it('Given a rejection whose message contains LIMIT_USAGE_FOR_NS but whose errorCode is absent, When evaluating, Then the status is RuntimeError', async () => {
+    it('Given a rejection whose message contains LIMIT_USAGE_FOR_NS but the error is not a DeploymentFailedError, When evaluating, Then the status is RuntimeError', async () => {
       // Arrange — pins the regression: message text alone must never classify a kill.
       runTestMethodsMock = vi
         .fn()

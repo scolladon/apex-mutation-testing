@@ -371,7 +371,7 @@ Each mutant is assigned a status after evaluation:
 
 A **Killed** mutant means your tests detected the mutation and failed as a result. This is the ideal outcome. It proves your tests are actively verifying the behavior that was changed. For example, if `subTotal + tax` is mutated to `subTotal - tax` and your test fails, the mutant is killed.
 
-A governor-limit exception (e.g. too many SOQL queries) is also reported as Killed. It's recognized by the org's structured error code rather than by scanning the error message, so recognition doesn't depend on the org user's language.
+A governor-limit exception (e.g. too many SOQL queries) is also reported as Killed. The org reports it as an ordinary failing test row rather than throwing, so it is scored through the same attribution as any other failing test — no special-casing needed.
 
 **What to look for:** A high number of killed mutants indicates strong, assertion-rich tests that validate actual logic and branch coverage rather than just executing code paths.
 
@@ -393,7 +393,7 @@ A **CompileError** mutant means the mutated code failed to compile during deploy
 
 #### RuntimeError
 
-A **RuntimeError** means an unexpected error occurred during the mutation evaluation. These errors are the result of networking issues, authorization issues, or other issues not directly related to your code. Any error the plugin can't specifically recognize — as a compile failure or a governor-limit kill — falls into this status; it still counts as a kill in the score (see [Mutation Score](#mutation-score) below), only the reported label and reason differ from Killed.
+A **RuntimeError** means an unexpected error occurred during the mutation evaluation. These errors are the result of networking issues, authorization issues, or other issues not directly related to your code. Any thrown error the plugin can't specifically recognize as a compile failure falls into this status; it still counts as a kill in the score (see [Mutation Score](#mutation-score) below), only the reported label and reason differ from Killed.
 
 **What to look for:** A high number of runtime errors may indicate connectivity or org stability issues. If you see many runtime errors, consider re-running the mutation test when the environment is more stable to get more accurate results.
 
