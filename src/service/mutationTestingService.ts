@@ -3,6 +3,7 @@ import { Progress, Spinner } from '@salesforce/sf-plugins-core'
 import type { CommonTokenStream } from 'apex-parser'
 import { ApexClassRepository } from '../adapter/apexClassRepository.js'
 import { ApexTestRunner } from '../adapter/apexTestRunner.js'
+import { AerHardlinkManager } from '../adapter/aerHardlinkManager.js'
 import { SObjectDescribeRepository } from '../adapter/sObjectDescribeRepository.js'
 import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
@@ -78,65 +79,83 @@ export class MutationTestingService {
   }
 
   public async process(): Promise<ApexMutationTestResult> {
-    const { apexClassRepository, apexTestRunner } = this.createAdapters()
-    const apexClass = await this.fetchApexClass(apexClassRepository)
-    const typeAnalysis = await this.discoverTypes(
-      apexClass,
-      apexClassRepository
-    )
+    let hardlinkManager: AerHardlinkManager | undefined
+    let activeProjectPath = this.aerSfProjectPath
 
-    const deployTime = await this.verifyCompilation(
-      apexClass,
-      apexClassRepository
-    )
-    await this.verifyTestClassCompilation(apexClassRepository)
+    if (this.useAer && this.aerSfProjectPath) {
+      hardlinkManager = new AerHardlinkManager()
+      activeProjectPath = await hardlinkManager.prepareMirror(
+        this.aerSfProjectPath,
+        this.apexClassName
+      )
+    }
 
-    const { testMethodsPerLine, testTime } =
-      await this.runBaselineTests(apexTestRunner)
-    const coveredLines = this.extractCoveredLines(testMethodsPerLine)
-    const { mutations, mutantGenerator, tokenStream } = this.generateMutations(
-      apexClass,
-      coveredLines,
-      typeAnalysis
-    )
+    try {
+      const { apexClassRepository, apexTestRunner } =
+        this.createAdapters(activeProjectPath)
+      const apexClass = await this.fetchApexClass(apexClassRepository)
+      const typeAnalysis = await this.discoverTypes(
+        apexClass,
+        apexClassRepository
+      )
 
-    if (this.dryRun) {
+      const deployTime = await this.verifyCompilation(
+        apexClass,
+        apexClassRepository
+      )
+      await this.verifyTestClassCompilation(apexClassRepository)
+
+      const { testMethodsPerLine, testTime } =
+        await this.runBaselineTests(apexTestRunner)
+      const coveredLines = this.extractCoveredLines(testMethodsPerLine)
+      const { mutations, mutantGenerator, tokenStream } = this.generateMutations(
+        apexClass,
+        coveredLines,
+        typeAnalysis
+      )
+
+      if (this.dryRun) {
+        this.displayTimeEstimate(
+          deployTime,
+          testTime,
+          mutations.length,
+          mutations.length
+        )
+        return this.buildDryRunResult(apexClass, mutations)
+      }
+
+      const groups = await this.planGroups(mutations, testMethodsPerLine)
       this.displayTimeEstimate(
         deployTime,
         testTime,
         mutations.length,
-        mutations.length
+        groups.length
       )
-      return this.buildDryRunResult(apexClass, mutations)
-    }
 
-    const groups = await this.planGroups(mutations, testMethodsPerLine)
-    this.displayTimeEstimate(
-      deployTime,
-      testTime,
-      mutations.length,
-      groups.length
-    )
-
-    const result = await (async () => {
-      try {
-        await apexTestRunner.startWatch()
-        return await this.executeMutationLoop(
-          apexClass,
-          mutations,
-          groups,
-          mutantGenerator,
-          tokenStream,
-          testMethodsPerLine,
-          apexTestRunner,
-          apexClassRepository
-        )
-      } finally {
-        await apexTestRunner.destroy()
-        await this.rollback(apexClass, apexClassRepository)
+      const result = await (async () => {
+        try {
+          await apexTestRunner.startWatch()
+          return await this.executeMutationLoop(
+            apexClass,
+            mutations,
+            groups,
+            mutantGenerator,
+            tokenStream,
+            testMethodsPerLine,
+            apexTestRunner,
+            apexClassRepository
+          )
+        } finally {
+          await apexTestRunner.destroy()
+          await this.rollback(apexClass, apexClassRepository)
+        }
+      })()
+      return result
+    } finally {
+      if (hardlinkManager) {
+        await hardlinkManager.cleanup()
       }
-    })()
-    return result
+    }
   }
 
   private async planGroups(
@@ -239,18 +258,19 @@ export class MutationTestingService {
     }
   }
 
-  private createAdapters() {
+  private createAdapters(projectPath?: string) {
+    const activeProjectPath = projectPath ?? this.aerSfProjectPath
     return {
       apexClassRepository: new ApexClassRepository(
         this.connection,
         {},
         this.useAer,
-        this.aerSfProjectPath
+        activeProjectPath
       ),
       apexTestRunner: new ApexTestRunner(
         this.connection,
         this.useAer,
-        this.aerSfProjectPath,
+        activeProjectPath,
         this.apexClassName,
         this.aerFlags,
         this.apexTestClassName
