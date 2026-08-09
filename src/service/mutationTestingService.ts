@@ -101,6 +101,17 @@ const truncateForDisplay = (value: string, maxLength: number): string => {
     : `${codePoints.slice(0, maxLength).join('')}…`
 }
 
+// Every org-supplied detail this service renders goes through this same
+// policy: jsforce sets `error.message` to the entire raw response body when
+// it is neither parseable JSON nor text/html, so the text is unbounded and
+// may contain control bytes. Sanitizing must run before truncating, never
+// after — sanitizing can only fold characters away, never add any, so once
+// it has run the string cannot grow back past the length bound. Applying
+// only the sanitize step, or only the length bound, leaves the other half
+// of the hazard in place.
+const renderOrgDetail = (detail: string): string =>
+  truncateForDisplay(sanitizeForDisplay(detail), MAX_ORG_ERROR_DETAIL_LENGTH)
+
 interface MutationLoopContext {
   apexClass: ApexClass
   mutations: ApexMutation[]
@@ -347,10 +358,7 @@ export class MutationTestingService {
   // it reaches the injected output sink.
   private warnSyncFallback(error: Error): void {
     this.spinner.pause(() => {
-      const reason = truncateForDisplay(
-        sanitizeForDisplay(error.message),
-        MAX_ORG_ERROR_DETAIL_LENGTH
-      )
+      const reason = renderOrgDetail(error.message)
       this.outputSink(
         `${this.messages.getMessage('info.syncTransportFallback', [reason])}\n`
       )
@@ -916,11 +924,8 @@ export class MutationTestingService {
       // carry control bytes — folded and length-bounded like every other
       // org-supplied detail this service renders. The actionable sentence goes
       // last so no amount of org text can push it off screen.
-      const cause = truncateForDisplay(
-        sanitizeForDisplay(
-          error instanceof Error ? error.message : String(error)
-        ),
-        MAX_ORG_ERROR_DETAIL_LENGTH
+      const cause = renderOrgDetail(
+        error instanceof Error ? error.message : String(error)
       )
       throw new Error(
         `Rollback of '${this.apexClassName}' failed. Underlying cause: ${cause}. The class on the target org is still in a mutated state. Redeploy manually.`
