@@ -321,12 +321,17 @@ process()
 ├── generateMutations()         → step 9
 ├── displayTimeEstimate()       → step 10
 ├── buildDryRunResult()         → dry-run exit point
-├── executeMutationLoop()       → step 11
-│   └── evaluateMutation()      → single mutation: deploy + test + classify
-└── rollback()                  → step 12
+└── executeMutationLoopWithRollback() → steps 11-12
+    ├── executeMutationLoop()       → step 11
+    │   └── evaluateMutation()      → single mutation: deploy + test + classify
+    ├── rollback()                  → step 12 (loop resolves)
+    ├── stopProgress()              → tears down the progress bar before a failure-path rollback
+    └── rollbackAfterLoopFailure()  → step 12 (loop rejects: restores, composes the combined error)
 ```
 
 Each method encapsulates one logical concern. `evaluateMutation()` handles the try/catch error classification for a single mutation. `formatRemainingTime()` extracts the time estimation math from the progress update. `rollback()` throws on failure instead of swallowing so that `process()`'s caller observes a non-zero exit whenever the target org is left in a mutated state.
+
+The restore now runs on every exit of `executeMutationLoop()`, not only when it resolves: `executeMutationLoopWithRollback()` wraps the loop call in a `catch` that restores and rethrows — deliberately not a `finally`, since a rejecting `finally` replaces the pending rejection and would destroy the original failure. When the loop fails and the restore also fails, the loop failure leads the thrown message and the restore failure is appended to it, with the loop error kept as the `cause`.
 
 ---
 
@@ -829,7 +834,8 @@ Each mutation is deployed using the Tooling API **MetadataContainer** pattern, w
 ┌─────────────────────┐
 │ContainerAsyncRequest │  MetadataContainerId ──► container.id
 │  (create)            │  IsCheckOnly: false
-│                      │  IsRunTests: true
+│                      │  IsRunTests: true by default; false only for the
+│                      │  failure-path rollback restore
 └──────────┬──────────┘
            │
            ▼
@@ -999,7 +1005,7 @@ This layout avoids the three classes of attack the old `app.report = { … }` in
 ```text
                   Salesforce Org
                  ┌──────────────┐
-                 │  ApexClass   │◄──── read / update (deploy mutant / rollback)
+                 │  ApexClass   │◄──── read / update (deploy mutant / rollback; failure-path rollback skips tests)
                  │  TestService │◄──── runTestSynchronous / runTestAsynchronous (baseline + per-mutant)
                  │  Describe    │◄──── SObject field metadata
                  └──────┬───────┘
