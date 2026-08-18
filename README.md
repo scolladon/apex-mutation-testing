@@ -159,6 +159,41 @@ On a class covered by a single test class, this means the **entire** run — bas
 
 Synchronous execution requires the **View Setup** user permission, which the asynchronous path never needed. If your org user permanently lacks it, the plugin pays exactly one wasted synchronous round-trip for the whole campaign, then skips the synchronous attempt for every later single-class run — the baseline and each mutant — falling back straight to the asynchronous transport. A transient failure (a lock contention, a momentary 503) is retried on the synchronous transport on the next call instead, since it can recover on its own. Either way, the plugin reports the reason only once, the first time it happens, rather than on every fallback.
 
+### Local Execution With aer
+
+Mutation testing is the worst case for a Salesforce org: one deployment and one test run **per mutant**, hundreds of times, against a remote system with governor limits and API quotas. [aer](https://aertest.com) is a local Apex runtime from October Swimmer, and `aer server` exposes a Salesforce-compatible API — so the plugin can run against it with **no flag and no change in how you invoke it**.
+
+Point `-o` at a local server instead of an org:
+
+```bash
+# 1. Serve your local source (in its own terminal)
+aer server force-app/
+
+# 2. Authenticate to it once, like any other org
+sf org login web -r http://127.0.0.1:8080 -a aer-local
+
+# 3. Run mutation testing against that alias
+sf apex mutation test run -o aer-local -c MyClass -t MyClass_Test
+```
+
+Two things make this worth doing:
+
+**It is dramatically faster.** A 57-mutant campaign that takes minutes against an org completes in about **13 seconds** locally — roughly 0s per deployment and 1s per test run. Nothing is queued, nothing is throttled, and no `DailyAsyncApexTests` units are consumed.
+
+**It mutates your working tree.** Org mode can only mutate what the org already has, so code you have not deployed cannot be tested. `aer server` loads your local source, which means work in progress is testable — and because mutations are applied through the API into the server's own state, **your files are never modified**. Interrupting a run cannot leave a mutated class on disk.
+
+#### Scores are not comparable across engines
+
+aer's compiler is not identical to Salesforce's, and the difference is not cosmetic. On the same class with the same 57 mutants, an org reported 7 mutants as `CompileError` while aer compiled and ran all of them. Because `CompileError` mutants are excluded from the score denominator, the same code scored **4% against the org and 14% against aer**.
+
+Treat org mode as the reference. A local run is the right tool for a fast feedback loop while you are writing tests; the number you publish or gate on should come from an org.
+
+#### Licensing
+
+`aer server` requires an aer licence. A trial is available by registering an email address at [octoberswimmer.com](https://www.octoberswimmer.com/tools/aer/subscribe/); without one the server stops after five minutes.
+
+Note this is separate from `aer test`, whose free tier allows 100 test methods per iteration with an unlimited number of iterations.
+
 ### Configuration
 
 The plugin supports configuration through a JSON file and CLI flags. CLI flags always take precedence over config file values.
