@@ -24,7 +24,9 @@ sf apex mutation test run -c <ApexClass> --test-suite <TestSuite> -o <TargetOrg>
 │                    Presentation Layer                     │
 │              commands/apex/mutation/test/run.ts           │
 │           (CLI flags, progress UI, score output,         │
-│            config resolution, threshold gating)          │
+│            config resolution, threshold gating;          │
+│            builds the EngineBundle via createOrgEngine    │
+│            before constructing the service)               │
 ├──────────────────────────────────────────────────────────┤
 │                  Configuration Layer                      │
 │              service/configReader.ts                      │
@@ -34,7 +36,8 @@ sf apex mutation test run -c <ApexClass> --test-suite <TestSuite> -o <TargetOrg>
 │            service/mutationTestingService.ts              │
 │     (workflow coordination via named sub-methods,        │
 │      error classification, score calculation,            │
-│      result assembly)                                    │
+│      result assembly — depends only on the three         │
+│      src/port/ interfaces, via EngineBundle)              │
 ├──────────────────────────────────────────────────────────┤
 │                      Domain Layer                         │
 │  ┌─────────────────────┐  ┌────────────────────────────┐ │
@@ -46,15 +49,38 @@ sf apex mutation test run -c <ApexClass> --test-suite <TestSuite> -o <TargetOrg>
 │  │  [26 mutators]       │  │                            │ │
 │  └─────────────────────┘  └────────────────────────────┘ │
 ├──────────────────────────────────────────────────────────┤
-│                   Infrastructure Layer                    │
+│                       Port Layer                           │
+│   src/port/ — interfaces only; zero outbound imports       │
+│   beyond sibling ports and Connection's type (ADR 084)     │
+│                                                            │
+│   executionEngine.ts      EngineContext · EngineBundle ·    │
+│                           EngineNotice                      │
+│   apexSourceProvider.ts   ApexSourceProvider ·              │
+│                           TypeDependencies                 │
+│   sObjectSchemaProvider.ts  SObjectSchemaProvider           │
+│   mutationTestBed.ts      MutationTestBed · MutantVerdict · │
+│                           Baseline · RestorePolicy          │
+├──────────────────────────────────────────────────────────┤
+│           Infrastructure Layer — src/adapter/org/          │
+│   orgEngine.ts (createOrgEngine) builds the port          │
+│   implementations below and hands them to the caller as   │
+│   one EngineBundle:                                        │
+│                                                            │
+│     OrgApexSourceProvider    implements ApexSourceProvider │
+│     OrgMutationTestBed       implements MutationTestBed    │
+│     OrgSObjectSchemaProvider implements SObjectSchemaProvider│
+│                                                            │
+│   The first two wrap four internal repositories — nothing │
+│   outside this directory imports them directly:           │
 │  ┌───────────────────┐ ┌─────────────┐ ┌──────────────┐ │
-│  │ApexClassRepository│ │ApexTestRunner│ │SObjectDescribe│ │
-│  │  (Tooling API)    │ │ (apex-node) │ │  Repository   │ │
+│  │ApexClassRepository│ │ApexTestRunner│ │ApexSettings   │ │
+│  │  (Tooling API)    │ │ (apex-node) │ │Repository     │ │
+│  │                   │ │             │ │(Tooling API)  │ │
 │  └───────────────────┘ └─────────────┘ └──────────────┘ │
-│  ┌──────────────────────┐ ┌───────────────────────┐      │
-│  │ApexSettingsRepository│ │ApexTestSuiteRepository│      │
-│  │  (Tooling API)       │ │  (Tooling API)        │      │
-│  └──────────────────────┘ └───────────────────────┘      │
+│  ┌──────────────────────┐                                │
+│  │ApexTestSuiteRepository│                                │
+│  │  (Tooling API)        │                                │
+│  └──────────────────────┘                                │
 ├──────────────────────────────────────────────────────────┤
 │                    Reporting Layer                        │
 │  ┌───────────────────────────────────────────────────────┐│
@@ -64,6 +90,10 @@ sf apex mutation test run -c <ApexClass> --test-suite <TestSuite> -o <TargetOrg>
 │  └───────────────────────────────────────────────────────┘│
 └──────────────────────────────────────────────────────────┘
 ```
+
+`OrgSObjectSchemaProvider` has no separate internal repository behind it — it is the
+renamed `SObjectDescribeRepository`, implementing `SObjectSchemaProvider` directly against
+`Connection.describe` (see [Repository Pattern — Adapter Layer](#repository-pattern--adapter-layer)).
 
 ---
 
@@ -116,15 +146,19 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │         every dropped class and its reason
 │
 ├─ 4. FETCH SOURCE
-│     ApexClassRepository.read(MyClass) → { Id, Body }
+│     engine.source.readClass(MyClass) → { Id, Body }
+│       (OrgApexSourceProvider → ApexClassRepository.read)
 │
 ├─ 5. DISCOVER DEPENDENCIES
-│     ApexClassRepository.getApexClassDependencies(Id)
-│       → MetadataComponentDependency[]
-│       → partition into: ApexClass | StandardEntity | CustomObject
+│     engine.source.listDependencies(apexClass)
+│       (OrgApexSourceProvider → ApexClassRepository.getApexClassDependencies)
+│       → TypeDependencies { apexClasses, sObjects }
+│       → sObjects already merges StandardEntity ∪ CustomObject
 │
 ├─ 6. BUILD TYPE SYSTEM
-│     SObjectDescribeRepository.describe(sObjectTypes)
+│     engine.schema.describe(sObjectTypes)
+│       (OrgSObjectSchemaProvider.describe — no repository behind it;
+│        it is the renamed SObjectDescribeRepository)
 │       → parallel Describe API calls (max 25 concurrent)
 │     TypeDiscoverer.analyzeFull(Body)
 │       → single ANTLR parse, returns
@@ -134,61 +168,78 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │       → tree + tokenStream are threaded into step 9 so
 │         MutantGenerator skips its own parse (see Perf-3).
 │
-├─ 7. COMPILABILITY VERIFICATION (target class only)
-│     Deploy main class back to org via
-│       ApexClassRepository.update(apexClass)
-│       → wrapped in timeExecution() → deployTime
-│       → validates class compiles (catches broken deps)
-│       → on failure: throw error.compilabilityCheckFailed with
-│         Salesforce error details
-│     Rationale: Salesforce only checks compilation of
-│       the deployed element, not its dependents. A class
-│       can be broken if a dependency changed after last
-│       deploy. Without this check, all mutants would get
-│       CompileError → misleading 100% score.
-│     The test-class perimeter is NOT deployed here to prove it
-│       compiles — that pre-flight is deleted. Compilation of the
-│       perimeter is a documented prerequisite; a class that fails
-│       to compile is instead reported by the baseline test run
-│       itself (step 8) and dropped with a warning, rather than
-│       aborting the whole command
+├─ 7-8. VERIFY COMPILATION + BASELINE TEST RUN (fused behind one port call)
+│     engine.testBed.prepare(apexClass, perimeter, hooks)
+│       (OrgMutationTestBed.prepare — src/adapter/org/orgMutationTestBed.ts)
+│     The bed never touches UI (ADR 086): it fires hooks.onVerifying() /
+│       onVerified() / onBaselineStarting() in order, and
+│       MutationTestingService.prepareBaseline() renders the exact spinner
+│       text the two formerly-separate service methods used to render —
+│       one fewer bed responsibility, same on-screen behaviour.
 │
-├─ 8. BASELINE TEST RUN
-│     selectCoverageStrategy(apexSettingsRepository)
-│       → ApexSettingsRepository.isAggregateCoverageOnly()
+│     7. Compilability verification (target class only)
+│       Deploy main class back to org via
+│         ApexClassRepository.update(apexClass)
+│         → wrapped in timeExecution() → applyMs
+│         → validates class compiles (catches broken deps)
+│         → on failure: throw CompilationCheckFailedError, which
+│           prepareBaseline() re-renders as error.compilabilityCheckFailed
+│           with the Salesforce error details
+│       Rationale: Salesforce only checks compilation of
+│         the deployed element, not its dependents. A class
+│         can be broken if a dependency changed after last
+│         deploy. Without this check, all mutants would get
+│         CompileError → misleading 100% score.
+│       The test-class perimeter is NOT deployed here to prove it
+│         compiles — that pre-flight is deleted. Compilation of the
+│         perimeter is a documented prerequisite; a class that fails
+│         to compile is instead reported by the baseline test run
+│         below and dropped with a warning, rather than aborting the
+│         whole command
+│
+│     8. Baseline test run
+│       selects the coverage strategy up front, inside the bed —
+│         ApexSettingsRepository.isAggregateCoverageOnly()
 │         (Tooling API: ApexSettings.IsAggregateCodeCoverageOnlyEnabled)
-│       → knowledge, not inference: picks PerTestCoverageStrategy
-│         or AggregateCoverageStrategy up front (see Strategy
-│         Pattern — Coverage Fidelity)
-│     ApexTestRunner.getTestMethodsPerLines(perimeter[], coverageStrategy)
-│       → wrapped in timeExecution() → testTime
-│       → obeys the same transport predicate as every other run in
-│         this lifecycle (see Transport Selection): a single-class
-│         perimeter runs synchronously, at zero DailyAsyncApexTests
-│         cost; two or more classes run asynchronously. Either way
-│         apex-node's tests: TestItem[] takes every class natively,
-│         so an N-class perimeter costs no extra deploy or run cycle
-│       → a @TestSetup row is excluded before any classification
-│         runs — cross-referenced against the async transport's own
-│         `TestResult.setup` array (the synchronous transport never
-│         reports a setup row at all) rather than trusted by its
-│         absence from `tests` — so it never becomes a TestMethodId,
-│         never contributes coverage, and is never re-run per mutant
-│       → partitions the returned rows: a CompileFail row names its
-│         class and the platform's own message and is excluded from
-│         coverage extraction; any other non-Pass row aborts the run
-│         exactly as before ("Original tests failed! Cannot proceed
-│         with mutation testing.")
-│       → testMethodsPerLine: Map<line, Set<TestMethodId>>
-│         (TestMethodId = "ClassName.methodName", minted here via
-│          qualifyTestMethod so identically-named methods in
-│          different perimeter classes never collide; shaped by
-│          the injected coverageStrategy; union across the
-│          perimeter under PerTestCoverageStrategy; CompileFail rows
-│          never reach it)
-│       ✓ Every executed test must pass (green baseline) — a class
-│         that never executed a test contributes nothing to that
-│         evidence
+│         → knowledge, not inference: picks PerTestCoverageStrategy
+│           or AggregateCoverageStrategy (see Strategy
+│           Pattern — Coverage Fidelity)
+│       ApexTestRunner.getTestMethodsPerLines(perimeter[], coverageStrategy)
+│         → wrapped in timeExecution() → runMs
+│         → obeys the same transport predicate as every other run in
+│           this lifecycle (see Transport Selection): a single-class
+│           perimeter runs synchronously, at zero DailyAsyncApexTests
+│           cost; two or more classes run asynchronously. Either way
+│           apex-node's tests: TestItem[] takes every class natively,
+│           so an N-class perimeter costs no extra deploy or run cycle
+│         → a @TestSetup row is excluded before any classification
+│           runs — cross-referenced against the async transport's own
+│           `TestResult.setup` array (the synchronous transport never
+│           reports a setup row at all) rather than trusted by its
+│           absence from `tests` — so it never becomes a TestMethodId,
+│           never contributes coverage, and is never re-run per mutant
+│         → partitions the returned rows: a CompileFail row names its
+│           class and the platform's own message and is excluded from
+│           coverage extraction — before the coverage strategy above
+│           ever sees the row — while any other non-Pass row aborts
+│           the run exactly as before ("Original tests failed! Cannot
+│           proceed with mutation testing.")
+│         → testMethodsPerLine: Map<line, Set<TestMethodId>>
+│           (TestMethodId = "ClassName.methodName", minted here via
+│            qualifyTestMethod so identically-named methods in
+│            different perimeter classes never collide; shaped by
+│            the selected coverageStrategy; union across the
+│            perimeter under PerTestCoverageStrategy; CompileFail rows
+│            never reach it)
+│         ✓ Every executed test must pass (green baseline) — a class
+│           that never executed a test contributes nothing to that
+│           evidence
+│       prepare() returns a Baseline: { outcome, testsRan,
+│         compileFailures, otherFailureCount, testMethodsPerLine,
+│         fidelity, cost: { applyMs, runMs } }
+│
+│     Back in the service, MutationTestingService.runBaselineTests()
+│       reduces the perimeter from that Baseline:
 │     A class reported CompileFail is named in a warning ("it does
 │       not compile", with the platform's diagnosis) and dropped
 │       from the perimeter; the run proceeds on the remainder
@@ -247,39 +298,49 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │     │    (tokens passed from step 9, never cached  │
 │     │     on the generator instance)               │
 │     │                                              │
-│     │ b. ApexClassRepository.update(mutatedSource) │
-│     │    → try { MetadataContainer deploy + poll   │
-│     │           (exponential backoff, 5-min timeout│
-│     │            → PollTimeoutError on exceed)     │
-│     │      } finally {                             │
-│     │        fire-and-forget deleteContainer(id)   │
-│     │        — non-blocking so N mutants don't     │
-│     │        pay N extra API round-trips           │
-│     │      }                                       │
-│     │                                              │
-│     │ c. ApexTestRunner.runTestMethods(            │
-│     │      testMethodIds: Set<TestMethodId>)       │
-│     │    → only tests covering the mutated line,   │
-│     │      folded back per class (toTestItems)     │
-│     │    → outcomes matched by qualified id, so a  │
-│     │      same-named method in two perimeter      │
-│     │      classes is never conflated              │
-│     │                                              │
-│     │ d. Classify outcome:                         │
-│     │    Tests failed  → Killed                    │
-│     │    Tests passed  → Survived                  │
-│     │    Deploy failed → CompileError              │
-│     │    Limit error   → Killed                    │
-│     │    Other error   → RuntimeError              │
-│     │                                              │
-│     │ e. Update progress bar with remaining time   │
-│     │    rolling avg = elapsed / completed         │
-│     │    remaining = avg × (total - completed)     │
-│     │    "Remaining: ~Xm Ys | <result>"            │
+│     │ b-c. engine.testBed.evaluate(mutated, tests)  │
+│     │      (OrgMutationTestBed.evaluate)             │
+│     │    → deploy: try { MetadataContainer create +  │
+│     │           poll (exponential backoff, 5-min     │
+│     │           timeout → PollTimeoutError on exceed)│
+│     │      } finally { fire-and-forget               │
+│     │        deleteContainer(id) — non-blocking so N │
+│     │        mutants don't pay N extra round-trips }  │
+│     │    → a deploy failure is CAUGHT inside evaluate │
+│     │      and returned as a MutantVerdict rather     │
+│     │      than thrown: { kind: 'not-compilable',     │
+│     │      detail } — data crossing the port, not an  │
+│     │      exception (ADR 087)                        │
+│     │    → on successful deploy: ApexTestRunner.      │
+│     │      runTestMethods(testMethodIds), only tests  │
+│     │      covering the mutated line, folded back per │
+│     │      class (toTestItems); outcomes matched by   │
+│     │      qualified id, so a same-named method in    │
+│     │      two perimeter classes is never conflated;  │
+│     │      returned as { kind: 'executed', result }   │
+│     │                                                │
+│     │ d. GroupExecutor.evaluateGroup classifies the  │
+│     │    MutantVerdict (or the caught 'threw' outcome│
+│     │    for an infrastructure failure — see          │
+│     │    Structured Error Classification):            │
+│     │    Tests failed        → Killed                │
+│     │    Tests passed        → Survived               │
+│     │    kind: not-compilable → CompileError          │
+│     │    Limit error          → Killed (ordinary      │
+│     │                            failing test row)    │
+│     │    Other thrown error   → RuntimeError          │
+│     │                                                │
+│     │ e. Update progress bar with remaining time     │
+│     │    rolling avg = elapsed / completed           │
+│     │    remaining = avg × (total - completed)       │
+│     │    "Remaining: ~Xm Ys | <result>"               │
 │     └─────────────────────────────────────────────┘
 │
 ├─ 12. ROLLBACK
-│      ApexClassRepository.update(originalBody)
+│      engine.testBed.restore(policy)
+│      (OrgMutationTestBed.restore → ApexClassRepository.update(original,
+│       policy) — RUN_TESTS on the success path, SKIP_TESTS on the
+│       failure path; both live in src/port/mutationTestBed.ts)
 │      On failure: spinner shows "Rollback FAILED …"
 │      and the error is RE-THROWN so CI / scripts observe
 │      a non-zero exit when a class is left mutated.
@@ -308,34 +369,105 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 
 ### `process()` Method Decomposition
 
-The `process()` method is a thin orchestrator (~40 lines) that delegates each lifecycle step to a named private method:
+The `process()` method is a thin orchestrator that delegates each lifecycle step to a named
+private method. `MutationTestingService` no longer builds its own org collaborators — it
+receives a ready-made `EngineBundle` (`{ source, schema, testBed }`) through its constructor,
+built once by `createOrgEngine` in `run.ts` — so `createAdapters()` is gone entirely:
 
 ```text
 process()
-├── createAdapters()            → step 3 (adapters)
-├── fetchApexClass()            → step 4
-├── discoverTypes()             → steps 5-6
-├── verifyCompilation()         → step 7 (target class)
-├── runBaselineTests()          → step 8 (baseline + compile/no-coverage drops)
-├── extractCoveredLines()       → step 8b (filtering + coverage)
-├── generateMutations()         → step 9
-├── displayTimeEstimate()       → step 10
-├── buildDryRunResult()         → dry-run exit point
+├── fetchApexClass()                  → step 4, via engine.source.readClass
+├── discoverTypes()                   → steps 5-6, via engine.source.listDependencies
+│                                        + engine.schema
+├── runBaselineTests()                → steps 7+8 (compile verify + baseline, fused)
+│   ├── prepareBaseline()                 → engine.testBed.prepare(original, perimeter,
+│   │                                        hooks) — hooks render the spinner; the bed
+│   │                                        itself never touches UI (ADR 086)
+│   ├── assertUsableBaseline()            → guards: failing tests / zero tests ran
+│   └── reducePerimeterFromBaseline()     → drops compile-failed / zero-coverage classes
+├── extractCoveredLines()             → step 8b guard
+├── generateMutations()               → step 9
+├── planGroups()                      → mutation-grouping plan (DSATUR + exact coloring)
+├── displayTimeEstimate()             → step 10
+├── buildDryRunResult()               → dry-run exit point
 └── executeMutationLoopWithRollback() → steps 11-12
-    ├── executeMutationLoop()       → step 11
-    │   └── evaluateMutation()      → single mutation: deploy + test + classify
-    ├── rollback()                  → step 12 (loop resolves)
-    ├── stopProgress()              → tears down the progress bar before a failure-path rollback
-    └── rollbackAfterLoopFailure()  → step 12 (loop rejects: restores, composes the combined error)
+    ├── executeMutationLoop()             → step 11, delegates each group to
+    │   └── GroupExecutor.evaluate()          GroupExecutor, which calls
+    │       └── evaluateGroup()               engine.testBed.evaluate() and classifies
+    │                                          the returned MutantVerdict
+    ├── rollback()                    → step 12 (loop resolves): testBed.restore(RUN_TESTS)
+    ├── stopProgress()                → tears down the progress bar before a failure-path
+    │                                    rollback
+    └── rollbackAfterLoopFailure()    → step 12 (loop rejects): testBed.restore(SKIP_TESTS),
+                                          composes the combined error
 ```
 
-Each method encapsulates one logical concern. `evaluateMutation()` handles the try/catch error classification for a single mutation. `formatRemainingTime()` extracts the time estimation math from the progress update. `rollback()` throws on failure instead of swallowing so that `process()`'s caller observes a non-zero exit whenever the target org is left in a mutated state.
+`verifyCompilation()` and `selectCoverageStrategy()` are gone as separate service methods:
+both are folded into the single `engine.testBed.prepare(original, perimeter, hooks)` call —
+the org bed verifies compilation, picks the coverage strategy, and runs the baseline test in
+one port call, firing `hooks.onVerifying` / `onVerified` / `onBaselineStarting` so
+`prepareBaseline()` can render the exact spinner text the two separate methods used to render,
+without the bed knowing what a spinner is. `evaluateMutation()` no longer exists under that
+name either: its former responsibility — deploy one mutation, run its tests, classify the
+outcome — is `GroupExecutor.evaluateGroup` (`src/service/groupExecutor.ts`; see
+[Mutation Grouping](#mutation-grouping-opt-in)), which classifies the `MutantVerdict`
+`engine.testBed.evaluate()` returns instead of catching a thrown compile error. `rollback()`
+now calls `engine.testBed.restore(policy)` instead of a bare repository update.
 
-The restore now runs on every exit of `executeMutationLoop()`, not only when it resolves: `executeMutationLoopWithRollback()` wraps the loop call in a `catch` that restores and rethrows — deliberately not a `finally`, since a rejecting `finally` replaces the pending rejection and would destroy the original failure. When the loop fails and the restore also fails, the loop failure leads the thrown message and the restore failure is appended to it, with the loop error kept as the `cause`.
+Each method encapsulates one logical concern. `formatRemainingTime()` extracts the time
+estimation math from the progress update. `rollback()` throws on failure instead of
+swallowing so that `process()`'s caller observes a non-zero exit whenever the target org is
+left in a mutated state.
+
+The restore now runs on every exit of `executeMutationLoop()`, not only when it resolves:
+`executeMutationLoopWithRollback()` wraps the loop call in a `catch` that restores and
+rethrows — deliberately not a `finally`, since a rejecting `finally` replaces the pending
+rejection and would destroy the original failure. When the loop fails and the restore also
+fails, the loop failure leads the thrown message and the restore failure is appended to it,
+with the loop error kept as the `cause`. This is the same discipline the test bed's own
+disposal contract follows — see
+[Execution Ports](#execution-ports).
 
 ---
 
 ## Core Design Patterns
+
+### Execution Ports
+
+The plugin talks to Salesforce through exactly three ports (`src/port/`), each an interface
+with zero outbound imports beyond sibling ports and `Connection`'s type (ADR 084):
+
+- `ApexSourceProvider` (`apexSourceProvider.ts`) — class existence/read, dependency
+  discovery, perimeter assessment, and test-suite resolution.
+- `SObjectSchemaProvider` (`sObjectSchemaProvider.ts`) — SObject field type resolution for
+  the type system.
+- `MutationTestBed` (`mutationTestBed.ts`) — `prepare` (compile verification and the
+  baseline test run, fused behind one call), `evaluate` (deploy one mutant, run its covering
+  tests, and return a `MutantVerdict` rather than throw on a compile failure — ADR 087), and
+  `restore`.
+
+`executionEngine.ts` holds the wiring types shared by any implementation of the three ports —
+`EngineContext` (the `Connection`, the target class name, and a `notify` callback for
+cross-cutting notices) and `EngineBundle` (`{ source, schema, testBed }`) — but declares no
+implementation itself.
+
+`src/adapter/org/orgEngine.ts` exposes `createOrgEngine(ctx)`, which builds the three
+implementations over one shared `ApexClassRepository` and returns them as a single
+`EngineBundle`. `run.ts` calls it once, before constructing `MutationTestingService`, so the
+service only ever sees the three ports through `EngineBundle` — it holds no adapter import of
+its own.
+
+**Why there is no engine factory.** An earlier draft of this refactor added an `EngineId`
+union and a `Record<EngineId, …>` dispatch table, anticipating a second engine that would run
+Apex locally instead of against an org. That engine turned out to be unnecessary: `aer server`
+presents a Salesforce-compatible API, so a local runtime is reached as an ordinary org alias
+and every adapter here works against it unchanged. Dispatch over a set of one is not dispatch,
+so the factory, the `EngineId` union and the `AsyncDisposable` teardown contract were all
+removed before this work merged (ADRs 085, 089 and 091, superseded).
+
+The ports themselves stay, because their value was never engine-swapping — it is that
+`MutationTestingService` no longer imports `@salesforce/core` or `jsforce`, and can be tested
+against fakes instead of a mocked SDK.
 
 ### Mutation Grouping (opt-in)
 
@@ -409,18 +541,57 @@ Line eligibility filtering is applied uniformly to all mutators — no exception
 
 ### Structured Error Classification
 
-`GroupExecutor.classifyError` (`src/service/groupExecutor.ts`) turns a thrown deploy/test-run error into a per-mutant status:
+A non-compiling mutant is **data returned by the port, not an exception thrown across it**
+(ADR 087). `OrgMutationTestBed.evaluate` (`src/adapter/org/orgMutationTestBed.ts`) catches
+`DeploymentFailedError` from the mutated deploy and returns a `MutantVerdict`:
 
 ```typescript
-if (error instanceof DeploymentFailedError) return 'CompileError'
-return 'RuntimeError'
+if (error instanceof DeploymentFailedError) {
+  return { kind: 'not-compilable', detail: error.message }
+}
+throw error
 ```
 
-The check reads the error's type, not its message text, because **Salesforce localizes platform API error messages to the org user's language** — a message match observed on an English-locale org silently stops matching on any other. `DeploymentFailedError` (`src/adapter/apexClassRepository.ts`, mirroring the existing `PollTimeoutError`) is a typed error the plugin itself throws when a mutated deploy lands in `Failed`. A live-org probe found this localization risk does *not* extend to Apex runtime exception text: a `System.LimitException` came back in English from a French-locale org in the same session where a platform API error came back in French, so the two are localized independently — only the platform-API-facing `DeploymentFailedError` path needs the structural guard. Message text is still used for *reporting* — `progressMessage` and `statusReason` quote it verbatim so the user sees the org's own diagnosis — just never for *classification*. A governor-limit exception (e.g. too many SOQL queries) never reaches this function at all: the same probe found the org reports it as an ordinary failing test row over HTTP 200, with no distinguishing error code anywhere in the row, message, or stack trace — the existing per-method attribution in `attributeOutcomes` already scores it `Killed` because the row's outcome is non-`Pass`.
+`GroupExecutor.evaluateGroup` (`src/service/groupExecutor.ts`) reads that verdict directly —
+`outcome.kind === 'not-compilable'` builds the `CompileError` mutant result — with no
+`instanceof` check of its own, because the classification already happened at the port
+boundary. `classifyRuntimeError` in the same file handles only what still *throws*: an
+infrastructure failure (a network error, a poll timeout) that `GroupExecutor.runGroup`
+catches as `unknown` and folds into the same `GroupOutcome` union as the port's own verdict
+(`{ kind: 'threw'; error: unknown } | MutantVerdict`), so both the k>1 recursion predicate
+and the k=1 leaf narrow over one discriminated union instead of a caught value and a returned
+one:
+
+```typescript
+const classifyRuntimeError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error)
+  return {
+    status: 'RuntimeError' as const,
+    statusReason: message,
+    progressMessage: `Mutation result: runtime error (${message})`,
+  }
+}
+```
+
+The localization rationale carries over unchanged from before the port extraction:
+**Salesforce localizes platform API error messages to the org user's language**, so
+`DeploymentFailedError`'s type check (now inside `OrgMutationTestBed.evaluate`) reads the
+error's type, not its message text — a message match observed on an English-locale org
+silently stops matching on any other. A live-org probe found this risk does *not* extend to
+Apex runtime exception text: a `System.LimitException` came back in English from a
+French-locale org in the same session where a platform API error came back in French, so the
+two are localized independently — only the compile-fail path needs the structural guard.
+Message text is still used for *reporting* — `progressMessage` and `statusReason` quote it
+verbatim so the user sees the org's own diagnosis — just never for *classification*. A
+governor-limit exception (e.g. too many SOQL queries) never reaches `classifyRuntimeError` at
+all: the same probe found the org reports it as an ordinary failing test row over HTTP 200,
+with no distinguishing error code anywhere in the row, message, or stack trace — the existing
+per-method attribution in `attributeOutcomes` already scores it `Killed` because the row's
+outcome is non-`Pass`.
 
 ### Domain Test Result Mapping
 
-`ApexTestRunner` (`src/adapter/apexTestRunner.ts`) is the only file in `src/` that imports `@salesforce/apex-node`. Both transports return the vendor SDK's own `TestResult` shape; before either public method returns, the adapter maps that SDK DTO into `ApexTestRunResult` (`src/type/ApexTestRunResult.ts`) — a shape owned by this plugin, not mirrored from the vendor:
+`ApexTestRunner` (`src/adapter/org/apexTestRunner.ts`) is the only file in `src/` that imports `@salesforce/apex-node`. Both transports return the vendor SDK's own `TestResult` shape; before either public method returns, the adapter maps that SDK DTO into `ApexTestRunResult` (`src/type/ApexTestRunResult.ts`) — a shape owned by this plugin, not mirrored from the vendor:
 
 ```typescript
 const toApexTestRunResult = (testResult: TestResult): ApexTestRunResult => ({
@@ -452,20 +623,37 @@ class AggregateCoverageStrategy implements CoverageStrategy // fidelity: 'aggreg
 - `AggregateCoverageStrategy` reads the target class's entry from `testResult.classCoverage` and assigns **every** covered line the full set of qualified ids of every executed test method across the perimeter — an over-approximation, since the aggregate rollup does not distinguish which test covered which line. This is the accepted "every test method runs per mutant" degradation.
 - Both strategies lower-case the target class name once in their constructor for case-insensitive matching.
 
-**Selection is knowledge, not inference.** `MutationTestingService.selectCoverageStrategy` queries `ApexSettingsRepository.isAggregateCoverageOnly()` (a Tooling API read of `ApexSettings.IsAggregateCodeCoverageOnlyEnabled`) up front in `process()`, before the baseline test run, and picks the strategy accordingly:
+**Selection is knowledge, not inference — made where the baseline is computed.**
+`OrgMutationTestBed.prepare` (`src/adapter/org/orgMutationTestBed.ts`) queries
+`ApexSettingsRepository.isAggregateCoverageOnly()` (a Tooling API read of
+`ApexSettings.IsAggregateCodeCoverageOnlyEnabled`) and picks the strategy before running the
+baseline test:
 
 ```typescript
-const aggregateOnly = await apexSettingsRepository.isAggregateCoverageOnly()
-const coverageStrategy = aggregateOnly
+const strategy = (await this.settings.isAggregateCoverageOnly())
   ? new AggregateCoverageStrategy(this.apexClassName)
   : new PerTestCoverageStrategy(this.apexClassName)
 ```
 
-The chosen strategy is injected into `ApexTestRunner.getTestMethodsPerLines(apexTestClassNames, coverageStrategy)`, which delegates all coverage shaping to it. The adapter no longer guesses from the shape of an empty map — it is simply told which fidelity to use.
+The two strategy classes are unmoved — they still live in `src/service/coverageStrategy.ts`
+— only the *selection* crossed into the org engine, because it is org-specific knowledge (a
+Tooling API read) that a future non-org engine would not share (ADR 090).
+`MutationTestingService` never selects a strategy itself; it reads the chosen fidelity back
+off the returned `Baseline.fidelity` — `stopBaselineSpinner` and
+`reducePerimeterFromBaseline`'s zero-contribution check both branch on it — rather than
+holding a reference to the strategy instance.
+
+The chosen strategy is injected into
+`ApexTestRunner.getTestMethodsPerLines(apexTestClassNames, coverageStrategy)`, which
+delegates all coverage shaping to it and — this is load-bearing — excludes a `CompileFail`
+row (via `partitionOutcomes`) **before** the strategy ever sees a test result: a compile
+failure is not a coverage fact, and letting either strategy see the row would attribute
+failed-to-compile "coverage" to whichever class the response happens to name. The adapter no
+longer guesses from the shape of an empty map — it is simply told which fidelity to use.
 
 ### Transport Selection — Synchronous vs. Asynchronous Test Runs
 
-`ApexTestRunner` (`src/adapter/apexTestRunner.ts`) sends every test run — baseline and per-mutant alike — through one of two Tooling API transports, chosen by one private seam both public methods funnel through:
+`ApexTestRunner` (`src/adapter/org/apexTestRunner.ts`) sends every test run — baseline and per-mutant alike — through one of two Tooling API transports, chosen by one private seam both public methods funnel through:
 
 ```typescript
 const SYNC_ELIGIBLE_TEST_CLASS_COUNT = 1
@@ -488,7 +676,7 @@ Measured on the E2E fixture, this drops the campaign's queued async test classes
 
 There is no flag and no config key for any of this: the behaviour is unconditional, on every run, with no opt-out.
 
-**The permission floor.** `runTestsSynchronous` requires the **View Setup** user permission; the asynchronous path never needed it. A thrown sync error is classified by its structured `errorCode`, the same discipline that would apply to any typed platform error code: `INSUFFICIENT_ACCESS_OR_READONLY` and `INSUFFICIENT_ACCESS` mean the *capability* itself is missing, so they latch `syncTransportDisabled` on the adapter instance — every later single-class call for the rest of the campaign skips the synchronous attempt entirely, costing exactly one wasted round-trip total rather than one per group. Any other error (a lock contention, a transient 503, and the like) is treated as transient and the synchronous transport is retried on the next call. Either way the exact same payload falls back to the asynchronous transport, and the fallback call is issued *before* the reason is reported, so a throwing report callback — the caller's stdout write, not this adapter's concern — can never preempt the fallback attempt itself. The reason is reported only the first time it happens, through `MutationTestingService`'s spinner-pause channel (never a UI dependency inside `src/adapter/`) and a private reporting latch on the adapter instance, separate from the transport latch; it goes through an injected output sink rather than `process.stdout` directly, and — being org/network-controlled and unbounded — is sanitized and length-bounded the same way a compile diagnosis is (`sanitizeForDisplay`, `src/service/skippedTestClassMessage.ts`) before it reaches the terminal. If an asynchronous retry itself throws, that error propagates untouched to the same classification path every async failure already goes through.
+**The permission floor.** `runTestsSynchronous` requires the **View Setup** user permission; the asynchronous path never needed it. A thrown sync error is classified by its structured `errorCode`, the same discipline that would apply to any typed platform error code: `INSUFFICIENT_ACCESS_OR_READONLY` and `INSUFFICIENT_ACCESS` mean the *capability* itself is missing, so they latch `syncTransportDisabled` on the adapter instance — every later single-class call for the rest of the campaign skips the synchronous attempt entirely, costing exactly one wasted round-trip total rather than one per group. Any other error (a lock contention, a transient 503, and the like) is treated as transient and the synchronous transport is retried on the next call. Either way the exact same payload falls back to the asynchronous transport, and the fallback call is issued *before* the reason is reported, so a throwing report callback can never preempt the fallback attempt itself. The reason is reported only the first time it happens, through a private reporting latch on the adapter instance, separate from the transport latch — `ApexTestRunner` carries no UI dependency of its own; it calls its own `onSyncFallback(error)` callback and nothing else. That callback is wired up once, in `src/adapter/org/orgEngine.ts`, to `ctx.notify({ kind: 'sync-transport-fallback', error })` — the one `EngineNotice` member today — and `run.ts` supplies `notify` as `notice => reportEngineNotice(notice, this.spinner, messages)` (ADR 093). `reportEngineNotice` (`src/service/engineNotice.ts`) is where the presentation lives: it uses `spinner.pause`, not the start/stop pair the rest of this service relies on (`stop()` no-ops when nothing is running, `start()` replaces the current task without stopping it, so that idiom would silently swallow a later "Original tests passed"), and it sanitizes and truncates the org-supplied reason — `renderOrgDetail`, bounded at 200 code points (`MAX_ORG_ERROR_DETAIL_LENGTH`) — the same discipline the rollback-failure cause uses, in the same module, before writing through the injected `OutputSink` rather than `process.stdout` directly. If an asynchronous retry itself throws, that error propagates untouched to the same classification path every async failure already goes through.
 
 **A synchronous compile failure is normalized, not thrown.** The synchronous resource represents a non-compiling test class as an ordinary HTTP 200 carrying a plain `Fail` row (`methodName: null`, `runTime: -1`, `summary.testsRan: 0`) — it never throws, so the fallback above cannot catch it. `runTestSynchronous` recognizes this exact fingerprint (row count, `methodName`, `runTime`, and both `summary` fields together) and rewrites the result into the `CompileFail` shape the asynchronous transport already produces for the same failure, so `partitionOutcomes` treats both transports identically. A partial match is left untouched — fail closed, so a real test failure is never mistaken for a compile skip.
 
@@ -514,15 +702,27 @@ Concrete mutators override:
 
 ### Repository Pattern — Adapter Layer
 
-All Salesforce org interactions are isolated behind repository interfaces:
+Four repository classes isolate the org's Tooling API / `@salesforce/apex-node` surface.
+They are internals of the org engine now (`src/adapter/org/`, ADR 084): nothing outside that
+directory imports them. `orgEngine.ts` (`createOrgEngine`) wires them into the port
+implementations `src/service/` and `src/commands/` actually depend on —
+`OrgApexSourceProvider` wraps `ApexClassRepository` + `ApexTestSuiteRepository`, and
+`OrgMutationTestBed` wraps `ApexClassRepository`, `ApexTestRunner`, and
+`ApexSettingsRepository` — and hands both, plus `OrgSObjectSchemaProvider`, to the rest of
+the codebase as one `EngineBundle` (see
+[Execution Ports](#execution-ports)).
 
 | Repository | API | Purpose |
 | --- | --- | --- |
 | `ApexClassRepository` | Tooling API | CRUD on ApexClass, MetadataContainer deployment |
 | `ApexTestRunner` | @salesforce/apex-node | Test execution with/without coverage, synchronous or asynchronous by payload class count |
-| `SObjectDescribeRepository` | Metadata API describe | SObject field type resolution |
 | `ApexSettingsRepository` | Tooling API | Reads `IsAggregateCodeCoverageOnlyEnabled` to select the coverage strategy |
 | `ApexTestSuiteRepository` | Tooling API | Resolves ApexTestSuite names to member Apex test class names |
+
+The fifth pre-port collaborator, SObject describe, has no repository behind it anymore:
+`OrgSObjectSchemaProvider` (`src/adapter/org/orgSObjectSchemaProvider.ts` — the renamed
+`SObjectDescribeRepository`) implements `SObjectSchemaProvider` directly against
+`Connection.describe`, with no intermediate class to wrap.
 
 ### Builder/Fluent API — TypeDiscoverer
 
@@ -869,6 +1069,16 @@ Each mutation is deployed using the Tooling API **MetadataContainer** pattern, w
 
 **Poll configuration**. `PollOptions = { initialIntervalMs?, maxIntervalMs?, timeoutMs? }` is validated at construction: negative intervals and the racy `timeoutMs === 0` throw. A negative `timeoutMs` is accepted as "immediate timeout" for test harnesses.
 
+`RUN_TESTS` / `SKIP_TESTS` and the `RestorePolicy` type they form live in
+`src/port/mutationTestBed.ts` — a port module, not `src/adapter/org/apexClassRepository.ts`
+where they lived before the port extraction — because `MutationTestBed.restore(policy)` is a
+method on the port's own interface. `ApexClassRepository.update(apexClass, testPolicy:
+RestorePolicy = RUN_TESTS)` imports them back from the port. `OrgMutationTestBed.restore` is
+the only caller that ever passes the non-default `SKIP_TESTS`, on the failure-path rollback
+described in [`process()` Method Decomposition](#process-method-decomposition) — the org has
+usually just exhausted a test-run quota when that path runs, so skipping tests on the restore
+deploy is also the cheapest request the plugin can still make.
+
 ---
 
 ## Scoring Algorithm
@@ -1011,10 +1221,12 @@ This layout avoids the three classes of attack the old `app.report = { … }` in
                  └──────┬───────┘
                         │
               ┌─────────▼──────────┐
-              │   Adapter Layer    │
-              │ Repository + Runner│
+              │ src/adapter/org/    │
+              │ Repository + Runner │
+              │ (implements ports)  │
               └─────────┬──────────┘
-                        │
+                        │  EngineBundle (src/port/ interfaces,
+                        │  built once by adapter/org/orgEngine.ts)
          ┌──────────────▼──────────────┐
          │    MutationTestingService   │
          │                             │
@@ -1086,6 +1298,17 @@ by line/column/mutatorName/replacement, replace volatile timestamps), then valid
 `git diff` against a committed HTML snapshot. The validate step displays the diff before
 failing for CI debugging. Teardown (class redeployment) always executes even on failure.
 
+**Unit coverage of the execution-ports layering** adds three surfaces under `test/unit/`,
+alongside the existing `test/unit/service/` and `test/unit/mutator/` trees: `test/unit/port/`
+covers the port modules' own exports that need no adapter — `CompilationCheckFailedError`
+and the `RUN_TESTS`/`SKIP_TESTS` distinctness — since the port interfaces themselves are
+type-only and generate no runtime surface to test; `test/unit/adapter/org/` covers the org
+engine's port implementations and the four repositories they wrap, including
+`OrgMutationTestBed`'s prepare-before-evaluate/restore precondition guard, which is
+unreachable by construction and so must be driven directly from a test; and the NUT suite
+covers the command's wiring of `createOrgEngine` end to end (see
+[Execution Ports](#execution-ports)).
+
 **Test fixtures** (`test/classes/Mutation.cls`, `MutationTest.cls` and `MutationBulkTest.cls`)
 are shared across NUT and E2E tiers. `Mutation.cls` contains constructs triggering all 25
 mutators. `MutationTest.cls` provides 100% line coverage. `MutationBulkTest.cls` is the second
@@ -1119,15 +1342,40 @@ The HTML report is written to `reports/mutation/index.html`.
 
 | Metric | Value |
 | --- | --- |
-| Total mutants | 2333 |
-| Killed | 2201 |
-| Timeout | 4 |
-| Survived (equivalent) | 128 |
-| **Mutation score** | **94.51%** |
+| Total mutants | 3273 |
+| Killed | 3232 |
+| Timeout | 30 |
+| Survived (equivalent) | 11 |
+| **Mutation score** | **99.66%** |
+
+Refreshed after the execution-ports refactor (`src/port/`, `src/adapter/org/`). The total moved for **two reasons at once**, so the raw delta against
+the prior baseline (2333 total, 94.51%) is not a single-cause comparison: `src/port/**/*.ts`
+joined `stryker.config.mjs`'s `mutate` scope in Part 2 of this refactor (four new files with
+their own mutants), and the refactor itself is new/rewritten code across
+`src/adapter/org/` (three new port implementations plus `orgEngine.ts`) and `src/service/`
+(`mutationTestingService.ts`, `groupExecutor.ts` restructured around the port).
+
+**This baseline predates the rescope that removed the engine factory, the `concurrency`
+member and the disposal contract, so it should be re-measured before being diffed against a
+fresh report.**
+
+The survivor count fell sharply even as the mutant count grew (128 → 11): most of the
+previously-documented equivalent survivors lived in code this refactor rewrote outright
+(`verifyCompilation`, `selectCoverageStrategy`, `evaluateMutation`/`classifyError` — all gone,
+replaced by `testBed.prepare`/`evaluate` and `GroupExecutor.evaluateGroup`), and the new code
+was built under the same 100 % coverage gate plus the golden-UI-sequence and edge-matrix
+tests this refactor added, which killed mutants the old, more loosely-tested code left
+standing. Ten of the eleven current survivors are byte-identical carryovers from files this
+refactor moved but did not rewrite (`apexClassRepository.ts`, `apexTestRunner.ts`,
+and single-element-array edge cases in `groupExecutor.ts`/`mutationTestingService.ts` that
+predate this branch) — confirmed by diffing each surviving line against `main`. They are not
+re-audited here; they fall under categories 1-5 below, already accepted before this refactor
+started. Only one survivor is new to this branch, and it is called out under category 6.
 
 ### Confirmed Equivalent Survivors
 
-The 128 survivors are all confirmed equivalent — no additional test can ever kill them. They fall into five categories:
+The current survivors are all confirmed equivalent — no additional test can ever kill them.
+They fall into six categories:
 
 **1. ANTLR grammar guarantees**
 
@@ -1143,11 +1391,25 @@ Several patterns use `value ?? fallback` where `value` is structurally guarantee
 
 **4. Defensive guards on well-formed input**
 
-Some mutators contain `if (!token)` guards as safety nets. Because all call sites pass non-null tokens (enforced by the ANTLR grammar and TypeScript types), the false branch is never executed. Mutations to these guards survive because no test can reach the guarded branch.
+Some mutators contain `if (!token)` guards as safety nets. Because all call sites pass non-null tokens (enforced by the ANTLR grammar and TypeScript types), the false branch is never executed. Mutations to these guards survive because no test can reach the guarded branch. A related shape appears in the ports layer, on a new file, but is **not** a survivor: `OrgMutationTestBed`'s `requireOriginal()` throws when `evaluate`/`restore` runs before `prepare` — unreachable by construction, since the service always calls `prepare` first (§ [Execution Ports](#execution-ports)). Both the guard's condition and its message are pinned: a unit test calls `restore` on a fresh bed and asserts the rejection *with a message matcher*, so the `StringLiteral` mutant on the diagnostic text is killed too. It is recorded here only because the baseline run above predates that matcher and still counts it among the survivors.
 
 **5. Identity-preserving operator swaps in unreachable contexts**
 
 A small number of arithmetic and logical mutations swap operators in expressions whose values are constrained to a single outcome by the enclosing logic (e.g., a constant that is always zero after a previous null guard). These are semantically equivalent to the original regardless of the operator used.
+
+**6. Port capabilities declared ahead of their consumer**
+
+An earlier draft of this refactor declared `MutationTestBed.concurrency` and an
+`AsyncDisposable` teardown contract ahead of the second engine that was expected to need them.
+That engine proved unnecessary (see [Execution Ports](#execution-ports)) and both members were
+removed, so neither appears in the current scope. The finding worth keeping: Stryker generated
+**no mutant at all** for either — a bare numeric-literal property initializer is outside every
+mutator in the default catalog, and an intentionally empty method body is skipped by the
+`BlockStatement` mutator. A capability declared without a consumer is therefore invisible to
+mutation testing in both directions: it cannot be killed, and it cannot survive.
+
+`src/commands/**` stays deliberately outside the scope: it holds only the oclif command
+shell, whose wiring the NUT suite covers end to end rather than per mutant.
 
 ---
 
