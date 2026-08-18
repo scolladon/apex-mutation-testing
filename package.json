@@ -15,7 +15,7 @@
     "re2js": "2.8.6"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.8",
+    "@biomejs/biome": "2.5.9",
     "@commitlint/config-conventional": "21.2.2",
     "@oclif/plugin-help": "6.2.58",
     "@salesforce/dev-config": "4.3.3",
