@@ -1,8 +1,8 @@
 import { Messages } from '@salesforce/core'
-import {
+import type {
+  ApexSourceProvider,
   ApexTestSuiteMember,
-  ApexTestSuiteRepository,
-} from '../adapter/apexTestSuiteRepository.js'
+} from '../port/apexSourceProvider.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { ConfigReader } from './configReader.js'
 
@@ -27,7 +27,7 @@ const appendOrigin = (
 
 export class TestSuiteResolver {
   constructor(
-    private readonly repository: ApexTestSuiteRepository,
+    private readonly source: ApexSourceProvider,
     private readonly messages: Messages<string>
   ) {}
 
@@ -39,7 +39,7 @@ export class TestSuiteResolver {
       return parameter
     }
 
-    const members = await this.repository.readMembers(suiteNames)
+    const members = await this.source.readTestSuiteMembers(suiteNames)
     const resolvedSuiteNames = new Set(members.map(member => member.suiteName))
     const unresolved = suiteNames.filter(name => !resolvedSuiteNames.has(name))
     if (unresolved.length > 0) {
@@ -83,7 +83,7 @@ export class TestSuiteResolver {
 
   private async failOnUnresolvedSuites(suiteNames: string[]): Promise<never> {
     const existing = new Set(
-      await this.repository.readExistingSuiteNames(suiteNames)
+      await this.source.readExistingTestSuiteNames(suiteNames)
     )
     const errors = suiteNames.map(name =>
       existing.has(name)

@@ -4,6 +4,7 @@ We encourage the developer community to contribute to this repository. This guid
 
 - [Requirements](#requirements)
 - [Installation](#installation)
+- [Environment secrets](#environment-secrets)
 - [Testing](#testing)
 - [Git Workflow](#git-workflow)
 
@@ -35,6 +36,36 @@ npm pack
 ```
 
 Rebuild every time you made a change in the source and you need to test locally
+
+## Environment secrets
+
+Secrets are read from the environment, never hardcoded and never committed to `sfdx-project.json`. Prefer tools that read a secret from the environment over ones that take it as a command-line argument, since arguments are visible to any process on the machine via `ps`. Where a third-party tool requires an argument anyway, pass the variable (`"$MY_SECRET"`) rather than the literal value, so the secret stays out of shell history and out of this repository.
+
+Locally, put them in a `.env` file at the repository root. It is git-ignored. Use the **same variable names as the repository secrets**, so a local run and a CI run resolve identically:
+
+```bash
+# .env — never commit this file
+AER_LICENSE_KEY=…
+```
+
+Nothing loads `.env` automatically yet, so export it into your shell for now (`set -a; . ./.env; set +a`, or a tool such as direnv).
+
+| Variable | Repository secret | Needed for |
+|---|---|---|
+| `AER_LICENSE_KEY` | ✅ same name | Carrying the aer licence key into a run (see below) |
+
+Note for CI: pull requests from forks cannot read repository secrets, so any job requiring a key must be restricted to non-fork branches or stay within the free tier.
+
+### The aer licence
+
+The local Apex runtime ([aer](https://aertest.com)) reads `AER_LICENSE_KEY` from the environment, which is the recommended way to supply it in CI. It can also be registered once and stored on disk with `aer license register <key>` — prefer the environment variable, since a command-line argument is visible in `ps` and in CI logs.
+
+What actually needs a licence:
+
+- **`aer test` has a free tier** — 100 test methods per iteration, with an unlimited number of iterations. Ordinary mutation runs stay inside it, because each mutant executes only the test methods covering the mutated line. Only a baseline run over a large test perimeter can exceed it.
+- **`aer server` requires a licence.** Without one it shuts down after five minutes.
+
+**The repository's key is for CI only.** It is an open-source project licence, and aer validates that it is being used from a GitHub Action on a public repository — so it does not work on a developer machine, by design. Running `aer server` locally needs a **developer licence**; a trial is available by registering an email address at [octoberswimmer.com](https://www.octoberswimmer.com/tools/aer/subscribe/).
 
 ## Testing
 

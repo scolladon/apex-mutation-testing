@@ -1,6 +1,7 @@
 {
   "extends": "@salesforce/dev-config/tsconfig-strict-esm",
   "compilerOptions": {
+    "lib": ["ES2023"],
     "allowJs": false,
     "esModuleInterop": true,
     "allowUnreachableCode": false,

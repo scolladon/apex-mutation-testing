@@ -3,8 +3,8 @@ import {
   ApexClassRepository,
   DeploymentFailedError,
   PollTimeoutError,
-  SKIP_TESTS,
-} from '../../../src/adapter/apexClassRepository.js'
+} from '../../../../src/adapter/org/apexClassRepository.js'
+import { SKIP_TESTS } from '../../../../src/port/mutationTestBed.js'
 
 describe('ApexClassRepository', () => {
   let connectionStub: Connection

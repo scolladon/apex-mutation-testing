@@ -1,3 +1,4 @@
+.env
 .sfdx
 .stryker-tmp
 .wireit

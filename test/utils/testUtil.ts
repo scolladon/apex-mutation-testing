@@ -1,3 +1,4 @@
+import type { Progress, Spinner } from '@salesforce/sf-plugins-core'
 import { ParserRuleContext, Token } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
 import {
@@ -5,10 +6,145 @@ import {
   ExpressionListContext,
   MethodDeclarationContext,
 } from 'apex-parser'
+import { vi } from 'vitest'
+import type { ApexSourceProvider } from '../../src/port/apexSourceProvider.js'
+import type {
+  Baseline,
+  MutationTestBed,
+  PrepareHooks,
+} from '../../src/port/mutationTestBed.js'
+import type { SObjectSchemaProvider } from '../../src/port/sObjectSchemaProvider.js'
 import type { TypeMatcher } from '../../src/service/typeMatcher.js'
+import type { ApexClass } from '../../src/type/ApexClass.js'
 import type { ApexMethod } from '../../src/type/ApexMethod.js'
 import { TokenRange } from '../../src/type/ApexMutation.js'
 import { TypeRegistry } from '../../src/type/TypeRegistry.js'
+
+export type UiRecorder = {
+  spinner: Spinner
+  progress: Progress
+  sink: (text: string) => void
+  calls: string[]
+}
+
+// Records every spinner/progress/sink invocation as one rendered line, in
+// call order. The rendered forms below are the vocabulary the golden arrays
+// are written in; changing one invalidates every recorded array at once.
+export const recordUiCalls = (): UiRecorder => {
+  const calls: string[] = []
+  const spinner = {
+    start: vi.fn((text: string) => {
+      calls.push(`spinner.start:${text}`)
+    }),
+    // Records the CALL, never the rendered text. oclif's real stop() prints
+    // its default 'done' when a task is active and prints nothing at all when
+    // none is, so a recorded textless `spinner.stop:` maps to either — the
+    // arrays cannot tell those apart, and never pin the user-visible word.
+    // Do not add rendering fidelity to this stub without re-capturing every
+    // golden array.
+    stop: vi.fn((text?: string) => {
+      calls.push(`spinner.stop:${text ?? ''}`)
+    }),
+    // Models oclif's real pause(): runs the callback synchronously and never
+    // no-ops when no task is running.
+    pause: vi.fn((fn: () => void) => {
+      calls.push('spinner.pause')
+      fn()
+    }),
+  } as unknown as Spinner
+  const progress = {
+    start: vi.fn((total: number, payload: { info: string }) => {
+      calls.push(`progress.start:${total}|${payload.info}`)
+    }),
+    update: vi.fn((value: number, payload: { info: string }) => {
+      calls.push(`progress.update:${value}|${payload.info}`)
+    }),
+    finish: vi.fn((payload: { info: string }) => {
+      calls.push(`progress.finish:${payload.info}`)
+    }),
+    stop: vi.fn(() => {
+      calls.push('progress.stop')
+    }),
+  } as unknown as Progress
+  const sink = vi.fn((text: string) => {
+    calls.push(`sink:${text}`)
+  })
+  return { spinner, progress, sink, calls }
+}
+
+// A stand-in MutationTestBed whose prepare() fires the three hooks in the
+// documented order before resolving with the given baseline —
+// callers that need prepare to reject build their own custom implementation,
+// since a rejecting prepare must decide for itself which hooks it fired.
+// evaluate() defaults to a clean Passed/no-tests verdict so a caller that
+// does not care about the mutation loop's outcome does not have to script
+// one; callers asserting a specific verdict override `bed.evaluate` directly.
+export const fakeTestBed = (baseline: Partial<Baseline> = {}) => {
+  const prepare = vi.fn(
+    async (
+      _original: unknown,
+      _perimeter: string[],
+      hooks: PrepareHooks
+    ): Promise<Baseline> => {
+      hooks.onVerifying()
+      hooks.onVerified()
+      hooks.onBaselineStarting()
+      return {
+        outcome: 'Passed',
+        testsRan: 1,
+        compileFailures: [],
+        otherFailureCount: 0,
+        testMethodsPerLine: new Map(),
+        fidelity: 'per-test',
+        cost: { applyMs: 5000, runMs: 5000 },
+        ...baseline,
+      }
+    }
+  )
+  const evaluate = vi.fn().mockResolvedValue({
+    kind: 'executed',
+    result: { outcome: 'Passed', tests: [] },
+  })
+  const restore = vi.fn().mockResolvedValue(undefined)
+  // Typed as the port, not inferred: without the annotation the fake can drift
+  // out of the contract the production bed implements and nothing notices,
+  // because no script type-checks test/**.
+  const bed: MutationTestBed = {
+    prepare,
+    evaluate,
+    restore,
+  }
+  return Object.assign(bed, { prepare, evaluate, restore })
+}
+
+// A stand-in ApexSourceProvider with every method pre-stubbed to a harmless
+// default (an existing, empty-shaped class with no dependencies and no
+// perimeter/suite fallout) so a caller only overrides the methods its test
+// actually drives.
+export const fakeSourceProvider = (
+  overrides: Partial<ApexSourceProvider> = {}
+) => ({
+  classExists: vi.fn().mockResolvedValue(true),
+  readClass: vi.fn().mockResolvedValue({} as ApexClass),
+  listDependencies: vi
+    .fn()
+    .mockResolvedValue({ apexClasses: [], sObjects: [] }),
+  assessPerimeter: vi.fn().mockResolvedValue([]),
+  readTestSuiteMembers: vi.fn().mockResolvedValue([]),
+  readExistingTestSuiteNames: vi.fn().mockResolvedValue([]),
+  ...overrides,
+})
+
+// A stand-in SObjectSchemaProvider whose describe() is a no-op and whose
+// lookups report "unknown" by default — the shape TypeDiscoverer sees when
+// nothing in a class body resolves to an sObject.
+export const fakeSchemaProvider = (
+  overrides: Partial<SObjectSchemaProvider> = {}
+) => ({
+  describe: vi.fn().mockResolvedValue(undefined),
+  resolveFieldType: vi.fn().mockReturnValue(undefined),
+  ...overrides,
+})
 
 export const TestUtil = {
   createToken(line: number = 1, column: number = 0): Token {

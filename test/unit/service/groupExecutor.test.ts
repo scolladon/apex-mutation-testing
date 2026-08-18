@@ -1,11 +1,7 @@
 import { Messages } from '@salesforce/core'
 import { Progress } from '@salesforce/sf-plugins-core'
 import type { CommonTokenStream } from 'apex-parser'
-import {
-  ApexClassRepository,
-  DeploymentFailedError,
-} from '../../../src/adapter/apexClassRepository.js'
-import { ApexTestRunner } from '../../../src/adapter/apexTestRunner.js'
+import type { MutationTestBed } from '../../../src/port/mutationTestBed.js'
 import { GroupExecutor } from '../../../src/service/groupExecutor.js'
 import { MutantGenerator } from '../../../src/service/mutantGenerator.js'
 import { MutationGroup } from '../../../src/service/mutationGrouper.js'
@@ -13,7 +9,6 @@ import { ApexMutation } from '../../../src/type/ApexMutation.js'
 import type { ApexTestRunResult } from '../../../src/type/ApexTestRunResult.js'
 import type { TestMethodId } from '../../../src/type/TestMethodId.js'
 
-const CLASS_ID = 'class-id'
 const CLASS_NAME = 'Mutation'
 const CLASS_BODY = 'public class Mutation { }'
 const MUTATED_BODY = 'public class Mutation { /* mutated */ }'
@@ -71,16 +66,17 @@ describe('GroupExecutor', () => {
     } as unknown as Progress
     mutateManyMock = vi.fn().mockReturnValue(MUTATED_BODY)
     return new GroupExecutor(
-      { Id: CLASS_ID, Body: CLASS_BODY } as never,
       CLASS_NAME,
       CLASS_BODY,
       {} as CommonTokenStream,
       testMethodsPerLine,
       { mutateMany: mutateManyMock } as unknown as MutantGenerator,
-      { runTestMethods: runTestMethodsMock } as unknown as ApexTestRunner,
       {
-        update: vi.fn().mockResolvedValue({}),
-      } as unknown as ApexClassRepository,
+        evaluate: vi.fn(async () => ({
+          kind: 'executed' as const,
+          result: await runTestMethodsMock(),
+        })),
+      } as unknown as MutationTestBed,
       progress,
       { getMessage: vi.fn(() => 'fallback') } as unknown as Messages<string>
     )
@@ -179,11 +175,13 @@ describe('GroupExecutor', () => {
       expect(positions[positions.length - 1]).toBe(8)
     })
 
-    it('When deploying, Then the mutated body is pushed under the original class id', async () => {
+    it('When evaluating, Then the mutated body is handed to the bed', async () => {
       // Arrange
-      const updateClassMock = vi.fn().mockResolvedValue({})
+      const evaluateMock = vi.fn(async () => ({
+        kind: 'executed' as const,
+        result: await runTestMethodsMock(),
+      }))
       const sut = new GroupExecutor(
-        { Id: CLASS_ID, Body: CLASS_BODY } as never,
         CLASS_NAME,
         CLASS_BODY,
         {} as CommonTokenStream,
@@ -191,8 +189,7 @@ describe('GroupExecutor', () => {
         {
           mutateMany: vi.fn().mockReturnValue(MUTATED_BODY),
         } as unknown as MutantGenerator,
-        { runTestMethods: runTestMethodsMock } as unknown as ApexTestRunner,
-        { update: updateClassMock } as unknown as ApexClassRepository,
+        { evaluate: evaluateMock } as unknown as MutationTestBed,
         {
           start: vi.fn(),
           update: vi.fn(),
@@ -205,10 +202,50 @@ describe('GroupExecutor', () => {
       await sut.evaluate(group, 0, performance.now(), 12)
 
       // Assert
-      expect(updateClassMock).toHaveBeenCalledWith({
-        Id: CLASS_ID,
-        Body: MUTATED_BODY,
+      expect(evaluateMock).toHaveBeenCalledWith(MUTATED_BODY, group.testMethods)
+    })
+
+    it('When a batch evaluation resolves not-compilable, Then the group recurses into singletons', async () => {
+      // Arrange — a `not-compilable` verdict occupies the same "ambiguous
+      // attribution" slot a thrown batch error previously held: it must
+      // still force k>1 recursion, and each singleton retry classifies its
+      // own outcome rather than the group being scored as a whole.
+      const localUpdateMock = vi.fn()
+      const localProgress = {
+        start: vi.fn(),
+        update: localUpdateMock,
+        finish: vi.fn(),
+      } as unknown as Progress
+      const evaluateMock = vi.fn().mockResolvedValue({
+        kind: 'not-compilable',
+        detail: 'Deployment failed:\nsyntax error',
       })
+      const sut = new GroupExecutor(
+        CLASS_NAME,
+        CLASS_BODY,
+        {} as CommonTokenStream,
+        testMethodsPerLine,
+        {
+          mutateMany: vi.fn().mockReturnValue(MUTATED_BODY),
+        } as unknown as MutantGenerator,
+        { evaluate: evaluateMock } as unknown as MutationTestBed,
+        localProgress,
+        { getMessage: vi.fn(() => 'fallback') } as unknown as Messages<string>
+      )
+
+      // Act
+      const results = await sut.evaluate(group, 0, performance.now(), 12)
+
+      // Assert
+      expect(results.map(r => r.status)).toEqual([
+        'CompileError',
+        'CompileError',
+        'CompileError',
+      ])
+      const infos = localUpdateMock.mock.calls.map(
+        ([, payload]) => (payload as { info: string }).info
+      )
+      expect(infos).toContainEqual(expect.stringContaining('fallback'))
     })
   })
 
@@ -240,13 +277,12 @@ describe('GroupExecutor', () => {
       )
     })
 
-    it('Given a deploy rejection carrying a French message and no recognisable prefix, When evaluating, Then the status is CompileError', async () => {
-      // Arrange — a DeploymentFailedError instance is the only signal that
-      // must matter; the message is deliberately non-English and does not
-      // start with the plugin's own English prefix.
+    it('Given a bed verdict carrying a French message and no recognisable prefix, When evaluating, Then the status is CompileError with the verdict detail as statusReason', async () => {
+      // Arrange — a `not-compilable` verdict is the only signal that must
+      // matter; the message is deliberately non-English and does not start
+      // with the plugin's own English prefix.
       const frenchMessage = "Échec : la classe ne compile pas sur l'org cible"
       const sut = new GroupExecutor(
-        { Id: CLASS_ID, Body: CLASS_BODY } as never,
         CLASS_NAME,
         CLASS_BODY,
         {} as CommonTokenStream,
@@ -254,12 +290,12 @@ describe('GroupExecutor', () => {
         {
           mutateMany: vi.fn().mockReturnValue(MUTATED_BODY),
         } as unknown as MutantGenerator,
-        { runTestMethods: vi.fn() } as unknown as ApexTestRunner,
         {
-          update: vi
-            .fn()
-            .mockRejectedValue(new DeploymentFailedError(frenchMessage)),
-        } as unknown as ApexClassRepository,
+          evaluate: vi.fn().mockResolvedValue({
+            kind: 'not-compilable',
+            detail: frenchMessage,
+          }),
+        } as unknown as MutationTestBed,
         {
           start: vi.fn(),
           update: vi.fn(),
@@ -273,9 +309,10 @@ describe('GroupExecutor', () => {
 
       // Assert
       expect(results.map(r => r.status)).toEqual(['CompileError'])
+      expect(results.map(r => r.statusReason)).toEqual([frenchMessage])
     })
 
-    it('Given a rejection whose message contains LIMIT_USAGE_FOR_NS but the error is not a DeploymentFailedError, When evaluating, Then the status is RuntimeError', async () => {
+    it('Given a rejection whose message contains LIMIT_USAGE_FOR_NS but is a thrown error rather than a not-compilable verdict, When evaluating, Then the status is RuntimeError', async () => {
       // Arrange — pins the regression: message text alone must never classify a kill.
       runTestMethodsMock = vi
         .fn()

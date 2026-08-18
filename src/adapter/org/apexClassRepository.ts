@@ -1,8 +1,9 @@
 import { Connection } from '@salesforce/core'
 import { mapLimit } from 'async'
-import { ApexClass } from '../type/ApexClass.js'
-import { ApexClassIdentity } from '../type/ApexClassIdentity.js'
-import { MetadataComponentDependency } from '../type/MetadataComponentDependency.js'
+import { type RestorePolicy, RUN_TESTS } from '../../port/mutationTestBed.js'
+import { ApexClass } from '../../type/ApexClass.js'
+import { ApexClassIdentity } from './ApexClassIdentity.js'
+import { MetadataComponentDependency } from './MetadataComponentDependency.js'
 
 const DEFAULT_POLL_INITIAL_INTERVAL_MS = 100
 const DEFAULT_POLL_MAX_INTERVAL_MS = 2000
@@ -14,19 +15,6 @@ const TERMINAL_STATES = new Set([
   'Error',
   'Aborted',
 ]) as ReadonlySet<string>
-
-// Whether a container deploy asks the org to run tests. Named rather than a
-// bare boolean so the call sites read as intent instead of a flag.
-// Neither literal value is itself observable: the only consumer tests
-// `testPolicy === RUN_TESTS` (createDeployRequest below), so RUN_TESTS can
-// change freely as long as the default parameter — which reads RUN_TESTS
-// itself — changes with it, and SKIP_TESTS can be any value distinct from
-// RUN_TESTS and still produce the same `!== RUN_TESTS` outcome.
-// Stryker disable next-line StringLiteral: value is never itself observed — see above.
-export const RUN_TESTS = 'run-tests'
-// Stryker disable next-line StringLiteral: value is never itself observed — see above.
-export const SKIP_TESTS = 'skip-tests'
-export type DeployTestPolicy = typeof RUN_TESTS | typeof SKIP_TESTS
 
 // SOQL caps statement length, so a large perimeter must be queried in
 // batches.
@@ -158,7 +146,7 @@ export class ApexClassRepository {
   // and a restore that is refused is one that leaves a mutant behind.
   public async update(
     apexClass: ApexClass,
-    testPolicy: DeployTestPolicy = RUN_TESTS
+    testPolicy: RestorePolicy = RUN_TESTS
   ) {
     return this.deployToContainer(apexClass, testPolicy)
   }
@@ -167,7 +155,7 @@ export class ApexClassRepository {
   // deploy runs to verify compilation and pick up its coverage.
   private async deployToContainer(
     apexClass: ApexClass,
-    testPolicy: DeployTestPolicy
+    testPolicy: RestorePolicy
   ) {
     const containerId = await this.createContainer()
     try {
@@ -208,7 +196,7 @@ export class ApexClassRepository {
 
   private async createDeployRequest(
     containerId: string,
-    testPolicy: DeployTestPolicy
+    testPolicy: RestorePolicy
   ): Promise<string> {
     const asyncRequest = await this.connection.tooling
       .sobject('ContainerAsyncRequest')

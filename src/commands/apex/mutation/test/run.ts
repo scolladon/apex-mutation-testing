@@ -1,12 +1,15 @@
-import { Connection, Messages } from '@salesforce/core'
+import { Messages } from '@salesforce/core'
 import { Flags, SfCommand } from '@salesforce/sf-plugins-core'
-import { ApexTestSuiteRepository } from '../../../../adapter/apexTestSuiteRepository.js'
+import { createOrgEngine } from '../../../../adapter/org/orgEngine.js'
+import type { ApexSourceProvider } from '../../../../port/apexSourceProvider.js'
+import type { EngineBundle } from '../../../../port/executionEngine.js'
 import { ApexMutationHTMLReporter } from '../../../../reporter/HTMLReporter.js'
 import {
   ApexClassNotFoundError,
   ApexClassValidator,
 } from '../../../../service/apexClassValidator.js'
 import { ConfigReader } from '../../../../service/configReader.js'
+import { reportEngineNotice } from '../../../../service/engineNotice.js'
 import { MutationTestingService } from '../../../../service/mutationTestingService.js'
 import { formatSkippedTestClasses } from '../../../../service/skippedTestClassMessage.js'
 import { TestSuiteResolver } from '../../../../service/testSuiteResolver.js'
@@ -123,6 +126,19 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
     const { flags } = await this.parse(ApexMutationTest)
     const connection = flags['target-org'].getConnection(flags['api-version'])
 
+    const engine = await createOrgEngine({
+      connection,
+      apexClassName: flags['apex-class'],
+      notify: notice => reportEngineNotice(notice, this.spinner, messages),
+    })
+
+    return this.mutate(engine, flags)
+  }
+
+  private async mutate(
+    engine: EngineBundle,
+    flags: Awaited<ReturnType<ApexMutationTest['parse']>>['flags']
+  ): Promise<ApexMutationTestResult> {
     const parameters: ApexMutationParameter = {
       apexClassName: flags['apex-class'],
       apexTestClassNames: flags['test-class'] ?? [],
@@ -142,19 +158,19 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
 
     const resolvedParameters = await this.resolveParameters(
       parameters,
-      connection
+      engine.source
     )
     this.logRunningLine(resolvedParameters)
 
     const usableTestClassNames = await this.reduceToUsablePerimeter(
       resolvedParameters,
-      connection
+      engine.source
     )
 
     const mutationTestingService = new MutationTestingService(
       this.progress,
       this.spinner,
-      connection,
+      engine,
       { ...resolvedParameters, apexTestClassNames: usableTestClassNames },
       messages
     )
@@ -177,15 +193,12 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
 
   private async resolveParameters(
     parameters: ApexMutationParameter,
-    connection: Connection
+    source: ApexSourceProvider
   ): Promise<ApexMutationParameter> {
     const configReader = new ConfigReader(messages)
     const configuredParameters = await configReader.resolve(parameters)
 
-    const testSuiteResolver = new TestSuiteResolver(
-      new ApexTestSuiteRepository(connection),
-      messages
-    )
+    const testSuiteResolver = new TestSuiteResolver(source, messages)
     return testSuiteResolver.resolve(configuredParameters)
   }
 
@@ -202,9 +215,9 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
 
   private async reduceToUsablePerimeter(
     parameters: ApexMutationParameter,
-    connection: Connection
+    source: ApexSourceProvider
   ): Promise<string[]> {
-    const apexClassValidator = new ApexClassValidator(connection)
+    const apexClassValidator = new ApexClassValidator(source)
     const [, verdicts] = await Promise.all([
       apexClassValidator.validate(parameters),
       apexClassValidator.assessPerimeter(parameters.apexTestClassNames),

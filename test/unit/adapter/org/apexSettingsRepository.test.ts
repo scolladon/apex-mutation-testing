@@ -1,5 +1,5 @@
 import { Connection } from '@salesforce/core'
-import { ApexSettingsRepository } from '../../../src/adapter/apexSettingsRepository.js'
+import { ApexSettingsRepository } from '../../../../src/adapter/org/apexSettingsRepository.js'
 
 describe('ApexSettingsRepository', () => {
   let connectionStub: Connection

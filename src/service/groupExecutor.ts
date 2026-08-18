@@ -1,12 +1,7 @@
 import { Messages } from '@salesforce/core'
 import { Progress } from '@salesforce/sf-plugins-core'
 import type { CommonTokenStream } from 'apex-parser'
-import {
-  ApexClassRepository,
-  DeploymentFailedError,
-} from '../adapter/apexClassRepository.js'
-import { ApexTestRunner } from '../adapter/apexTestRunner.js'
-import { ApexClass } from '../type/ApexClass.js'
+import type { MutantVerdict, MutationTestBed } from '../port/mutationTestBed.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
 import type { ApexTestRunResult } from '../type/ApexTestRunResult.js'
@@ -27,35 +22,24 @@ const PASS_OUTCOME = 'Pass'
 // Stryker disable next-line StringLiteral: any non-pass value behaves the same.
 const NON_PASS_OUTCOME = 'Fail'
 
-// Classify a deploy/test-run error into a per-mutant outcome plus a progress
-// message. DeploymentFailedError — a compile error from the Tooling API
-// deploy — is matched by type rather than message text, because Salesforce
-// localises *platform API* error text to the org user's language: a message
-// match observed on an English-locale org would silently stop matching on
-// any other. Apex runtime exception text is not at the same risk — a
-// live-org probe found a System.LimitException coming back in English from
-// a French-locale org, in the same session as a platform API error that came
-// back in French, so the two are localised independently. A governor-limit
-// exception never reaches this function at all: the org reports it as an
-// ordinary failing test row (HTTP 200, no throw), which attributeOutcomes
-// already scores as Killed through the row's non-Pass outcome. Any other
-// thrown error is reported as a RuntimeError.
-const classifyError = (
-  error: unknown,
-  mutation: ApexMutation
+// Classify a caught evaluate() failure into a RuntimeError outcome plus a
+// progress message. Apex runtime exception text carries no localisation risk
+// analogous to a platform API error: a live-org probe found a
+// System.LimitException coming back in English from a French-locale org, in
+// the same session as a platform API error that came back in French, so the
+// two are localised independently. A governor-limit exception never reaches
+// this function at all: the org reports it as an ordinary failing test row
+// (HTTP 200, no throw), which attributeOutcomes already scores as Killed
+// through the row's non-Pass outcome. Any other thrown error is reported as
+// a RuntimeError.
+const classifyRuntimeError = (
+  error: unknown
 ): {
-  status: 'CompileError' | 'RuntimeError'
-  statusReason?: string
+  status: 'RuntimeError'
+  statusReason: string
   progressMessage: string
 } => {
   const message = error instanceof Error ? error.message : String(error)
-  if (error instanceof DeploymentFailedError) {
-    return {
-      status: 'CompileError',
-      statusReason: message,
-      progressMessage: `Mutation result: compile error at line ${mutation.target.startToken.line}`,
-    }
-  }
   return {
     status: 'RuntimeError',
     statusReason: message,
@@ -63,22 +47,26 @@ const classifyError = (
   }
 }
 
-// Owns per-iteration evaluation: deploy mutated source, run union of covering
-// tests, attribute outcomes per mutation. A singleton group (k=1) is the leaf
-// case — error classification and status determination live here. Multi-mutation
-// groups (k>1) recurse into singletons on any failure (deploy, run, missing
-// outcome). All progress UI for a single iteration is emitted from this class
-// so the lifecycle service stays focused on orchestration.
+// A caught evaluate() failure, folded in alongside the port's own verdict so
+// the k>1 recursion predicate and the k=1 leaf can narrow over one
+// discriminated union instead of a caught value and a returned one.
+type GroupOutcome = { kind: 'threw'; error: unknown } | MutantVerdict
+
+// Owns per-iteration evaluation: evaluate the mutated source through the
+// test bed, attribute outcomes per mutation. A singleton group (k=1) is the
+// leaf case — error classification and status determination live here.
+// Multi-mutation groups (k>1) recurse into singletons on any failure
+// (thrown, non-compiling, missing outcome). All progress UI for a single
+// iteration is emitted from this class so the lifecycle service stays
+// focused on orchestration.
 export class GroupExecutor {
   constructor(
-    private readonly apexClass: ApexClass,
     private readonly apexClassName: string,
     private readonly apexClassContent: string,
     private readonly tokenStream: CommonTokenStream,
     private readonly testMethodsPerLine: Map<number, Set<TestMethodId>>,
     private readonly mutantGenerator: MutantGenerator,
-    private readonly apexTestRunner: ApexTestRunner,
-    private readonly apexClassRepository: ApexClassRepository,
+    private readonly testBed: MutationTestBed,
     private readonly progress: Progress,
     private readonly messages: Messages<string>
   ) {}
@@ -140,6 +128,21 @@ export class GroupExecutor {
     })
   }
 
+  // The try/catch is extracted so the union stays a `const`: with `let
+  // outcome` assigned from both arms of a try/catch, TypeScript's
+  // definite-assignment analysis is conservative and the narrowing below
+  // would need a non-null dance instead of the discriminant carrying it.
+  private async runGroup(
+    mutated: string,
+    tests: ReadonlySet<TestMethodId>
+  ): Promise<GroupOutcome> {
+    try {
+      return await this.testBed.evaluate(mutated, tests)
+    } catch (error: unknown) {
+      return { kind: 'threw', error }
+    }
+  }
+
   private async evaluateGroup(
     group: MutationGroup,
     completedSoFar: number
@@ -151,36 +154,40 @@ export class GroupExecutor {
       group.mutations,
       this.tokenStream
     )
-    let testResult: ApexTestRunResult | undefined
-    let batchError: unknown
-    try {
-      await this.apexClassRepository.update({
-        Id: this.apexClass.Id as string,
-        Body: mutated,
-      })
-      testResult = await this.apexTestRunner.runTestMethods(group.testMethods)
-    } catch (error: unknown) {
-      batchError = error
-    }
+    const outcome = await this.runGroup(mutated, group.testMethods)
 
-    // For k>1, a batch error or a coverage gap (test runner did not report
-    // every expected method) makes attribution ambiguous. Recurse with each
-    // mutation as its own singleton group; each child call hits the leaf and
-    // either succeeds or classifies its error directly.
+    // For k>1, an outcome that is not a clean execution — a thrown batch
+    // error or a non-compiling mutant — or a coverage gap (test runner did
+    // not report every expected method) makes attribution ambiguous.
+    // Recurse with each mutation as its own singleton group; each child call
+    // hits the leaf and either succeeds or classifies its outcome directly.
     if (
       group.mutations.length > 1 &&
-      (batchError !== undefined ||
-        this.hasCoverageGap(testResult!, group.testMethods))
+      (outcome.kind !== 'executed' ||
+        this.hasCoverageGap(outcome.result, group.testMethods))
     ) {
       return this.recurseIntoSingletons(group, completedSoFar)
     }
 
-    // Leaf for k=1 with caught error: classify the error directly. (k>1 with
-    // an error was handled above by recursing into singletons.) No test
-    // outcomes were observed, so no attribution.
-    if (batchError !== undefined) {
+    // Leaf for k=1 with a non-compiling mutant. (k>1 with this outcome was
+    // handled above by recursing into singletons.) No test outcomes were
+    // observed, so no attribution.
+    if (outcome.kind === 'not-compilable') {
       const mutation = group.mutations[0]
-      const c = classifyError(batchError, mutation)
+      return {
+        mutantResults: [
+          this.buildMutantResult(mutation, 'CompileError', {
+            statusReason: outcome.detail,
+          }),
+        ],
+        progressMessage: `Mutation result: compile error at line ${mutation.target.startToken.line}`,
+      }
+    }
+
+    // Leaf for k=1 with a caught error: classify it directly.
+    if (outcome.kind === 'threw') {
+      const mutation = group.mutations[0]
+      const c = classifyRuntimeError(outcome.error)
       return {
         mutantResults: [
           this.buildMutantResult(mutation, c.status, {
@@ -191,7 +198,7 @@ export class GroupExecutor {
       }
     }
 
-    const mutantResults = this.attributeOutcomes(group, testResult!)
+    const mutantResults = this.attributeOutcomes(group, outcome.result)
     return {
       mutantResults,
       progressMessage: this.buildGroupProgressMessage(mutantResults),
@@ -292,7 +299,7 @@ export class GroupExecutor {
 
   private hasCoverageGap(
     testResult: ApexTestRunResult,
-    expectedMethods: Set<TestMethodId>
+    expectedMethods: ReadonlySet<TestMethodId>
   ): boolean {
     const reported = new Set(
       testResult.tests.map(t => qualifyTestMethod(t.className, t.methodName))

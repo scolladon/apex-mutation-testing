@@ -6,7 +6,7 @@ import {
   CommonTokenStream,
   ParseTreeWalker,
 } from 'apex-parser'
-import { SObjectDescribeRepository } from '../../src/adapter/sObjectDescribeRepository.js'
+import { OrgSObjectSchemaProvider } from '../../src/adapter/org/orgSObjectSchemaProvider.js'
 import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { NonVoidMethodCallMutator } from '../../src/mutator/nonVoidMethodCallMutator.js'
 import { MutantGenerator } from '../../src/service/mutantGenerator.js'
@@ -21,7 +21,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
   const parseAndMutate = async (
     code: string,
     coveredLines: Set<number>,
-    sObjectDescribeRepository?: SObjectDescribeRepository
+    sObjectDescribeRepository?: OrgSObjectSchemaProvider
   ) => {
     const lexer = new ApexLexer(new CaseInsensitiveInputStream('test', code))
     const tokenStream = new CommonTokenStream(lexer)
@@ -214,7 +214,6 @@ describe('NonVoidMethodCallMutator Integration', () => {
   describe('SObject field assignments', () => {
     it('should mutate SObject String field assignment', async () => {
       const mockSObjectRepo = {
-        isSObject: (type: string) => type.toLowerCase() === 'account',
         resolveFieldType: (type: string, field: string) => {
           if (
             type.toLowerCase() === 'account' &&
@@ -224,7 +223,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
           return undefined
         },
         describe: vi.fn(),
-      } as unknown as SObjectDescribeRepository
+      } as unknown as OrgSObjectSchemaProvider
 
       const code = `
         public class TestClass {
@@ -251,7 +250,6 @@ describe('NonVoidMethodCallMutator Integration', () => {
 
     it('should mutate SObject Integer field assignment', async () => {
       const mockSObjectRepo = {
-        isSObject: (type: string) => type.toLowerCase() === 'account',
         resolveFieldType: (type: string, field: string) => {
           if (
             type.toLowerCase() === 'account' &&
@@ -261,7 +259,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
           return undefined
         },
         describe: vi.fn(),
-      } as unknown as SObjectDescribeRepository
+      } as unknown as OrgSObjectSchemaProvider
 
       const code = `
         public class TestClass {

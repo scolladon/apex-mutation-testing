@@ -1,11 +1,11 @@
 import { Messages } from '@salesforce/core'
-import { ApexTestSuiteRepository } from '../../../src/adapter/apexTestSuiteRepository.js'
 import { TestSuiteResolver } from '../../../src/service/testSuiteResolver.js'
 import { ApexMutationParameter } from '../../../src/type/ApexMutationParameter.js'
+import { fakeSourceProvider } from '../../utils/testUtil.js'
 
 describe('TestSuiteResolver', () => {
   let sut: TestSuiteResolver
-  let repositoryMock: ApexTestSuiteRepository
+  let sourceMock: ReturnType<typeof fakeSourceProvider>
   let messagesMock: Messages<string>
   const baseParameter: ApexMutationParameter = {
     apexClassName: 'MyClass',
@@ -14,10 +14,7 @@ describe('TestSuiteResolver', () => {
   }
 
   beforeEach(() => {
-    repositoryMock = {
-      readMembers: vi.fn(),
-      readExistingSuiteNames: vi.fn(),
-    } as unknown as ApexTestSuiteRepository
+    sourceMock = fakeSourceProvider()
     messagesMock = {
       getMessage: vi.fn((key: string, args?: string[]) => {
         const templates: Record<string, string> = {
@@ -27,7 +24,7 @@ describe('TestSuiteResolver', () => {
         return templates[key] ?? key
       }),
     } as unknown as Messages<string>
-    sut = new TestSuiteResolver(repositoryMock, messagesMock)
+    sut = new TestSuiteResolver(sourceMock, messagesMock)
   })
 
   describe('given no apexTestSuiteNames key', () => {
@@ -41,7 +38,7 @@ describe('TestSuiteResolver', () => {
       // Assert
       expect(result).toBe(parameter)
       expect(result.testClassOrigins).toBeUndefined()
-      expect(repositoryMock.readMembers).not.toHaveBeenCalled()
+      expect(sourceMock.readTestSuiteMembers).not.toHaveBeenCalled()
     })
   })
 
@@ -58,7 +55,7 @@ describe('TestSuiteResolver', () => {
 
       // Assert
       expect(result).toBe(parameter)
-      expect(repositoryMock.readMembers).not.toHaveBeenCalled()
+      expect(sourceMock.readTestSuiteMembers).not.toHaveBeenCalled()
     })
   })
 
@@ -70,7 +67,7 @@ describe('TestSuiteResolver', () => {
         apexTestClassNames: [],
         apexTestSuiteNames: ['Alpha'],
       }
-      vi.mocked(repositoryMock.readMembers).mockResolvedValue([
+      vi.mocked(sourceMock.readTestSuiteMembers).mockResolvedValue([
         { suiteName: 'Alpha', className: 'AlphaTestA' },
         { suiteName: 'Alpha', className: 'AlphaTestB' },
         { suiteName: 'Alpha', className: 'AlphaTestC' },
@@ -94,8 +91,8 @@ describe('TestSuiteResolver', () => {
       )
       expect(result).not.toBe(parameter)
       expect(parameter.apexTestClassNames).toEqual([])
-      expect(repositoryMock.readMembers).toHaveBeenCalledWith(['Alpha'])
-      expect(repositoryMock.readExistingSuiteNames).not.toHaveBeenCalled()
+      expect(sourceMock.readTestSuiteMembers).toHaveBeenCalledWith(['Alpha'])
+      expect(sourceMock.readExistingTestSuiteNames).not.toHaveBeenCalled()
     })
   })
 
@@ -107,7 +104,7 @@ describe('TestSuiteResolver', () => {
         apexTestClassNames: [],
         apexTestSuiteNames: ['Zed', 'Alpha'],
       }
-      vi.mocked(repositoryMock.readMembers).mockResolvedValue([
+      vi.mocked(sourceMock.readTestSuiteMembers).mockResolvedValue([
         { suiteName: 'Alpha', className: 'AlphaTest' },
         { suiteName: 'Zed', className: 'ZedTest' },
       ])
@@ -128,7 +125,7 @@ describe('TestSuiteResolver', () => {
         apexTestClassNames: [],
         apexTestSuiteNames: ['Zed', 'Alpha'],
       }
-      vi.mocked(repositoryMock.readMembers).mockResolvedValue([
+      vi.mocked(sourceMock.readTestSuiteMembers).mockResolvedValue([
         { suiteName: 'Alpha', className: 'SharedTest' },
         { suiteName: 'Zed', className: 'SharedTest' },
       ])
@@ -151,17 +148,17 @@ describe('TestSuiteResolver', () => {
         apexTestClassNames: [],
         apexTestSuiteNames: ['Alpha', 'alpha'],
       }
-      vi.mocked(repositoryMock.readMembers).mockResolvedValue([
+      vi.mocked(sourceMock.readTestSuiteMembers).mockResolvedValue([
         { suiteName: 'Alpha', className: 'AlphaTest' },
       ])
-      vi.mocked(repositoryMock.readExistingSuiteNames).mockResolvedValue([])
+      vi.mocked(sourceMock.readExistingTestSuiteNames).mockResolvedValue([])
 
       // Act
       const result = sut.resolve(parameter)
 
       // Assert
       await expect(result).rejects.toThrow("Apex test suite 'alpha' not found")
-      expect(repositoryMock.readExistingSuiteNames).toHaveBeenCalledWith([
+      expect(sourceMock.readExistingTestSuiteNames).toHaveBeenCalledWith([
         'alpha',
       ])
     })
@@ -175,7 +172,7 @@ describe('TestSuiteResolver', () => {
         apexTestClassNames: [],
         apexTestSuiteNames: ['Alpha', 'Beta'],
       }
-      vi.mocked(repositoryMock.readMembers).mockResolvedValue([
+      vi.mocked(sourceMock.readTestSuiteMembers).mockResolvedValue([
         { suiteName: 'Alpha', className: 'SharedTest' },
         { suiteName: 'Beta', className: 'SharedTest' },
       ])
@@ -199,7 +196,7 @@ describe('TestSuiteResolver', () => {
         apexTestClassNames: ['sHAREDtest'],
         apexTestSuiteNames: ['Alpha'],
       }
-      vi.mocked(repositoryMock.readMembers).mockResolvedValue([
+      vi.mocked(sourceMock.readTestSuiteMembers).mockResolvedValue([
         { suiteName: 'Alpha', className: 'SharedTest' },
       ])
 
@@ -220,7 +217,7 @@ describe('TestSuiteResolver', () => {
         apexTestClassNames: [],
         apexTestSuiteNames: ['Alpha', 'Beta'],
       }
-      vi.mocked(repositoryMock.readMembers).mockResolvedValue([
+      vi.mocked(sourceMock.readTestSuiteMembers).mockResolvedValue([
         { suiteName: 'Alpha', className: 'BarTest' },
         { suiteName: 'Beta', className: 'bartest' },
       ])
@@ -244,7 +241,7 @@ describe('TestSuiteResolver', () => {
         apexTestClassNames: [],
         apexTestSuiteNames: ['MySuite'],
       }
-      vi.mocked(repositoryMock.readMembers).mockResolvedValue([
+      vi.mocked(sourceMock.readTestSuiteMembers).mockResolvedValue([
         { suiteName: 'MySuite', className: 'AlphaTest' },
       ])
 
@@ -266,7 +263,7 @@ describe('TestSuiteResolver', () => {
         apexTestClassNames: ['CliTest'],
         apexTestSuiteNames: ['Alpha'],
       }
-      vi.mocked(repositoryMock.readMembers).mockResolvedValue([
+      vi.mocked(sourceMock.readTestSuiteMembers).mockResolvedValue([
         { suiteName: 'Alpha', className: 'AlphaTest' },
       ])
 
@@ -285,14 +282,14 @@ describe('TestSuiteResolver', () => {
         ...baseParameter,
         apexTestSuiteNames: ['Nope'],
       }
-      vi.mocked(repositoryMock.readMembers).mockResolvedValue([])
-      vi.mocked(repositoryMock.readExistingSuiteNames).mockResolvedValue([])
+      vi.mocked(sourceMock.readTestSuiteMembers).mockResolvedValue([])
+      vi.mocked(sourceMock.readExistingTestSuiteNames).mockResolvedValue([])
 
       // Act & Assert
       await expect(sut.resolve(parameter)).rejects.toThrow(
         "Apex test suite 'Nope' not found"
       )
-      expect(repositoryMock.readExistingSuiteNames).toHaveBeenCalledWith([
+      expect(sourceMock.readExistingTestSuiteNames).toHaveBeenCalledWith([
         'Nope',
       ])
     })
@@ -305,8 +302,8 @@ describe('TestSuiteResolver', () => {
         ...baseParameter,
         apexTestSuiteNames: ['Empty'],
       }
-      vi.mocked(repositoryMock.readMembers).mockResolvedValue([])
-      vi.mocked(repositoryMock.readExistingSuiteNames).mockResolvedValue([
+      vi.mocked(sourceMock.readTestSuiteMembers).mockResolvedValue([])
+      vi.mocked(sourceMock.readExistingTestSuiteNames).mockResolvedValue([
         'Empty',
       ])
 
@@ -328,8 +325,8 @@ describe('TestSuiteResolver', () => {
         ...baseParameter,
         apexTestSuiteNames: ['alpha'],
       }
-      vi.mocked(repositoryMock.readMembers).mockResolvedValue([])
-      vi.mocked(repositoryMock.readExistingSuiteNames).mockResolvedValue([])
+      vi.mocked(sourceMock.readTestSuiteMembers).mockResolvedValue([])
+      vi.mocked(sourceMock.readExistingTestSuiteNames).mockResolvedValue([])
 
       // Act & Assert
       await expect(sut.resolve(parameter)).rejects.toThrow(
@@ -345,19 +342,22 @@ describe('TestSuiteResolver', () => {
         ...baseParameter,
         apexTestSuiteNames: ['Alpha', 'Nope'],
       }
-      vi.mocked(repositoryMock.readMembers).mockResolvedValue([
+      vi.mocked(sourceMock.readTestSuiteMembers).mockResolvedValue([
         { suiteName: 'Alpha', className: 'AlphaTest' },
       ])
-      vi.mocked(repositoryMock.readExistingSuiteNames).mockResolvedValue([])
+      vi.mocked(sourceMock.readExistingTestSuiteNames).mockResolvedValue([])
 
       // Act & Assert
       await expect(sut.resolve(parameter)).rejects.toThrow(
         "Apex test suite 'Nope' not found"
       )
-      expect(repositoryMock.readExistingSuiteNames).toHaveBeenCalledWith([
+      expect(sourceMock.readExistingTestSuiteNames).toHaveBeenCalledWith([
         'Nope',
       ])
-      expect(repositoryMock.readMembers).toHaveBeenCalledWith(['Alpha', 'Nope'])
+      expect(sourceMock.readTestSuiteMembers).toHaveBeenCalledWith([
+        'Alpha',
+        'Nope',
+      ])
     })
   })
 
@@ -368,10 +368,10 @@ describe('TestSuiteResolver', () => {
         ...baseParameter,
         apexTestSuiteNames: ['Alpha', 'Empty', 'Nope'],
       }
-      vi.mocked(repositoryMock.readMembers).mockResolvedValue([
+      vi.mocked(sourceMock.readTestSuiteMembers).mockResolvedValue([
         { suiteName: 'Alpha', className: 'AlphaTest' },
       ])
-      vi.mocked(repositoryMock.readExistingSuiteNames).mockResolvedValue([
+      vi.mocked(sourceMock.readExistingTestSuiteNames).mockResolvedValue([
         'Empty',
       ])
 
@@ -382,8 +382,8 @@ describe('TestSuiteResolver', () => {
       await expect(act).rejects.toThrow(
         "Apex test suite 'Empty' contains no Apex test classes\nApex test suite 'Nope' not found"
       )
-      expect(repositoryMock.readExistingSuiteNames).toHaveBeenCalledTimes(1)
-      expect(repositoryMock.readExistingSuiteNames).toHaveBeenCalledWith([
+      expect(sourceMock.readExistingTestSuiteNames).toHaveBeenCalledTimes(1)
+      expect(sourceMock.readExistingTestSuiteNames).toHaveBeenCalledWith([
         'Empty',
         'Nope',
       ])
@@ -398,7 +398,7 @@ describe('TestSuiteResolver', () => {
         apexTestClassNames: [],
         apexTestSuiteNames: ['Foo', 'foo'],
       }
-      vi.mocked(repositoryMock.readMembers).mockResolvedValue([
+      vi.mocked(sourceMock.readTestSuiteMembers).mockResolvedValue([
         { suiteName: 'foo', className: 'AlphaTest' },
         { suiteName: 'Foo', className: 'SharedTest' },
         { suiteName: 'foo', className: 'SharedTest' },
@@ -426,7 +426,7 @@ describe('TestSuiteResolver', () => {
         dryRun: true,
         threshold: 80,
       }
-      vi.mocked(repositoryMock.readMembers).mockResolvedValue([
+      vi.mocked(sourceMock.readTestSuiteMembers).mockResolvedValue([
         { suiteName: 'Alpha', className: 'AlphaTest' },
       ])
 

@@ -1,9 +1,5 @@
 import { Connection } from '@salesforce/core'
-
-export interface ApexTestSuiteMember {
-  suiteName: string
-  className: string
-}
+import type { ApexTestSuiteMember } from '../../port/apexSourceProvider.js'
 
 interface TestSuiteMembershipRecord {
   ApexTestSuite: { TestSuiteName: string }

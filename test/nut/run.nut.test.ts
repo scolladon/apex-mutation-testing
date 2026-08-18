@@ -9,6 +9,7 @@ const mockMessages = vi.hoisted(() => ({
       'info.reasonNotFound': 'it could not be found on this org',
       'info.reasonNotAccessible': 'it is not accessible on this org',
       'info.reasonNoCoverage': 'it contributed no covered lines',
+      'info.syncTransportFallback': `Synchronous test execution is unavailable (${tokens?.[0]}). Falling back to the asynchronous transport.`,
     }
     return templates[key] ?? 'mock message'
   }),
@@ -115,11 +116,11 @@ vi.mock('../../src/service/testSuiteResolver.js', () => ({
     }
   ),
 }))
-vi.mock('../../src/adapter/apexTestSuiteRepository.js', () => ({
-  ApexTestSuiteRepository: vi.fn(),
+vi.mock('../../src/adapter/org/orgEngine.js', () => ({
+  createOrgEngine: vi.fn(),
 }))
 
-import { ApexTestSuiteRepository } from '../../src/adapter/apexTestSuiteRepository.js'
+import { createOrgEngine } from '../../src/adapter/org/orgEngine.js'
 import { default as ApexMutationTest } from '../../src/commands/apex/mutation/test/run.js'
 import { ApexMutationHTMLReporter } from '../../src/reporter/HTMLReporter.js'
 import {
@@ -135,8 +136,23 @@ describe('apex mutation test run NUT', () => {
   const mockOrg = {
     getConnection: vi.fn().mockReturnValue(mockConnection),
   }
+  // A fresh stub bundle per test — the identity that matters is that the
+  // very same `source` reaches the validator, the suite resolver and the
+  // service, exactly what createOrgEngine's shared-ApexClassRepository
+  // guarantee looks like from the command's side of the port.
+  let engine: {
+    source: object
+    schema: object
+    testBed: object
+  }
 
   beforeEach(() => {
+    engine = {
+      source: {},
+      schema: {},
+      testBed: {},
+    }
+    vi.mocked(createOrgEngine).mockResolvedValue(engine)
     mockConfigReaderResolve.mockImplementation((...args: unknown[]) =>
       Promise.resolve(args[0])
     )
@@ -214,7 +230,13 @@ describe('apex mutation test run NUT', () => {
       },
     })
     Object.defineProperty(cmd, 'spinner', {
-      value: { start: vi.fn(), stop: vi.fn() },
+      value: {
+        start: vi.fn(),
+        stop: vi.fn(),
+        // Models oclif's real pause(): invokes the callback synchronously,
+        // which reportEngineNotice relies on to write its sink line inline.
+        pause: vi.fn((fn: () => void) => fn()),
+      },
     })
     return cmd
   }
@@ -247,7 +269,7 @@ describe('apex mutation test run NUT', () => {
     })
 
     it('Then validates classes', () => {
-      expect(ApexClassValidator).toHaveBeenCalledWith(mockConnection)
+      expect(ApexClassValidator).toHaveBeenCalledWith(engine.source)
       const validatorInstance = vi.mocked(ApexClassValidator).mock.results[0]
         .value as { validate: ReturnType<typeof vi.fn> }
       expect(validatorInstance.validate).toHaveBeenCalledWith(
@@ -258,11 +280,48 @@ describe('apex mutation test run NUT', () => {
       )
     })
 
+    it('Then constructs exactly one org engine from the flag-derived context', () => {
+      expect(createOrgEngine).toHaveBeenCalledTimes(1)
+      expect(createOrgEngine).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connection: mockConnection,
+          apexClassName: 'MyClass',
+        })
+      )
+    })
+
+    it('Then the same source instance reaches the validator, the suite resolver context and the service bundle', () => {
+      expect(vi.mocked(ApexClassValidator).mock.calls[0][0]).toBe(engine.source)
+      expect(vi.mocked(MutationTestingService).mock.calls[0][2]).toBe(engine)
+    })
+
+    it('Then the notify callback passed to createOrgEngine renders a sync-transport-fallback notice through the spinner', async () => {
+      // Arrange — run.ts supplies notify wired to reportEngineNotice
+      // driving it directly proves that wiring without needing a
+      // live sync-transport failure inside this arrangement.
+      const stdoutWriteSpy = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation(() => true)
+      const ctx = vi.mocked(createOrgEngine).mock.calls[0][0]
+
+      // Act
+      ctx.notify({
+        kind: 'sync-transport-fallback',
+        error: new Error('View Setup permission required'),
+      })
+
+      // Assert
+      expect(stdoutWriteSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Synchronous test execution is unavailable')
+      )
+      stdoutWriteSpy.mockRestore()
+    })
+
     it('Then creates mutation service with correct params', () => {
       expect(MutationTestingService).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
-        mockConnection,
+        engine,
         expect.objectContaining({
           apexClassName: 'MyClass',
           apexTestClassNames: ['MyClassTest'],
@@ -348,7 +407,7 @@ describe('apex mutation test run NUT', () => {
       expect(MutationTestingService).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
-        mockConnection,
+        engine,
         expect.objectContaining({ apexTestClassNames: ['A', 'B'] }),
         expect.anything()
       )
@@ -364,7 +423,7 @@ describe('apex mutation test run NUT', () => {
       expect(MutationTestingService).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
-        mockConnection,
+        engine,
         expect.objectContaining({ apexTestClassNames: ['A', 'B'] }),
         expect.anything()
       )
@@ -435,9 +494,8 @@ describe('apex mutation test run NUT', () => {
 
       // Assert
       expect(mockTestSuiteResolve).toHaveBeenCalledWith(configuredParameters)
-      expect(ApexTestSuiteRepository).toHaveBeenCalledWith(mockConnection)
       expect(TestSuiteResolver).toHaveBeenCalledWith(
-        vi.mocked(ApexTestSuiteRepository).mock.results[0].value,
+        engine.source,
         expect.anything()
       )
       const validatorInstance = vi.mocked(ApexClassValidator).mock.results[0]
@@ -450,7 +508,7 @@ describe('apex mutation test run NUT', () => {
       expect(MutationTestingService).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
-        mockConnection,
+        engine,
         expect.objectContaining({
           apexTestClassNames: ['MyClassTest', 'FromSuite'],
         }),
@@ -594,7 +652,7 @@ describe('apex mutation test run NUT', () => {
       expect(MutationTestingService).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
-        mockConnection,
+        engine,
         expect.objectContaining({ apexTestClassNames: ['GoodTest'] }),
         expect.anything()
       )
@@ -620,7 +678,7 @@ describe('apex mutation test run NUT', () => {
       expect(MutationTestingService).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
-        mockConnection,
+        engine,
         expect.objectContaining({ apexTestClassNames: ['GoodTest'] }),
         expect.anything()
       )
@@ -1005,7 +1063,7 @@ describe('apex mutation test run NUT', () => {
         expect(MutationTestingService).toHaveBeenCalledWith(
           expect.anything(),
           expect.anything(),
-          mockConnection,
+          engine,
           expect.objectContaining({
             apexClassName: 'MyClass',
             apexTestClassNames: ['MyClassTest'],
@@ -1105,7 +1163,7 @@ describe('apex mutation test run NUT', () => {
       expect(MutationTestingService).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
-        mockConnection,
+        engine,
         expect.objectContaining({
           includeMutators: ['ArithmeticOperator', 'BoundaryCondition'],
         }),
@@ -1148,7 +1206,7 @@ describe('apex mutation test run NUT', () => {
       expect(MutationTestingService).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
-        mockConnection,
+        engine,
         expect.objectContaining({
           excludeMutators: ['ArithmeticOperator'],
         }),
@@ -1171,7 +1229,7 @@ describe('apex mutation test run NUT', () => {
       expect(MutationTestingService).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
-        mockConnection,
+        engine,
         expect.objectContaining({
           excludeTestMethods: ['testSlowMethod'],
         }),
@@ -1194,7 +1252,7 @@ describe('apex mutation test run NUT', () => {
       expect(MutationTestingService).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
-        mockConnection,
+        engine,
         expect.objectContaining({
           skipPatterns: ['System\\.debug'],
         }),
