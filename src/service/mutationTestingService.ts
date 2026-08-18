@@ -1,19 +1,15 @@
-import { Connection, Messages } from '@salesforce/core'
+import { Messages } from '@salesforce/core'
 import { Progress, Spinner } from '@salesforce/sf-plugins-core'
 import type { CommonTokenStream } from 'apex-parser'
+import type { EngineBundle } from '../port/executionEngine.js'
 import {
-  ApexClassRepository,
-  type DeployTestPolicy,
+  type Baseline,
+  type BaselineCompileFailure,
+  CompilationCheckFailedError,
+  type RestorePolicy,
   RUN_TESTS,
   SKIP_TESTS,
-} from '../adapter/apexClassRepository.js'
-import { ApexSettingsRepository } from '../adapter/apexSettingsRepository.js'
-import {
-  ApexTestRunner,
-  type BaselineCompileFailure,
-  type BaselineTestResult,
-} from '../adapter/apexTestRunner.js'
-import { SObjectDescribeRepository } from '../adapter/sObjectDescribeRepository.js'
+} from '../port/mutationTestBed.js'
 import { ApexClass } from '../type/ApexClass.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
@@ -31,10 +27,10 @@ import {
 } from '../type/TestMethodId.js'
 import { ConfigReader } from './configReader.js'
 import {
-  AggregateCoverageStrategy,
-  type CoverageStrategy,
-  PerTestCoverageStrategy,
-} from './coverageStrategy.js'
+  type OutputSink,
+  renderOrgDetail,
+  writeToStdout,
+} from './engineNotice.js'
 import { decideExactOutcome, solveColoring } from './exactColoring.js'
 import { GroupExecutor } from './groupExecutor.js'
 import { MutantGenerator } from './mutantGenerator.js'
@@ -52,7 +48,7 @@ import {
   formatSkippedTestClasses,
   sanitizeForDisplay,
 } from './skippedTestClassMessage.js'
-import { formatDuration, timeExecution } from './timeUtils.js'
+import { formatDuration } from './timeUtils.js'
 import { type TypeAnalysisResult, TypeDiscoverer } from './typeDiscoverer.js'
 import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
 
@@ -70,50 +66,10 @@ const matchesFilter = (id: TestMethodId, filterSet: Set<string>): boolean =>
 // Stryker disable next-line ConditionalExpression: no null slots remain.
 const isPresent = <T>(value: T | null): value is T => value !== null
 
-// A single-purpose write port so a caller can inject a stub in tests instead
-// of spying on the process-global stdout stream. Defaults to the real
-// stdout, so run.ts needs no change to keep its current behaviour.
-export type OutputSink = (text: string) => void
-
-const writeToStdout: OutputSink = text => {
-  process.stdout.write(text)
-}
-
-// @jsforce/jsforce-node sets `error.message` to the entire raw response body
-// when it is neither a parseable JSON error nor text/html (see
-// http-api.js), so any org/network failure detail is unbounded. Bounds every
-// such detail this service renders — the sync-transport fallback reason and
-// the rollback failure cause alike. The sibling compile-diagnosis sanitizer
-// never needs a bound because its inputs are already short.
-const MAX_ORG_ERROR_DETAIL_LENGTH = 200
-
 // Emitted when the progress bar cannot be torn down on the failure path. The
 // rollback that follows matters more, so this is reported and stepped over.
 const PROGRESS_TEARDOWN_WARNING =
   'Warning: could not tear down the progress display. Cause:'
-
-// Truncates by code point, not by UTF-16 index, so a surrogate pair is
-// never split.
-const truncateForDisplay = (value: string, maxLength: number): string => {
-  const codePoints = Array.from(value)
-  return codePoints.length <= maxLength
-    ? value
-    : `${codePoints.slice(0, maxLength).join('')}…`
-}
-
-// How every org-supplied detail this service renders is prepared: jsforce
-// sets `error.message` to the entire raw response body when it is neither
-// parseable JSON nor text/html (see http-api.js), so the text is unbounded
-// and may contain control bytes. Sanitizing runs first so the length budget
-// is spent on characters a human can read — truncating first can spend the
-// whole bound on control bytes that then fold away to nothing, erasing the
-// diagnostic entirely. Applying only one of the two steps leaves the other
-// half of the hazard in place.
-//
-// Errors raised by this process rather than by the org — the renderer
-// teardown in stopProgress — are not org-supplied and need only the fold.
-const renderOrgDetail = (detail: string): string =>
-  truncateForDisplay(sanitizeForDisplay(detail), MAX_ORG_ERROR_DETAIL_LENGTH)
 
 interface MutationLoopContext {
   apexClass: ApexClass
@@ -122,8 +78,6 @@ interface MutationLoopContext {
   mutantGenerator: MutantGenerator
   tokenStream: CommonTokenStream
   testMethodsPerLine: Map<number, Set<TestMethodId>>
-  apexTestRunner: ApexTestRunner
-  apexClassRepository: ApexClassRepository
   retainedTestClassNames: string[]
 }
 
@@ -145,7 +99,7 @@ export class MutationTestingService {
   constructor(
     protected readonly progress: Progress,
     protected readonly spinner: Spinner,
-    protected readonly connection: Connection,
+    private readonly engine: EngineBundle,
     {
       apexClassName,
       apexTestClassNames,
@@ -182,24 +136,11 @@ export class MutationTestingService {
   }
 
   public async process(): Promise<ApexMutationTestResult> {
-    const { apexClassRepository, apexTestRunner, apexSettingsRepository } =
-      this.createAdapters()
-    const apexClass = await this.fetchApexClass(apexClassRepository)
-    const typeAnalysis = await this.discoverTypes(
-      apexClass,
-      apexClassRepository
-    )
+    const apexClass = await this.fetchApexClass()
+    const typeAnalysis = await this.discoverTypes(apexClass)
 
-    const deployTime = await this.verifyCompilation(
-      apexClass,
-      apexClassRepository
-    )
-
-    const coverageStrategy = await this.selectCoverageStrategy(
-      apexSettingsRepository
-    )
-    const { testMethodsPerLine, testTime, retainedTestClassNames } =
-      await this.runBaselineTests(apexTestRunner, coverageStrategy)
+    const { testMethodsPerLine, retainedTestClassNames, cost } =
+      await this.runBaselineTests(apexClass)
     const coveredLines = this.extractCoveredLines(testMethodsPerLine)
     const { mutations, mutantGenerator, tokenStream } = this.generateMutations(
       apexClass,
@@ -209,8 +150,8 @@ export class MutationTestingService {
 
     if (this.dryRun) {
       this.displayTimeEstimate(
-        deployTime,
-        testTime,
+        cost.applyMs,
+        cost.runMs,
         mutations.length,
         mutations.length
       )
@@ -223,8 +164,8 @@ export class MutationTestingService {
 
     const groups = await this.planGroups(mutations, testMethodsPerLine)
     this.displayTimeEstimate(
-      deployTime,
-      testTime,
+      cost.applyMs,
+      cost.runMs,
       mutations.length,
       groups.length
     )
@@ -236,8 +177,6 @@ export class MutationTestingService {
       mutantGenerator,
       tokenStream,
       testMethodsPerLine,
-      apexTestRunner,
-      apexClassRepository,
       retainedTestClassNames,
     })
   }
@@ -342,89 +281,33 @@ export class MutationTestingService {
     return filteredPerLine
   }
 
-  private createAdapters() {
-    return {
-      apexClassRepository: new ApexClassRepository(this.connection),
-      apexTestRunner: new ApexTestRunner(this.connection, {
-        onSyncFallback: error => this.warnSyncFallback(error),
-      }),
-      apexSettingsRepository: new ApexSettingsRepository(this.connection),
-    }
-  }
-
-  // Uses spinner.pause, not the start/stop pair announceSkips relies on:
-  // oclif's stop() no-ops when no task is running, and start() replaces the
-  // current task without stopping it, so that idiom would silently swallow a
-  // later 'Original tests passed'. pause() is safe whether or not a task is
-  // active. The reason is org/network-controlled and unbounded — sanitized
-  // the same way as the compile-diagnosis path, then length-bounded, before
-  // it reaches the injected output sink.
-  private warnSyncFallback(error: Error): void {
-    this.spinner.pause(() => {
-      const reason = renderOrgDetail(error.message)
-      this.outputSink(
-        `${this.messages.getMessage('info.syncTransportFallback', [reason])}\n`
-      )
-    })
-  }
-
-  private async selectCoverageStrategy(
-    apexSettingsRepository: ApexSettingsRepository
-  ): Promise<CoverageStrategy> {
-    const aggregateOnly = await apexSettingsRepository.isAggregateCoverageOnly()
-    return aggregateOnly
-      ? new AggregateCoverageStrategy(this.apexClassName)
-      : new PerTestCoverageStrategy(this.apexClassName)
-  }
-
-  private async fetchApexClass(
-    apexClassRepository: ApexClassRepository
-  ): Promise<ApexClass> {
+  private async fetchApexClass(): Promise<ApexClass> {
     this.spinner.start(
       `Fetching "${this.apexClassName}" ApexClass content`,
       undefined,
       { stdout: true }
     )
-    const apexClass = (await apexClassRepository.read(
-      this.apexClassName
-    )) as unknown as ApexClass
+    const apexClass = await this.engine.source.readClass(this.apexClassName)
     this.apexClassContent = apexClass.Body
     this.spinner.stop('Done')
     return apexClass
   }
 
   private async discoverTypes(
-    apexClass: ApexClass,
-    apexClassRepository: ApexClassRepository
+    apexClass: ApexClass
   ): Promise<TypeAnalysisResult> {
     this.spinner.start(
       `Analyzing class dependencies for "${this.apexClassName}"`,
       undefined,
       { stdout: true }
     )
-    const dependencies = await apexClassRepository.getApexClassDependencies(
-      apexClass.Id as string
-    )
+    const { apexClasses, sObjects } =
+      await this.engine.source.listDependencies(apexClass)
 
-    const apexClassTypes = dependencies
-      .filter(dep => dep.RefMetadataComponentType === 'ApexClass')
-      .map(dep => dep.RefMetadataComponentName)
-
-    const standardEntityTypes = dependencies
-      .filter(dep => dep.RefMetadataComponentType === 'StandardEntity')
-      .map(dep => dep.RefMetadataComponentName)
-
-    const customObjectTypes = dependencies
-      .filter(dep => dep.RefMetadataComponentType === 'CustomObject')
-      .map(dep => dep.RefMetadataComponentName)
-
-    const sObjectDescribeRepository = new SObjectDescribeRepository(
-      this.connection
-    )
-    const apexClassMatcher = new ApexClassTypeMatcher(new Set(apexClassTypes))
+    const apexClassMatcher = new ApexClassTypeMatcher(new Set(apexClasses))
     const sObjectMatcher = new SObjectTypeMatcher(
-      new Set([...standardEntityTypes, ...customObjectTypes]),
-      sObjectDescribeRepository
+      new Set(sObjects),
+      this.engine.schema
     )
 
     const typeDiscoverer = new TypeDiscoverer()
@@ -436,63 +319,62 @@ export class MutationTestingService {
     return analysis
   }
 
-  private async verifyCompilation(
-    apexClass: ApexClass,
-    apexClassRepository: ApexClassRepository
-  ): Promise<number> {
-    this.spinner.start(
-      `Verifying "${this.apexClassName}" apex class compilation`,
-      undefined,
-      { stdout: true }
-    )
-    try {
-      const { durationMs } = await timeExecution(() =>
-        apexClassRepository.update(apexClass)
-      )
-      this.spinner.stop('Done')
-      return durationMs
-    } catch (error: unknown) {
-      this.spinner.stop()
-      const errorMessage =
-        error instanceof Error ? error.message : String(error)
-      throw new Error(
-        this.messages.getMessage('error.compilabilityCheckFailed', [
-          this.apexClassName,
-          errorMessage,
-        ])
-      )
-    }
-  }
-
-  private async runBaselineTests(
-    apexTestRunner: ApexTestRunner,
-    coverageStrategy: CoverageStrategy
-  ): Promise<{
+  private async runBaselineTests(apexClass: ApexClass): Promise<{
     testMethodsPerLine: Map<number, Set<TestMethodId>>
-    testTime: number
     retainedTestClassNames: string[]
+    cost: Baseline['cost']
   }> {
-    this.spinner.start(
-      `Executing "${this.testClassPerimeter}" tests to get coverage`,
-      undefined,
-      { stdout: true }
-    )
-    const { result: baseline, durationMs: testTime } = await timeExecution(() =>
-      apexTestRunner.getTestMethodsPerLines(
-        this.apexTestClassNames,
-        coverageStrategy
-      )
-    )
+    const baseline = await this.prepareBaseline(apexClass)
     this.assertUsableBaseline(baseline)
     const testMethodsPerLine = this.filterTestMethods(
       baseline.testMethodsPerLine
     )
     const retainedTestClassNames = this.reducePerimeterFromBaseline(
       baseline,
-      testMethodsPerLine,
-      coverageStrategy
+      testMethodsPerLine
     )
-    return { testMethodsPerLine, testTime, retainedTestClassNames }
+    return { testMethodsPerLine, retainedTestClassNames, cost: baseline.cost }
+  }
+
+  // The bed never touches a spinner: it fires onVerifying/
+  // onVerified/onBaselineStarting and this method makes the same spinner
+  // calls the service made before prepare() fused the compile gate and the
+  // baseline run. There is deliberately no onVerifyFailed hook — the error
+  // type tells this catch which phase failed, so it makes the textless
+  // spinner.stop() itself, in the same position verifyCompilation used to.
+  private async prepareBaseline(apexClass: ApexClass): Promise<Baseline> {
+    try {
+      return await this.engine.testBed.prepare(
+        apexClass,
+        this.apexTestClassNames,
+        {
+          onVerifying: () =>
+            this.spinner.start(
+              `Verifying "${this.apexClassName}" apex class compilation`,
+              undefined,
+              { stdout: true }
+            ),
+          onVerified: () => this.spinner.stop('Done'),
+          onBaselineStarting: () =>
+            this.spinner.start(
+              `Executing "${this.testClassPerimeter}" tests to get coverage`,
+              undefined,
+              { stdout: true }
+            ),
+        }
+      )
+    } catch (error: unknown) {
+      if (error instanceof CompilationCheckFailedError) {
+        this.spinner.stop()
+        throw new Error(
+          this.messages.getMessage('error.compilabilityCheckFailed', [
+            this.apexClassName,
+            error.reason.message,
+          ])
+        )
+      }
+      throw error
+    }
   }
 
   // Both aborts stop the spinner before throwing — losing either leaves a
@@ -500,7 +382,7 @@ export class MutationTestingService {
   // testsRan, so an all-CompileFail baseline never reaches this second
   // guard; it is caught downstream by the empty-perimeter guard in
   // reducePerimeterFromBaseline instead.
-  private assertUsableBaseline(baseline: BaselineTestResult): void {
+  private assertUsableBaseline(baseline: Baseline): void {
     const { outcome, testsRan, otherFailureCount } = baseline
     if (otherFailureCount > 0) {
       this.spinner.stop()
@@ -529,9 +411,9 @@ export class MutationTestingService {
     }
   }
 
-  private stopBaselineSpinner(coverageStrategy: CoverageStrategy): void {
+  private stopBaselineSpinner(fidelity: Baseline['fidelity']): void {
     this.spinner.stop(
-      coverageStrategy.fidelity === 'aggregate'
+      fidelity === 'aggregate'
         ? `Original tests passed (${this.messages.getMessage('info.aggregatedCoverageOnly')})`
         : 'Original tests passed'
     )
@@ -559,9 +441,8 @@ export class MutationTestingService {
   // otherFailureCount === 0 and testsRan > 0, since CompileFail rows count
   // toward testsRan, so it would claim a pass that never happened.
   private reducePerimeterFromBaseline(
-    baseline: BaselineTestResult,
-    testMethodsPerLine: Map<number, Set<TestMethodId>>,
-    coverageStrategy: CoverageStrategy
+    baseline: Baseline,
+    testMethodsPerLine: Map<number, Set<TestMethodId>>
   ): string[] {
     const compileSkips = this.toCompileSkips(baseline.compileFailures)
     const compileSentences = formatSkippedTestClasses(
@@ -577,11 +458,11 @@ export class MutationTestingService {
         compileSentences.join('\n'),
       ])
     }
-    this.stopBaselineSpinner(coverageStrategy)
+    this.stopBaselineSpinner(baseline.fidelity)
     this.announceSkips(compileSentences)
 
     const silent =
-      coverageStrategy.fidelity === 'per-test'
+      baseline.fidelity === 'per-test'
         ? this.findZeroContributionTestClasses(compiling, testMethodsPerLine)
         : []
     this.announceSkips(formatSkippedTestClasses(silent, this.messages))
@@ -759,8 +640,6 @@ export class MutationTestingService {
       mutantGenerator,
       tokenStream,
       testMethodsPerLine,
-      apexTestRunner,
-      apexClassRepository,
       retainedTestClassNames,
     } = context
 
@@ -774,14 +653,12 @@ export class MutationTestingService {
     )
 
     const executor = new GroupExecutor(
-      apexClass,
       this.apexClassName,
       this.apexClassContent,
       tokenStream,
       testMethodsPerLine,
       mutantGenerator,
-      apexTestRunner,
-      apexClassRepository,
+      this.engine.testBed,
       this.progress,
       this.messages
     )
@@ -841,9 +718,9 @@ export class MutationTestingService {
       // down here, next to the failure it answers, leaves a single renderer
       // drawing while the rollback spinner runs.
       this.stopProgress()
-      throw await this.rollbackAfterLoopFailure(loopError, context)
+      throw await this.rollbackAfterLoopFailure(loopError)
     }
-    await this.rollback(context.apexClass, context.apexClassRepository)
+    await this.rollback()
     return result
   }
 
@@ -854,6 +731,13 @@ export class MutationTestingService {
   // broke the bar cannot also swallow the report. Keep them apart; routing
   // this warning to stderr to "match" the bar would couple them and let a dead
   // stream skip the restore after all.
+  //
+  // The detail here is raised by this process, not by the org — a renderer
+  // teardown failure — so it needs only the control-byte fold, not the length
+  // bound renderOrgDetail applies to org-supplied text. Do not "align" it with
+  // the sibling call sites: truncating a plugin-local teardown diagnostic at
+  // 200 code points would clip it on the one path where the rollback outcome
+  // must stay legible.
   private stopProgress(): void {
     try {
       this.progress.stop()
@@ -867,21 +751,14 @@ export class MutationTestingService {
   // Returns the error for the caller to throw rather than throwing itself, so
   // the `throw` stays at the call site and the method keeps a nameable return
   // type instead of a `never` that TypeScript does not narrow through `await`.
-  private async rollbackAfterLoopFailure(
-    loopError: unknown,
-    context: MutationLoopContext
-  ): Promise<unknown> {
+  private async rollbackAfterLoopFailure(loopError: unknown): Promise<unknown> {
     try {
       // The run is already lost, and this restore is often attempted against
       // an org that has just exhausted its test quota — so it skips the test
       // run, making it the cheapest request the plugin can issue. The success
       // path keeps the default and leaves the org's coverage recomputed for
       // the real class.
-      await this.rollback(
-        context.apexClass,
-        context.apexClassRepository,
-        SKIP_TESTS
-      )
+      await this.rollback(SKIP_TESTS)
       return loopError
     } catch (rollbackError: unknown) {
       // The loop failure is the root cause and leads the message; the rollback
@@ -906,18 +783,14 @@ export class MutationTestingService {
     }
   }
 
-  private async rollback(
-    apexClass: ApexClass,
-    apexClassRepository: ApexClassRepository,
-    testPolicy: DeployTestPolicy = RUN_TESTS
-  ): Promise<void> {
+  private async rollback(testPolicy: RestorePolicy = RUN_TESTS): Promise<void> {
     this.spinner.start(
       `Rolling back "${this.apexClassName}" ApexClass to its original state`,
       undefined,
       { stdout: true }
     )
     try {
-      await apexClassRepository.update(apexClass, testPolicy)
+      await this.engine.testBed.restore(testPolicy)
       this.spinner.stop('Done')
     } catch (error: unknown) {
       this.spinner.stop(

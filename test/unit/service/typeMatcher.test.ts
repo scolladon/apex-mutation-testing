@@ -1,5 +1,5 @@
 import type { Mocked } from 'vitest'
-import { SObjectDescribeRepository } from '../../../src/adapter/sObjectDescribeRepository.js'
+import type { SObjectSchemaProvider } from '../../../src/port/sObjectSchemaProvider.js'
 import {
   ApexClassTypeMatcher,
   SObjectTypeMatcher,
@@ -73,14 +73,13 @@ describe('ApexClassTypeMatcher', () => {
 
 describe('SObjectTypeMatcher', () => {
   let sut: SObjectTypeMatcher
-  let mockDescribeRepository: Mocked<SObjectDescribeRepository>
+  let mockDescribeRepository: Mocked<SObjectSchemaProvider>
 
   beforeEach(() => {
     mockDescribeRepository = {
       describe: vi.fn().mockResolvedValue(undefined),
-      isSObject: vi.fn(),
       resolveFieldType: vi.fn(),
-    } as unknown as Mocked<SObjectDescribeRepository>
+    } as unknown as Mocked<SObjectSchemaProvider>
     sut = new SObjectTypeMatcher(
       new Set(['Account', 'Contact', 'Custom__c']),
       mockDescribeRepository
@@ -143,7 +142,7 @@ describe('SObjectTypeMatcher', () => {
   })
 
   describe('populate', () => {
-    it('Given collected types, When populate is called, Then it calls describeRepository.describe with collected types', async () => {
+    it('Given collected types, When populate is called, Then it calls schema.describe with collected types', async () => {
       // Arrange
       sut.collect('Account')
       sut.collect('Contact')
@@ -158,7 +157,7 @@ describe('SObjectTypeMatcher', () => {
       ])
     })
 
-    it('Given no collected types, When populate is called, Then it calls describeRepository.describe with empty array', async () => {
+    it('Given no collected types, When populate is called, Then it calls schema.describe with empty array', async () => {
       // Act
       await sut.populate()
 
@@ -166,7 +165,7 @@ describe('SObjectTypeMatcher', () => {
       expect(mockDescribeRepository.describe).toHaveBeenCalledWith([])
     })
 
-    it('Given no describeRepository, When populate is called, Then it resolves without error', async () => {
+    it('Given no schema, When populate is called, Then it resolves without error', async () => {
       // Arrange
       const matcherWithoutRepo = new SObjectTypeMatcher(new Set(['Account']))
 
@@ -176,7 +175,7 @@ describe('SObjectTypeMatcher', () => {
   })
 
   describe('getFieldType', () => {
-    it('Given a described sObject, When getFieldType is called, Then it delegates to describeRepository.resolveFieldType', () => {
+    it('Given a described sObject, When getFieldType is called, Then it delegates to schema.resolveFieldType', () => {
       // Arrange
       mockDescribeRepository.resolveFieldType.mockReturnValue(APEX_TYPE.STRING)
 
@@ -202,7 +201,7 @@ describe('SObjectTypeMatcher', () => {
       expect(result).toBeUndefined()
     })
 
-    it('Given no describeRepository, When getFieldType is called, Then it returns undefined without throwing', () => {
+    it('Given no schema, When getFieldType is called, Then it returns undefined without throwing', () => {
       // Arrange
       const matcherWithoutRepo = new SObjectTypeMatcher(new Set(['Account']))
 
@@ -214,7 +213,7 @@ describe('SObjectTypeMatcher', () => {
     })
   })
 
-  describe('Given no describeRepository, When constructed without one', () => {
+  describe('Given no schema, When constructed without one', () => {
     it('Then matches still works correctly', () => {
       // Arrange
       const matcherWithoutRepo = new SObjectTypeMatcher(

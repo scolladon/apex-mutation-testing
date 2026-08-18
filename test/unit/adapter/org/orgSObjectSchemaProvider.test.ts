@@ -1,17 +1,17 @@
 import { Connection } from '@salesforce/core'
-import { SObjectDescribeRepository } from '../../../src/adapter/sObjectDescribeRepository.js'
-import { APEX_TYPE } from '../../../src/type/ApexMethod.js'
+import { OrgSObjectSchemaProvider } from '../../../../src/adapter/org/orgSObjectSchemaProvider.js'
+import { APEX_TYPE } from '../../../../src/type/ApexMethod.js'
 
-describe('SObjectDescribeRepository', () => {
+describe('OrgSObjectSchemaProvider', () => {
   let connectionStub: Connection
-  let sut: SObjectDescribeRepository
+  let sut: OrgSObjectSchemaProvider
   const describeMock = vi.fn()
 
   beforeEach(() => {
     connectionStub = {
       describe: describeMock,
     } as unknown as Connection
-    sut = new SObjectDescribeRepository(connectionStub)
+    sut = new OrgSObjectSchemaProvider(connectionStub)
   })
 
   afterEach(() => {
@@ -122,8 +122,6 @@ describe('SObjectDescribeRepository', () => {
       await sut.describe(['BadObject', 'Contact'])
 
       // Assert
-      expect(sut.isSObject('badobject')).toBe(false)
-      expect(sut.isSObject('contact')).toBe(true)
       expect(sut.resolveFieldType('contact', 'name')).toBe(APEX_TYPE.STRING)
     })
   })
@@ -135,21 +133,6 @@ describe('SObjectDescribeRepository', () => {
 
       // Assert
       expect(describeMock).not.toHaveBeenCalled()
-    })
-  })
-
-  describe('Given isSObject is called', () => {
-    it('Then should return true for described sObjects', async () => {
-      // Arrange
-      describeMock.mockResolvedValue({ fields: [] })
-      await sut.describe(['Account'])
-
-      // Assert
-      expect(sut.isSObject('account')).toBe(true)
-    })
-
-    it('Then should return false for unknown types', () => {
-      expect(sut.isSObject('myclass')).toBe(false)
     })
   })
 

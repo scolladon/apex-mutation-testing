@@ -7,9 +7,16 @@ export default {
   // Adapter and reporter layers historically escaped mutation testing; the
   // code review found real bugs there (MetadataContainer leak, HTML escaping
   // gap, infinite poll), so include them in the mutate scope.
+  // This list is an explicit enumeration with no catch-all, so a new top-level
+  // src/ directory silently escapes mutation testing until it is added here —
+  // which is how the adapter and reporter layers came to be missing above.
+  // Check this list whenever one is created. src/commands/ is the one directory
+  // deliberately left out: it holds only the oclif command shell, whose wiring
+  // the NUT suite covers end to end rather than by mutant.
   mutate: [
     'src/adapter/**/*.ts',
     'src/mutator/**/*.ts',
+    'src/port/**/*.ts',
     'src/reporter/**/*.ts',
     'src/service/**/*.ts',
     'src/type/**/*.ts',

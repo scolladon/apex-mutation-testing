@@ -6,7 +6,7 @@ import {
   CommonTokenStream,
   ParseTreeWalker,
 } from 'apex-parser'
-import { SObjectDescribeRepository } from '../../src/adapter/sObjectDescribeRepository.js'
+import { OrgSObjectSchemaProvider } from '../../src/adapter/org/orgSObjectSchemaProvider.js'
 import { ArithmeticOperatorMutator } from '../../src/mutator/arithmeticOperatorMutator.js'
 import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { TypeDiscoverer } from '../../src/service/typeDiscoverer.js'
@@ -36,7 +36,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
   const parseAndMutateTypeAware = async (
     code: string,
     coveredLines: Set<number>,
-    sObjectDescribeRepository?: SObjectDescribeRepository
+    sObjectDescribeRepository?: OrgSObjectSchemaProvider
   ) => {
     const lexer = new ApexLexer(new CaseInsensitiveInputStream('test', code))
     const tokenStream = new CommonTokenStream(lexer)
@@ -342,7 +342,6 @@ describe('ArithmeticOperatorMutator Integration', () => {
         }
       `
       const mockSObjectDescribeRepository = {
-        isSObject: (type: string) => type.toLowerCase() === 'account',
         resolveFieldType: (type: string, field: string) => {
           if (
             type.toLowerCase() === 'account' &&
@@ -358,7 +357,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
       const mutations = await parseAndMutateTypeAware(
         code,
         new Set([4, 5]),
-        mockSObjectDescribeRepository as unknown as SObjectDescribeRepository
+        mockSObjectDescribeRepository as unknown as OrgSObjectSchemaProvider
       )
 
       // Assert
@@ -378,7 +377,6 @@ describe('ArithmeticOperatorMutator Integration', () => {
         }
       `
       const mockSObjectDescribeRepository = {
-        isSObject: (type: string) => type.toLowerCase() === 'account',
         resolveFieldType: (type: string, field: string) => {
           if (
             type.toLowerCase() === 'account' &&
@@ -394,7 +392,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
       const mutations = await parseAndMutateTypeAware(
         code,
         new Set([4, 5, 6, 7]),
-        mockSObjectDescribeRepository as unknown as SObjectDescribeRepository
+        mockSObjectDescribeRepository as unknown as OrgSObjectSchemaProvider
       )
 
       // Assert
@@ -412,7 +410,6 @@ describe('ArithmeticOperatorMutator Integration', () => {
         }
       `
       const mockSObjectDescribeRepository = {
-        isSObject: (type: string) => type.toLowerCase() === 'account',
         resolveFieldType: (type: string, field: string) => {
           const t = type.toLowerCase()
           const f = field.toLowerCase()
@@ -428,7 +425,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
       const mutations = await parseAndMutateTypeAware(
         code,
         new Set([4, 5]),
-        mockSObjectDescribeRepository as unknown as SObjectDescribeRepository
+        mockSObjectDescribeRepository as unknown as OrgSObjectSchemaProvider
       )
 
       // Assert
@@ -449,7 +446,6 @@ describe('ArithmeticOperatorMutator Integration', () => {
         }
       `
       const mockSObjectDescribeRepository = {
-        isSObject: (type: string) => type.toLowerCase() === 'account',
         resolveFieldType: (type: string, field: string) => {
           const t = type.toLowerCase()
           const f = field.toLowerCase()
@@ -465,7 +461,7 @@ describe('ArithmeticOperatorMutator Integration', () => {
       const mutations = await parseAndMutateTypeAware(
         code,
         new Set([4, 5]),
-        mockSObjectDescribeRepository as unknown as SObjectDescribeRepository
+        mockSObjectDescribeRepository as unknown as OrgSObjectSchemaProvider
       )
 
       // Assert

@@ -1,7 +1,7 @@
 import { ApexTestResultOutcome, TestLevel } from '@salesforce/apex-node'
 import { Connection } from '@salesforce/core'
-import { ApexTestRunner } from '../../../src/adapter/apexTestRunner.js'
-import type { TestMethodId } from '../../../src/type/TestMethodId.js'
+import { ApexTestRunner } from '../../../../src/adapter/org/apexTestRunner.js'
+import type { TestMethodId } from '../../../../src/type/TestMethodId.js'
 
 const runTestAsynchronousMock = vi.fn()
 const runTestSynchronousMock = vi.fn()

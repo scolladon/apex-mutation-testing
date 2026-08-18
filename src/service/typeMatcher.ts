@@ -1,4 +1,4 @@
-import { SObjectDescribeRepository } from '../adapter/sObjectDescribeRepository.js'
+import type { SObjectSchemaProvider } from '../port/sObjectSchemaProvider.js'
 import { ApexType } from '../type/ApexMethod.js'
 
 export interface TypeMatcher {
@@ -38,7 +38,7 @@ export class ApexClassTypeMatcher extends BaseTypeMatcher {
 export class SObjectTypeMatcher extends BaseTypeMatcher {
   constructor(
     private sObjectTypes: Set<string>,
-    private readonly describeRepository?: SObjectDescribeRepository
+    private readonly schema?: SObjectSchemaProvider
   ) {
     super()
   }
@@ -48,10 +48,10 @@ export class SObjectTypeMatcher extends BaseTypeMatcher {
   }
 
   async populate(): Promise<void> {
-    await this.describeRepository?.describe([...this._collectedTypes])
+    await this.schema?.describe([...this._collectedTypes])
   }
 
   getFieldType(objectType: string, fieldName: string): ApexType | undefined {
-    return this.describeRepository?.resolveFieldType(objectType, fieldName)
+    return this.schema?.resolveFieldType(objectType, fieldName)
   }
 }

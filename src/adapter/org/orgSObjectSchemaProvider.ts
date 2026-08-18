@@ -1,7 +1,8 @@
 import { Connection } from '@salesforce/core'
 import { mapLimit } from 'async'
-import type { ApexType } from '../type/ApexMethod.js'
-import { APEX_TYPE, SObjectFieldTypes } from '../type/ApexMethod.js'
+import type { SObjectSchemaProvider } from '../../port/sObjectSchemaProvider.js'
+import type { ApexType } from '../../type/ApexMethod.js'
+import { APEX_TYPE, SObjectFieldTypes } from '../../type/ApexMethod.js'
 
 const DESCRIBE_FIELD_TYPE_MAP: Record<string, ApexType> = {
   int: APEX_TYPE.INTEGER,
@@ -25,7 +26,7 @@ const DESCRIBE_FIELD_TYPE_MAP: Record<string, ApexType> = {
 
 const MAX_CONCURRENT_DESCRIBE_CALLS = 25
 
-export class SObjectDescribeRepository {
+export class OrgSObjectSchemaProvider implements SObjectSchemaProvider {
   private readonly fieldTypes: SObjectFieldTypes = new Map()
 
   constructor(private readonly connection: Connection) {}
@@ -50,10 +51,6 @@ export class SObjectDescribeRepository {
         }
       }
     )
-  }
-
-  public isSObject(typeName: string): boolean {
-    return this.fieldTypes.has(typeName.toLowerCase())
   }
 
   public resolveFieldType(

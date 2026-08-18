@@ -1,5 +1,5 @@
 import { Connection } from '@salesforce/core'
-import { ApexTestSuiteRepository } from '../../../src/adapter/apexTestSuiteRepository.js'
+import { ApexTestSuiteRepository } from '../../../../src/adapter/org/apexTestSuiteRepository.js'
 
 describe('ApexTestSuiteRepository', () => {
   let connectionStub: Connection

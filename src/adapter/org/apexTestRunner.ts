@@ -9,19 +9,15 @@ import {
   TestService,
 } from '@salesforce/apex-node'
 import { Connection } from '@salesforce/core'
-import type { CoverageStrategy } from '../service/coverageStrategy.js'
+import type { BaselineCompileFailure } from '../../port/mutationTestBed.js'
+import type { CoverageStrategy } from '../../service/coverageStrategy.js'
 import type {
   ApexClassCoverage,
   ApexTestMethodCoverage,
   ApexTestMethodResult,
   ApexTestRunResult,
-} from '../type/ApexTestRunResult.js'
-import { type TestMethodId, toTestItems } from '../type/TestMethodId.js'
-
-export interface BaselineCompileFailure {
-  className: string
-  message: string
-}
+} from '../../type/ApexTestRunResult.js'
+import { type TestMethodId, toTestItems } from '../../type/TestMethodId.js'
 
 export interface BaselineTestResult {
   outcome: string
@@ -264,9 +260,9 @@ interface ApexTestRunnerOptions {
 export class ApexTestRunner {
   protected readonly testService: TestService
   private readonly onSyncFallback?: (error: Error) => void
-  // Mutable instance state, deliberately: createAdapters() builds one runner
-  // per run, so this latch is session-scoped and stops a permission-less org
-  // from emitting the same warning once per test group.
+  // Mutable instance state, deliberately: createOrgEngine() builds one runner
+  // per command invocation, so this latch is session-scoped and stops a
+  // permission-less org from emitting the same warning once per test group.
   private syncFallbackReported = false
   // Set once a permanent capability gap is observed (a missing View Setup
   // permission never grants itself mid-campaign) — skips the synchronous
@@ -303,7 +299,7 @@ export class ApexTestRunner {
   }
 
   public async runTestMethods(
-    testMethods: Set<TestMethodId>
+    testMethods: ReadonlySet<TestMethodId>
   ): Promise<ApexTestRunResult> {
     const testResult = await this.runTests(
       toTestItems(testMethods),
