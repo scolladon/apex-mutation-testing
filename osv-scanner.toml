@@ -1,6 +1,10 @@
 # OSV-Scanner suppressions
 # See https://google.github.io/osv-scanner/configuration/
-
-[[IgnoredVulns]]
-id = "GHSA-f886-m6hf-6m8v"
-reason = "brace-expansion ReDoS reachable only via brace-pattern input to wireit's glob. wireit is a dev-only build tool (not in the published `files`), pins brace-expansion ^4.0.0, and is incompatible with the patched 5.x (ESM, no default export). Not reachable at runtime by the published plugin."
+#
+# No suppressions are currently in force. The file is kept because the
+# MegaLinter job invokes osv-scanner with `--config <this file>`.
+#
+# A suppression must state why the advisory is not reachable for this package,
+# and must be removed once it stops applying: osv-scanner reports an ignore
+# that no longer matches anything as an unused ignore, so a stale entry becomes
+# noise in every future run.
