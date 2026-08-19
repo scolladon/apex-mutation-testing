@@ -169,7 +169,7 @@ Point `-o` at a local server instead of an org:
 # 1. Serve your local source (in its own terminal)
 aer server force-app/
 
-# 2. Authenticate to it once, like any other org
+# 2. Authenticate to it once, like any other org (browser-based; see CI variant below)
 sf org login web -r http://127.0.0.1:8080 -a aer-local
 
 # 3. Run mutation testing against that alias
@@ -182,11 +182,34 @@ Two things make this worth doing:
 
 **It mutates your working tree.** Org mode can only mutate what the org already has, so code you have not deployed cannot be tested. `aer server` loads your local source, which means work in progress is testable — and because mutations are applied through the API into the server's own state, **your files are never modified**. Interrupting a run cannot leave a mutated class on disk.
 
-#### Scores are not comparable across engines
+#### Authenticating without a browser
 
-aer's compiler is not identical to Salesforce's, and the difference is not cosmetic. On the same class with the same 57 mutants, an org reported 7 mutants as `CompileError` while aer compiled and ran all of them. Because `CompileError` mutants are excluded from the score denominator, the same code scored **4% against the org and 14% against aer**.
+`sf org login web` opens a browser. That is fine on your machine, and impossible in CI. `aer server` can seed a session token at startup, which reduces authentication to two non-interactive commands:
 
-Treat org mode as the reference. A local run is the right tool for a fast feedback loop while you are writing tests; the number you publish or gate on should come from an org.
+```bash
+# 1. Serve your source with a known session token
+export AER_SEED_SESSION_TOKEN='00D000000000000!ci'
+aer server force-app/
+
+# 2. Store it as an org alias — no browser, no prompt
+SF_ACCESS_TOKEN="$AER_SEED_SESSION_TOKEN" \
+  sf org login access-token -r http://127.0.0.1:8080 -a aer-local --no-prompt
+
+# 3. Run mutation testing against that alias
+sf apex mutation test run -o aer-local -c MyClass -t MyClass_Test
+```
+
+The token must be `00D000000000000!` followed by letters, digits, underscores or periods. Both tools read it from the environment — `aer server` from `AER_SEED_SESSION_TOKEN` (or its `--seed-session-token` flag), `sf` from `SF_ACCESS_TOKEN` — so the value never has to appear on a command line or in a process list.
+
+It is a throwaway credential for a server bound to `127.0.0.1`: there is nothing to protect and nothing to rotate. `sf` will warn that `http:` is an insecure protocol, which is expected for a loopback address.
+
+#### Compiler parity
+
+aer's compiler is an independent implementation of Salesforce's, and mutation testing exercises it unusually hard: a mutation tool deliberately generates invalid code, so every mutant is a compiler strictness test. Divergence lands straight in the score, because `CompileError` mutants are excluded from the denominator.
+
+Use **aer v1.3.12 or later**, where our E2E fixture scores identically against a local server and against an org — all 57 mutants, status for status.
+
+That parity is verified on one fixture, not guaranteed for every Apex construct. The number you publish or gate on should still come from an org, and a local run that disagrees with an org run on a mutant's status is [an aer bug worth reporting](https://github.com/octoberswimmer/aer-dist/issues).
 
 #### Licensing
 
