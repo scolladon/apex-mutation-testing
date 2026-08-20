@@ -287,6 +287,21 @@ describe('ApexClassRepository', () => {
         ]
       )
     })
+
+    it('Given an undefined classId, When getting dependencies, Then it resolves empty without issuing an unfiltered find', async () => {
+      // Arrange — jsforce drops a predicate whose value is undefined, which
+      // would otherwise turn this into an unfiltered org-wide
+      // MetadataComponentDependency read.
+
+      // Act
+      const result = await sut.getApexClassDependencies(
+        undefined as unknown as string
+      )
+
+      // Assert
+      expect(result).toEqual([])
+      expect(findArgsMock).not.toHaveBeenCalled()
+    })
   })
 
   describe('when updating an ApexClass', () => {

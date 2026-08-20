@@ -69,30 +69,6 @@ describe('EntityDefinitionRepository', () => {
       })
     })
 
-    describe('given the sink is invoked directly with no names', () => {
-      it('Given the sink is invoked directly with no names, When it runs, Then it resolves empty without building an unfiltered $in query', async () => {
-        // Arrange — chunk([]) already yields zero chunks, so
-        // readByDeveloperNames([]) never reaches this private sink through the
-        // public API. This exercises the guard directly since it exists as
-        // defense-in-depth against a future change to chunk's emptiness
-        // semantics, and against jsforce dropping the whole WHERE clause for
-        // an empty $in (which would turn this into an unfiltered org-wide
-        // read that EntityDefinition cannot page through — see queryMore).
-        const queryByDeveloperNames = (
-          sut as unknown as {
-            queryByDeveloperNames(names: string[]): Promise<unknown[]>
-          }
-        ).queryByDeveloperNames.bind(sut)
-
-        // Act
-        const result = await queryByDeveloperNames([])
-
-        // Assert
-        expect(result).toEqual([])
-        expect(findArgsMock).not.toHaveBeenCalled()
-      })
-    })
-
     describe('given a perimeter one name larger than the chunk size', () => {
       it('Given one name more than the chunk size, When reading, Then two finds are issued, 200 then 1, and the rows are returned in chunk order', async () => {
         // Arrange

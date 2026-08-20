@@ -21,6 +21,13 @@ const MAX_CONCURRENT_DEVELOPER_NAME_QUERIES = 25
 export class EntityDefinitionRepository {
   constructor(private readonly connection: Connection) {}
 
+  // Guarded at this reachable public boundary by relying on chunk's own
+  // tested emptiness contract (see queryChunking.test.ts): an empty array
+  // yields zero chunks, so the sink below is never invoked and no `$in`
+  // query is ever built for `[]` — a legitimate caller input (an empty
+  // perimeter), not a bug. An empty `$in` makes jsforce drop the whole WHERE
+  // clause, and EntityDefinition refuses queryMore(), so an unfiltered read
+  // would throw rather than page through the org.
   public async readByDeveloperNames(
     names: string[]
   ): Promise<EntityDefinitionRow[]> {
@@ -33,18 +40,12 @@ export class EntityDefinitionRepository {
     return rows.flat()
   }
 
-  // Guards the sink rather than trusting `chunk`'s emptiness semantics: an
-  // empty `$in` makes jsforce drop the whole WHERE clause, and
-  // EntityDefinition refuses queryMore(), so an unfiltered read would throw
-  // rather than page through the org. Filtering on NamespacePrefix
-  // server-side is not an option either: EntityDefinition silently drops
-  // that predicate, so the namespace join happens in memory by the caller.
+  // Filtering on NamespacePrefix server-side is not an option either:
+  // EntityDefinition silently drops that predicate, so the namespace join
+  // happens in memory by the caller.
   private async queryByDeveloperNames(
     names: string[]
   ): Promise<EntityDefinitionRow[]> {
-    if (names.length === 0) {
-      return []
-    }
     return (await this.connection.tooling
       .sobject('EntityDefinition')
       .find({ DeveloperName: { $in: names } }, [

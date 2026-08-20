@@ -134,9 +134,17 @@ export class ApexClassRepository {
       .execute()) as unknown as ApexClassIdentity[]
   }
 
+  // The only unguarded sink in this file until now: jsforce drops a
+  // predicate whose value is `undefined`, which would turn this into an
+  // unfiltered org-wide read, matching the guard style the sibling ApexClass
+  // and EntityDefinition queries already carry against their own empty-`$in`
+  // hazard.
   public async getApexClassDependencies(
     classId: string
   ): Promise<MetadataComponentDependency[]> {
+    if (!classId) {
+      return []
+    }
     return (await this.connection.tooling
       .sobject('MetadataComponentDependency')
       .find({ MetadataComponentId: classId }, DEPENDENCY_PROJECTION)
