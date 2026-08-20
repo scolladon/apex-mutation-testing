@@ -80,6 +80,10 @@ Per-test coverage unavailable on this org due to "Store Only Aggregated Code Cov
 
 Synchronous test execution is unavailable (%s). Falling back to the asynchronous transport.
 
+# info.typeResolutionDegraded
+
+Type resolution degraded for %s: these types could not be resolved against the org, so type-aware mutators fall back to untyped behaviour and some mutants are not generated%s.
+
 # error.blankTestClass
 
 Blank apex test class name found: '%s'. Remove empty entries from the -t/--test-class flag.

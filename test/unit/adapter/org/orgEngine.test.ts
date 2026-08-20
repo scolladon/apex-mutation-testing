@@ -88,13 +88,14 @@ describe('createOrgEngine', () => {
     )
   })
 
-  it('Given an engine context, When creating the org engine, Then the schema is an OrgSObjectSchemaProvider built from the connection', async () => {
+  it('Given an engine context, When creating the org engine, Then the schema is an OrgSObjectSchemaProvider built from the connection and notify', async () => {
     // Act
     await createOrgEngine(ctx)
 
     // Assert
     expect(vi.mocked(OrgSObjectSchemaProvider)).toHaveBeenCalledWith(
-      ctx.connection
+      ctx.connection,
+      ctx.notify
     )
   })
 

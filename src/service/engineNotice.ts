@@ -52,7 +52,7 @@ export const renderOrgDetail = (detail: string): string =>
 // the same way as the compile-diagnosis path, then length-bounded, before it
 // reaches the injected output sink.
 const renderSyncTransportFallback = (
-  notice: EngineNotice,
+  notice: Extract<EngineNotice, { kind: 'sync-transport-fallback' }>,
   spinner: Spinner,
   messages: Messages<string>,
   sink: OutputSink
@@ -63,18 +63,51 @@ const renderSyncTransportFallback = (
   })
 }
 
+// Reuses renderOrgDetail for both the joined type names and the error
+// message: both are org-supplied (the names come from a describe/query
+// response) and therefore share the same unbounded-length, unsanitized
+// hazard as the sync-transport reason above.
+const renderTypeResolutionDegraded = (
+  notice: Extract<EngineNotice, { kind: 'type-resolution-degraded' }>,
+  spinner: Spinner,
+  messages: Messages<string>,
+  sink: OutputSink
+): void => {
+  spinner.pause(() => {
+    const names = renderOrgDetail(notice.typeNames.join(', '))
+    const reason = notice.error
+      ? ` (${renderOrgDetail(notice.error.message)})`
+      : ''
+    sink(
+      `${messages.getMessage('info.typeResolutionDegraded', [names, reason])}\n`
+    )
+  })
+}
+
 // Keyed on the notice tag rather than rendering unconditionally: EngineNotice
-// is a union with one member today, and a Record makes an unhandled future
-// kind a compile error instead of a wrong message. Without it, a second kind
-// would type-check, reach this function, and be announced to the user as a
-// synchronous-transport fallback. A lookup rather than a switch, for the same
-// reason the engine factory uses one: an unreachable default arm cannot be
-// covered.
-const NOTICE_RENDERERS: Record<
-  EngineNotice['kind'],
-  typeof renderSyncTransportFallback
-> = {
-  'sync-transport-fallback': renderSyncTransportFallback,
+// is a union, and a Record makes an unhandled future kind a compile error
+// instead of a wrong message. Without it, a new kind would type-check, reach
+// this function, and be announced to the user under the wrong renderer. A
+// lookup rather than a switch, for the same reason the engine factory uses
+// one: an unreachable default arm cannot be covered.
+// The value type uses method shorthand rather than a function-type property:
+// a Record whose value type is the renderer's own function type would make
+// `NOTICE_RENDERERS[notice.kind]`'s parameter the intersection of every arm's
+// narrow notice type, which is `never` — a method is checked bivariantly
+// instead, so each renderer can keep declaring only the one notice shape it
+// understands while the map still keys on the whole union.
+type NoticeRenderer = {
+  render(
+    notice: EngineNotice,
+    spinner: Spinner,
+    messages: Messages<string>,
+    sink: OutputSink
+  ): void
+}
+
+const NOTICE_RENDERERS: Record<EngineNotice['kind'], NoticeRenderer> = {
+  'sync-transport-fallback': { render: renderSyncTransportFallback },
+  'type-resolution-degraded': { render: renderTypeResolutionDegraded },
 }
 
 export const reportEngineNotice = (
@@ -83,5 +116,5 @@ export const reportEngineNotice = (
   messages: Messages<string>,
   sink: OutputSink = writeToStdout
 ): void => {
-  NOTICE_RENDERERS[notice.kind](notice, spinner, messages, sink)
+  NOTICE_RENDERERS[notice.kind].render(notice, spinner, messages, sink)
 }

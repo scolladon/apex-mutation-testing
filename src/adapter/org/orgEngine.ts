@@ -20,7 +20,7 @@ export const createOrgEngine = async (
       apexClassRepository,
       new ApexTestSuiteRepository(ctx.connection)
     ),
-    schema: new OrgSObjectSchemaProvider(ctx.connection),
+    schema: new OrgSObjectSchemaProvider(ctx.connection, ctx.notify),
     testBed: new OrgMutationTestBed(
       apexClassRepository,
       apexTestRunner,

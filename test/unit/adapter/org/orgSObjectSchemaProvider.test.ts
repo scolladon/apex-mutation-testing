@@ -6,12 +6,13 @@ describe('OrgSObjectSchemaProvider', () => {
   let connectionStub: Connection
   let sut: OrgSObjectSchemaProvider
   const describeMock = vi.fn()
+  const notifyMock = vi.fn()
 
   beforeEach(() => {
     connectionStub = {
       describe: describeMock,
     } as unknown as Connection
-    sut = new OrgSObjectSchemaProvider(connectionStub)
+    sut = new OrgSObjectSchemaProvider(connectionStub, notifyMock)
   })
 
   afterEach(() => {
@@ -123,6 +124,122 @@ describe('OrgSObjectSchemaProvider', () => {
 
       // Assert
       expect(sut.resolveFieldType('contact', 'name')).toBe(APEX_TYPE.STRING)
+    })
+
+    it('Then the surviving object still resolves and notify is called exactly once with both failed names and the first error', async () => {
+      // Arrange
+      const firstError = new Error('Object not found: BadA')
+      const secondError = new Error('Object not found: BadB')
+      describeMock
+        .mockRejectedValueOnce(firstError)
+        .mockRejectedValueOnce(secondError)
+        .mockResolvedValueOnce({
+          fields: [{ name: 'Name', type: 'string' }],
+        })
+
+      // Act
+      await sut.describe(['BadA', 'BadB', 'Contact'])
+
+      // Assert
+      expect(notifyMock).toHaveBeenCalledTimes(1)
+      expect(notifyMock).toHaveBeenCalledWith({
+        kind: 'type-resolution-degraded',
+        typeNames: ['BadA', 'BadB'],
+        error: firstError,
+      })
+      expect(sut.resolveFieldType('contact', 'name')).toBe(APEX_TYPE.STRING)
+    })
+
+    it('Given a describe rejects with a non-Error value, When describing, Then the notice still carries an Error carrying that value', async () => {
+      // Arrange — a non-Error rejection value drives the false arm of the
+      // instanceof normalisation
+      describeMock.mockRejectedValueOnce('boom')
+
+      // Act
+      await sut.describe(['BadObject'])
+
+      // Assert
+      const [notice] = notifyMock.mock.calls[0] as [
+        { error?: Error; typeNames: string[] },
+      ]
+      expect(notice.error).toBeInstanceOf(Error)
+      expect(notice.error?.message).toContain('boom')
+    })
+
+    it('Given every describe succeeds, When describing, Then notify is never called', async () => {
+      // Arrange
+      describeMock.mockResolvedValue({ fields: [] })
+
+      // Act
+      await sut.describe(['Account', 'Contact'])
+
+      // Assert
+      expect(notifyMock).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('Given a describe result naming a field with its namespaced spelling', () => {
+    it('Given a describe result naming a field namespaced__Amount__c, When resolving Amount__c, Then it returns DOUBLE', async () => {
+      // Arrange
+      describeMock.mockResolvedValue({
+        fields: [{ name: 'namespaced__Amount__c', type: 'double' }],
+      })
+
+      // Act
+      await sut.describe(['namespaced__ProbeObj__c'])
+
+      // Assert
+      expect(sut.resolveFieldType('namespaced__ProbeObj__c', 'Amount__c')).toBe(
+        APEX_TYPE.DOUBLE
+      )
+    })
+
+    it('Given a describe result naming a standard field, When resolving under its own name, Then it resolves and gains no spurious alias', async () => {
+      // Arrange
+      describeMock.mockResolvedValue({
+        fields: [{ name: 'Name', type: 'string' }],
+      })
+
+      // Act
+      await sut.describe(['Account'])
+
+      // Assert
+      expect(sut.resolveFieldType('account', 'Name')).toBe(APEX_TYPE.STRING)
+    })
+
+    it('Given a describe result naming a non-namespaced custom field, When resolving under its own name, Then it resolves and gains no spurious alias', async () => {
+      // Arrange
+      describeMock.mockResolvedValue({
+        fields: [{ name: 'Amount__c', type: 'double' }],
+      })
+
+      // Act
+      await sut.describe(['ProbeObj__c'])
+
+      // Assert
+      expect(sut.resolveFieldType('ProbeObj__c', 'Amount__c')).toBe(
+        APEX_TYPE.DOUBLE
+      )
+    })
+  })
+
+  describe('Given a describe result carrying both a real field and a packaged field aliasing to the same bare spelling', () => {
+    it('Given a describe result carrying both a real Amount__c and a packaged pkg__Amount__c, When resolving Amount__c, Then the real field wins', async () => {
+      // Arrange
+      describeMock.mockResolvedValue({
+        fields: [
+          { name: 'Amount__c', type: 'string' },
+          { name: 'pkg__Amount__c', type: 'double' },
+        ],
+      })
+
+      // Act
+      await sut.describe(['ProbeObj__c'])
+
+      // Assert
+      expect(sut.resolveFieldType('ProbeObj__c', 'Amount__c')).toBe(
+        APEX_TYPE.STRING
+      )
     })
   })
 

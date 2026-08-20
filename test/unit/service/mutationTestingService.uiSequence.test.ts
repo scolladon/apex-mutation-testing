@@ -270,7 +270,7 @@ describe('MutationTestingService — golden UI-call sequence', () => {
         repository,
         {} as unknown as ApexTestSuiteRepository
       ),
-      schema: new OrgSObjectSchemaProvider(connection),
+      schema: new OrgSObjectSchemaProvider(connection, vi.fn()),
       testBed: new OrgMutationTestBed(
         repository,
         runner,
