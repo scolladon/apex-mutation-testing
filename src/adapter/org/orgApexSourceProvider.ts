@@ -30,6 +30,9 @@ const identityTypeName = (name: string): TypeName => ({
   aliases: [name],
 })
 
+const toError = (value: unknown): Error =>
+  value instanceof Error ? value : new Error(String(value))
+
 // A local class is a legitimate source spelling as-is. A managed-package
 // class uses the Apex dotted convention (`ns.Name`), unlike the `ns__Name`
 // object convention, and the bare name remains a valid spelling too.
@@ -137,10 +140,10 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
       return []
     }
 
-    const entityRows =
-      await this.entityDefinitionRepository.readByDeveloperNames(
-        rows.map(row => row.RefMetadataComponentName)
-      )
+    const entityRows = await this.readEntityRows(rows)
+    if (entityRows === undefined) {
+      return []
+    }
     const byJoinKey = new Map(
       entityRows.map(row => [
         entityJoinKey(row.DeveloperName, row.NamespacePrefix),
@@ -171,6 +174,30 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
       })
     }
     return resolved
+  }
+
+  // A failed read must degrade, never abort: on `main` this path was a local
+  // map that could not fail, but it now crosses the Tooling API and can
+  // reject on permissions, transient network, or the `EXCEEDED_ID_LIMIT`
+  // EntityDefinition is known to throw. Every requested row is reported
+  // unresolved through the same notice the no-row case uses, rather than
+  // letting the rejection propagate through listDependencies -> discoverTypes
+  // -> process() and kill the whole run.
+  private async readEntityRows(
+    rows: MetadataComponentDependency[]
+  ): Promise<EntityDefinitionRow[] | undefined> {
+    try {
+      return await this.entityDefinitionRepository.readByDeveloperNames(
+        rows.map(row => row.RefMetadataComponentName)
+      )
+    } catch (error) {
+      this.notify({
+        kind: 'type-resolution-degraded',
+        typeNames: rows.map(row => row.RefMetadataComponentName),
+        error: toError(error),
+      })
+      return undefined
+    }
   }
 
   /** A name can return two rows when a managed and a local class share it,

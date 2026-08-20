@@ -300,6 +300,65 @@ describe('OrgApexSourceProvider', () => {
       })
     })
 
+    it('Given readByDeveloperNames rejects, When listing dependencies, Then every custom object row is dropped and notify carries all their names with the rejection', async () => {
+      // Arrange — permissions, transient network, or the EXCEEDED_ID_LIMIT
+      // EntityDefinition is known to throw must degrade the same way an
+      // unresolved name does, never abort the whole run.
+      const dependencies: MetadataComponentDependency[] = [
+        {
+          Id: 'dep1',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'Present',
+          RefMetadataComponentNamespace: null,
+        },
+        {
+          Id: 'dep2',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'Other',
+          RefMetadataComponentNamespace: null,
+        },
+      ]
+      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
+      const failure = new Error('EXCEEDED_ID_LIMIT')
+      readByDeveloperNamesMock.mockRejectedValueOnce(failure)
+
+      // Act
+      const result = await sut.listDependencies(apexClass)
+
+      // Assert
+      expect(result.sObjects).toEqual([])
+      expect(notifyMock).toHaveBeenCalledTimes(1)
+      expect(notifyMock).toHaveBeenCalledWith({
+        kind: 'type-resolution-degraded',
+        typeNames: ['Present', 'Other'],
+        error: failure,
+      })
+    })
+
+    it('Given readByDeveloperNames rejects with a non-Error value, When listing dependencies, Then notify carries an Error wrapping that value', async () => {
+      // Arrange — a non-Error rejection value drives the false arm of the
+      // instanceof normalisation.
+      const dependencies: MetadataComponentDependency[] = [
+        {
+          Id: 'dep1',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'Present',
+          RefMetadataComponentNamespace: null,
+        },
+      ]
+      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
+      readByDeveloperNamesMock.mockRejectedValueOnce('boom')
+
+      // Act
+      await sut.listDependencies(apexClass)
+
+      // Assert
+      const [notice] = (notifyMock as ReturnType<typeof vi.fn>).mock
+        .calls[0] as [{ error?: Error }]
+      expect(notice.error).toBeInstanceOf(Error)
+      expect(notice.error?.message).toContain('boom')
+    })
+
     it('Given every CustomObject row resolves, When listing dependencies, Then notify is never called', async () => {
       // Arrange
       const dependencies: MetadataComponentDependency[] = [
