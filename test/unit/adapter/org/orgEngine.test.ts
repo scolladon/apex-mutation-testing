@@ -3,6 +3,7 @@ import { ApexClassRepository } from '../../../../src/adapter/org/apexClassReposi
 import { ApexSettingsRepository } from '../../../../src/adapter/org/apexSettingsRepository.js'
 import { ApexTestRunner } from '../../../../src/adapter/org/apexTestRunner.js'
 import { ApexTestSuiteRepository } from '../../../../src/adapter/org/apexTestSuiteRepository.js'
+import { EntityDefinitionRepository } from '../../../../src/adapter/org/entityDefinitionRepository.js'
 import { OrgApexSourceProvider } from '../../../../src/adapter/org/orgApexSourceProvider.js'
 import { createOrgEngine } from '../../../../src/adapter/org/orgEngine.js'
 import { OrgMutationTestBed } from '../../../../src/adapter/org/orgMutationTestBed.js'
@@ -13,6 +14,7 @@ vi.mock('../../../../src/adapter/org/apexClassRepository.js')
 vi.mock('../../../../src/adapter/org/apexSettingsRepository.js')
 vi.mock('../../../../src/adapter/org/apexTestRunner.js')
 vi.mock('../../../../src/adapter/org/apexTestSuiteRepository.js')
+vi.mock('../../../../src/adapter/org/entityDefinitionRepository.js')
 vi.mock('../../../../src/adapter/org/orgApexSourceProvider.js')
 vi.mock('../../../../src/adapter/org/orgMutationTestBed.js')
 vi.mock('../../../../src/adapter/org/orgSObjectSchemaProvider.js')
@@ -86,6 +88,27 @@ describe('createOrgEngine', () => {
     expect(vi.mocked(OrgApexSourceProvider).mock.calls[0][1]).toBe(
       vi.mocked(ApexTestSuiteRepository).mock.instances[0]
     )
+  })
+
+  it('Given an engine context, When creating the org engine, Then the source is composed from an EntityDefinitionRepository built from the connection', async () => {
+    // Act
+    await createOrgEngine(ctx)
+
+    // Assert
+    expect(vi.mocked(EntityDefinitionRepository)).toHaveBeenCalledWith(
+      ctx.connection
+    )
+    expect(vi.mocked(OrgApexSourceProvider).mock.calls[0][2]).toBe(
+      vi.mocked(EntityDefinitionRepository).mock.instances[0]
+    )
+  })
+
+  it('Given an engine context, When creating the org engine, Then ctx.notify reaches the source construction', async () => {
+    // Act
+    await createOrgEngine(ctx)
+
+    // Assert
+    expect(vi.mocked(OrgApexSourceProvider).mock.calls[0][3]).toBe(ctx.notify)
   })
 
   it('Given an engine context, When creating the org engine, Then the schema is an OrgSObjectSchemaProvider built from the connection and notify', async () => {

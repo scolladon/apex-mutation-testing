@@ -8,17 +8,17 @@ export interface ApexTestSuiteMember {
   className: string
 }
 
-export interface TypeDependencies {
-  apexClasses: string[]
-  sObjects: string[] // StandardEntity ∪ CustomObject, already merged
-}
-
 /** One org type with every spelling the source under mutation may write for it.
  *  `apiName` is the one true name — what describe() receives and what the schema
  *  is keyed by. `aliases` always contains `apiName`. */
 export interface TypeName {
   apiName: string
   aliases: string[]
+}
+
+export interface TypeDependencies {
+  apexClasses: TypeName[]
+  sObjects: TypeName[] // StandardEntity ∪ CustomObject, already merged
 }
 
 export interface ApexSourceProvider {

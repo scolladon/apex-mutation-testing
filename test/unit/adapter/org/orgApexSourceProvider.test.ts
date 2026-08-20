@@ -1,7 +1,9 @@
 import type { ApexClassRepository } from '../../../../src/adapter/org/apexClassRepository.js'
 import type { ApexTestSuiteRepository } from '../../../../src/adapter/org/apexTestSuiteRepository.js'
+import type { EntityDefinitionRepository } from '../../../../src/adapter/org/entityDefinitionRepository.js'
 import type { MetadataComponentDependency } from '../../../../src/adapter/org/MetadataComponentDependency.js'
 import { OrgApexSourceProvider } from '../../../../src/adapter/org/orgApexSourceProvider.js'
+import type { EngineNotify } from '../../../../src/port/executionEngine.js'
 import type { ApexClass } from '../../../../src/type/ApexClass.js'
 
 describe('OrgApexSourceProvider', () => {
@@ -11,6 +13,8 @@ describe('OrgApexSourceProvider', () => {
   let getApexClassDependenciesMock: ReturnType<typeof vi.fn>
   let readMembersMock: ReturnType<typeof vi.fn>
   let readExistingSuiteNamesMock: ReturnType<typeof vi.fn>
+  let readByDeveloperNamesMock: ReturnType<typeof vi.fn>
+  let notifyMock: EngineNotify
 
   beforeEach(() => {
     // Arrange
@@ -19,6 +23,8 @@ describe('OrgApexSourceProvider', () => {
     getApexClassDependenciesMock = vi.fn()
     readMembersMock = vi.fn()
     readExistingSuiteNamesMock = vi.fn()
+    readByDeveloperNamesMock = vi.fn().mockResolvedValue([])
+    notifyMock = vi.fn()
 
     const repository = {
       read: readMock,
@@ -29,8 +35,16 @@ describe('OrgApexSourceProvider', () => {
       readMembers: readMembersMock,
       readExistingSuiteNames: readExistingSuiteNamesMock,
     } as unknown as ApexTestSuiteRepository
+    const entityDefinitionRepository = {
+      readByDeveloperNames: readByDeveloperNamesMock,
+    } as unknown as EntityDefinitionRepository
 
-    sut = new OrgApexSourceProvider(repository, suiteRepository)
+    sut = new OrgApexSourceProvider(
+      repository,
+      suiteRepository,
+      entityDefinitionRepository,
+      notifyMock
+    )
   })
 
   describe('classExists', () => {
@@ -88,23 +102,14 @@ describe('OrgApexSourceProvider', () => {
   describe('listDependencies', () => {
     const apexClass = { Id: '123', Body: '' } as ApexClass
 
-    it('Given only ApexClass dependencies, When listing dependencies, Then apexClasses carries the ApexClass names only', async () => {
+    it('Given a StandardEntity dependency, When listing dependencies, Then sObjects carries an identity-mapped TypeName and no EntityDefinition read is issued', async () => {
       // Arrange
       const dependencies: MetadataComponentDependency[] = [
         {
           Id: 'dep1',
-          RefMetadataComponentType: 'ApexClass',
-          RefMetadataComponentName: 'MyHelper',
-        },
-        {
-          Id: 'dep2',
           RefMetadataComponentType: 'StandardEntity',
           RefMetadataComponentName: 'Account',
-        },
-        {
-          Id: 'dep3',
-          RefMetadataComponentType: 'CustomObject',
-          RefMetadataComponentName: 'Invoice__c',
+          RefMetadataComponentNamespace: null,
         },
       ]
       getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
@@ -113,27 +118,222 @@ describe('OrgApexSourceProvider', () => {
       const result = await sut.listDependencies(apexClass)
 
       // Assert
-      expect(result.apexClasses).toEqual(['MyHelper'])
-      expect(getApexClassDependenciesMock).toHaveBeenCalledWith('123')
+      expect(result.sObjects).toEqual([
+        { apiName: 'Account', aliases: ['Account'] },
+      ])
+      expect(readByDeveloperNamesMock).not.toHaveBeenCalled()
     })
 
-    it('Given only StandardEntity and CustomObject dependencies, When listing dependencies, Then sObjects carries both merged', async () => {
+    it('Given a namespaced CustomObject dependency, When listing dependencies, Then sObjects carries the qualified api name and the bare alias', async () => {
+      // Arrange
+      const dependencies: MetadataComponentDependency[] = [
+        {
+          Id: 'dep1',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'ProbeObj',
+          RefMetadataComponentNamespace: 'namespaced',
+        },
+      ]
+      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
+      readByDeveloperNamesMock.mockResolvedValueOnce([
+        {
+          DeveloperName: 'ProbeObj',
+          QualifiedApiName: 'namespaced__ProbeObj__c',
+          NamespacePrefix: 'namespaced',
+        },
+      ])
+
+      // Act
+      const result = await sut.listDependencies(apexClass)
+
+      // Assert
+      expect(result.sObjects).toEqual([
+        {
+          apiName: 'namespaced__ProbeObj__c',
+          aliases: ['namespaced__ProbeObj__c', 'ProbeObj__c'],
+        },
+      ])
+      expect(readByDeveloperNamesMock).toHaveBeenCalledWith(['ProbeObj'])
+    })
+
+    // Diverges from the fixture above by resolving to a __mdt suffix with no
+    // namespace: a __c-only fixture would coincide with a mutant that appends
+    // `__c` instead of reading QualifiedApiName, and this also drives the
+    // namespace-null arm of the bare-alias derivation (no second alias).
+    it('Given an unnamespaced CustomObject dependency resolving to a custom metadata type, When listing dependencies, Then sObjects carries only the qualified api name with no bare alias', async () => {
+      // Arrange
+      const dependencies: MetadataComponentDependency[] = [
+        {
+          Id: 'dep1',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'Invoice',
+          RefMetadataComponentNamespace: null,
+        },
+      ]
+      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
+      readByDeveloperNamesMock.mockResolvedValueOnce([
+        {
+          DeveloperName: 'Invoice',
+          QualifiedApiName: 'Invoice__mdt',
+          NamespacePrefix: null,
+        },
+      ])
+
+      // Act
+      const result = await sut.listDependencies(apexClass)
+
+      // Assert
+      expect(result.sObjects).toEqual([
+        { apiName: 'Invoice__mdt', aliases: ['Invoice__mdt'] },
+      ])
+    })
+
+    it('Given an EntityDefinition row whose qualified name does not carry the row namespace, When listing dependencies, Then no bare alias is derived', async () => {
+      // Arrange — rather than blindly slicing a prefix off a name that does
+      // not carry it (which would emit a mangled alias), the derivation
+      // returns nothing. The org never produces this shape (it always embeds
+      // the prefix in QualifiedApiName); this is a defensive fixture pinning
+      // that the guard fails closed rather than mangling the alias.
+      const dependencies: MetadataComponentDependency[] = [
+        {
+          Id: 'dep1',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'Other',
+          RefMetadataComponentNamespace: 'namespaced',
+        },
+      ]
+      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
+      readByDeveloperNamesMock.mockResolvedValueOnce([
+        {
+          DeveloperName: 'Other',
+          QualifiedApiName: 'Other__c',
+          NamespacePrefix: 'namespaced',
+        },
+      ])
+
+      // Act
+      const result = await sut.listDependencies(apexClass)
+
+      // Assert
+      expect(result.sObjects).toEqual([
+        { apiName: 'Other__c', aliases: ['Other__c'] },
+      ])
+    })
+
+    it('Given two EntityDefinition rows sharing a developer name in different namespaces, When listing dependencies, Then each dependency row picks the row matching its own namespace', async () => {
+      // Arrange
+      const dependencies: MetadataComponentDependency[] = [
+        {
+          Id: 'dep1',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'Thing',
+          RefMetadataComponentNamespace: 'nsA',
+        },
+        {
+          Id: 'dep2',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'Thing',
+          RefMetadataComponentNamespace: 'nsB',
+        },
+      ]
+      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
+      readByDeveloperNamesMock.mockResolvedValueOnce([
+        {
+          DeveloperName: 'Thing',
+          QualifiedApiName: 'nsA__Thing__c',
+          NamespacePrefix: 'nsA',
+        },
+        {
+          DeveloperName: 'Thing',
+          QualifiedApiName: 'nsB__Thing__c',
+          NamespacePrefix: 'nsB',
+        },
+      ])
+
+      // Act
+      const result = await sut.listDependencies(apexClass)
+
+      // Assert
+      expect(result.sObjects).toEqual([
+        { apiName: 'nsA__Thing__c', aliases: ['nsA__Thing__c', 'Thing__c'] },
+        { apiName: 'nsB__Thing__c', aliases: ['nsB__Thing__c', 'Thing__c'] },
+      ])
+    })
+
+    it('Given a CustomObject dependency with no matching EntityDefinition row, When listing dependencies, Then it is dropped from sObjects and notify is called with the unresolved name', async () => {
+      // Arrange — two rows, one of each kind: a fixture where every row
+      // fails could not tell "drop the bad one" from "drop them all".
+      const dependencies: MetadataComponentDependency[] = [
+        {
+          Id: 'dep1',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'Present',
+          RefMetadataComponentNamespace: null,
+        },
+        {
+          Id: 'dep2',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'Gone',
+          RefMetadataComponentNamespace: null,
+        },
+      ]
+      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
+      readByDeveloperNamesMock.mockResolvedValueOnce([
+        {
+          DeveloperName: 'Present',
+          QualifiedApiName: 'Present__c',
+          NamespacePrefix: null,
+        },
+      ])
+
+      // Act
+      const result = await sut.listDependencies(apexClass)
+
+      // Assert
+      expect(result.sObjects).toEqual([
+        { apiName: 'Present__c', aliases: ['Present__c'] },
+      ])
+      expect(notifyMock).toHaveBeenCalledTimes(1)
+      expect(notifyMock).toHaveBeenCalledWith({
+        kind: 'type-resolution-degraded',
+        typeNames: ['Gone'],
+      })
+    })
+
+    it('Given every CustomObject row resolves, When listing dependencies, Then notify is never called', async () => {
+      // Arrange
+      const dependencies: MetadataComponentDependency[] = [
+        {
+          Id: 'dep1',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'Present',
+          RefMetadataComponentNamespace: null,
+        },
+      ]
+      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
+      readByDeveloperNamesMock.mockResolvedValueOnce([
+        {
+          DeveloperName: 'Present',
+          QualifiedApiName: 'Present__c',
+          NamespacePrefix: null,
+        },
+      ])
+
+      // Act
+      await sut.listDependencies(apexClass)
+
+      // Assert
+      expect(notifyMock).not.toHaveBeenCalled()
+    })
+
+    it('Given an ApexClass dependency with no namespace, When listing dependencies, Then apexClasses carries an identity-mapped TypeName', async () => {
       // Arrange
       const dependencies: MetadataComponentDependency[] = [
         {
           Id: 'dep1',
           RefMetadataComponentType: 'ApexClass',
           RefMetadataComponentName: 'MyHelper',
-        },
-        {
-          Id: 'dep2',
-          RefMetadataComponentType: 'StandardEntity',
-          RefMetadataComponentName: 'Account',
-        },
-        {
-          Id: 'dep3',
-          RefMetadataComponentType: 'CustomObject',
-          RefMetadataComponentName: 'Invoice__c',
+          RefMetadataComponentNamespace: null,
         },
       ]
       getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
@@ -142,7 +342,101 @@ describe('OrgApexSourceProvider', () => {
       const result = await sut.listDependencies(apexClass)
 
       // Assert
-      expect(result.sObjects).toEqual(['Account', 'Invoice__c'])
+      expect(result.apexClasses).toEqual([
+        { apiName: 'MyHelper', aliases: ['MyHelper'] },
+      ])
+    })
+
+    it('Given an ApexClass dependency with an empty-string namespace, When listing dependencies, Then apexClasses carries an identity-mapped TypeName', async () => {
+      // Arrange — the org emits either null or '' for a local class
+      // depending on projection, and both must read as local.
+      const dependencies: MetadataComponentDependency[] = [
+        {
+          Id: 'dep1',
+          RefMetadataComponentType: 'ApexClass',
+          RefMetadataComponentName: 'MyHelper',
+          RefMetadataComponentNamespace: '',
+        },
+      ]
+      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
+
+      // Act
+      const result = await sut.listDependencies(apexClass)
+
+      // Assert
+      expect(result.apexClasses).toEqual([
+        { apiName: 'MyHelper', aliases: ['MyHelper'] },
+      ])
+    })
+
+    it('Given an ApexClass dependency from a managed package, When listing dependencies, Then apexClasses carries the dotted api name and the bare alias', async () => {
+      // Arrange
+      const dependencies: MetadataComponentDependency[] = [
+        {
+          Id: 'dep1',
+          RefMetadataComponentType: 'ApexClass',
+          RefMetadataComponentName: 'PostInstallScript',
+          RefMetadataComponentNamespace: 'devedapp',
+        },
+      ]
+      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
+
+      // Act
+      const result = await sut.listDependencies(apexClass)
+
+      // Assert
+      expect(result.apexClasses).toEqual([
+        {
+          apiName: 'devedapp.PostInstallScript',
+          aliases: ['devedapp.PostInstallScript', 'PostInstallScript'],
+        },
+      ])
+    })
+
+    it('Given a mix of ApexClass, StandardEntity and CustomObject dependencies, When listing dependencies, Then sObjects keeps standard entities before custom objects', async () => {
+      // Arrange — pins the merge order: StandardEntity rows first, then
+      // CustomObject rows, matching the order the org returned them in.
+      const dependencies: MetadataComponentDependency[] = [
+        {
+          Id: 'dep1',
+          RefMetadataComponentType: 'ApexClass',
+          RefMetadataComponentName: 'MyHelper',
+          RefMetadataComponentNamespace: null,
+        },
+        {
+          Id: 'dep2',
+          RefMetadataComponentType: 'StandardEntity',
+          RefMetadataComponentName: 'Account',
+          RefMetadataComponentNamespace: null,
+        },
+        {
+          Id: 'dep3',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'Invoice',
+          RefMetadataComponentNamespace: null,
+        },
+      ]
+      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
+      readByDeveloperNamesMock.mockResolvedValueOnce([
+        {
+          DeveloperName: 'Invoice',
+          QualifiedApiName: 'Invoice__c',
+          NamespacePrefix: null,
+        },
+      ])
+
+      // Act
+      const result = await sut.listDependencies(apexClass)
+
+      // Assert
+      expect(result.apexClasses).toEqual([
+        { apiName: 'MyHelper', aliases: ['MyHelper'] },
+      ])
+      expect(result.sObjects).toEqual([
+        { apiName: 'Account', aliases: ['Account'] },
+        { apiName: 'Invoice__c', aliases: ['Invoice__c'] },
+      ])
+      expect(getApexClassDependenciesMock).toHaveBeenCalledWith('123')
     })
 
     it('Given no ApexClass dependencies, When listing dependencies, Then apexClasses is empty', async () => {
@@ -152,6 +446,7 @@ describe('OrgApexSourceProvider', () => {
           Id: 'dep1',
           RefMetadataComponentType: 'StandardEntity',
           RefMetadataComponentName: 'Contact',
+          RefMetadataComponentNamespace: null,
         },
       ]
       getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
@@ -170,6 +465,7 @@ describe('OrgApexSourceProvider', () => {
           Id: 'dep1',
           RefMetadataComponentType: 'ApexClass',
           RefMetadataComponentName: 'MyHelper',
+          RefMetadataComponentNamespace: null,
         },
       ]
       getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
@@ -179,24 +475,6 @@ describe('OrgApexSourceProvider', () => {
 
       // Assert
       expect(result.sObjects).toEqual([])
-    })
-
-    it('Given a CustomObject dependency only, When listing dependencies, Then sObjects carries the CustomObject name', async () => {
-      // Arrange
-      const dependencies: MetadataComponentDependency[] = [
-        {
-          Id: 'dep1',
-          RefMetadataComponentType: 'CustomObject',
-          RefMetadataComponentName: 'Order__c',
-        },
-      ]
-      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
-
-      // Act
-      const result = await sut.listDependencies(apexClass)
-
-      // Assert
-      expect(result.sObjects).toEqual(['Order__c'])
     })
   })
 

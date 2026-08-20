@@ -3,6 +3,7 @@ import { ApexClassRepository } from './apexClassRepository.js'
 import { ApexSettingsRepository } from './apexSettingsRepository.js'
 import { ApexTestRunner } from './apexTestRunner.js'
 import { ApexTestSuiteRepository } from './apexTestSuiteRepository.js'
+import { EntityDefinitionRepository } from './entityDefinitionRepository.js'
 import { OrgApexSourceProvider } from './orgApexSourceProvider.js'
 import { OrgMutationTestBed } from './orgMutationTestBed.js'
 import { OrgSObjectSchemaProvider } from './orgSObjectSchemaProvider.js'
@@ -18,7 +19,9 @@ export const createOrgEngine = async (
   return {
     source: new OrgApexSourceProvider(
       apexClassRepository,
-      new ApexTestSuiteRepository(ctx.connection)
+      new ApexTestSuiteRepository(ctx.connection),
+      new EntityDefinitionRepository(ctx.connection),
+      ctx.notify
     ),
     schema: new OrgSObjectSchemaProvider(ctx.connection, ctx.notify),
     testBed: new OrgMutationTestBed(
