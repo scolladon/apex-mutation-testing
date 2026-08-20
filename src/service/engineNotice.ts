@@ -85,30 +85,47 @@ const renderTypeResolutionDegraded = (
 }
 
 // Keyed on the notice tag rather than rendering unconditionally: EngineNotice
-// is a union, and a Record makes an unhandled future kind a compile error
+// is a union, and this map makes an unhandled future kind a compile error
 // instead of a wrong message. Without it, a new kind would type-check, reach
 // this function, and be announced to the user under the wrong renderer. A
 // lookup rather than a switch, for the same reason the engine factory uses
 // one: an unreachable default arm cannot be covered.
-// The value type uses method shorthand rather than a function-type property:
-// a Record whose value type is the renderer's own function type would make
-// `NOTICE_RENDERERS[notice.kind]`'s parameter the intersection of every arm's
-// narrow notice type, which is `never` — a method is checked bivariantly
-// instead, so each renderer can keep declaring only the one notice shape it
-// understands while the map still keys on the whole union.
-type NoticeRenderer = {
-  render(
-    notice: EngineNotice,
+// Correlated on the tag (`[K in EngineNotice['kind']]`) rather than a plain
+// `Record` keyed by the renderer's own function type: a plain Record would
+// make every slot's parameter the intersection of every arm's narrow notice
+// type, which is `never`, forcing method shorthand to work around it — and
+// method shorthand is checked bivariantly even under strictFunctionTypes, so
+// a renderer registered under the wrong kind would compile clean and only
+// TypeError at runtime on the field the wrong notice shape lacks. A plain
+// function-type property in a correlated mapped type is checked
+// contravariantly, so a swapped registration is a compile error here.
+type NoticeRenderers = {
+  [K in EngineNotice['kind']]: (
+    notice: Extract<EngineNotice, { kind: K }>,
     spinner: Spinner,
     messages: Messages<string>,
     sink: OutputSink
-  ): void
+  ) => void
 }
 
-const NOTICE_RENDERERS: Record<EngineNotice['kind'], NoticeRenderer> = {
-  'sync-transport-fallback': { render: renderSyncTransportFallback },
-  'type-resolution-degraded': { render: renderTypeResolutionDegraded },
+const NOTICE_RENDERERS: NoticeRenderers = {
+  'sync-transport-fallback': renderSyncTransportFallback,
+  'type-resolution-degraded': renderTypeResolutionDegraded,
 }
+
+// The one dispatch site needs one assertion: `notice.kind` narrows `notice`
+// for the caller, but indexing `NOTICE_RENDERERS` by that same key does not
+// re-derive the correlation between the key and `notice`'s own narrowed type
+// that the object literal above already proved once, at its own type-check —
+// indexing `NoticeRenderers` by the whole `EngineNotice['kind']` union instead
+// reproduces the same never-typed intersection the mapped type exists to
+// avoid, so the assertion target is the wide, unnarrowed signature.
+type NoticeRenderer = (
+  notice: EngineNotice,
+  spinner: Spinner,
+  messages: Messages<string>,
+  sink: OutputSink
+) => void
 
 export const reportEngineNotice = (
   notice: EngineNotice,
@@ -116,5 +133,6 @@ export const reportEngineNotice = (
   messages: Messages<string>,
   sink: OutputSink = writeToStdout
 ): void => {
-  NOTICE_RENDERERS[notice.kind].render(notice, spinner, messages, sink)
+  const render = NOTICE_RENDERERS[notice.kind] as NoticeRenderer
+  render(notice, spinner, messages, sink)
 }
