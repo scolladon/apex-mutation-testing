@@ -76,11 +76,42 @@ const toCustomObjectTypeName = (row: EntityDefinitionRow): TypeName => {
   return { apiName: row.QualifiedApiName, aliases }
 }
 
-// Both sides are org-canonical developer names for the same object, so the
-// join is exact, not case-folded (unlike assessPerimeter's fold, which
-// exists because user-supplied class names reach it there).
+// Both sides are org-canonical developer names for the same object, not
+// case-folded (unlike assessPerimeter's fold, which exists because
+// user-supplied class names reach it there). The join is exact only when the
+// key is unique: DeveloperName strips the suffix, so Foo__c, Foo__e, Foo__b,
+// Foo__x and Foo__mdt can all share one key in one namespace — see
+// groupByJoinKey, which is where a shared key is caught.
 const entityJoinKey = (name: string, namespace: string | null): string =>
   `${name}::${namespace ?? ''}`
+
+// Groups rather than indexing 1:1, so a key shared by more than one row is
+// visible to the caller instead of the last row silently winning.
+const groupByJoinKey = (
+  rows: EntityDefinitionRow[]
+): Map<string, EntityDefinitionRow[]> => {
+  const grouped = new Map<string, EntityDefinitionRow[]>()
+  for (const row of rows) {
+    const key = entityJoinKey(row.DeveloperName, row.NamespacePrefix)
+    const bucket = grouped.get(key)
+    if (bucket) {
+      bucket.push(row)
+    } else {
+      grouped.set(key, [row])
+    }
+  }
+  return grouped
+}
+
+// Renders the spelling closest to what the user's source could have written:
+// the org's `ns__Name__c` object convention minus the suffix, which is
+// exactly what failed to resolve and so cannot be known. The bare developer
+// name alone would render two unresolved same-named objects in different
+// namespaces identically.
+const qualifiedDeveloperName = (
+  name: string,
+  namespace: string | null
+): string => (namespace ? `${namespace}__${name}` : name)
 
 export class OrgApexSourceProvider implements ApexSourceProvider {
   constructor(
@@ -144,33 +175,35 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
     if (entityRows === undefined) {
       return []
     }
-    const byJoinKey = new Map(
-      entityRows.map(row => [
-        entityJoinKey(row.DeveloperName, row.NamespacePrefix),
-        row,
-      ])
-    )
+    const rowsByJoinKey = groupByJoinKey(entityRows)
 
     const resolved: TypeName[] = []
-    const unresolvedNames: string[] = []
+    const unresolvedNames = new Set<string>()
     for (const row of rows) {
-      const entityRow = byJoinKey.get(
+      const candidates = rowsByJoinKey.get(
         entityJoinKey(
           row.RefMetadataComponentName,
           row.RefMetadataComponentNamespace
         )
       )
-      if (entityRow) {
-        resolved.push(toCustomObjectTypeName(entityRow))
+      // Exactly one candidate resolves; zero or more than one (an ambiguous
+      // key) is unresolved, never a guess at which row is right.
+      if (candidates?.length === 1) {
+        resolved.push(toCustomObjectTypeName(candidates[0]))
       } else {
-        unresolvedNames.push(row.RefMetadataComponentName)
+        unresolvedNames.add(
+          qualifiedDeveloperName(
+            row.RefMetadataComponentName,
+            row.RefMetadataComponentNamespace
+          )
+        )
       }
     }
 
-    if (unresolvedNames.length > 0) {
+    if (unresolvedNames.size > 0) {
       this.notify({
         kind: 'type-resolution-degraded',
-        typeNames: unresolvedNames,
+        typeNames: [...unresolvedNames],
       })
     }
     return resolved
@@ -186,14 +219,25 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
   private async readEntityRows(
     rows: MetadataComponentDependency[]
   ): Promise<EntityDefinitionRow[] | undefined> {
+    // Deduped: the join key is name+namespace precisely because one name can
+    // appear under two namespaces, so a duplicate name here is a redundant
+    // SOQL term the downstream join tolerates without a 1:1 row-to-request
+    // correspondence.
+    const names = [...new Set(rows.map(row => row.RefMetadataComponentName))]
     try {
-      return await this.entityDefinitionRepository.readByDeveloperNames(
-        rows.map(row => row.RefMetadataComponentName)
-      )
+      return await this.entityDefinitionRepository.readByDeveloperNames(names)
     } catch (error) {
+      const failedNames = new Set(
+        rows.map(row =>
+          qualifiedDeveloperName(
+            row.RefMetadataComponentName,
+            row.RefMetadataComponentNamespace
+          )
+        )
+      )
       this.notify({
         kind: 'type-resolution-degraded',
-        typeNames: rows.map(row => row.RefMetadataComponentName),
+        typeNames: [...failedNames],
         error: toError(error),
       })
       return undefined

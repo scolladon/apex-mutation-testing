@@ -260,6 +260,132 @@ describe('OrgApexSourceProvider', () => {
       ])
     })
 
+    it('Given two EntityDefinition rows sharing a developer name in the same namespace, When listing dependencies, Then the dependency referencing that name is dropped as ambiguous and notify carries its name', async () => {
+      // Arrange — DeveloperName strips the suffix, so Foo__c and Foo__e both
+      // report DeveloperName 'Foo' in the same namespace; nothing on the
+      // dependency row can break the tie, so the name is treated as
+      // unresolved rather than silently picking one of the two rows.
+      const dependencies: MetadataComponentDependency[] = [
+        {
+          Id: 'dep1',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'Foo',
+          RefMetadataComponentNamespace: null,
+        },
+      ]
+      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
+      readByDeveloperNamesMock.mockResolvedValueOnce([
+        {
+          DeveloperName: 'Foo',
+          QualifiedApiName: 'Foo__c',
+          NamespacePrefix: null,
+        },
+        {
+          DeveloperName: 'Foo',
+          QualifiedApiName: 'Foo__e',
+          NamespacePrefix: null,
+        },
+      ])
+
+      // Act
+      const result = await sut.listDependencies(apexClass)
+
+      // Assert
+      expect(result.sObjects).toEqual([])
+      expect(notifyMock).toHaveBeenCalledWith({
+        kind: 'type-resolution-degraded',
+        typeNames: ['Foo'],
+      })
+    })
+
+    it('Given two CustomObject dependency rows referencing the same developer name and namespace, When listing dependencies, Then the entity read is issued with the name only once', async () => {
+      // Arrange — the join key is name+namespace precisely because one name
+      // can appear under two namespaces, so a duplicate name is structurally
+      // reachable and must not force a redundant SOQL term.
+      const dependencies: MetadataComponentDependency[] = [
+        {
+          Id: 'dep1',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'Dup',
+          RefMetadataComponentNamespace: null,
+        },
+        {
+          Id: 'dep2',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'Dup',
+          RefMetadataComponentNamespace: null,
+        },
+      ]
+      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
+      readByDeveloperNamesMock.mockResolvedValueOnce([
+        {
+          DeveloperName: 'Dup',
+          QualifiedApiName: 'Dup__c',
+          NamespacePrefix: null,
+        },
+      ])
+
+      // Act
+      await sut.listDependencies(apexClass)
+
+      // Assert
+      expect(readByDeveloperNamesMock).toHaveBeenCalledWith(['Dup'])
+    })
+
+    it('Given an unresolved CustomObject dependency carrying a namespace, When listing dependencies, Then notify carries the namespace-qualified developer name', async () => {
+      // Arrange — the user's source says `ns__Gone__c`, not the bare
+      // developer name `Gone`; reporting the bare spelling would render two
+      // unresolved same-named objects in different namespaces identically.
+      const dependencies: MetadataComponentDependency[] = [
+        {
+          Id: 'dep1',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'Gone',
+          RefMetadataComponentNamespace: 'ns',
+        },
+      ]
+      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
+      readByDeveloperNamesMock.mockResolvedValueOnce([])
+
+      // Act
+      await sut.listDependencies(apexClass)
+
+      // Assert
+      expect(notifyMock).toHaveBeenCalledWith({
+        kind: 'type-resolution-degraded',
+        typeNames: ['ns__Gone'],
+      })
+    })
+
+    it('Given two CustomObject dependency rows unresolved under the same name and namespace, When listing dependencies, Then notify carries that name only once', async () => {
+      // Arrange
+      const dependencies: MetadataComponentDependency[] = [
+        {
+          Id: 'dep1',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'Gone',
+          RefMetadataComponentNamespace: null,
+        },
+        {
+          Id: 'dep2',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'Gone',
+          RefMetadataComponentNamespace: null,
+        },
+      ]
+      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
+      readByDeveloperNamesMock.mockResolvedValueOnce([])
+
+      // Act
+      await sut.listDependencies(apexClass)
+
+      // Assert
+      expect(notifyMock).toHaveBeenCalledWith({
+        kind: 'type-resolution-degraded',
+        typeNames: ['Gone'],
+      })
+    })
+
     it('Given a CustomObject dependency with no matching EntityDefinition row, When listing dependencies, Then it is dropped from sObjects and notify is called with the unresolved name', async () => {
       // Arrange — two rows, one of each kind: a fixture where every row
       // fails could not tell "drop the bad one" from "drop them all".
