@@ -9,7 +9,7 @@ import {
 import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { NakedReceiverMutator } from '../../src/mutator/nakedReceiverMutator.js'
 import { TypeDiscoverer } from '../../src/service/typeDiscoverer.js'
-import { ApexClassTypeMatcher } from '../../src/service/typeMatcher.js'
+import { AliasTypeMatcher } from '../../src/service/typeMatcher.js'
 
 describe('NakedReceiverMutator Integration', () => {
   const parseAndMutateTypeAware = async (
@@ -22,7 +22,7 @@ describe('NakedReceiverMutator Integration', () => {
     const tree = parser.compilationUnit()
 
     const typeDiscoverer = new TypeDiscoverer().withMatcher(
-      new ApexClassTypeMatcher(new Set())
+      new AliasTypeMatcher([])
     )
     const typeRegistry = await typeDiscoverer.analyze(code)
 

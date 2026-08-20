@@ -10,53 +10,6 @@ export interface TypeMatcher {
   getFieldType?(objectType: string, fieldName: string): ApexType | undefined
 }
 
-abstract class BaseTypeMatcher implements TypeMatcher {
-  protected readonly _collectedTypes: Set<string> = new Set()
-
-  abstract matches(typeName: string): boolean
-
-  collect(typeName: string): void {
-    if (this.matches(typeName)) {
-      this._collectedTypes.add(typeName)
-    }
-  }
-
-  get collectedTypes(): ReadonlySet<string> {
-    return this._collectedTypes
-  }
-}
-
-export class ApexClassTypeMatcher extends BaseTypeMatcher {
-  constructor(private apexClassTypes: Set<string>) {
-    super()
-  }
-
-  matches(typeName: string): boolean {
-    return this.apexClassTypes.has(typeName)
-  }
-}
-
-export class SObjectTypeMatcher extends BaseTypeMatcher {
-  constructor(
-    private sObjectTypes: Set<string>,
-    private readonly schema?: SObjectSchemaProvider
-  ) {
-    super()
-  }
-
-  matches(typeName: string): boolean {
-    return this.sObjectTypes.has(typeName)
-  }
-
-  async populate(): Promise<void> {
-    await this.schema?.describe([...this._collectedTypes])
-  }
-
-  getFieldType(objectType: string, fieldName: string): ApexType | undefined {
-    return this.schema?.resolveFieldType(objectType, fieldName)
-  }
-}
-
 export class AliasTypeMatcher implements TypeMatcher {
   // lower(alias) -> apiName; a real apiName NEVER loses to another type's alias.
   private readonly canonicalByAlias = new Map<string, string>()

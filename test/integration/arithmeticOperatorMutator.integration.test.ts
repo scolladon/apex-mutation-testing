@@ -10,10 +10,7 @@ import { OrgSObjectSchemaProvider } from '../../src/adapter/org/orgSObjectSchema
 import { ArithmeticOperatorMutator } from '../../src/mutator/arithmeticOperatorMutator.js'
 import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { TypeDiscoverer } from '../../src/service/typeDiscoverer.js'
-import {
-  ApexClassTypeMatcher,
-  SObjectTypeMatcher,
-} from '../../src/service/typeMatcher.js'
+import { AliasTypeMatcher } from '../../src/service/typeMatcher.js'
 import { APEX_TYPE } from '../../src/type/ApexMethod.js'
 
 describe('ArithmeticOperatorMutator Integration', () => {
@@ -44,10 +41,12 @@ describe('ArithmeticOperatorMutator Integration', () => {
     const tree = parser.compilationUnit()
 
     const typeDiscoverer = new TypeDiscoverer()
-      .withMatcher(new ApexClassTypeMatcher(new Set()))
+      .withMatcher(new AliasTypeMatcher([]))
       .withMatcher(
-        new SObjectTypeMatcher(
-          sObjectDescribeRepository ? new Set(['Account']) : new Set(),
+        new AliasTypeMatcher(
+          sObjectDescribeRepository
+            ? [{ apiName: 'Account', aliases: ['Account'] }]
+            : [],
           sObjectDescribeRepository
         )
       )

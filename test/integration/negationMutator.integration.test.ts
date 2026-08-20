@@ -9,10 +9,7 @@ import {
 import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { NegationMutator } from '../../src/mutator/negationMutator.js'
 import { TypeDiscoverer } from '../../src/service/typeDiscoverer.js'
-import {
-  ApexClassTypeMatcher,
-  SObjectTypeMatcher,
-} from '../../src/service/typeMatcher.js'
+import { AliasTypeMatcher } from '../../src/service/typeMatcher.js'
 
 describe('NegationMutator Integration', () => {
   const parseAndMutate = async (code: string, coveredLines: Set<number>) => {
@@ -22,8 +19,8 @@ describe('NegationMutator Integration', () => {
     const tree = parser.compilationUnit()
 
     const typeDiscoverer = new TypeDiscoverer()
-      .withMatcher(new ApexClassTypeMatcher(new Set()))
-      .withMatcher(new SObjectTypeMatcher(new Set()))
+      .withMatcher(new AliasTypeMatcher([]))
+      .withMatcher(new AliasTypeMatcher([]))
     const typeRegistry = await typeDiscoverer.analyze(code)
 
     const negationMutator = new NegationMutator(typeRegistry)
