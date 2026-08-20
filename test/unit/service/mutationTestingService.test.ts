@@ -2279,10 +2279,14 @@ describe('MutationTestingService', () => {
         // Act
         await sut.process()
 
-        // Assert — registration order (apex-class matcher first) is
-        // load-bearing for TypeRegistry.resolveDottedExpression's matcher
-        // loop, and with one matcher class it is what distinguishes the two
-        // constructor calls here.
+        // Assert — pins the wiring, not an ordering claim: discoverTypes
+        // constructs one AliasTypeMatcher per source, apex classes then
+        // sObjects, and only the sObject matcher receives the schema. With
+        // one matcher class, the nth-call position is what distinguishes the
+        // two constructor calls below. Whether the apex-class matcher's
+        // withMatcher registration coming first matters to
+        // TypeRegistry.resolveDottedExpression's matcher loop is not
+        // asserted here — swapping that order today leaves this suite green.
         expect(vi.mocked(AliasTypeMatcher)).toHaveBeenNthCalledWith(
           1,
           apexClasses
