@@ -10,10 +10,14 @@ export interface ApexTestSuiteMember {
 
 /** One org type with every spelling the source under mutation may write for it.
  *  `apiName` is the one true name — what describe() receives and what the schema
- *  is keyed by. `aliases` always contains `apiName`. */
+ *  is keyed by. `aliases` always contains `apiName`. `namespace` is the org
+ *  packaging namespace this type is installed under, when known; only a
+ *  CustomObject sets it — it is what the schema provider strips from a
+ *  describe()'d field's own spelling to derive that field's bare alias. */
 export interface TypeName {
   apiName: string
   aliases: string[]
+  namespace?: string | null
 }
 
 export interface TypeDependencies {

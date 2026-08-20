@@ -1,6 +1,14 @@
 import { Connection } from '@salesforce/core'
 import { OrgSObjectSchemaProvider } from '../../../../src/adapter/org/orgSObjectSchemaProvider.js'
+import type { DescribedSObject } from '../../../../src/port/sObjectSchemaProvider.js'
 import { APEX_TYPE } from '../../../../src/type/ApexMethod.js'
+
+// A local (non-namespaced) sObject to describe — the common case across
+// this suite, where only a handful of tests care about a real namespace.
+const local = (apiName: string): DescribedSObject => ({
+  apiName,
+  namespace: null,
+})
 
 describe('OrgSObjectSchemaProvider', () => {
   let connectionStub: Connection
@@ -25,7 +33,7 @@ describe('OrgSObjectSchemaProvider', () => {
       describeMock.mockResolvedValue({ fields: [] })
 
       // Act
-      await sut.describe(['Account', 'Contact'])
+      await sut.describe([local('Account'), local('Contact')])
 
       // Assert
       expect(describeMock).toHaveBeenCalledTimes(2)
@@ -53,7 +61,7 @@ describe('OrgSObjectSchemaProvider', () => {
       })
 
       // Act
-      await sut.describe(['Account'])
+      await sut.describe([local('Account')])
 
       // Assert
       expect(sut.resolveFieldType('account', 'name')).toBe(APEX_TYPE.STRING)
@@ -100,7 +108,7 @@ describe('OrgSObjectSchemaProvider', () => {
         })
 
         // Act
-        await sut.describe(['Account'])
+        await sut.describe([local('Account')])
 
         // Assert
         expect(sut.resolveFieldType('account', 'testfield')).toBe(
@@ -120,34 +128,59 @@ describe('OrgSObjectSchemaProvider', () => {
         })
 
       // Act
-      await sut.describe(['BadObject', 'Contact'])
+      await sut.describe([local('BadObject'), local('Contact')])
 
       // Assert
       expect(sut.resolveFieldType('contact', 'name')).toBe(APEX_TYPE.STRING)
     })
 
-    it('Then the surviving object still resolves and notify is called exactly once with both failed names and the first error', async () => {
+    it('Given two sObjects failing with the same error message, When describing, Then notify is called once with both names and that error', async () => {
       // Arrange
-      const firstError = new Error('Object not found: BadA')
-      const secondError = new Error('Object not found: BadB')
+      const sharedError = new Error('Object not found')
       describeMock
-        .mockRejectedValueOnce(firstError)
-        .mockRejectedValueOnce(secondError)
+        .mockRejectedValueOnce(sharedError)
+        .mockRejectedValueOnce(new Error('Object not found'))
         .mockResolvedValueOnce({
           fields: [{ name: 'Name', type: 'string' }],
         })
 
       // Act
-      await sut.describe(['BadA', 'BadB', 'Contact'])
+      await sut.describe([local('BadA'), local('BadB'), local('Contact')])
 
       // Assert
       expect(notifyMock).toHaveBeenCalledTimes(1)
       expect(notifyMock).toHaveBeenCalledWith({
         kind: 'type-resolution-degraded',
         typeNames: ['BadA', 'BadB'],
-        error: firstError,
+        error: sharedError,
       })
       expect(sut.resolveFieldType('contact', 'name')).toBe(APEX_TYPE.STRING)
+    })
+
+    it('Given two sObjects failing with different error messages, When describing, Then notify is called once per distinct cause, each carrying only its own name', async () => {
+      // Arrange — collapsing both causes onto the first would make the
+      // second cause untraceable.
+      const firstError = new Error('Object not found: BadA')
+      const secondError = new Error('insufficient access: BadB')
+      describeMock
+        .mockRejectedValueOnce(firstError)
+        .mockRejectedValueOnce(secondError)
+
+      // Act
+      await sut.describe([local('BadA'), local('BadB')])
+
+      // Assert
+      expect(notifyMock).toHaveBeenCalledTimes(2)
+      expect(notifyMock).toHaveBeenCalledWith({
+        kind: 'type-resolution-degraded',
+        typeNames: ['BadA'],
+        error: firstError,
+      })
+      expect(notifyMock).toHaveBeenCalledWith({
+        kind: 'type-resolution-degraded',
+        typeNames: ['BadB'],
+        error: secondError,
+      })
     })
 
     it('Given a describe rejects with a non-Error value, When describing, Then the notice still carries an Error carrying that value', async () => {
@@ -156,7 +189,7 @@ describe('OrgSObjectSchemaProvider', () => {
       describeMock.mockRejectedValueOnce('boom')
 
       // Act
-      await sut.describe(['BadObject'])
+      await sut.describe([local('BadObject')])
 
       // Assert
       const [notice] = notifyMock.mock.calls[0] as [
@@ -171,7 +204,7 @@ describe('OrgSObjectSchemaProvider', () => {
       describeMock.mockResolvedValue({ fields: [] })
 
       // Act
-      await sut.describe(['Account', 'Contact'])
+      await sut.describe([local('Account'), local('Contact')])
 
       // Assert
       expect(notifyMock).not.toHaveBeenCalled()
@@ -186,7 +219,9 @@ describe('OrgSObjectSchemaProvider', () => {
       })
 
       // Act
-      await sut.describe(['namespaced__ProbeObj__c'])
+      await sut.describe([
+        { apiName: 'namespaced__ProbeObj__c', namespace: 'namespaced' },
+      ])
 
       // Assert
       expect(sut.resolveFieldType('namespaced__ProbeObj__c', 'Amount__c')).toBe(
@@ -194,30 +229,94 @@ describe('OrgSObjectSchemaProvider', () => {
       )
     })
 
-    it('Given a describe result naming a standard field, When resolving under its own name, Then it resolves and gains no spurious alias', async () => {
+    it('Given a describe result naming a field on a namespaced object that does not carry that namespace prefix, When resolving under its own name, Then it resolves and gains no alias', async () => {
+      // Arrange — a subscriber can add a local field to a namespaced object;
+      // its own spelling never carried the package namespace, so stripping
+      // that prefix must fail closed rather than mangle the field name.
+      describeMock.mockResolvedValue({
+        fields: [{ name: 'LocalField__c', type: 'string' }],
+      })
+
+      // Act
+      await sut.describe([
+        { apiName: 'namespaced__ProbeObj__c', namespace: 'namespaced' },
+      ])
+
+      // Assert
+      expect(
+        sut.resolveFieldType('namespaced__ProbeObj__c', 'LocalField__c')
+      ).toBe(APEX_TYPE.STRING)
+      // A field that does not start with 'namespaced__' must mint no alias
+      // at all — slicing it anyway, ignoring the failed startsWith check,
+      // would mangle 'localfield__c' into the single-character key 'c'.
+      expect(
+        sut.resolveFieldType('namespaced__ProbeObj__c', 'c')
+      ).toBeUndefined()
+    })
+
+    it('Given a describe result naming a standard field, When resolving under its own name, Then it resolves', async () => {
       // Arrange
       describeMock.mockResolvedValue({
         fields: [{ name: 'Name', type: 'string' }],
       })
 
       // Act
-      await sut.describe(['Account'])
+      await sut.describe([local('Account')])
 
       // Assert
       expect(sut.resolveFieldType('account', 'Name')).toBe(APEX_TYPE.STRING)
     })
 
-    it('Given a describe result naming a non-namespaced custom field, When resolving under its own name, Then it resolves and gains no spurious alias', async () => {
+    it('Given a describe result naming a non-namespaced custom field, When resolving under its own name, Then it resolves', async () => {
       // Arrange
       describeMock.mockResolvedValue({
         fields: [{ name: 'Amount__c', type: 'double' }],
       })
 
       // Act
-      await sut.describe(['ProbeObj__c'])
+      await sut.describe([local('ProbeObj__c')])
 
       // Assert
       expect(sut.resolveFieldType('ProbeObj__c', 'Amount__c')).toBe(
+        APEX_TYPE.DOUBLE
+      )
+    })
+
+    // The geolocation-compound-field pair below is the motivating case for
+    // deriving the alias from the object's own known namespace: a compound
+    // component name (`Loc__Latitude__s`) carries an extra `__` segment the
+    // developer name never had, which broke counting segments to decide
+    // "namespaced" — it fired for a non-namespaced object and missed firing
+    // for a namespaced one.
+    it('Given a describe result naming a geolocation component field on a non-namespaced object, When resolving the field, Then it resolves under its own spelling and mints no alias for its middle segment', async () => {
+      // Arrange
+      describeMock.mockResolvedValue({
+        fields: [{ name: 'Loc__Latitude__s', type: 'double' }],
+      })
+
+      // Act
+      await sut.describe([local('ProbeObj__c')])
+
+      // Assert
+      expect(sut.resolveFieldType('ProbeObj__c', 'Loc__Latitude__s')).toBe(
+        APEX_TYPE.DOUBLE
+      )
+      expect(sut.resolveFieldType('ProbeObj__c', 'Latitude__s')).toBeUndefined()
+    })
+
+    it('Given a describe result naming a geolocation component field on a namespaced object, When resolving the namespace-stripped spelling, Then it resolves', async () => {
+      // Arrange — this is the real spelling source inside the package
+      // writes; segment counting left it unresolved because the component
+      // name carries four segments instead of three.
+      describeMock.mockResolvedValue({
+        fields: [{ name: 'ns__Loc__Latitude__s', type: 'double' }],
+      })
+
+      // Act
+      await sut.describe([{ apiName: 'ns__Loc__c', namespace: 'ns' }])
+
+      // Assert
+      expect(sut.resolveFieldType('ns__Loc__c', 'Loc__Latitude__s')).toBe(
         APEX_TYPE.DOUBLE
       )
     })
@@ -234,7 +333,7 @@ describe('OrgSObjectSchemaProvider', () => {
       })
 
       // Act
-      await sut.describe(['ProbeObj__c'])
+      await sut.describe([local('ProbeObj__c')])
 
       // Assert
       expect(sut.resolveFieldType('ProbeObj__c', 'Amount__c')).toBe(
@@ -263,7 +362,7 @@ describe('OrgSObjectSchemaProvider', () => {
       describeMock.mockResolvedValue({
         fields: [{ name: 'Name', type: 'string' }],
       })
-      await sut.describe(['Account'])
+      await sut.describe([local('Account')])
 
       // Assert
       expect(sut.resolveFieldType('account', 'nonexistent')).toBeUndefined()
@@ -274,7 +373,7 @@ describe('OrgSObjectSchemaProvider', () => {
       describeMock.mockResolvedValue({
         fields: [{ name: 'NumberOfEmployees', type: 'int' }],
       })
-      await sut.describe(['Account'])
+      await sut.describe([local('Account')])
 
       // Assert
       expect(sut.resolveFieldType('account', 'numberofemployees')).toBe(
@@ -290,7 +389,7 @@ describe('OrgSObjectSchemaProvider', () => {
       describeMock.mockResolvedValue({
         fields: [{ name: 'Custom', type: 'somefuturetype' }],
       })
-      await sut.describe(['Account'])
+      await sut.describe([local('Account')])
 
       // Assert
       expect(sut.resolveFieldType('account', 'custom')).toBe(APEX_TYPE.OBJECT)

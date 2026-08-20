@@ -13,6 +13,10 @@ export interface TypeMatcher {
 export class AliasTypeMatcher implements TypeMatcher {
   // lower(alias) -> apiName; a real apiName NEVER loses to another type's alias.
   private readonly canonicalByAlias = new Map<string, string>()
+  // apiName -> namespace; carried through to describe() so the schema
+  // provider can strip a describe()'d field's own namespace prefix rather
+  // than guess one from the field name's shape.
+  private readonly namespaceByApiName = new Map<string, string | null>()
   private readonly _collectedTypes: Set<string> = new Set()
 
   constructor(
@@ -43,7 +47,17 @@ export class AliasTypeMatcher implements TypeMatcher {
   }
 
   async populate(): Promise<void> {
-    await this.schema?.describe([...this._collectedTypes])
+    await this.schema?.describe(
+      [...this._collectedTypes].map(apiName => ({
+        apiName,
+        // Every collected apiName came from canonicalByAlias, which
+        // registerCanonicalNames populates in lockstep with
+        // namespaceByApiName over the same `types` list, so this lookup can
+        // never miss — a `?? null` fallback here would be an untestable,
+        // permanently-dead branch rather than real error handling.
+        namespace: this.namespaceByApiName.get(apiName) as string | null,
+      }))
+    )
   }
 
   getFieldType(objectType: string, fieldName: string): ApexType | undefined {
@@ -54,8 +68,9 @@ export class AliasTypeMatcher implements TypeMatcher {
   }
 
   private registerCanonicalNames(types: TypeName[]): void {
-    for (const { apiName } of types) {
+    for (const { apiName, namespace } of types) {
       this.canonicalByAlias.set(apiName.toLowerCase(), apiName)
+      this.namespaceByApiName.set(apiName, namespace ?? null)
     }
   }
 

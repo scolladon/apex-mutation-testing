@@ -151,6 +151,7 @@ describe('OrgApexSourceProvider', () => {
         {
           apiName: 'namespaced__ProbeObj__c',
           aliases: ['namespaced__ProbeObj__c', 'ProbeObj__c'],
+          namespace: 'namespaced',
         },
       ])
       expect(readByDeveloperNamesMock).toHaveBeenCalledWith(['ProbeObj'])
@@ -184,7 +185,7 @@ describe('OrgApexSourceProvider', () => {
 
       // Assert
       expect(result.sObjects).toEqual([
-        { apiName: 'Invoice__mdt', aliases: ['Invoice__mdt'] },
+        { apiName: 'Invoice__mdt', aliases: ['Invoice__mdt'], namespace: null },
       ])
     })
 
@@ -216,7 +217,7 @@ describe('OrgApexSourceProvider', () => {
 
       // Assert
       expect(result.sObjects).toEqual([
-        { apiName: 'Other__c', aliases: ['Other__c'] },
+        { apiName: 'Other__c', aliases: ['Other__c'], namespace: 'namespaced' },
       ])
     })
 
@@ -255,8 +256,16 @@ describe('OrgApexSourceProvider', () => {
 
       // Assert
       expect(result.sObjects).toEqual([
-        { apiName: 'nsA__Thing__c', aliases: ['nsA__Thing__c', 'Thing__c'] },
-        { apiName: 'nsB__Thing__c', aliases: ['nsB__Thing__c', 'Thing__c'] },
+        {
+          apiName: 'nsA__Thing__c',
+          aliases: ['nsA__Thing__c', 'Thing__c'],
+          namespace: 'nsA',
+        },
+        {
+          apiName: 'nsB__Thing__c',
+          aliases: ['nsB__Thing__c', 'Thing__c'],
+          namespace: 'nsB',
+        },
       ])
     })
 
@@ -417,7 +426,7 @@ describe('OrgApexSourceProvider', () => {
 
       // Assert
       expect(result.sObjects).toEqual([
-        { apiName: 'Present__c', aliases: ['Present__c'] },
+        { apiName: 'Present__c', aliases: ['Present__c'], namespace: null },
       ])
       expect(notifyMock).toHaveBeenCalledTimes(1)
       expect(notifyMock).toHaveBeenCalledWith({
@@ -619,7 +628,7 @@ describe('OrgApexSourceProvider', () => {
       ])
       expect(result.sObjects).toEqual([
         { apiName: 'Account', aliases: ['Account'] },
-        { apiName: 'Invoice__c', aliases: ['Invoice__c'] },
+        { apiName: 'Invoice__c', aliases: ['Invoice__c'], namespace: null },
       ])
       expect(getApexClassDependenciesMock).toHaveBeenCalledWith('123')
     })

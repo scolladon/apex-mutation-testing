@@ -73,7 +73,11 @@ const toCustomObjectTypeName = (row: EntityDefinitionRow): TypeName => {
     bareAlias === undefined
       ? [row.QualifiedApiName]
       : [row.QualifiedApiName, bareAlias]
-  return { apiName: row.QualifiedApiName, aliases }
+  return {
+    apiName: row.QualifiedApiName,
+    aliases,
+    namespace: row.NamespacePrefix,
+  }
 }
 
 // Both sides are org-canonical developer names for the same object, not

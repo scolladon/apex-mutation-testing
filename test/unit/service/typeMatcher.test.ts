@@ -130,13 +130,14 @@ describe('AliasTypeMatcher', () => {
           {
             apiName: 'namespaced__ProbeObj__c',
             aliases: ['namespaced__ProbeObj__c', 'ProbeObj__c'],
+            namespace: 'namespaced',
           },
         ],
         mockDescribeRepository
       )
     })
 
-    it('Given collected types, When populate is called, Then describe receives the canonical api names', async () => {
+    it('Given collected types, When populate is called, Then describe receives the canonical api name paired with its namespace', async () => {
       // Arrange
       sut.collect('ProbeObj__c')
 
@@ -145,7 +146,7 @@ describe('AliasTypeMatcher', () => {
 
       // Assert
       expect(mockDescribeRepository.describe).toHaveBeenCalledWith([
-        'namespaced__ProbeObj__c',
+        { apiName: 'namespaced__ProbeObj__c', namespace: 'namespaced' },
       ])
     })
 
