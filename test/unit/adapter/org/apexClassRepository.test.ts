@@ -268,6 +268,25 @@ describe('ApexClassRepository', () => {
       // Assert
       expect(result).toEqual(mockDependencies)
     })
+
+    it('given a classId, When getting dependencies, Then the read projects Id, type, name and namespace explicitly', async () => {
+      // Arrange
+      findMock.mockResolvedValue([])
+
+      // Act
+      await sut.getApexClassDependencies('123')
+
+      // Assert
+      expect(findArgsMock).toHaveBeenCalledWith(
+        { MetadataComponentId: '123' },
+        [
+          'Id',
+          'RefMetadataComponentType',
+          'RefMetadataComponentName',
+          'RefMetadataComponentNamespace',
+        ]
+      )
+    })
   })
 
   describe('when updating an ApexClass', () => {

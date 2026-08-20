@@ -4,6 +4,7 @@ import { type RestorePolicy, RUN_TESTS } from '../../port/mutationTestBed.js'
 import { ApexClass } from '../../type/ApexClass.js'
 import { ApexClassIdentity } from './ApexClassIdentity.js'
 import { MetadataComponentDependency } from './MetadataComponentDependency.js'
+import { chunk } from './queryChunking.js'
 
 const DEFAULT_POLL_INITIAL_INTERVAL_MS = 100
 const DEFAULT_POLL_MAX_INTERVAL_MS = 2000
@@ -26,13 +27,16 @@ const IDENTITY_QUERY_CHUNK_SIZE = 200
 // load. Matches the bounded idiom in sObjectDescribeRepository.ts.
 const MAX_CONCURRENT_IDENTITY_QUERIES = 25
 
-const chunk = <T>(items: T[], size: number): T[][] => {
-  const chunks: T[][] = []
-  for (let i = 0; i < items.length; i += size) {
-    chunks.push(items.slice(i, i + size))
-  }
-  return chunks
-}
+// A named projection is load-bearing here (RefMetadataComponentNamespace is
+// consumed downstream), and naming it also avoids the describe round-trip an
+// unprojected find resolves through — see the classExists comment in
+// orgApexSourceProvider.ts for the cost this pattern otherwise pays.
+const DEPENDENCY_PROJECTION = [
+  'Id',
+  'RefMetadataComponentType',
+  'RefMetadataComponentName',
+  'RefMetadataComponentNamespace',
+]
 
 interface PollOptions {
   initialIntervalMs?: number
@@ -135,7 +139,7 @@ export class ApexClassRepository {
   ): Promise<MetadataComponentDependency[]> {
     return (await this.connection.tooling
       .sobject('MetadataComponentDependency')
-      .find({ MetadataComponentId: classId })
+      .find({ MetadataComponentId: classId }, DEPENDENCY_PROJECTION)
       .execute()) as MetadataComponentDependency[]
   }
 
