@@ -158,4 +158,57 @@ describe('createOrgEngine', () => {
       vi.mocked(ApexSettingsRepository).mock.instances[0]
     )
   })
+
+  it('Given readNamespacePrefix rejects, When creating the org engine, Then the run does not abort, the namespace degrades to null and notify carries the rejection', async () => {
+    // Arrange — this is the first org round-trip of every run, firing before
+    // class validation and before any progress output; a real org (or a
+    // local aer server that does not support this query) must never abort
+    // the whole run over what is pure optional enrichment.
+    const failure = new Error('EXCEEDED_ID_LIMIT')
+    vi.mocked(OrganizationRepository).mockImplementation(
+      class {
+        readNamespacePrefix = vi.fn().mockRejectedValue(failure)
+      } as unknown as new (
+        connection: Connection
+      ) => OrganizationRepository
+    )
+
+    // Act
+    await createOrgEngine(ctx)
+
+    // Assert
+    expect(ctx.notify).toHaveBeenCalledWith({
+      kind: 'type-resolution-degraded',
+      typeNames: [],
+      error: failure,
+    })
+    expect(vi.mocked(OrgApexSourceProvider).mock.calls[0][4]).toBeNull()
+    expect(vi.mocked(OrgSObjectSchemaProvider)).toHaveBeenCalledWith(
+      ctx.connection,
+      ctx.notify,
+      null
+    )
+  })
+
+  it('Given readNamespacePrefix rejects with a non-Error value, When creating the org engine, Then notify carries an Error wrapping that value', async () => {
+    // Arrange — a non-Error rejection value drives the false arm of the
+    // instanceof normalisation.
+    vi.mocked(OrganizationRepository).mockImplementation(
+      class {
+        readNamespacePrefix = vi.fn().mockRejectedValue('boom')
+      } as unknown as new (
+        connection: Connection
+      ) => OrganizationRepository
+    )
+
+    // Act
+    await createOrgEngine(ctx)
+
+    // Assert
+    const [notice] = (ctx.notify as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      { error?: Error },
+    ]
+    expect(notice.error).toBeInstanceOf(Error)
+    expect(notice.error?.message).toContain('boom')
+  })
 })
