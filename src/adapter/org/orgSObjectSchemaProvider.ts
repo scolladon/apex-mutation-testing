@@ -113,20 +113,47 @@ const groupByErrorMessage = (
 // many distinct objects would otherwise degrade to one line per object. The
 // first (limit - 1) causes keep their own notice; every cause beyond that is
 // merged into one final notice, so the total notice count never exceeds the
-// limit.
+// limit. mergedCauseCount records how many original causes fed each bucket —
+// 1 for every kept cause, and the actual merged count for the overflow
+// bucket — so the caller can disclose the elision instead of silently
+// attributing one arbitrary cause's reason to every name in the bucket.
 const MAX_DESCRIBE_FAILURE_NOTICES = 5
+
+type BoundCause = { failures: DescribeFailure[]; mergedCauseCount: number }
 
 const boundCauses = (
   causes: DescribeFailure[][],
   limit: number
-): DescribeFailure[][] => {
+): BoundCause[] => {
+  const asBoundCause = (failures: DescribeFailure[]): BoundCause => ({
+    failures,
+    mergedCauseCount: 1,
+  })
   if (causes.length <= limit) {
-    return causes
+    return causes.map(asBoundCause)
   }
-  const kept = causes.slice(0, limit - 1)
-  const overflow = causes.slice(limit - 1).flat()
-  return [...kept, overflow]
+  const kept = causes.slice(0, limit - 1).map(asBoundCause)
+  const overflowCauses = causes.slice(limit - 1)
+  return [
+    ...kept,
+    {
+      failures: overflowCauses.flat(),
+      mergedCauseCount: overflowCauses.length,
+    },
+  ]
 }
+
+// The merged bucket's first cause is a real reason for its own name, but an
+// arbitrary one for the rest of the bucket — the same "one reason attributed
+// to many names" problem groupByErrorMessage exists to prevent, one layer
+// up. Rather than keep attributing it silently, or dropping it and leaving
+// the notice reasonless, the elided cause count is disclosed in the message.
+const describeCause = (first: Error, mergedCauseCount: number): Error =>
+  mergedCauseCount <= 1
+    ? first
+    : new Error(
+        `${first.message} (and ${mergedCauseCount - 1} other cause${mergedCauseCount - 1 === 1 ? '' : 's'})`
+      )
 
 export class OrgSObjectSchemaProvider implements SObjectSchemaProvider {
   private readonly fieldTypes: SObjectFieldTypes = new Map()
@@ -171,18 +198,20 @@ export class OrgSObjectSchemaProvider implements SObjectSchemaProvider {
   // of being fatal — or, as before, silently discarded. One notice per
   // distinct cause, not one for all of them collapsed onto the first: naming
   // every failed sObject next to a reason only some of them share would make
-  // causes 2..N untraceable — bounded by MAX_DESCRIBE_FAILURE_NOTICES so that
-  // this per-cause granularity cannot itself degrade to one line per object.
+  // causes 2..N untraceable. That per-cause guarantee holds for the first
+  // (limit - 1) causes only; MAX_DESCRIBE_FAILURE_NOTICES bounds the notice
+  // count itself, and the causes beyond it share one merged, elision-marked
+  // notice rather than degrading to one line per object.
   private reportFailures(failures: DescribeFailure[]): void {
     const causes = [...groupByErrorMessage(failures).values()]
-    for (const causeFailures of boundCauses(
+    for (const { failures: causeFailures, mergedCauseCount } of boundCauses(
       causes,
       MAX_DESCRIBE_FAILURE_NOTICES
     )) {
       this.notify({
         kind: 'type-resolution-degraded',
         typeNames: causeFailures.map(failure => failure.name),
-        error: causeFailures[0].error,
+        error: describeCause(causeFailures[0].error, mergedCauseCount),
       })
     }
   }

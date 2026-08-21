@@ -188,8 +188,12 @@ describe('OrgSObjectSchemaProvider', () => {
     // Bounds the notice COUNT, not just each notice's text: jsforce commonly
     // embeds the object name in the error message, so N distinct failures
     // would otherwise degrade to N stdout lines in a large org. Six distinct
-    // causes is the smallest input that exceeds the five-notice cap.
-    it('Given describe failures spanning more distinct causes than the notice cap, When describing, Then only the capped number of notices are emitted and the causes beyond the cap are merged into the last notice', async () => {
+    // causes is the smallest input that exceeds the five-notice cap. The
+    // merged notice must not attribute BadE's own reason to BadF unqualified
+    // — that is exactly the "one arbitrary reason attributed to many names"
+    // groupByErrorMessage exists to prevent, one layer up — so the elision is
+    // disclosed in the error message instead.
+    it('Given describe failures spanning more distinct causes than the notice cap, When describing, Then only the capped number of notices are emitted and the merged notice discloses the elided cause', async () => {
       // Arrange
       const names = ['BadA', 'BadB', 'BadC', 'BadD', 'BadE', 'BadF']
       const errors = names.map(name => new Error(`Object not found: ${name}`))
@@ -205,7 +209,34 @@ describe('OrgSObjectSchemaProvider', () => {
       expect(notifyMock).toHaveBeenCalledWith({
         kind: 'type-resolution-degraded',
         typeNames: ['BadE', 'BadF'],
-        error: errors[4],
+        error: expect.objectContaining({
+          message: 'Object not found: BadE (and 1 other cause)',
+        }),
+      })
+    })
+
+    // Seven distinct causes merges three into the last notice (BadE, BadF,
+    // BadG), disclosing 2 elided causes — the plural arm of the count text,
+    // distinct from the singular arm the six-cause fixture above covers.
+    it('Given describe failures spanning more than two causes beyond the notice cap, When describing, Then the merged notice discloses the elided cause count in the plural', async () => {
+      // Arrange
+      const names = ['BadA', 'BadB', 'BadC', 'BadD', 'BadE', 'BadF', 'BadG']
+      const errors = names.map(name => new Error(`Object not found: ${name}`))
+      for (const error of errors) {
+        describeMock.mockRejectedValueOnce(error)
+      }
+
+      // Act
+      await sut.describe(names)
+
+      // Assert
+      expect(notifyMock).toHaveBeenCalledTimes(5)
+      expect(notifyMock).toHaveBeenCalledWith({
+        kind: 'type-resolution-degraded',
+        typeNames: ['BadE', 'BadF', 'BadG'],
+        error: expect.objectContaining({
+          message: 'Object not found: BadE (and 2 other causes)',
+        }),
       })
     })
 
