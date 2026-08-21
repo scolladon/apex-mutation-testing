@@ -4,7 +4,7 @@ import type { MetadataComponentDependency } from './MetadataComponentDependency.
 
 // Same falsy test as isLocal in orgApexSourceProvider.ts, applied to a
 // dependency row's raw namespace field instead of an ApexClassIdentity.
-export const hasNoNamespace = (namespace: string | null): boolean => !namespace
+const hasNoNamespace = (namespace: string | null): boolean => !namespace
 
 export const identityTypeName = (name: string): TypeName => ({
   apiName: name,
@@ -20,10 +20,10 @@ export const identityTypeName = (name: string): TypeName => ({
 // org's own?" question for the third of the three; folding here keeps both
 // uses in this file consistent with it instead of assuming, unstated, that
 // org-canonical casing agrees across sources.
-export const foldedNamespace = (namespace: string | null): string | null =>
+const foldedNamespace = (namespace: string | null): string | null =>
   namespace === null ? null : namespace.toLowerCase()
 
-export const isOwnNamespace = (
+const isOwnNamespace = (
   namespace: string | null,
   orgNamespace: string | null
 ): boolean => foldedNamespace(namespace) === foldedNamespace(orgNamespace)
@@ -67,7 +67,7 @@ export const toApexClassTypeName = (
 // still resolves to `undefined` below, because the resulting prefix
 // (`${null}__` = "null__", `${''}__` = "__") is not a prefix any real
 // qualified api name carries.
-export const bareObjectAlias = (
+const bareObjectAlias = (
   qualifiedApiName: string,
   namespacePrefix: string | null,
   orgNamespace: string | null
@@ -85,7 +85,7 @@ export const bareObjectAlias = (
 // source can never write `ProbeObj` for a type whose api name is
 // `ProbeObj__c`, so aliasing it would only create false matches against an
 // unrelated Apex class of that name.
-export const toCustomObjectTypeName = (
+const toCustomObjectTypeName = (
   row: EntityDefinitionRow,
   orgNamespace: string | null
 ): TypeName => {
@@ -110,7 +110,7 @@ export const toCustomObjectTypeName = (
 // key is unique: DeveloperName strips the suffix, so Foo__c, Foo__e, Foo__b,
 // Foo__x and Foo__mdt can all share one key in one namespace — see
 // groupByJoinKey, which is where a shared key is caught.
-export const entityJoinKey = (name: string, namespace: string | null): string =>
+const entityJoinKey = (name: string, namespace: string | null): string =>
   `${name}::${namespace ?? ''}`
 
 // Groups rather than indexing 1:1, so a key shared by more than one row is
