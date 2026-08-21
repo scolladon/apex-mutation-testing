@@ -56,31 +56,38 @@ sf apex mutation test run -c <ApexClass> --test-suite <TestSuite> -o <TargetOrg>
 │   executionEngine.ts      EngineContext · EngineBundle ·    │
 │                           EngineNotice                      │
 │   apexSourceProvider.ts   ApexSourceProvider ·              │
-│                           TypeDependencies                 │
+│                           TypeDependencies · TypeName       │
 │   sObjectSchemaProvider.ts  SObjectSchemaProvider           │
 │   mutationTestBed.ts      MutationTestBed · MutantVerdict · │
 │                           Baseline · RestorePolicy          │
 ├──────────────────────────────────────────────────────────┤
 │           Infrastructure Layer — src/adapter/org/          │
-│   orgEngine.ts (createOrgEngine) builds the port          │
-│   implementations below and hands them to the caller as   │
-│   one EngineBundle:                                        │
+│   orgEngine.ts (createOrgEngine) reads the org's own       │
+│   namespace once, builds the port implementations below,  │
+│   and hands them to the caller as one EngineBundle:        │
 │                                                            │
 │     OrgApexSourceProvider    implements ApexSourceProvider │
 │     OrgMutationTestBed       implements MutationTestBed    │
 │     OrgSObjectSchemaProvider implements SObjectSchemaProvider│
+│       (both take `notify` + the org namespace — a failed   │
+│        describe or an unresolved type is reported via      │
+│        EngineNotice, never swallowed)                      │
 │                                                            │
-│   The first two wrap four internal repositories — nothing │
+│   The first two wrap internal repositories — nothing      │
 │   outside this directory imports them directly:           │
 │  ┌───────────────────┐ ┌─────────────┐ ┌──────────────┐ │
 │  │ApexClassRepository│ │ApexTestRunner│ │ApexSettings   │ │
 │  │  (Tooling API)    │ │ (apex-node) │ │Repository     │ │
 │  │                   │ │             │ │(Tooling API)  │ │
 │  └───────────────────┘ └─────────────┘ └──────────────┘ │
-│  ┌──────────────────────┐                                │
-│  │ApexTestSuiteRepository│                                │
-│  │  (Tooling API)        │                                │
-│  └──────────────────────┘                                │
+│  ┌──────────────────────┐ ┌──────────────────────────┐  │
+│  │ApexTestSuiteRepository│ │EntityDefinitionRepository│  │
+│  │  (Tooling API)        │ │  (Tooling API)           │  │
+│  └──────────────────────┘ └──────────────────────────┘  │
+│  ┌────────────────────────┐                               │
+│  │OrganizationRepository   │  read once by orgEngine.ts,  │
+│  │  (plain query)          │  not wrapped by a provider    │
+│  └────────────────────────┘                               │
 ├──────────────────────────────────────────────────────────┤
 │                    Reporting Layer                        │
 │  ┌───────────────────────────────────────────────────────┐│
@@ -94,6 +101,17 @@ sf apex mutation test run -c <ApexClass> --test-suite <TestSuite> -o <TargetOrg>
 `OrgSObjectSchemaProvider` has no separate internal repository behind it — it is the
 renamed `SObjectDescribeRepository`, implementing `SObjectSchemaProvider` directly against
 `Connection.describe` (see [Repository Pattern — Adapter Layer](#repository-pattern--adapter-layer)).
+It now also takes `notify` and the org's namespace: a failed `describe()` is collected,
+grouped by cause, and announced through `EngineNotice` after the batch resolves rather than
+swallowed, and the namespace lets it alias a namespaced field to the bare spelling source
+may legally write inside the org's own namespace (see [Type Classification](#type-classification)).
+
+Two more `src/adapter/org/` modules carry no port implementation of their own.
+`orgTypeNames.ts` — module-private, extracted from `OrgApexSourceProvider` — derives every
+`TypeName { apiName, aliases }` from a dependency row, an `EntityDefinition` row, or a bare
+identity, plus the org namespace threaded in from `orgEngine.ts`. `queryChunking.ts` holds
+the `chunk()` helper both `ApexClassRepository` and `EntityDefinitionRepository` batch their
+`IN`-clause reads through.
 
 ---
 
@@ -152,14 +170,30 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 ├─ 5. DISCOVER DEPENDENCIES
 │     engine.source.listDependencies(apexClass)
 │       (OrgApexSourceProvider → ApexClassRepository.getApexClassDependencies)
-│       → TypeDependencies { apexClasses, sObjects }
+│       → TypeDependencies { apexClasses: TypeName[], sObjects: TypeName[] }
 │       → sObjects already merges StandardEntity ∪ CustomObject
+│       → each TypeName { apiName, aliases } pairs the org's one true name
+│         — what describe() will receive, what the schema map is keyed by —
+│         with every spelling source may legally write for it. A
+│         StandardEntity or an own-namespace ApexClass is identity-mapped;
+│         a CustomObject's apiName comes from a targeted EntityDefinition
+│         read, joined in memory on (DeveloperName, NamespacePrefix); a
+│         bare (unqualified) alias is minted only when the row's namespace
+│         is the org's own — a bare spelling is not legal source for a
+│         foreign namespace's type
+│       → a row that does not resolve — no matching EntityDefinition, or
+│         an ambiguous one (two suffix families sharing a developer name) —
+│         is dropped from sObjects and reported through EngineNotice,
+│         never silently passed through as the unresolved developer name
 │
 ├─ 6. BUILD TYPE SYSTEM
 │     engine.schema.describe(sObjectTypes)
 │       (OrgSObjectSchemaProvider.describe — no repository behind it;
 │        it is the renamed SObjectDescribeRepository)
 │       → parallel Describe API calls (max 25 concurrent)
+│       → a describe that fails is collected, grouped by cause, and
+│         reported through EngineNotice once the batch resolves — it
+│         does not abort the run and it is never silently swallowed
 │     TypeDiscoverer.analyzeFull(Body)
 │       → single ANTLR parse, returns
 │         { typeRegistry, tree, tokenStream }
@@ -676,7 +710,7 @@ Measured on the E2E fixture, this drops the campaign's queued async test classes
 
 There is no flag and no config key for any of this: the behaviour is unconditional, on every run, with no opt-out.
 
-**The permission floor.** `runTestsSynchronous` requires the **View Setup** user permission; the asynchronous path never needed it. A thrown sync error is classified by its structured `errorCode`, the same discipline that would apply to any typed platform error code: `INSUFFICIENT_ACCESS_OR_READONLY` and `INSUFFICIENT_ACCESS` mean the *capability* itself is missing, so they latch `syncTransportDisabled` on the adapter instance — every later single-class call for the rest of the campaign skips the synchronous attempt entirely, costing exactly one wasted round-trip total rather than one per group. Any other error (a lock contention, a transient 503, and the like) is treated as transient and the synchronous transport is retried on the next call. Either way the exact same payload falls back to the asynchronous transport, and the fallback call is issued *before* the reason is reported, so a throwing report callback can never preempt the fallback attempt itself. The reason is reported only the first time it happens, through a private reporting latch on the adapter instance, separate from the transport latch — `ApexTestRunner` carries no UI dependency of its own; it calls its own `onSyncFallback(error)` callback and nothing else. That callback is wired up once, in `src/adapter/org/orgEngine.ts`, to `ctx.notify({ kind: 'sync-transport-fallback', error })` — the one `EngineNotice` member today — and `run.ts` supplies `notify` as `notice => reportEngineNotice(notice, this.spinner, messages)` (ADR 093). `reportEngineNotice` (`src/service/engineNotice.ts`) is where the presentation lives: it uses `spinner.pause`, not the start/stop pair the rest of this service relies on (`stop()` no-ops when nothing is running, `start()` replaces the current task without stopping it, so that idiom would silently swallow a later "Original tests passed"), and it sanitizes and truncates the org-supplied reason — `renderOrgDetail`, bounded at 200 code points (`MAX_ORG_ERROR_DETAIL_LENGTH`) — the same discipline the rollback-failure cause uses, in the same module, before writing through the injected `OutputSink` rather than `process.stdout` directly. If an asynchronous retry itself throws, that error propagates untouched to the same classification path every async failure already goes through.
+**The permission floor.** `runTestsSynchronous` requires the **View Setup** user permission; the asynchronous path never needed it. A thrown sync error is classified by its structured `errorCode`, the same discipline that would apply to any typed platform error code: `INSUFFICIENT_ACCESS_OR_READONLY` and `INSUFFICIENT_ACCESS` mean the *capability* itself is missing, so they latch `syncTransportDisabled` on the adapter instance — every later single-class call for the rest of the campaign skips the synchronous attempt entirely, costing exactly one wasted round-trip total rather than one per group. Any other error (a lock contention, a transient 503, and the like) is treated as transient and the synchronous transport is retried on the next call. Either way the exact same payload falls back to the asynchronous transport, and the fallback call is issued *before* the reason is reported, so a throwing report callback can never preempt the fallback attempt itself. The reason is reported only the first time it happens, through a private reporting latch on the adapter instance, separate from the transport latch — `ApexTestRunner` carries no UI dependency of its own; it calls its own `onSyncFallback(error)` callback and nothing else. That callback is wired up once, in `src/adapter/org/orgEngine.ts`, to `ctx.notify({ kind: 'sync-transport-fallback', error })` — one of `EngineNotice`'s two members, the other being `type-resolution-degraded` (see [Repository Pattern — Adapter Layer](#repository-pattern--adapter-layer)) — and `run.ts` supplies `notify` as `notice => reportEngineNotice(notice, this.spinner, messages)` (ADR 093). `reportEngineNotice` (`src/service/engineNotice.ts`) is where the presentation lives: it uses `spinner.pause`, not the start/stop pair the rest of this service relies on (`stop()` no-ops when nothing is running, `start()` replaces the current task without stopping it, so that idiom would silently swallow a later "Original tests passed"), and it sanitizes and truncates the org-supplied reason — `renderOrgDetail`, bounded at 200 code points (`MAX_ORG_ERROR_DETAIL_LENGTH`) — the same discipline the rollback-failure cause uses, in the same module, before writing through the injected `OutputSink` rather than `process.stdout` directly. If an asynchronous retry itself throws, that error propagates untouched to the same classification path every async failure already goes through.
 
 **A synchronous compile failure is normalized, not thrown.** The synchronous resource represents a non-compiling test class as an ordinary HTTP 200 carrying a plain `Fail` row (`methodName: null`, `runTime: -1`, `summary.testsRan: 0`) — it never throws, so the fallback above cannot catch it. `runTestSynchronous` recognizes this exact fingerprint (row count, `methodName`, `runTime`, and both `summary` fields together) and rewrites the result into the `CompileFail` shape the asynchronous transport already produces for the same failure, so `partitionOutcomes` treats both transports identically. A partial match is left untouched — fail closed, so a real test failure is never mistaken for a compile skip.
 
@@ -702,15 +736,18 @@ Concrete mutators override:
 
 ### Repository Pattern — Adapter Layer
 
-Four repository classes isolate the org's Tooling API / `@salesforce/apex-node` surface.
+Six repository classes isolate the org's Tooling API / `@salesforce/apex-node` surface.
 They are internals of the org engine now (`src/adapter/org/`, ADR 084): nothing outside that
 directory imports them. `orgEngine.ts` (`createOrgEngine`) wires them into the port
 implementations `src/service/` and `src/commands/` actually depend on —
-`OrgApexSourceProvider` wraps `ApexClassRepository` + `ApexTestSuiteRepository`, and
-`OrgMutationTestBed` wraps `ApexClassRepository`, `ApexTestRunner`, and
-`ApexSettingsRepository` — and hands both, plus `OrgSObjectSchemaProvider`, to the rest of
-the codebase as one `EngineBundle` (see
-[Execution Ports](#execution-ports)).
+`OrgApexSourceProvider` wraps `ApexClassRepository` + `ApexTestSuiteRepository` +
+`EntityDefinitionRepository`, and `OrgMutationTestBed` wraps `ApexClassRepository`,
+`ApexTestRunner`, and `ApexSettingsRepository` — and hands both, plus
+`OrgSObjectSchemaProvider`, to the rest of the codebase as one `EngineBundle` (see
+[Execution Ports](#execution-ports)). `OrganizationRepository` is read directly by
+`orgEngine.ts` itself, once per run before the bundle is built — not wrapped by either
+provider, since both `OrgApexSourceProvider` and `OrgSObjectSchemaProvider` need the same
+org-namespace value.
 
 | Repository | API | Purpose |
 | --- | --- | --- |
@@ -718,11 +755,25 @@ the codebase as one `EngineBundle` (see
 | `ApexTestRunner` | @salesforce/apex-node | Test execution with/without coverage, synchronous or asynchronous by payload class count |
 | `ApexSettingsRepository` | Tooling API | Reads `IsAggregateCodeCoverageOnlyEnabled` to select the coverage strategy |
 | `ApexTestSuiteRepository` | Tooling API | Resolves ApexTestSuite names to member Apex test class names |
+| `EntityDefinitionRepository` | Tooling API | Resolves a `CustomObject` dependency row's developer name to its true `QualifiedApiName`, chunked at 200 names, `mapLimit`-bounded at 25 |
+| `OrganizationRepository` | REST API (plain query) | Reads `Organization.NamespacePrefix` once per run — the org's own namespace, threaded to every bare-alias decision |
 
-The fifth pre-port collaborator, SObject describe, has no repository behind it anymore:
+The seventh pre-port collaborator, SObject describe, has no repository behind it anymore:
 `OrgSObjectSchemaProvider` (`src/adapter/org/orgSObjectSchemaProvider.ts` — the renamed
 `SObjectDescribeRepository`) implements `SObjectSchemaProvider` directly against
 `Connection.describe`, with no intermediate class to wrap.
+
+**Describe failures are reported, not swallowed.** `OrgSObjectSchemaProvider.describe`
+collects every failure from its `mapLimit` batch and groups them by error message, so two
+genuinely different causes surface as two notices instead of one cause attributed arbitrarily
+to every failed name, and bounds the notice count at five — beyond that, later causes merge
+into one final notice that discloses how many were elided, rather than emitting one line per
+failed object in a large org. Each notice carries the affected names and the first `Error` for
+that cause, raised once the whole batch resolves, through the same `EngineNotice` kind
+(`type-resolution-degraded`) that `OrgApexSourceProvider` uses for an unresolved `CustomObject`
+row — "your types did not resolve" is one channel, not two. A single inaccessible object still
+degrades the run rather than aborting it: `describe` calls `notify` and moves on, exactly as a
+compile-time-unresolvable type does.
 
 ### Builder/Fluent API — TypeDiscoverer
 
@@ -793,13 +844,16 @@ Type-aware mutators need to understand Apex types to generate valid mutations (e
               ┌───────────────────┐
               │ TypeMatcher[]     │
               │                   │
-              │ ApexClassType     │──► matches(typeName)
-              │   Matcher         │    by dependency set
+              │ AliasTypeMatcher  │──► matches(typeName)
+              │  — one class,     │    case-folded lookup
+              │    twice:         │    in one alias map
               │                   │
-              │ SObjectType       │──► matches(typeName)
-              │   Matcher         │    by dependency set
-              │                   │──► populate() → describe()
-              │                   │──► getFieldType(obj, field)
+              │  apexClassMatcher │──► collect(typeName)
+              │   (no schema)     │    stores canonical apiName
+              │  sObjectMatcher   │──► populate()→describe()
+              │   (+ schema)      │    no-op if no schema
+              │                   │──► getFieldType(obj,fld)
+              │                   │    miss if no schema
               └─────────┬────────┘
                         ▼
               ┌───────────────────┐
@@ -811,6 +865,19 @@ Type-aware mutators need to understand Apex types to generate valid mutations (e
               │ → ResolvedType    │
               └───────────────────┘
 ```
+
+`AliasTypeMatcher` is the one concrete class behind the `TypeMatcher` interface, instantiated
+twice by `discoverTypes()` (`src/service/mutationTestingService.ts`) — `apexClassMatcher`
+with no schema, `sObjectMatcher` with `engine.schema` — registered into `TypeDiscoverer` in
+that order. Each instance builds one `alias.toLowerCase() → apiName` map from its
+`TypeName[]` in two passes: every `apiName` first, then every alias, skipping an alias whose
+key a canonical name already claims — a real `apiName` never loses to another type's alias.
+`matches` and `collect` are one case-folded lookup into that map; `collect` stores the
+canonical `apiName`, not the caller's spelling, so the array `populate()` hands to
+`describe()` is already the org's true names and case variants dedupe. On the schema-less
+instance, `populate()` and `getFieldType()` are present but inert (`schema?.…`), which is
+exactly what lets `TypeRegistry.resolveDottedExpression` and `TypeDiscoverer.analyzeFull`
+call both instances unconditionally without knowing which one carries a schema.
 
 ### Phase 2: Type Resolution at Mutation Time
 
@@ -854,6 +921,20 @@ Input typeName
     │
     └─ otherwise                              ──► VOID (conservative fallback)
 ```
+
+The `TypeMatcher.matches()` step folds case at exactly one boundary — the same place
+`classifyApexType`'s own primitive/list/set/map checks already fold. It has to: `typeDiscoverer`
+stores a variable's, parameter's, or field's type lower-cased, while the spelling collected
+into the matcher at parse time keeps its original case, so a type spelled `Mutation` at
+collect time is asked about as `mutation` at resolve time — a mismatch that touches every
+type in every org, including a same-namespace Apex class or a standard entity, not just a
+namespaced or foreign one. Folding at the matcher closes it without touching either store
+site, so `findVariableType`'s lower-cased return value stays exactly what mutators read today.
+`VOID` is still this ladder's fallback, and it is still the silent-degradation sink:
+`isNumericOperand`/`isNumericReturn` both go false for it, so type-aware mutators quietly
+decline. What changed is what can put a type there — a genuinely unresolved dependency,
+reported through `EngineNotice`, or a name nothing under mutation depends on — not a case or
+naming mismatch the source and the org actually agree on.
 
 ---
 
