@@ -162,6 +162,40 @@ describe('OrgApexSourceProvider', () => {
       expect(readByDeveloperNamesMock).toHaveBeenCalledWith(['ProbeObj'])
     })
 
+    // Organization.NamespacePrefix and EntityDefinition.NamespacePrefix are
+    // two distinct org-supplied values; nothing guarantees they agree on
+    // case, so the own-namespace comparison must not assume they do.
+    it("Given an EntityDefinition row's namespace differs from the org's own namespace only in case, When listing dependencies, Then sObjects still carries the bare alias", async () => {
+      // Arrange
+      const dependencies: MetadataComponentDependency[] = [
+        {
+          Id: 'dep1',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'ProbeObj',
+          RefMetadataComponentNamespace: ORG_NAMESPACE.toUpperCase(),
+        },
+      ]
+      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
+      readByDeveloperNamesMock.mockResolvedValueOnce([
+        {
+          DeveloperName: 'ProbeObj',
+          QualifiedApiName: 'NAMESPACED__ProbeObj__c',
+          NamespacePrefix: ORG_NAMESPACE.toUpperCase(),
+        },
+      ])
+
+      // Act
+      const result = await sut.listDependencies(apexClass)
+
+      // Assert
+      expect(result.sObjects).toEqual([
+        {
+          apiName: 'NAMESPACED__ProbeObj__c',
+          aliases: ['NAMESPACED__ProbeObj__c', 'ProbeObj__c'],
+        },
+      ])
+    })
+
     // The defect this whole change closes: a bare spelling is only legal
     // source for the org's OWN namespace, so a foreign package's object must
     // never mint one — unconditional minting is what let an org object and a
@@ -650,6 +684,34 @@ describe('OrgApexSourceProvider', () => {
         {
           apiName: 'namespaced.Mutation',
           aliases: ['namespaced.Mutation', 'Mutation'],
+        },
+      ])
+    })
+
+    // MetadataComponentDependency.RefMetadataComponentNamespace and
+    // Organization.NamespacePrefix are two distinct org-supplied values;
+    // nothing guarantees they agree on case, so the own-namespace comparison
+    // must not assume they do.
+    it("Given an ApexClass dependency's namespace differs from the org's own namespace only in case, When listing dependencies, Then apexClasses still carries the bare alias", async () => {
+      // Arrange
+      const dependencies: MetadataComponentDependency[] = [
+        {
+          Id: 'dep1',
+          RefMetadataComponentType: 'ApexClass',
+          RefMetadataComponentName: 'Mutation',
+          RefMetadataComponentNamespace: ORG_NAMESPACE.toUpperCase(),
+        },
+      ]
+      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
+
+      // Act
+      const result = await sut.listDependencies(apexClass)
+
+      // Assert
+      expect(result.apexClasses).toEqual([
+        {
+          apiName: 'NAMESPACED.Mutation',
+          aliases: ['NAMESPACED.Mutation', 'Mutation'],
         },
       ])
     })

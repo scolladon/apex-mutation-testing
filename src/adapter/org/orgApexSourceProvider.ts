@@ -33,6 +33,23 @@ const identityTypeName = (name: string): TypeName => ({
 const toError = (value: unknown): Error =>
   value instanceof Error ? value : new Error(String(value))
 
+// Case-folded before comparing: Organization.NamespacePrefix,
+// EntityDefinition.NamespacePrefix and
+// MetadataComponentDependency.RefMetadataComponentNamespace are three
+// distinct org-supplied values from three distinct sObjects, and nothing
+// establishes that they agree on case. bareFieldAlias in
+// orgSObjectSchemaProvider.ts already folds this same "is this namespace the
+// org's own?" question for the third of the three; folding here keeps both
+// uses in this file consistent with it instead of assuming, unstated, that
+// org-canonical casing agrees across sources.
+const foldedNamespace = (namespace: string | null): string | null =>
+  namespace === null ? null : namespace.toLowerCase()
+
+const isOwnNamespace = (
+  namespace: string | null,
+  orgNamespace: string | null
+): boolean => foldedNamespace(namespace) === foldedNamespace(orgNamespace)
+
 // A local class is a legitimate source spelling as-is. A managed-package
 // class uses the Apex dotted convention (`ns.Name`), unlike the `ns__Name`
 // object convention. The bare name is only ever a legal spelling for a class
@@ -50,7 +67,9 @@ const toApexClassTypeName = (
     return identityTypeName(name)
   }
   const apiName = `${namespace}.${name}`
-  const aliases = namespace === orgNamespace ? [apiName, name] : [apiName]
+  const aliases = isOwnNamespace(namespace, orgNamespace)
+    ? [apiName, name]
+    : [apiName]
   return { apiName, aliases }
 }
 
@@ -63,12 +82,19 @@ const toApexClassTypeName = (
 // blindly slicing a prefix off a name that does not carry it — which would
 // emit a mangled alias — this returns nothing when the qualified name does
 // not start with the row's own namespace either.
+//
+// No separate null/empty guard on namespacePrefix: isOwnNamespace already
+// answers false for a null/'' row against a real orgNamespace. The one case
+// it does not filter — a null/'' row against a null/'' (non-namespaced) org —
+// still resolves to `undefined` below, because the resulting prefix
+// (`${null}__` = "null__", `${''}__` = "__") is not a prefix any real
+// qualified api name carries.
 const bareObjectAlias = (
   qualifiedApiName: string,
   namespacePrefix: string | null,
   orgNamespace: string | null
 ): string | undefined => {
-  if (!namespacePrefix || namespacePrefix !== orgNamespace) {
+  if (!isOwnNamespace(namespacePrefix, orgNamespace)) {
     return undefined
   }
   const prefix = `${namespacePrefix}__`
