@@ -699,6 +699,91 @@ describe('apex mutation test run NUT', () => {
       expect(MutationTestingService).not.toHaveBeenCalled()
     })
 
+    it('When the not-mutable state carries control characters, Then error.apexClassNotMutable is created with the state sanitized', async () => {
+      // Arrange — a leading unit separator (0x1F) and a trailing DEL (0x7F):
+      // ManageableState is org-supplied and reaches the aer local backend
+      // unconstrained by any grammar, unlike the class name.
+      vi.mocked(ApexClassValidator).mockImplementation(
+        class {
+          validate = vi
+            .fn()
+            .mockRejectedValue(
+              new ApexClassNotMutableError('InvalidClass', [
+                'installed',
+              ]) as never
+            )
+          assessPerimeter = vi
+            .fn()
+            .mockResolvedValue({ skipped: [], resolutions: [] } as never)
+        } as unknown as typeof ApexClassValidator
+      )
+      const sut = buildCommand(['-c', 'InvalidClass', '-t', 'MyClassTest'])
+
+      // Act & Assert
+      await expect(sut.run()).rejects.toThrow()
+      expect(mockMessages.createError).toHaveBeenCalledWith(
+        'error.apexClassNotMutable',
+        ['InvalidClass', 'installed']
+      )
+    })
+
+    it('When an ambiguous spelling carries control characters, Then error.apexClassAmbiguous is created with the spelling sanitized', async () => {
+      // Arrange — a leading DEL (0x7F): NamespacePrefix is org-supplied and
+      // reaches the aer local backend unconstrained by any grammar.
+      vi.mocked(ApexClassValidator).mockImplementation(
+        class {
+          validate = vi
+            .fn()
+            .mockRejectedValue(
+              new ApexClassAmbiguousError('Argument', [
+                'mockery.Argument',
+                'acme.Argument',
+              ]) as never
+            )
+          assessPerimeter = vi
+            .fn()
+            .mockResolvedValue({ skipped: [], resolutions: [] } as never)
+        } as unknown as typeof ApexClassValidator
+      )
+      const sut = buildCommand(['-c', 'Argument', '-t', 'MyClassTest'])
+
+      // Act & Assert
+      await expect(sut.run()).rejects.toThrow()
+      expect(mockMessages.createError).toHaveBeenCalledWith(
+        'error.apexClassAmbiguous',
+        ['Argument', 'mockery.Argument, acme.Argument']
+      )
+    })
+
+    it('When the unqualified spelling carries control characters, Then error.apexClassUnqualified is created with the spelling sanitized', async () => {
+      // Arrange — a leading right-to-left override (U+202E): NamespacePrefix
+      // is org-supplied and reaches the aer local backend unconstrained by
+      // any grammar.
+      vi.mocked(ApexClassValidator).mockImplementation(
+        class {
+          validate = vi
+            .fn()
+            .mockRejectedValue(
+              new ApexClassUnqualifiedError(
+                'Argument',
+                '‮mockery.Argument'
+              ) as never
+            )
+          assessPerimeter = vi
+            .fn()
+            .mockResolvedValue({ skipped: [], resolutions: [] } as never)
+        } as unknown as typeof ApexClassValidator
+      )
+      const sut = buildCommand(['-c', 'Argument', '-t', 'MyClassTest'])
+
+      // Act & Assert
+      await expect(sut.run()).rejects.toThrow()
+      expect(mockMessages.createError).toHaveBeenCalledWith(
+        'error.apexClassUnqualified',
+        ['Argument', 'mockery.Argument']
+      )
+    })
+
     it('When validate rejects with a non-ApexClassNotFoundError, Then it is rethrown untouched', async () => {
       // Arrange
       vi.mocked(ApexClassValidator).mockImplementation(

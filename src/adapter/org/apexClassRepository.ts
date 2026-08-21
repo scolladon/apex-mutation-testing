@@ -120,7 +120,14 @@ export class ApexClassRepository {
   // collapsing the very distinction a discriminated verdict exists to
   // preserve. Classification happens in memory, over every candidate row
   // this bare name returns across every namespace.
+  // Guards the sink rather than trusting a caller's name to always be
+  // truthy: jsforce drops a predicate whose value is undefined, which would
+  // turn this into an unfiltered org-wide read — the first mutable row of
+  // the whole org, handed back as if it were the requested class.
   public async readCandidates(name: string): Promise<ApexClassCandidate[]> {
+    if (!name) {
+      return []
+    }
     return (await this.connection.tooling
       .sobject('ApexClass')
       .find({ Name: name }, CANDIDATE_PROJECTION)
@@ -132,9 +139,17 @@ export class ApexClassRepository {
   // back as the literal string "(hidden)", but that hazard cannot reach the
   // parser here: the row count is bounded to one per namespace and an
   // `installed` row is excluded by state before any body is used.
+  // Guards the sink rather than trusting a caller's name to always be
+  // truthy: jsforce drops a predicate whose value is undefined, which would
+  // turn this into an unfiltered org-wide read — the first mutable row of
+  // the whole org, handed back (body included) as if it were the requested
+  // class.
   public async readBodyCandidates(
     name: string
   ): Promise<ApexClassBodyCandidate[]> {
+    if (!name) {
+      return []
+    }
     return (await this.connection.tooling
       .sobject('ApexClass')
       .find({ Name: name }, BODY_CANDIDATE_PROJECTION)

@@ -397,7 +397,6 @@ describe('MutationTestingService — golden UI-call sequence', () => {
           tests: [
             {
               classId: 'TestClassTest',
-              className: 'TestClassTest',
               methodName: 'testMethodA',
               outcome: 'Fail',
             },
@@ -451,7 +450,6 @@ describe('MutationTestingService — golden UI-call sequence', () => {
           tests: [
             {
               classId: 'TestClassTest',
-              className: 'TestClassTest',
               methodName: 'testMethodA',
               outcome: 'Fail',
             },
@@ -505,13 +503,11 @@ describe('MutationTestingService — golden UI-call sequence', () => {
           tests: [
             {
               classId: 'TestClassTest',
-              className: 'TestClassTest',
               methodName: 'testMethodA',
               outcome: 'Fail',
             },
             {
               classId: 'TestClassTest',
-              className: 'TestClassTest',
               methodName: 'testMethodB',
               outcome: 'Pass',
             },
@@ -657,7 +653,6 @@ describe('MutationTestingService — golden UI-call sequence', () => {
         compileFailures: [
           {
             classId: 'TestClassTest',
-            className: 'TestClassTest',
             message: 'boom',
           },
         ],
@@ -706,7 +701,6 @@ describe('MutationTestingService — golden UI-call sequence', () => {
         compileFailures: [
           {
             classId: 'TestClassTest',
-            className: 'TestClassTest',
             message: 'boom',
           },
         ],

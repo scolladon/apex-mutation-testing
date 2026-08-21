@@ -95,6 +95,18 @@ describe('ApexClassRepository', () => {
       expect(conditions).not.toHaveProperty('NamespacePrefix')
       expect(fields).toEqual(['NamespacePrefix', 'ManageableState'])
     })
+
+    it('Given a falsy name, When reading ApexClass candidates, Then it resolves empty without issuing an unfiltered find', async () => {
+      // Arrange — jsforce drops a predicate whose value is undefined, which
+      // would otherwise turn this into an unfiltered org-wide ApexClass read.
+
+      // Act
+      const result = await sut.readCandidates(undefined as unknown as string)
+
+      // Assert
+      expect(result).toEqual([])
+      expect(findArgsMock).not.toHaveBeenCalled()
+    })
   })
 
   describe('when reading ApexClass body candidates', () => {
@@ -126,6 +138,21 @@ describe('ApexClassRepository', () => {
         'NamespacePrefix',
         'ManageableState',
       ])
+    })
+
+    it('Given a falsy name, When reading ApexClass body candidates, Then it resolves empty without issuing an unfiltered find', async () => {
+      // Arrange — jsforce drops a predicate whose value is undefined, which
+      // would otherwise turn this into an unfiltered org-wide ApexClass read
+      // that could hand back an arbitrary class body.
+
+      // Act
+      const result = await sut.readBodyCandidates(
+        undefined as unknown as string
+      )
+
+      // Assert
+      expect(result).toEqual([])
+      expect(findArgsMock).not.toHaveBeenCalled()
     })
   })
 

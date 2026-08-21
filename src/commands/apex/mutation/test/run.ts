@@ -14,7 +14,10 @@ import {
 import { ConfigReader } from '../../../../service/configReader.js'
 import { reportEngineNotice } from '../../../../service/engineNotice.js'
 import { MutationTestingService } from '../../../../service/mutationTestingService.js'
-import { formatSkippedTestClasses } from '../../../../service/skippedTestClassMessage.js'
+import {
+  formatSkippedTestClasses,
+  sanitizeForDisplay,
+} from '../../../../service/skippedTestClassMessage.js'
 import { TestSuiteResolver } from '../../../../service/testSuiteResolver.js'
 import { ApexMutationParameter } from '../../../../type/ApexMutationParameter.js'
 import type { ApexMutationTestResult as MutationProcessResult } from '../../../../type/ApexMutationTestResult.js'
@@ -36,7 +39,12 @@ export type ApexMutationTestResult = {
 
 // Every rejection from validate/assessPerimeter passes through here.
 // ApexClassNotFoundError renders as the command's own error; anything else
-// is rethrown untouched — no rejection reason is swallowed.
+// is rethrown untouched — no rejection reason is swallowed. className is
+// user-typed and pinned to the identifier grammar before any org call, so it
+// needs no sanitizing; states and spellings embed org-supplied
+// ManageableState/NamespacePrefix values, unconstrained by any grammar on
+// the aer local backend, so each is sanitized the same way
+// skippedTestClassMessage.ts sanitizes org-supplied text.
 function renderTargetClassError(error: unknown): never {
   if (error instanceof ApexClassNotFoundError) {
     throw messages.createError('error.apexClassNotFound', [error.className])
@@ -44,19 +52,19 @@ function renderTargetClassError(error: unknown): never {
   if (error instanceof ApexClassNotMutableError) {
     throw messages.createError('error.apexClassNotMutable', [
       error.className,
-      error.states.join(', '),
+      error.states.map(sanitizeForDisplay).join(', '),
     ])
   }
   if (error instanceof ApexClassAmbiguousError) {
     throw messages.createError('error.apexClassAmbiguous', [
       error.className,
-      error.spellings.join(', '),
+      error.spellings.map(sanitizeForDisplay).join(', '),
     ])
   }
   if (error instanceof ApexClassUnqualifiedError) {
     throw messages.createError('error.apexClassUnqualified', [
       error.className,
-      error.spelling,
+      sanitizeForDisplay(error.spelling),
     ])
   }
   throw error

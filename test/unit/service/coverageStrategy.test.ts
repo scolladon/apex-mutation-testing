@@ -4,12 +4,6 @@ import {
 } from '../../../src/service/coverageStrategy.js'
 import type { ApexTestRunResult } from '../../../src/type/ApexTestRunResult.js'
 
-const declaringClass = {
-  name: 'ApexClassTest',
-  namespacePrefix: '',
-  fullName: 'ApexClassTest',
-}
-
 // 18-character org Ids, pinned equal in width on both namespaced and
 // non-namespaced orgs. TARGET_CLASS_ID and FOREIGN_CLASS_ID differ in more
 // than case so a fixture using both can tell a real join from a vacuous one.
@@ -21,9 +15,9 @@ const CASE_FOLDED_CLASS_ID = '01pjv000000ee9zqaw'
 
 // The declaring TEST class's own id — a different fact from the coverage
 // rows' classId above (that identifies the class UNDER mutation). Deliberately
-// not derivable from declaringClass.fullName/'FooTest'/'BarTest', so a
-// fixture asserting on the qualified TestMethodId can tell a real id-based
-// qualifier from one that silently still reads the display name.
+// not derivable from 'ApexClassTest'/'FooTest'/'BarTest', so a fixture
+// asserting on the qualified TestMethodId can tell a real id-based qualifier
+// from one that silently still reads the display name.
 const DECLARING_CLASS_ID = '01pjV000000EEw1QAG'
 const FOO_DECLARING_CLASS_ID = '01pjV000000EEw2QAG'
 const BAR_DECLARING_CLASS_ID = '01pjV000000EEw3QAG'
@@ -45,7 +39,6 @@ describe('PerTestCoverageStrategy', () => {
             {
               classId: DECLARING_CLASS_ID,
               methodName: 'testMethodA',
-              className: declaringClass.fullName,
               coverage: [
                 {
                   classId: TARGET_CLASS_ID,
@@ -103,7 +96,6 @@ describe('PerTestCoverageStrategy', () => {
             {
               classId: DECLARING_CLASS_ID,
               methodName: 'testMethod',
-              className: declaringClass.fullName,
               coverage: null,
             },
           ],
@@ -125,7 +117,6 @@ describe('PerTestCoverageStrategy', () => {
             {
               classId: DECLARING_CLASS_ID,
               methodName: 'testMethod',
-              className: declaringClass.fullName,
               coverage: [
                 {
                   classId: FOREIGN_CLASS_ID,
@@ -153,7 +144,6 @@ describe('PerTestCoverageStrategy', () => {
             {
               classId: DECLARING_CLASS_ID,
               methodName: 'testRun',
-              className: declaringClass.fullName,
               coverage: [
                 {
                   classId: TARGET_CLASS_ID,
@@ -192,7 +182,6 @@ describe('PerTestCoverageStrategy', () => {
             {
               classId: DECLARING_CLASS_ID,
               methodName: 't',
-              className: declaringClass.fullName,
               coverage: [
                 {
                   classId: CASE_FOLDED_CLASS_ID,
@@ -220,7 +209,6 @@ describe('PerTestCoverageStrategy', () => {
             {
               classId: DECLARING_CLASS_ID,
               methodName: 'testMethod',
-              className: declaringClass.fullName,
               coverage: [
                 {
                   classId: TARGET_CLASS_ID,
@@ -248,7 +236,6 @@ describe('PerTestCoverageStrategy', () => {
             {
               classId: DECLARING_CLASS_ID,
               methodName: 'testMethod',
-              className: declaringClass.fullName,
               coverage: [
                 {
                   classId: TARGET_CLASS_ID,
@@ -276,7 +263,6 @@ describe('PerTestCoverageStrategy', () => {
             {
               classId: DECLARING_CLASS_ID,
               methodName: 'testMethodA',
-              className: declaringClass.fullName,
               coverage: [
                 {
                   classId: TARGET_CLASS_ID,
@@ -288,7 +274,6 @@ describe('PerTestCoverageStrategy', () => {
             {
               classId: DECLARING_CLASS_ID,
               methodName: 'testMethodB',
-              className: declaringClass.fullName,
               coverage: [
                 {
                   classId: TARGET_CLASS_ID,
@@ -334,7 +319,6 @@ describe('PerTestCoverageStrategy', () => {
             {
               classId: FOO_DECLARING_CLASS_ID,
               methodName: 'testA',
-              className: 'FooTest',
               coverage: [
                 {
                   classId: TARGET_CLASS_ID,
@@ -346,7 +330,6 @@ describe('PerTestCoverageStrategy', () => {
             {
               classId: BAR_DECLARING_CLASS_ID,
               methodName: 'testB',
-              className: 'BarTest',
               coverage: [
                 {
                   classId: TARGET_CLASS_ID,
@@ -384,7 +367,6 @@ describe('PerTestCoverageStrategy', () => {
             {
               classId: FOO_DECLARING_CLASS_ID,
               methodName: 'testA',
-              className: 'FooTest',
               coverage: [
                 {
                   classId: TARGET_CLASS_ID,
@@ -396,7 +378,6 @@ describe('PerTestCoverageStrategy', () => {
             {
               classId: BAR_DECLARING_CLASS_ID,
               methodName: 'testA',
-              className: 'BarTest',
               coverage: [
                 {
                   classId: TARGET_CLASS_ID,
@@ -423,15 +404,13 @@ describe('PerTestCoverageStrategy', () => {
 
     describe('given the declaring class is namespaced', () => {
       it('then should qualify with the class id, not the namespace-qualified display name', () => {
-        // Arrange — a namespaced org can report a namespace-qualified
-        // className on the row; the qualifier must still key off classId,
-        // which carries no namespace of its own.
+        // Arrange — the qualifier must key off classId, which carries no
+        // namespace of its own, even for a namespaced declaring class.
         const mockTestResult = {
           tests: [
             {
               classId: NS_FOO_DECLARING_CLASS_ID,
               methodName: 'testA',
-              className: 'ns.FooTest',
               coverage: [
                 {
                   classId: TARGET_CLASS_ID,
@@ -478,12 +457,10 @@ describe('AggregateCoverageStrategy', () => {
             {
               classId: DECLARING_CLASS_ID,
               methodName: 'testMethodA',
-              className: declaringClass.fullName,
             },
             {
               classId: DECLARING_CLASS_ID,
               methodName: 'testMethodB',
-              className: declaringClass.fullName,
             },
           ],
           classCoverage: [{ classId: TARGET_CLASS_ID, coveredLines: [10, 20] }],
@@ -522,7 +499,6 @@ describe('AggregateCoverageStrategy', () => {
             {
               classId: DECLARING_CLASS_ID,
               methodName: 'testMethodA',
-              className: declaringClass.fullName,
             },
           ],
           classCoverage: [{ classId: FOREIGN_CLASS_ID, coveredLines: [7, 8] }],
@@ -544,7 +520,6 @@ describe('AggregateCoverageStrategy', () => {
             {
               classId: DECLARING_CLASS_ID,
               methodName: 'testMethodA',
-              className: declaringClass.fullName,
             },
           ],
           classCoverage: [
@@ -588,7 +563,6 @@ describe('AggregateCoverageStrategy', () => {
             {
               classId: DECLARING_CLASS_ID,
               methodName: 'testMethodA',
-              className: declaringClass.fullName,
             },
           ],
           classCoverage: [{ classId: TARGET_CLASS_ID, coveredLines: null }],
@@ -610,7 +584,6 @@ describe('AggregateCoverageStrategy', () => {
             {
               classId: DECLARING_CLASS_ID,
               methodName: 'testMethodA',
-              className: declaringClass.fullName,
             },
           ],
         } as unknown as ApexTestRunResult
@@ -631,7 +604,6 @@ describe('AggregateCoverageStrategy', () => {
             {
               classId: DECLARING_CLASS_ID,
               methodName: 't',
-              className: declaringClass.fullName,
             },
           ],
           classCoverage: [
@@ -655,12 +627,10 @@ describe('AggregateCoverageStrategy', () => {
             {
               classId: FOO_DECLARING_CLASS_ID,
               methodName: 'testA',
-              className: 'FooTest',
             },
             {
               classId: BAR_DECLARING_CLASS_ID,
               methodName: 'testB',
-              className: 'BarTest',
             },
           ],
           classCoverage: [{ classId: TARGET_CLASS_ID, coveredLines: [10] }],

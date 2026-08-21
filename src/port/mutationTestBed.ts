@@ -21,7 +21,6 @@ export type MutantVerdict =
 
 export interface BaselineCompileFailure {
   classId: string
-  className: string
   message: string
 }
 

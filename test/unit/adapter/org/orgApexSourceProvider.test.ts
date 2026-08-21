@@ -4,6 +4,12 @@ import type { EntityDefinitionRepository } from '../../../../src/adapter/org/ent
 import type { MetadataComponentDependency } from '../../../../src/adapter/org/MetadataComponentDependency.js'
 import { OrgApexSourceProvider } from '../../../../src/adapter/org/orgApexSourceProvider.js'
 import type { EngineNotify } from '../../../../src/port/executionEngine.js'
+import {
+  ApexClassAmbiguousError,
+  ApexClassNotFoundError,
+  ApexClassNotMutableError,
+  ApexClassUnqualifiedError,
+} from '../../../../src/service/apexClassValidator.js'
 import type { ApexClass } from '../../../../src/type/ApexClass.js'
 
 // The org's own namespace, pinned to a single value throughout this suite so
@@ -95,6 +101,24 @@ describe('OrgApexSourceProvider', () => {
       expect(result).toEqual({
         kind: 'not-mutable',
         states: ['installed', 'none reported'],
+      })
+    })
+
+    it('Given three non-mutable candidates all reporting the same state, When assessTargetClass, Then resolves not-mutable with the state deduped to a single entry', async () => {
+      // Arrange
+      readCandidatesMock.mockResolvedValueOnce([
+        { NamespacePrefix: 'devedapp', ManageableState: 'installed' },
+        { NamespacePrefix: 'acme', ManageableState: 'installed' },
+        { NamespacePrefix: 'mockery', ManageableState: 'installed' },
+      ])
+
+      // Act
+      const result = await sut.assessTargetClass('Argument')
+
+      // Assert — one entry, not one per row
+      expect(result).toEqual({
+        kind: 'not-mutable',
+        states: ['installed'],
       })
     })
 
@@ -253,59 +277,95 @@ describe('OrgApexSourceProvider', () => {
       expect(readBodyCandidatesMock).toHaveBeenCalledWith('Argument')
     })
 
-    it.each([
-      ['not-found', []],
-      [
-        'not-mutable',
-        [
-          {
-            Id: '1',
-            Body: '(hidden)',
-            NamespacePrefix: 'devedapp',
-            ManageableState: 'installed',
-          },
-        ],
-      ],
-      [
-        'ambiguous',
-        [
-          {
-            Id: '1',
-            Body: 'class Argument {}',
-            NamespacePrefix: 'mockery',
-            ManageableState: 'installedEditable',
-          },
-          {
-            Id: '2',
-            Body: 'class Argument {}',
-            NamespacePrefix: 'acme',
-            ManageableState: 'installedEditable',
-          },
-        ],
-      ],
-      [
-        'unqualified',
-        [
-          {
-            Id: '1',
-            Body: 'class Argument {}',
-            NamespacePrefix: 'mockery',
-            ManageableState: 'installedEditable',
-          },
-        ],
-      ],
-    ])(
-      'Given a %s selection, When readClass, Then rejects naming the class and the verdict kind',
-      async (kind, candidates) => {
-        // Arrange
-        readBodyCandidatesMock.mockResolvedValueOnce(candidates)
+    it('Given no candidate rows, When readClass, Then rejects with ApexClassNotFoundError', async () => {
+      // Arrange
+      readBodyCandidatesMock.mockResolvedValue([])
 
-        // Act & Assert
-        await expect(sut.readClass('Argument')).rejects.toThrow(
-          `Apex class 'Argument' cannot be read for mutation (${kind})`
-        )
-      }
-    )
+      // Act
+      const rejection = sut.readClass('Argument')
+
+      // Assert — the same typed error apexClassValidator.ts throws for the
+      // identical condition, not a raw Error naming the verdict kind
+      await expect(rejection).rejects.toThrow(ApexClassNotFoundError)
+      await expect(rejection).rejects.toThrow("Apex class 'Argument' not found")
+    })
+
+    it('Given only non-mutable candidates, When readClass, Then rejects with ApexClassNotMutableError carrying the deduped states', async () => {
+      // Arrange — two rows share one ManageableState, pinning the same
+      // dedup readClass shares with assessTargetClass
+      readBodyCandidatesMock.mockResolvedValueOnce([
+        {
+          Id: '1',
+          Body: '(hidden)',
+          NamespacePrefix: 'devedapp',
+          ManageableState: 'installed',
+        },
+        {
+          Id: '2',
+          Body: '(hidden)',
+          NamespacePrefix: 'acme',
+          ManageableState: 'installed',
+        },
+      ])
+
+      // Act
+      const rejection = sut.readClass('Argument')
+
+      // Assert
+      await expect(rejection).rejects.toThrow(ApexClassNotMutableError)
+      await expect(rejection).rejects.toThrow(
+        "Apex class 'Argument' is not modifiable on this org"
+      )
+      await expect(rejection).rejects.toMatchObject({ states: ['installed'] })
+    })
+
+    it('Given two competing mutable candidates in foreign namespaces, When readClass, Then rejects with ApexClassAmbiguousError carrying both qualified spellings', async () => {
+      // Arrange
+      readBodyCandidatesMock.mockResolvedValueOnce([
+        {
+          Id: '1',
+          Body: 'class Argument {}',
+          NamespacePrefix: 'mockery',
+          ManageableState: 'installedEditable',
+        },
+        {
+          Id: '2',
+          Body: 'class Argument {}',
+          NamespacePrefix: 'acme',
+          ManageableState: 'installedEditable',
+        },
+      ])
+
+      // Act
+      const rejection = sut.readClass('Argument')
+
+      // Assert
+      await expect(rejection).rejects.toThrow(ApexClassAmbiguousError)
+      await expect(rejection).rejects.toMatchObject({
+        spellings: ['mockery.Argument', 'acme.Argument'],
+      })
+    })
+
+    it('Given a single mutable candidate in a foreign namespace, When readClass is queried bare, Then rejects with ApexClassUnqualifiedError naming the qualified spelling', async () => {
+      // Arrange
+      readBodyCandidatesMock.mockResolvedValueOnce([
+        {
+          Id: '1',
+          Body: 'class Argument {}',
+          NamespacePrefix: 'mockery',
+          ManageableState: 'installedEditable',
+        },
+      ])
+
+      // Act
+      const rejection = sut.readClass('Argument')
+
+      // Assert
+      await expect(rejection).rejects.toThrow(ApexClassUnqualifiedError)
+      await expect(rejection).rejects.toMatchObject({
+        spelling: 'mockery.Argument',
+      })
+    })
   })
 
   describe('listDependencies', () => {

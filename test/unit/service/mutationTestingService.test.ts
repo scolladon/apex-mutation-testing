@@ -274,7 +274,6 @@ describe('MutationTestingService', () => {
             compileFailures: [
               {
                 classId: 'TestClassTest',
-                className: 'TestClassTest',
                 message: 'boom',
               },
             ],
@@ -1425,7 +1424,6 @@ describe('MutationTestingService', () => {
             compileFailures: [
               {
                 classId: 'BrokenTest',
-                className: 'BrokenTest',
                 message: 'Invalid type: Dep at line 3 column 5',
               },
             ],
@@ -1454,7 +1452,6 @@ describe('MutationTestingService', () => {
             compileFailures: [
               {
                 classId: 'BrokenTest',
-                className: 'BrokenTest',
                 message: 'Invalid type: Dep at line 3 column 5',
               },
             ],
@@ -1483,9 +1480,7 @@ describe('MutationTestingService', () => {
         mockCompilingAdapters()
         engine.testBed = fakeTestBed(
           baselineResult({
-            compileFailures: [
-              { classId: 'FooTest', className: 'FooTest', message: 'boom' },
-            ],
+            compileFailures: [{ classId: 'FooTest', message: 'boom' }],
             testMethodsPerLine: new Map([[1, new Set(['GoodTest.testA'])]]),
           })
         )
@@ -1532,7 +1527,6 @@ describe('MutationTestingService', () => {
             compileFailures: [
               {
                 classId: 'BrokenTest',
-                className: 'BrokenTest',
                 message: 'Invalid type: Dep at line 3 column 5',
               },
             ],
@@ -1563,7 +1557,6 @@ describe('MutationTestingService', () => {
             compileFailures: [
               {
                 classId: 'BrokenTest',
-                className: 'BrokenTest',
                 message: 'Invalid type: Dep at line 3 column 5',
               },
             ],
@@ -1593,8 +1586,8 @@ describe('MutationTestingService', () => {
           baselineResult({
             testsRan: 2,
             compileFailures: [
-              { classId: 'FooTest', className: 'FooTest', message: 'boom one' },
-              { classId: 'BarTest', className: 'BarTest', message: 'boom two' },
+              { classId: 'FooTest', message: 'boom one' },
+              { classId: 'BarTest', message: 'boom two' },
             ],
             testMethodsPerLine: new Map(),
           })
@@ -1661,7 +1654,6 @@ describe('MutationTestingService', () => {
             compileFailures: [
               {
                 classId: 'BrokenTest',
-                className: 'BrokenTest',
                 message: 'boom',
               },
             ],
@@ -1708,7 +1700,6 @@ describe('MutationTestingService', () => {
             compileFailures: [
               {
                 classId: 'BrokenTest',
-                className: 'BrokenTest',
                 message: 'boom',
               },
             ],
@@ -1743,7 +1734,6 @@ describe('MutationTestingService', () => {
             compileFailures: [
               {
                 classId: 'BrokenTest',
-                className: 'BrokenTest',
                 message: 'boom',
               },
             ],
@@ -1772,7 +1762,6 @@ describe('MutationTestingService', () => {
             compileFailures: [
               {
                 classId: CLASS_ID_FOREIGN,
-                className: 'mockery.Argument',
                 message: 'boom',
               },
             ],
@@ -1840,7 +1829,6 @@ describe('MutationTestingService', () => {
             compileFailures: [
               {
                 classId: 'UnresolvedClassId',
-                className: 'GhostTest',
                 message: 'boom',
               },
             ],
@@ -4005,7 +3993,6 @@ describe('MutationTestingService', () => {
             compileFailures: [
               {
                 classId: 'TestClassTest',
-                className: 'TestClassTest',
                 message: 'Invalid type: Foo',
               },
             ],
@@ -4340,7 +4327,6 @@ describe('MutationTestingService', () => {
             tests: [
               {
                 classId: 'TestClassTest',
-                className: 'TestClassTest',
                 methodName: 'testMethodA',
                 outcome: 'Fail',
               },
@@ -4600,13 +4586,11 @@ describe('MutationTestingService', () => {
             tests: [
               {
                 classId: 'FooTest',
-                className: 'FooTest',
                 methodName: 'testA',
                 outcome: 'Pass',
               },
               {
                 classId: 'BarTest',
-                className: 'BarTest',
                 methodName: 'testA',
                 outcome: 'Fail',
               },
@@ -4691,7 +4675,6 @@ describe('MutationTestingService', () => {
                 tests: [
                   {
                     classId: 'FooTest',
-                    className: 'FooTest',
                     methodName: 'testA',
                     outcome: 'Pass',
                   },
@@ -4708,7 +4691,6 @@ describe('MutationTestingService', () => {
                 tests: [
                   {
                     classId: 'FooTest',
-                    className: 'FooTest',
                     methodName: 'testA',
                     outcome: 'Pass',
                   },
@@ -4726,7 +4708,6 @@ describe('MutationTestingService', () => {
               tests: [
                 {
                   classId: 'BarTest',
-                  className: 'BarTest',
                   methodName: 'testA',
                   outcome: 'Pass',
                 },
@@ -4802,13 +4783,11 @@ describe('MutationTestingService', () => {
             tests: [
               {
                 classId: 'FooTest',
-                className: 'FooTest',
                 methodName: 'testA',
                 outcome: 'Pass',
               },
               {
                 classId: 'BarTest',
-                className: 'BarTest',
                 methodName: 'testA',
                 outcome: 'Pass',
               },
@@ -4866,7 +4845,6 @@ describe('MutationTestingService', () => {
             tests: [
               {
                 classId: 'FooTest',
-                className: 'FooTest',
                 methodName: 'testA',
                 outcome: 'Fail',
               },
@@ -5082,13 +5060,11 @@ describe('MutationTestingService', () => {
                 {
                   methodName: 'testA',
                   classId: 'TestClassTest',
-                  className: 'TestClassTest',
                   outcome: 'Pass',
                 },
                 {
                   methodName: 'testB',
                   classId: 'TestClassTest',
-                  className: 'TestClassTest',
                   outcome: 'Pass',
                 },
               ],
@@ -5163,13 +5139,11 @@ describe('MutationTestingService', () => {
               {
                 methodName: 'testA',
                 classId: 'TestClassTest',
-                className: 'TestClassTest',
                 outcome: 'Pass',
               },
               {
                 methodName: 'testB',
                 classId: 'TestClassTest',
-                className: 'TestClassTest',
                 outcome: 'Pass',
               },
             ],
@@ -5204,13 +5178,11 @@ describe('MutationTestingService', () => {
                 {
                   methodName: 'testA',
                   classId: 'TestClassTest',
-                  className: 'TestClassTest',
                   outcome: 'Pass',
                 },
                 {
                   methodName: 'testB',
                   classId: 'TestClassTest',
-                  className: 'TestClassTest',
                   outcome: 'Fail',
                 },
               ],
@@ -5248,7 +5220,6 @@ describe('MutationTestingService', () => {
                 {
                   methodName: 'testA',
                   classId: 'TestClassTest',
-                  className: 'TestClassTest',
                   outcome: 'Pass',
                 },
               ],
@@ -5278,7 +5249,6 @@ describe('MutationTestingService', () => {
               {
                 methodName: 'testA',
                 classId: 'TestClassTest',
-                className: 'TestClassTest',
                 outcome: 'Pass',
               },
             ],

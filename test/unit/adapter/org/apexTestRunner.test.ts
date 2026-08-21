@@ -42,7 +42,6 @@ const mappedTest = (row: {
   }>
 }) => ({
   classId: row.apexClass.id,
-  className: row.apexClass.name,
   methodName: row.methodName,
   outcome: row.outcome,
   coverage: row.perClassCoverage?.map(mappedCoverage),
@@ -76,7 +75,7 @@ describe('ApexTestRunner', () => {
 
   describe('class identity vs display name', () => {
     describe('given a Fail row whose fullName spelling differs from its Pass-row sibling', () => {
-      it('then should read classId and className from the id and bare name, never from fullName', async () => {
+      it('then should read classId from the id, never from fullName', async () => {
         // Arrange — the id, the bare name and fullName all differ from one
         // another, so this fixture can tell the new mechanism apart from
         // the one it replaces
@@ -112,10 +111,10 @@ describe('ApexTestRunner', () => {
     })
 
     describe('given the same class reported across a Pass row and a Fail row with different fullName spellings', () => {
-      it('then should map both rows to the identical classId and className', async () => {
+      it('then should map both rows to the identical classId', async () => {
         // Arrange — apex-node's synchronous transport picks its namespace
         // separator by outcome, so fullName varies per row for one class;
-        // classId and className must not
+        // classId must not
         const passRow = {
           apexClass: {
             id: PROBE_CLASS_ID,
@@ -164,7 +163,7 @@ describe('ApexTestRunner', () => {
     })
 
     describe('given two CompileFail rows for one class whose fullName spelling differs by outcome but whose apexClass.id agrees', () => {
-      it('then should dedupe into one BaselineCompileFailure carrying the classId and bare className', async () => {
+      it('then should dedupe into one BaselineCompileFailure carrying the classId', async () => {
         // Arrange — a two-class perimeter stays on the asynchronous
         // transport
         const firstCompileRow = {
@@ -209,7 +208,6 @@ describe('ApexTestRunner', () => {
         expect(result.compileFailures).toEqual([
           {
             classId: PROBE_CLASS_ID,
-            className: 'ProbeFailTest',
             message: 'first diagnosis',
           },
         ])
@@ -270,7 +268,7 @@ describe('ApexTestRunner', () => {
     })
 
     describe('given PerClassCoverage and CodeCoverageResult rows for the covered class', () => {
-      it('then should map both to carry classId alongside className', async () => {
+      it('then should map both to carry classId', async () => {
         // Arrange — a single class routes through the synchronous transport
         const passRow = {
           apexClass: { id: TEST_CLASS_ID, name: 'MutationTest' },
@@ -558,7 +556,6 @@ describe('ApexTestRunner', () => {
         expect(result.compileFailures).toEqual([
           {
             classId: 'BrokenTestId',
-            className: 'BrokenTest',
             message: 'Invalid type: AmtProbeDep at line 3 column 5',
           },
         ])
@@ -664,8 +661,56 @@ describe('ApexTestRunner', () => {
         expect(result.compileFailures).toEqual([
           {
             classId: 'BrokenTestId',
-            className: 'BrokenTest',
             message: 'Invalid type: AmtProbeDep at line 3 column 5',
+          },
+        ])
+        expect(runTestAsynchronousMock).not.toHaveBeenCalled()
+      })
+
+      it('then should keep both CompileFail rows when they share a name but carry different class ids', async () => {
+        // Arrange — a local class and a mockery.-prefixed class can share
+        // the same bare name while remaining two distinct classes; only the
+        // class id may fold them together, never the name. A fixture where
+        // both rows shared the same id (as the dedupe test above does) could
+        // not tell a name-keyed dedupe apart from an id-keyed one — this one
+        // can, since dedupe-by-name would wrongly collapse it to one entry.
+        const localCompileRow = {
+          apexClass: { id: 'LocalArgumentId', name: 'Argument' },
+          methodName: '<compile>',
+          outcome: ApexTestResultOutcome.CompileFail,
+          message: 'Invalid type: LocalDep at line 3 column 5',
+        }
+        const packagedCompileRow = {
+          apexClass: { id: 'PackagedArgumentId', name: 'Argument' },
+          methodName: '<compile>',
+          outcome: ApexTestResultOutcome.CompileFail,
+          message: 'Invalid type: PackagedDep at line 7 column 1',
+        }
+        const mockTestResult = {
+          summary: { outcome: 'Failed', passing: 0, failing: 0, testsRan: 2 },
+          tests: [localCompileRow, packagedCompileRow],
+        }
+        runTestSynchronousMock.mockResolvedValue(mockTestResult)
+        const strategyStub = {
+          fidelity: 'aggregate' as const,
+          getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
+        }
+
+        // Act
+        const result = await sut.getTestMethodsPerLines(
+          ['Argument'],
+          strategyStub
+        )
+
+        // Assert — two distinct diagnoses survive, one per class id
+        expect(result.compileFailures).toEqual([
+          {
+            classId: 'LocalArgumentId',
+            message: 'Invalid type: LocalDep at line 3 column 5',
+          },
+          {
+            classId: 'PackagedArgumentId',
+            message: 'Invalid type: PackagedDep at line 7 column 1',
           },
         ])
         expect(runTestAsynchronousMock).not.toHaveBeenCalled()
@@ -697,7 +742,7 @@ describe('ApexTestRunner', () => {
 
         // Assert
         expect(result.compileFailures).toEqual([
-          { classId: 'BrokenTestId', className: 'BrokenTest', message: '' },
+          { classId: 'BrokenTestId', message: '' },
         ])
         expect(runTestAsynchronousMock).not.toHaveBeenCalled()
       })
@@ -744,7 +789,6 @@ describe('ApexTestRunner', () => {
         expect(result.compileFailures).toEqual([
           {
             classId: '01pdL00000Z2WqmQAF',
-            className: 'AmtSyncDepTest',
             message: 'line 5, column 37: Variable does not exist: AmtSyncDep',
           },
         ])

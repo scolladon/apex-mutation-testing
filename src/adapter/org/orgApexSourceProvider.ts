@@ -7,6 +7,12 @@ import type {
   TypeName,
 } from '../../port/apexSourceProvider.js'
 import type { EngineNotify } from '../../port/executionEngine.js'
+import {
+  ApexClassAmbiguousError,
+  ApexClassNotFoundError,
+  ApexClassNotMutableError,
+  ApexClassUnqualifiedError,
+} from '../../service/apexClassValidator.js'
 import type { ApexClass } from '../../type/ApexClass.js'
 import type { ApexClassRef } from '../../type/ApexClassName.js'
 import { splitApexClassName } from '../../type/ApexClassName.js'
@@ -43,6 +49,16 @@ import {
 const NO_STATE_REPORTED = 'none reported'
 const observedState = (state: string | null): string =>
   state ?? NO_STATE_REPORTED
+
+// Deduped: several non-mutable rows commonly share one ManageableState (e.g.
+// three managed rows all reporting 'installed'), and the message this feeds
+// is phrased in the singular — without deduping, a repeated state would
+// render as "manageable state: installed, installed, installed".
+const observedStates = (
+  candidates: readonly ApexClassCandidate[]
+): string[] => [
+  ...new Set(candidates.map(c => observedState(c.ManageableState))),
+]
 
 // Every row's qualified spelling is always a lookup key. Its bare spelling
 // joins only when the row's namespace is this org's own — a bare name is
@@ -127,9 +143,7 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
       case 'not-mutable':
         return {
           kind: 'not-mutable',
-          states: selection.candidates.map(c =>
-            observedState(c.ManageableState)
-          ),
+          states: observedStates(selection.candidates),
         }
       case 'ambiguous':
         return {
@@ -151,18 +165,40 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
     }
   }
 
+  // Rejects with the same typed errors apexClassValidator.ts throws for the
+  // identical conditions, rather than a raw Error naming its internal
+  // verdict kind: assessTargetClass and readClass are two separate org
+  // round-trips classifying the same rows, so a TOCTOU race between them
+  // must surface through the one curated, already-handled error vocabulary.
   public async readClass(name: string): Promise<ApexClass> {
     const ref = splitApexClassName(name)
     const selection = this.select(
       await this.repository.readBodyCandidates(ref.name),
       ref
     )
-    if (selection.kind !== 'mutable') {
-      throw new Error(
-        `Apex class '${name}' cannot be read for mutation (${selection.kind})`
-      )
+    switch (selection.kind) {
+      case 'mutable':
+        return selection.candidate
+      case 'not-found':
+        throw new ApexClassNotFoundError(name)
+      case 'not-mutable':
+        throw new ApexClassNotMutableError(
+          name,
+          observedStates(selection.candidates)
+        )
+      case 'ambiguous':
+        throw new ApexClassAmbiguousError(
+          name,
+          selection.candidates.map(c =>
+            qualifiedApexClassName(ref.name, c.NamespacePrefix)
+          )
+        )
+      case 'unqualified':
+        throw new ApexClassUnqualifiedError(
+          name,
+          qualifiedApexClassName(ref.name, selection.candidate.NamespacePrefix)
+        )
     }
-    return selection.candidate
   }
 
   public async listDependencies(
