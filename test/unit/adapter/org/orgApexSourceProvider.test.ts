@@ -847,14 +847,15 @@ describe('OrgApexSourceProvider', () => {
       // Act
       const result = await sut.assessPerimeter(['TestClassTest'])
 
-      // Assert
+      // Assert — a row with no namespace has no separate qualified spelling,
+      // so its bare name is its only lookup key, not a duplicated pair.
       expect(result).toEqual({
         skipped: [],
         resolutions: [
           {
             classId: 'ID1',
             displayName: 'TestClassTest',
-            lookupKeys: ['testclasstest', 'testclasstest'],
+            lookupKeys: ['testclasstest'],
           },
         ],
       })
@@ -876,7 +877,7 @@ describe('OrgApexSourceProvider', () => {
           {
             classId: 'ID1',
             displayName: 'TestClassTest',
-            lookupKeys: ['testclasstest', 'testclasstest'],
+            lookupKeys: ['testclasstest'],
           },
         ],
       })
@@ -893,19 +894,21 @@ describe('OrgApexSourceProvider', () => {
       // Act
       const result = await sut.assessPerimeter(['TestClassTest'])
 
-      // Assert
+      // Assert — the bare name is shared, so the managed row does not mint
+      // it; the local row answers to it regardless, since it has no other
+      // spelling to begin with.
       expect(result).toEqual({
         skipped: [],
         resolutions: [
           {
             classId: 'ID1',
             displayName: 'et4ae5.TestClassTest',
-            lookupKeys: ['testclasstest', 'et4ae5.testclasstest'],
+            lookupKeys: ['et4ae5.testclasstest'],
           },
           {
             classId: 'ID2',
             displayName: 'TestClassTest',
-            lookupKeys: ['testclasstest', 'testclasstest'],
+            lookupKeys: ['testclasstest'],
           },
         ],
       })
@@ -928,7 +931,7 @@ describe('OrgApexSourceProvider', () => {
           {
             classId: 'ID1',
             displayName: 'FooTest',
-            lookupKeys: ['footest', 'footest'],
+            lookupKeys: ['footest'],
           },
         ],
       })
@@ -960,7 +963,7 @@ describe('OrgApexSourceProvider', () => {
           {
             classId: 'ID1',
             displayName: 'Usable',
-            lookupKeys: ['usable', 'usable'],
+            lookupKeys: ['usable'],
           },
           {
             classId: 'ID2',
@@ -1018,28 +1021,37 @@ describe('OrgApexSourceProvider', () => {
     // demonstrated to be prevented.
     const CLASS_ID_LOCAL = '01p000000000001'
     const CLASS_ID_FOREIGN = '01p000000000002'
+    const CLASS_ID_OTHER = '01p000000000003'
 
-    it('should resolve a namespaced row to its FQN and a bare row to its bare name', async () => {
-      // Arrange
+    it("should mint the bare spelling for the org's own row and withhold it from the contesting foreign row", async () => {
+      // Arrange — the local row carries the org's OWN namespace explicitly
+      // (rather than null), so the outcome genuinely turns on the
+      // own-namespace check rather than on having no namespace to qualify.
       readIdentitiesMock.mockResolvedValueOnce([
-        { Id: CLASS_ID_LOCAL, Name: 'Argument', NamespacePrefix: null },
+        {
+          Id: CLASS_ID_LOCAL,
+          Name: 'Argument',
+          NamespacePrefix: ORG_NAMESPACE,
+        },
         { Id: CLASS_ID_FOREIGN, Name: 'Argument', NamespacePrefix: 'mockery' },
       ])
 
       // Act
       const result = await sut.assessPerimeter(['Argument'])
 
-      // Assert
+      // Assert — both rows share the bare name 'Argument', so only the
+      // org's own row answers to it; the foreign row answers to its
+      // qualified spelling alone.
       expect(result.resolutions).toEqual([
         {
           classId: CLASS_ID_LOCAL,
-          displayName: 'Argument',
-          lookupKeys: ['argument', 'argument'],
+          displayName: `${ORG_NAMESPACE}.Argument`,
+          lookupKeys: ['argument', `${ORG_NAMESPACE}.argument`],
         },
         {
           classId: CLASS_ID_FOREIGN,
           displayName: 'mockery.Argument',
-          lookupKeys: ['argument', 'mockery.argument'],
+          lookupKeys: ['mockery.argument'],
         },
       ])
     })
@@ -1056,6 +1068,60 @@ describe('OrgApexSourceProvider', () => {
 
       // Assert
       expect(result.resolutions.length).toBe(2)
+    })
+
+    it('should mint both the bare and qualified spelling for a foreign row that is the sole claimant of its bare name', async () => {
+      // Arrange — no other row in the set answers to 'ArgumentTest', so the
+      // bare spelling is unambiguous even though the row is foreign.
+      readIdentitiesMock.mockResolvedValueOnce([
+        {
+          Id: CLASS_ID_FOREIGN,
+          Name: 'ArgumentTest',
+          NamespacePrefix: 'mockery',
+        },
+      ])
+
+      // Act
+      const result = await sut.assessPerimeter(['mockery.ArgumentTest'])
+
+      // Assert
+      expect(result.resolutions).toEqual([
+        {
+          classId: CLASS_ID_FOREIGN,
+          displayName: 'mockery.ArgumentTest',
+          lookupKeys: ['argumenttest', 'mockery.argumenttest'],
+        },
+      ])
+    })
+
+    it('should mint no bare key for either row when two foreign rows share a bare name', async () => {
+      // Arrange — neither row is the org's own namespace and neither is the
+      // bare name's sole claimant, so a bare perimeter entry must resolve to
+      // neither rather than to an arbitrary one of them.
+      readIdentitiesMock.mockResolvedValueOnce([
+        { Id: CLASS_ID_FOREIGN, Name: 'Argument', NamespacePrefix: 'mockery' },
+        { Id: CLASS_ID_OTHER, Name: 'Argument', NamespacePrefix: 'other' },
+      ])
+
+      // Act
+      const result = await sut.assessPerimeter([
+        'mockery.Argument',
+        'other.Argument',
+      ])
+
+      // Assert
+      expect(result.resolutions).toEqual([
+        {
+          classId: CLASS_ID_FOREIGN,
+          displayName: 'mockery.Argument',
+          lookupKeys: ['mockery.argument'],
+        },
+        {
+          classId: CLASS_ID_OTHER,
+          displayName: 'other.Argument',
+          lookupKeys: ['other.argument'],
+        },
+      ])
     })
   })
 

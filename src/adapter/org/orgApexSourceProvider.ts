@@ -19,6 +19,7 @@ import type { MetadataComponentDependency } from './MetadataComponentDependency.
 import {
   groupByJoinKey,
   identityTypeName,
+  isOwnNamespace,
   partitionByEntityRow,
   qualifiedApexClassName,
   qualifiedDeveloperName,
@@ -30,23 +31,65 @@ import {
 const isLocal = (identity: ApexClassIdentity): boolean =>
   !identity.NamespacePrefix
 
-// The two forms admitted as input, for one org row. Deliberately branchless:
-// for a row with no namespace the qualified spelling IS the bare one, and the
-// Set the caller builds collapses the duplicate. Case-folded because
-// ApexClass.Name matches case-insensitively on the org and the perimeter entry
-// is user-typed.
-const spellingsOf = (identity: ApexClassIdentity): string[] => [
-  identity.Name.toLowerCase(),
-  qualifiedApexClassName(identity.Name, identity.NamespacePrefix).toLowerCase(),
-]
+// Every row's qualified spelling is always a lookup key. Its bare spelling
+// joins only when the row is unambiguous as the source of that bare name
+// within the returned set: either its namespace is the org's own, or no
+// other row in the set answers to the same bare name — a bare name shared by
+// two foreign rows resolves to neither, rather than to an arbitrary one of
+// them. A row with no namespace has no separate qualified spelling to begin
+// with (the bare name IS its only spelling), so the ambiguity question never
+// arises for it. Case-folded throughout because ApexClass.Name matches
+// case-insensitively on the org and the perimeter entry is user-typed.
+const spellingsOf = (
+  identity: ApexClassIdentity,
+  orgNamespace: string | null,
+  bareNameCounts: ReadonlyMap<string, number>
+): string[] => {
+  const bare = identity.Name.toLowerCase()
+  const qualified = qualifiedApexClassName(
+    identity.Name,
+    identity.NamespacePrefix
+  ).toLowerCase()
+  if (bare === qualified) {
+    return [bare]
+  }
+  const mintsBare =
+    isOwnNamespace(identity.NamespacePrefix, orgNamespace) ||
+    bareNameCounts.get(bare) === 1
+  return mintsBare ? [bare, qualified] : [qualified]
+}
 
-// One row in, one resolution out. Not a resolution from a spelling: this is a
-// 1:1 mapping from a row, so no candidate is ever picked over another.
-const toResolution = (identity: ApexClassIdentity): TestClassResolution => ({
-  classId: identity.Id,
-  displayName: qualifiedApexClassName(identity.Name, identity.NamespacePrefix),
-  lookupKeys: spellingsOf(identity),
-})
+// Case-folded so a bare name shared by two rows differing only in case is
+// still recognised as contested.
+const countBareNames = (
+  identities: ApexClassIdentity[]
+): Map<string, number> => {
+  const counts = new Map<string, number>()
+  for (const identity of identities) {
+    const bare = identity.Name.toLowerCase()
+    counts.set(bare, (counts.get(bare) ?? 0) + 1)
+  }
+  return counts
+}
+
+// One resolution per row, but a row's lookupKeys now depend on the whole
+// returned set, not on the row alone: a bare spelling shared by more than one
+// row is ambiguous, so only the org's own row — or a row that is the bare
+// name's sole claimant — answers to it.
+const toResolutions = (
+  identities: ApexClassIdentity[],
+  orgNamespace: string | null
+): TestClassResolution[] => {
+  const bareNameCounts = countBareNames(identities)
+  return identities.map(identity => ({
+    classId: identity.Id,
+    displayName: qualifiedApexClassName(
+      identity.Name,
+      identity.NamespacePrefix
+    ),
+    lookupKeys: spellingsOf(identity, orgNamespace, bareNameCounts),
+  }))
+}
 
 const toError = (value: unknown): Error =>
   value instanceof Error ? value : new Error(String(value))
@@ -210,7 +253,10 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
           ? ('not-accessible' as const)
           : ('not-found' as const),
       }))
-    return { skipped, resolutions: identities.map(toResolution) }
+    return {
+      skipped,
+      resolutions: toResolutions(identities, this.orgNamespace),
+    }
   }
 
   public async readTestSuiteMembers(

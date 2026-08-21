@@ -34,7 +34,7 @@ const foldedNamespace = (namespace: string | null): string | null =>
   // Stryker disable next-line MethodExpression: both sides fold in lockstep.
   namespace === null ? null : namespace.toLowerCase()
 
-const isOwnNamespace = (
+export const isOwnNamespace = (
   namespace: string | null,
   orgNamespace: string | null
 ): boolean => foldedNamespace(namespace) === foldedNamespace(orgNamespace)

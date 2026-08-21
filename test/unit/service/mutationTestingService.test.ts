@@ -1,6 +1,11 @@
 import { Messages } from '@salesforce/core'
 import { Progress, Spinner } from '@salesforce/sf-plugins-core'
+import type { ApexClassIdentity } from '../../../src/adapter/org/ApexClassIdentity.js'
+import type { ApexClassRepository } from '../../../src/adapter/org/apexClassRepository.js'
 import { DeploymentFailedError } from '../../../src/adapter/org/apexClassRepository.js'
+import type { ApexTestSuiteRepository } from '../../../src/adapter/org/apexTestSuiteRepository.js'
+import type { EntityDefinitionRepository } from '../../../src/adapter/org/entityDefinitionRepository.js'
+import { OrgApexSourceProvider } from '../../../src/adapter/org/orgApexSourceProvider.js'
 import type { EngineBundle } from '../../../src/port/executionEngine.js'
 import {
   CompilationCheckFailedError,
@@ -82,6 +87,30 @@ const resolutionsFor = (classNames: string[]): TestClassResolutions =>
       { classId: name, displayName: name, lookupKeys: [name.toLowerCase()] },
     ])
   )
+
+// Derives a TestClassResolutions map through the real
+// OrgApexSourceProvider.assessPerimeter rather than hand-building one: a
+// regression in its bare-key-minting rule (spellingsOf) is what this is for
+// catching, not just a regression in this service's own class-id join.
+const resolveViaOrgAdapter = async (
+  identities: ApexClassIdentity[],
+  perimeter: string[],
+  orgNamespace: string | null = null
+): Promise<TestClassResolutions> => {
+  const provider = new OrgApexSourceProvider(
+    {
+      readIdentities: vi.fn().mockResolvedValue(identities),
+    } as unknown as ApexClassRepository,
+    {} as ApexTestSuiteRepository,
+    {} as EntityDefinitionRepository,
+    vi.fn(),
+    orgNamespace
+  )
+  const { resolutions } = await provider.assessPerimeter(perimeter)
+  return new Map(
+    resolutions.map(resolution => [resolution.classId, resolution])
+  )
+}
 
 describe('MutationTestingService', () => {
   let sut: MutationTestingService
@@ -1305,31 +1334,25 @@ describe('MutationTestingService', () => {
             ]),
           })
         )
-        // CLASS_ID_FOREIGN's own lookupKeys deliberately do NOT include the
-        // bare 'argument' spelling here (unlike its real-org spellingsOf,
-        // which would): a contributing class's OWN bare-name lookup key
-        // coinciding with a DIFFERENT class's exact perimeter spelling is an
-        // orthogonal, union-of-keys ambiguity this fixture is not testing —
-        // isolating the class-id join from that ambiguity is what proves two
-        // classes sharing a bare name resolve independently here.
-        const resolutions: TestClassResolutions = new Map([
+        // Resolved through the real org adapter, not hand-built: CLASS_ID_LOCAL
+        // owns the contested bare name 'argument' (the org's own namespace),
+        // so CLASS_ID_FOREIGN never mints it — this is what closes the
+        // false-negative half of the defect (a union-of-keys join would
+        // otherwise let CLASS_ID_FOREIGN's coverage silently cover for
+        // CLASS_ID_LOCAL too). This fixture also isolates the remaining,
+        // orthogonal question of whether the class-id join itself keeps the
+        // two classes' silent/contributing verdicts independent.
+        const resolutions = await resolveViaOrgAdapter(
           [
-            CLASS_ID_LOCAL,
+            { Id: CLASS_ID_LOCAL, Name: 'Argument', NamespacePrefix: null },
             {
-              classId: CLASS_ID_LOCAL,
-              displayName: 'Argument',
-              lookupKeys: ['argument'],
+              Id: CLASS_ID_FOREIGN,
+              Name: 'Argument',
+              NamespacePrefix: 'mockery',
             },
           ],
-          [
-            CLASS_ID_FOREIGN,
-            {
-              classId: CLASS_ID_FOREIGN,
-              displayName: 'mockery.Argument',
-              lookupKeys: ['mockery.argument'],
-            },
-          ],
-        ])
+          ['Argument', 'mockery.Argument']
+        )
         const zeroContributionSut = buildZeroContributionSut(
           ['Argument', 'mockery.Argument'],
           undefined,
@@ -1752,30 +1775,22 @@ describe('MutationTestingService', () => {
             ]),
           })
         )
-        // CLASS_ID_FOREIGN's own lookupKeys deliberately do NOT include the
-        // bare 'argument' spelling here (unlike its real-org spellingsOf,
-        // which would): that overlap is an orthogonal union-of-keys
-        // ambiguity this fixture is not testing — isolating the class-id
-        // join from it is what proves the qualified compile failure is
-        // attributed to its own class and not the bare-named one.
-        const resolutions: TestClassResolutions = new Map([
+        // Resolved through the real org adapter, not hand-built: this is the
+        // false-positive half of the defect — a union-of-keys join fed by an
+        // unconditionally-minted bare key would wrongly attribute
+        // CLASS_ID_FOREIGN's compile failure to the healthy CLASS_ID_LOCAL
+        // too, since both answer to the bare perimeter spelling 'Argument'.
+        const resolutions = await resolveViaOrgAdapter(
           [
-            CLASS_ID_LOCAL,
+            { Id: CLASS_ID_LOCAL, Name: 'Argument', NamespacePrefix: null },
             {
-              classId: CLASS_ID_LOCAL,
-              displayName: 'Argument',
-              lookupKeys: ['argument'],
+              Id: CLASS_ID_FOREIGN,
+              Name: 'Argument',
+              NamespacePrefix: 'mockery',
             },
           ],
-          [
-            CLASS_ID_FOREIGN,
-            {
-              classId: CLASS_ID_FOREIGN,
-              displayName: 'mockery.Argument',
-              lookupKeys: ['mockery.argument'],
-            },
-          ],
-        ])
+          ['Argument', 'mockery.Argument']
+        )
         const compileDropSut = buildCompileDropSut(
           ['Argument', 'mockery.Argument'],
           undefined,
@@ -1789,6 +1804,11 @@ describe('MutationTestingService', () => {
         // Argument (a different class id) compiles and keeps its coverage.
         expect(spinner.start).toHaveBeenCalledWith(
           "Skipping test class 'mockery.Argument': it does not compile (boom).",
+          undefined,
+          { stdout: true }
+        )
+        expect(spinner.start).not.toHaveBeenCalledWith(
+          expect.stringContaining("Skipping test class 'Argument'"),
           undefined,
           { stdout: true }
         )
