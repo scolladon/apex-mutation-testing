@@ -62,18 +62,25 @@ describe('ApexClassValidator', () => {
   })
 
   describe('assessPerimeter', () => {
-    it('should delegate to the source and resolve with its verdicts', async () => {
+    it('should delegate to the source and resolve with both its verdicts and its resolutions', async () => {
       // Arrange
-      const verdicts = [
-        { className: 'TestClassTest', reason: 'not-found' as const },
-      ]
-      source.assessPerimeter.mockResolvedValueOnce(verdicts)
+      const assessment = {
+        skipped: [{ className: 'TestClassTest', reason: 'not-found' as const }],
+        resolutions: [
+          {
+            classId: '01p000000000001',
+            displayName: 'TestClassTest',
+            lookupKeys: ['testclasstest'],
+          },
+        ],
+      }
+      source.assessPerimeter.mockResolvedValueOnce(assessment)
 
       // Act
       const result = await sut.assessPerimeter(params.apexTestClassNames)
 
       // Assert
-      expect(result).toEqual(verdicts)
+      expect(result).toEqual(assessment)
       expect(source.assessPerimeter).toHaveBeenCalledWith(
         params.apexTestClassNames
       )

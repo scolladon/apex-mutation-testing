@@ -19,6 +19,7 @@ import {
   attachSuiteProvenance,
   reducePerimeter,
 } from '../../../../type/SkippedTestClass.js'
+import type { TestClassResolutions } from '../../../../type/TestClassResolution.js'
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url)
 const messages = Messages.loadMessages(
@@ -162,7 +163,7 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
     )
     this.logRunningLine(resolvedParameters)
 
-    const usableTestClassNames = await this.reduceToUsablePerimeter(
+    const { usable, resolutions } = await this.reduceToUsablePerimeter(
       resolvedParameters,
       engine.source
     )
@@ -171,7 +172,11 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       this.progress,
       this.spinner,
       engine,
-      { ...resolvedParameters, apexTestClassNames: usableTestClassNames },
+      {
+        ...resolvedParameters,
+        apexTestClassNames: usable,
+        testClassResolutions: resolutions,
+      },
       messages
     )
     const mutationResult = await mutationTestingService.process()
@@ -216,13 +221,14 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
   private async reduceToUsablePerimeter(
     parameters: ApexMutationParameter,
     source: ApexSourceProvider
-  ): Promise<string[]> {
+  ): Promise<{ usable: string[]; resolutions: TestClassResolutions }> {
     const apexClassValidator = new ApexClassValidator(source)
-    const [, verdicts] = await Promise.all([
+    const [, perimeterAssessment] = await Promise.all([
       apexClassValidator.validate(parameters),
       apexClassValidator.assessPerimeter(parameters.apexTestClassNames),
     ]).catch(renderTargetClassError)
 
+    const { skipped: verdicts, resolutions } = perimeterAssessment
     const skipped = attachSuiteProvenance(verdicts, parameters.testClassOrigins)
     const sentences = formatSkippedTestClasses(skipped, messages)
     sentences.forEach(sentence => this.warn(sentence))
@@ -234,7 +240,10 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
         sentences.join('\n'),
       ])
     }
-    return usable
+    return {
+      usable,
+      resolutions: new Map(resolutions.map(r => [r.classId, r])),
+    }
   }
 
   private async publishReport(

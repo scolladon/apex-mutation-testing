@@ -20,6 +20,7 @@ import { ApexMutationParameter } from '../../../src/type/ApexMutationParameter.j
 import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult.js'
 import { ApexTestRunResult } from '../../../src/type/ApexTestRunResult.js'
 import { TestClassOrigins } from '../../../src/type/TestClassOrigin.js'
+import type { TestClassResolutions } from '../../../src/type/TestClassResolution.js'
 import {
   fakeSchemaProvider,
   fakeSourceProvider,
@@ -439,6 +440,7 @@ describe('MutationTestingService', () => {
             sourceFile: 'TestClass',
             sourceFileContent: mockApexClass.Body,
             testFiles: ['TestClassTest'],
+            testClassResolutions: [],
             mutants: expectedMutants,
           })
           expect(progress.start).toHaveBeenCalled()
@@ -544,6 +546,7 @@ describe('MutationTestingService', () => {
           sourceFile: 'TestClass',
           sourceFileContent: mockApexClass.Body,
           testFiles: ['TestClassTest'],
+          testClassResolutions: [],
           mutants: [
             {
               id: expect.stringContaining('TestClass-'),
@@ -5006,6 +5009,77 @@ describe('MutationTestingService', () => {
           groupSpy.mockRestore()
         })
       })
+    })
+  })
+
+  describe('Given a testClassResolutions map is supplied', () => {
+    const TEST_CLASS_ID = '01p000000000123'
+    const resolution = {
+      classId: TEST_CLASS_ID,
+      displayName: 'namespaced.MutationTest',
+      lookupKeys: ['mutationtest', 'namespaced.mutationtest'],
+    }
+
+    const buildDryRunSut = (
+      testClassResolutions?: TestClassResolutions
+    ): MutationTestingService =>
+      new MutationTestingService(
+        progress,
+        spinner,
+        engine,
+        {
+          apexClassName: 'TestClass',
+          apexTestClassNames: ['TestClassTest'],
+          dryRun: true,
+          testClassResolutions,
+        } as ApexMutationParameter,
+        messagesMock
+      )
+
+    beforeEach(() => {
+      // Cast rather than following the file's usual bare-class-literal
+      // pattern: an un-cast literal here would add a fresh instance of the
+      // partial-mock/full-class structural mismatch tsconfig.test.json
+      // already carries ~70 times over, pushing that orphaned count up.
+      vi.mocked(MutantGenerator).mockImplementation(
+        class {
+          compute = vi
+            .fn()
+            .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+          mutate = vi.fn()
+        } as unknown as typeof MutantGenerator
+      )
+      engine.testBed = fakeTestBed(
+        baselineResult({
+          outcome: 'Passed',
+          testsRan: 1,
+          testMethodsPerLine: new Map([
+            [1, new Set(['TestClassTest.testMethodA'])],
+          ]),
+        })
+      )
+    })
+
+    it('Given a resolutions map, When processing, Then the result carries its values under testClassResolutions', async () => {
+      // Arrange
+      const dryRunSut = buildDryRunSut(new Map([[TEST_CLASS_ID, resolution]]))
+
+      // Act
+      const result = await dryRunSut.process()
+
+      // Assert
+      expect(result.testClassResolutions).toEqual([resolution])
+    })
+
+    it('Given no resolutions map, When processing, Then the result carries an empty testClassResolutions array', async () => {
+      // Arrange
+      const dryRunSut = buildDryRunSut()
+
+      // Act
+      const result = await dryRunSut.process()
+
+      // Assert
+      expect(result.testClassResolutions).toEqual([])
     })
   })
 })

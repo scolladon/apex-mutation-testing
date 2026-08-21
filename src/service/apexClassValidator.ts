@@ -1,6 +1,8 @@
-import type { ApexSourceProvider } from '../port/apexSourceProvider.js'
+import type {
+  ApexSourceProvider,
+  PerimeterAssessment,
+} from '../port/apexSourceProvider.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
-import { SkippedTestClass } from '../type/SkippedTestClass.js'
 
 export class ApexClassNotFoundError extends Error {
   constructor(public readonly className: string) {
@@ -20,7 +22,7 @@ export class ApexClassValidator {
     }
   }
 
-  public async assessPerimeter(names: string[]): Promise<SkippedTestClass[]> {
+  public async assessPerimeter(names: string[]): Promise<PerimeterAssessment> {
     return this.source.assessPerimeter(names)
   }
 }

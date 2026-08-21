@@ -20,6 +20,7 @@ import {
   SkippedTestClass,
 } from '../type/SkippedTestClass.js'
 import { TestClassOrigins } from '../type/TestClassOrigin.js'
+import { TestClassResolutions } from '../type/TestClassResolution.js'
 import {
   type TestMethodId,
   testClassOf,
@@ -93,6 +94,7 @@ export class MutationTestingService {
   private readonly allowedLines: Set<number> | undefined
   private readonly mutationGroupingEnabled: boolean
   private readonly testClassOrigins: TestClassOrigins | undefined
+  private readonly testClassResolutions: TestClassResolutions
   // Assigned by fetchApexClass before any reader runs; no meaningful seed.
   private apexClassContent!: string
 
@@ -112,6 +114,7 @@ export class MutationTestingService {
       lines,
       mutationGrouping,
       testClassOrigins,
+      testClassResolutions,
     }: ApexMutationParameter,
     protected readonly messages: Messages<string>,
     private readonly outputSink: OutputSink = writeToStdout
@@ -127,6 +130,7 @@ export class MutationTestingService {
     this.allowedLines = ConfigReader.parseLineRanges(lines)
     this.mutationGroupingEnabled = mutationGrouping ?? false
     this.testClassOrigins = testClassOrigins
+    this.testClassResolutions = testClassResolutions ?? new Map()
   }
 
   // One canonical spelling of the joined test class perimeter, so every log
@@ -622,6 +626,7 @@ export class MutationTestingService {
       sourceFile: this.apexClassName,
       sourceFileContent: apexClass.Body,
       testFiles: retainedTestClassNames,
+      testClassResolutions: [...this.testClassResolutions.values()],
       mutants: mutations.map(mutation => ({
         id: `${this.apexClassName}-${mutation.target.startToken.line}-${mutation.target.startToken.charPositionInLine}-${mutation.target.startToken.tokenIndex}-${Date.now()}`,
         mutatorName: mutation.mutationName,
@@ -700,6 +705,7 @@ export class MutationTestingService {
       sourceFile: this.apexClassName,
       sourceFileContent: apexClass.Body,
       testFiles: retainedTestClassNames,
+      testClassResolutions: [...this.testClassResolutions.values()],
       // Stryker disable next-line MethodExpression: no null slots remain, so
       // filtering and not filtering yield the same array — see `isPresent`.
       mutants: orderedResults.filter(isPresent),

@@ -162,7 +162,9 @@ describe('apex mutation test run NUT', () => {
     vi.mocked(ApexClassValidator).mockImplementation(
       class {
         validate = vi.fn().mockResolvedValue(undefined as never)
-        assessPerimeter = vi.fn().mockResolvedValue([] as never)
+        assessPerimeter = vi
+          .fn()
+          .mockResolvedValue({ skipped: [], resolutions: [] } as never)
       }
     )
     vi.mocked(MutationTestingService).mockImplementation(
@@ -583,7 +585,9 @@ describe('apex mutation test run NUT', () => {
             .mockRejectedValue(
               new ApexClassNotFoundError('InvalidClass') as never
             )
-          assessPerimeter = vi.fn().mockResolvedValue([] as never)
+          assessPerimeter = vi
+            .fn()
+            .mockResolvedValue({ skipped: [], resolutions: [] } as never)
         }
       )
       const sut = buildCommand(['-c', 'InvalidClass', '-t', 'MyClassTest'])
@@ -607,7 +611,9 @@ describe('apex mutation test run NUT', () => {
           validate = vi
             .fn()
             .mockRejectedValue(new Error('org unavailable') as never)
-          assessPerimeter = vi.fn().mockResolvedValue([] as never)
+          assessPerimeter = vi
+            .fn()
+            .mockResolvedValue({ skipped: [], resolutions: [] } as never)
         }
       )
 
@@ -628,6 +634,49 @@ describe('apex mutation test run NUT', () => {
         .value as { assessPerimeter: ReturnType<typeof vi.fn> }
       expect(validatorInstance.assessPerimeter).toHaveBeenCalledWith(['A', 'B'])
     })
+
+    it('When the port resolves a classId resolution, Then MutationTestingService is constructed with a map keyed by classId', async () => {
+      // Arrange
+      const TEST_CLASS_ID = '01p000000000123'
+      // Cast rather than following the file's usual bare-class-literal
+      // pattern: an un-cast literal here would add a fresh instance of the
+      // partial-mock/full-class structural mismatch tsconfig.test.json
+      // already carries a dozen times over, pushing that orphaned count up.
+      vi.mocked(ApexClassValidator).mockImplementation(
+        class {
+          validate = vi.fn().mockResolvedValue(undefined as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [],
+            resolutions: [
+              {
+                classId: TEST_CLASS_ID,
+                displayName: 'MutationTest',
+                lookupKeys: ['mutationtest'],
+              },
+            ],
+          } as never)
+        } as unknown as typeof ApexClassValidator
+      )
+
+      // Act
+      await runCommand(['-c', 'MyClass', '-t', 'MutationTest'])
+
+      // Assert
+      const constructorParameter = vi.mocked(MutationTestingService).mock
+        .calls[0][3]
+      expect(constructorParameter.testClassResolutions).toEqual(
+        new Map([
+          [
+            TEST_CLASS_ID,
+            {
+              classId: TEST_CLASS_ID,
+              displayName: 'MutationTest',
+              lookupKeys: ['mutationtest'],
+            },
+          ],
+        ])
+      )
+    })
   })
 
   describe('Given a two-class perimeter where the validator reports one class unusable', () => {
@@ -635,11 +684,10 @@ describe('apex mutation test run NUT', () => {
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
           validate = vi.fn().mockResolvedValue(undefined as never)
-          assessPerimeter = vi
-            .fn()
-            .mockResolvedValue([
-              { className: 'BadTest', reason: 'not-found' },
-            ] as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [{ className: 'BadTest', reason: 'not-found' }],
+            resolutions: [],
+          } as never)
         }
       )
     })
@@ -705,10 +753,13 @@ describe('apex mutation test run NUT', () => {
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
           validate = vi.fn().mockResolvedValue(undefined as never)
-          assessPerimeter = vi.fn().mockResolvedValue([
-            { className: 'AaaTest', reason: 'not-found' },
-            { className: 'BbbTest', reason: 'not-accessible' },
-          ] as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [
+              { className: 'AaaTest', reason: 'not-found' },
+              { className: 'BbbTest', reason: 'not-accessible' },
+            ],
+            resolutions: [],
+          } as never)
         }
       )
     })
@@ -782,11 +833,10 @@ describe('apex mutation test run NUT', () => {
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
           validate = vi.fn().mockResolvedValue(undefined as never)
-          assessPerimeter = vi
-            .fn()
-            .mockResolvedValue([
-              { className: 'BadTest', reason: 'not-found' },
-            ] as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [{ className: 'BadTest', reason: 'not-found' }],
+            resolutions: [],
+          } as never)
         }
       )
       const sut = buildCommand(['-c', 'MyClass', '--test-suite', 'SmokeSuite'])
@@ -814,11 +864,10 @@ describe('apex mutation test run NUT', () => {
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
           validate = vi.fn().mockResolvedValue(undefined as never)
-          assessPerimeter = vi
-            .fn()
-            .mockResolvedValue([
-              { className: 'BadTest', reason: 'not-found' },
-            ] as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [{ className: 'BadTest', reason: 'not-found' }],
+            resolutions: [],
+          } as never)
         }
       )
       const sut = buildCommand([
@@ -850,11 +899,10 @@ describe('apex mutation test run NUT', () => {
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
           validate = vi.fn().mockResolvedValue(undefined as never)
-          assessPerimeter = vi
-            .fn()
-            .mockResolvedValue([
-              { className: 'BadTest', reason: 'not-found' },
-            ] as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [{ className: 'BadTest', reason: 'not-found' }],
+            resolutions: [],
+          } as never)
         }
       )
       const sut = buildCommand(['-c', 'MyClass', '-t', 'GoodTest,BadTest'])
@@ -875,11 +923,10 @@ describe('apex mutation test run NUT', () => {
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
           validate = vi.fn().mockResolvedValue(undefined as never)
-          assessPerimeter = vi
-            .fn()
-            .mockResolvedValue([
-              { className: 'MyClasTest', reason: 'not-found' },
-            ] as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [{ className: 'MyClasTest', reason: 'not-found' }],
+            resolutions: [],
+          } as never)
         }
       )
 
@@ -907,11 +954,10 @@ describe('apex mutation test run NUT', () => {
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
           validate = vi.fn().mockResolvedValue(undefined as never)
-          assessPerimeter = vi
-            .fn()
-            .mockResolvedValue([
-              { className: 'SuiteTest', reason: 'not-found' },
-            ] as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [{ className: 'SuiteTest', reason: 'not-found' }],
+            resolutions: [],
+          } as never)
         }
       )
 
@@ -926,11 +972,10 @@ describe('apex mutation test run NUT', () => {
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
           validate = vi.fn().mockResolvedValue(undefined as never)
-          assessPerimeter = vi
-            .fn()
-            .mockResolvedValue([
-              { className: 'MyClasTest', reason: 'not-found' },
-            ] as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [{ className: 'MyClasTest', reason: 'not-found' }],
+            resolutions: [],
+          } as never)
         }
       )
 
@@ -948,11 +993,10 @@ describe('apex mutation test run NUT', () => {
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
           validate = vi.fn().mockResolvedValue(undefined as never)
-          assessPerimeter = vi
-            .fn()
-            .mockResolvedValue([
-              { className: 'MyClasTest', reason: 'not-found' },
-            ] as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [{ className: 'MyClasTest', reason: 'not-found' }],
+            resolutions: [],
+          } as never)
         }
       )
       const sut = buildCommand(['-c', 'MyClass', '-t', 'MyClasTest'])

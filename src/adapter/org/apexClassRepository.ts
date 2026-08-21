@@ -130,7 +130,7 @@ export class ApexClassRepository {
     }
     return (await this.connection.tooling
       .sobject('ApexClass')
-      .find({ Name: { $in: names } }, ['Name', 'NamespacePrefix'])
+      .find({ Name: { $in: names } }, ['Id', 'Name', 'NamespacePrefix'])
       .execute()) as unknown as ApexClassIdentity[]
   }
 

@@ -1,5 +1,6 @@
 import type { ApexClass } from '../type/ApexClass.js'
 import type { SkippedTestClass } from '../type/SkippedTestClass.js'
+import type { TestClassResolution } from '../type/TestClassResolution.js'
 
 // Moved here from src/adapter/org/apexTestSuiteRepository.ts: a port module
 // must never import from an adapter, and this shape crosses the port.
@@ -23,11 +24,16 @@ export interface TypeDependencies {
   sObjects: TypeName[] // StandardEntity ∪ CustomObject, already merged
 }
 
+export interface PerimeterAssessment {
+  skipped: SkippedTestClass[]
+  resolutions: TestClassResolution[]
+}
+
 export interface ApexSourceProvider {
   classExists(name: string): Promise<boolean>
   readClass(name: string): Promise<ApexClass>
   listDependencies(apexClass: ApexClass): Promise<TypeDependencies>
-  assessPerimeter(names: string[]): Promise<SkippedTestClass[]>
+  assessPerimeter(names: string[]): Promise<PerimeterAssessment>
   readTestSuiteMembers(suiteNames: string[]): Promise<ApexTestSuiteMember[]>
   readExistingTestSuiteNames(suiteNames: string[]): Promise<string[]>
 }

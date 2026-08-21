@@ -810,79 +810,128 @@ describe('OrgApexSourceProvider', () => {
       const result = await sut.assessPerimeter(['TestClassTest'])
 
       // Assert
-      expect(result).toEqual([
-        { className: 'TestClassTest', reason: 'not-found' },
-      ])
+      expect(result).toEqual({
+        skipped: [{ className: 'TestClassTest', reason: 'not-found' }],
+        resolutions: [],
+      })
     })
 
     it('should resolve with a not-accessible verdict when the only identity row carries a namespace prefix', async () => {
       // Arrange
       readIdentitiesMock.mockResolvedValueOnce([
-        { Name: 'TestClassTest', NamespacePrefix: 'et4ae5' },
+        { Id: 'ID1', Name: 'TestClassTest', NamespacePrefix: 'et4ae5' },
       ])
 
       // Act
       const result = await sut.assessPerimeter(['TestClassTest'])
 
       // Assert
-      expect(result).toEqual([
-        { className: 'TestClassTest', reason: 'not-accessible' },
-      ])
+      expect(result).toEqual({
+        skipped: [{ className: 'TestClassTest', reason: 'not-accessible' }],
+        resolutions: [
+          {
+            classId: 'ID1',
+            displayName: 'et4ae5.TestClassTest',
+            lookupKeys: ['testclasstest', 'et4ae5.testclasstest'],
+          },
+        ],
+      })
     })
 
     it('should resolve with an empty list when the identity row carries a null namespace prefix', async () => {
       // Arrange
       readIdentitiesMock.mockResolvedValueOnce([
-        { Name: 'TestClassTest', NamespacePrefix: null },
+        { Id: 'ID1', Name: 'TestClassTest', NamespacePrefix: null },
       ])
 
       // Act
       const result = await sut.assessPerimeter(['TestClassTest'])
 
       // Assert
-      expect(result).toEqual([])
+      expect(result).toEqual({
+        skipped: [],
+        resolutions: [
+          {
+            classId: 'ID1',
+            displayName: 'TestClassTest',
+            lookupKeys: ['testclasstest', 'testclasstest'],
+          },
+        ],
+      })
     })
 
     it('should resolve with an empty list when the identity row carries an empty-string namespace prefix', async () => {
       // Arrange
       readIdentitiesMock.mockResolvedValueOnce([
-        { Name: 'TestClassTest', NamespacePrefix: '' },
+        { Id: 'ID1', Name: 'TestClassTest', NamespacePrefix: '' },
       ])
 
       // Act
       const result = await sut.assessPerimeter(['TestClassTest'])
 
       // Assert
-      expect(result).toEqual([])
+      expect(result).toEqual({
+        skipped: [],
+        resolutions: [
+          {
+            classId: 'ID1',
+            displayName: 'TestClassTest',
+            lookupKeys: ['testclasstest', 'testclasstest'],
+          },
+        ],
+      })
     })
 
     it('should resolve with an empty list when one of two rows sharing a name is local', async () => {
       // Arrange — a managed and a local class can share a name; any local
       // row makes the perimeter entry usable.
       readIdentitiesMock.mockResolvedValueOnce([
-        { Name: 'TestClassTest', NamespacePrefix: 'et4ae5' },
-        { Name: 'TestClassTest', NamespacePrefix: null },
+        { Id: 'ID1', Name: 'TestClassTest', NamespacePrefix: 'et4ae5' },
+        { Id: 'ID2', Name: 'TestClassTest', NamespacePrefix: null },
       ])
 
       // Act
       const result = await sut.assessPerimeter(['TestClassTest'])
 
       // Assert
-      expect(result).toEqual([])
+      expect(result).toEqual({
+        skipped: [],
+        resolutions: [
+          {
+            classId: 'ID1',
+            displayName: 'et4ae5.TestClassTest',
+            lookupKeys: ['testclasstest', 'et4ae5.testclasstest'],
+          },
+          {
+            classId: 'ID2',
+            displayName: 'TestClassTest',
+            lookupKeys: ['testclasstest', 'testclasstest'],
+          },
+        ],
+      })
     })
 
     it('should resolve with an empty list when the org-reported name differs only in case', async () => {
       // Arrange — the join is case-folded both ways so a differently-cased
       // org row still matches the perimeter entry.
       readIdentitiesMock.mockResolvedValueOnce([
-        { Name: 'FooTest', NamespacePrefix: null },
+        { Id: 'ID1', Name: 'FooTest', NamespacePrefix: null },
       ])
 
       // Act
       const result = await sut.assessPerimeter(['footest'])
 
       // Assert
-      expect(result).toEqual([])
+      expect(result).toEqual({
+        skipped: [],
+        resolutions: [
+          {
+            classId: 'ID1',
+            displayName: 'FooTest',
+            lookupKeys: ['footest', 'footest'],
+          },
+        ],
+      })
     })
 
     // A three-class perimeter with the first AND last entries unusable is what
@@ -890,8 +939,8 @@ describe('OrgApexSourceProvider', () => {
     it('should name exactly the unusable entries, in perimeter order, when the first and last of a three-class perimeter are unusable', async () => {
       // Arrange
       readIdentitiesMock.mockResolvedValueOnce([
-        { Name: 'Usable', NamespacePrefix: null },
-        { Name: 'NotATest', NamespacePrefix: 'et4ae5' },
+        { Id: 'ID1', Name: 'Usable', NamespacePrefix: null },
+        { Id: 'ID2', Name: 'NotATest', NamespacePrefix: 'et4ae5' },
       ])
 
       // Act
@@ -902,10 +951,24 @@ describe('OrgApexSourceProvider', () => {
       ])
 
       // Assert
-      expect(result).toEqual([
-        { className: 'Missing', reason: 'not-found' },
-        { className: 'NotATest', reason: 'not-accessible' },
-      ])
+      expect(result).toEqual({
+        skipped: [
+          { className: 'Missing', reason: 'not-found' },
+          { className: 'NotATest', reason: 'not-accessible' },
+        ],
+        resolutions: [
+          {
+            classId: 'ID1',
+            displayName: 'Usable',
+            lookupKeys: ['usable', 'usable'],
+          },
+          {
+            classId: 'ID2',
+            displayName: 'et4ae5.NotATest',
+            lookupKeys: ['notatest', 'et4ae5.notatest'],
+          },
+        ],
+      })
     })
 
     it('should return verdicts carrying no suiteNames', async () => {
@@ -913,7 +976,9 @@ describe('OrgApexSourceProvider', () => {
       readIdentitiesMock.mockResolvedValueOnce([])
 
       // Act
-      const [verdict] = await sut.assessPerimeter(['TestClassTest'])
+      const {
+        skipped: [verdict],
+      } = await sut.assessPerimeter(['TestClassTest'])
 
       // Assert
       expect(verdict.suiteNames).toBeUndefined()
@@ -934,9 +999,9 @@ describe('OrgApexSourceProvider', () => {
       // Arrange
       const perimeter = ['A', 'B', 'C']
       readIdentitiesMock.mockResolvedValueOnce([
-        { Name: 'A', NamespacePrefix: null },
-        { Name: 'B', NamespacePrefix: null },
-        { Name: 'C', NamespacePrefix: null },
+        { Id: 'ID_A', Name: 'A', NamespacePrefix: null },
+        { Id: 'ID_B', Name: 'B', NamespacePrefix: null },
+        { Id: 'ID_C', Name: 'C', NamespacePrefix: null },
       ])
 
       // Act
@@ -946,6 +1011,51 @@ describe('OrgApexSourceProvider', () => {
       // per-class reads.
       expect(readIdentitiesMock).toHaveBeenCalledTimes(1)
       expect(readIdentitiesMock).toHaveBeenCalledWith(perimeter)
+    })
+
+    // The two-ids-one-bare-name fixture the rest of the plan depends on: both
+    // rows must be present or the merge that Id identity prevents is never
+    // demonstrated to be prevented.
+    const CLASS_ID_LOCAL = '01p000000000001'
+    const CLASS_ID_FOREIGN = '01p000000000002'
+
+    it('should resolve a namespaced row to its FQN and a bare row to its bare name', async () => {
+      // Arrange
+      readIdentitiesMock.mockResolvedValueOnce([
+        { Id: CLASS_ID_LOCAL, Name: 'Argument', NamespacePrefix: null },
+        { Id: CLASS_ID_FOREIGN, Name: 'Argument', NamespacePrefix: 'mockery' },
+      ])
+
+      // Act
+      const result = await sut.assessPerimeter(['Argument'])
+
+      // Assert
+      expect(result.resolutions).toEqual([
+        {
+          classId: CLASS_ID_LOCAL,
+          displayName: 'Argument',
+          lookupKeys: ['argument', 'argument'],
+        },
+        {
+          classId: CLASS_ID_FOREIGN,
+          displayName: 'mockery.Argument',
+          lookupKeys: ['argument', 'mockery.argument'],
+        },
+      ])
+    })
+
+    it('should resolve one resolution per org row, not per perimeter entry', async () => {
+      // Arrange — one perimeter entry, two matching org rows
+      readIdentitiesMock.mockResolvedValueOnce([
+        { Id: CLASS_ID_LOCAL, Name: 'Argument', NamespacePrefix: null },
+        { Id: CLASS_ID_FOREIGN, Name: 'Argument', NamespacePrefix: 'mockery' },
+      ])
+
+      // Act
+      const result = await sut.assessPerimeter(['Argument'])
+
+      // Assert
+      expect(result.resolutions.length).toBe(2)
     })
   })
 

@@ -52,6 +52,7 @@ describe('HTMLReporter', () => {
     // Deliberately not alphabetical — pins that testFiles keys follow user
     // (perimeter) order, not a sort.
     testFiles: ['FooTest', 'BazTest', 'BarTest'],
+    testClassResolutions: [],
     mutants: [
       {
         id: '1',
@@ -350,6 +351,7 @@ describe('HTMLReporter', () => {
         sourceFile: 'TestClass',
         sourceFileContent: 'public class TestClass {}',
         testFiles: ['footest'],
+        testClassResolutions: [],
         mutants: [
           {
             id: '1',
@@ -387,6 +389,7 @@ describe('HTMLReporter', () => {
         sourceFile: 'TestClass',
         sourceFileContent: 'public class TestClass {}',
         testFiles: ['FooTest'],
+        testClassResolutions: [],
         mutants: [
           {
             id: '1',
@@ -417,6 +420,7 @@ describe('HTMLReporter', () => {
         sourceFile: 'TestClass',
         sourceFileContent: 'public class TestClass {}',
         testFiles: ['FooTest'],
+        testClassResolutions: [],
         mutants: [
           {
             id: '1',
@@ -479,6 +483,7 @@ describe('HTMLReporter', () => {
         sourceFileContent:
           'public class Evil { /* </script><script>alert(1) */ }',
         testFiles: ['EvilTest'],
+        testClassResolutions: [],
         mutants: [
           {
             id: 'x',
@@ -517,6 +522,7 @@ describe('HTMLReporter', () => {
         sourceFileContent:
           "public class Mailer { static String BODY = '<!-- header --> <script>x</script>'; }",
         testFiles: ['MailerTest'],
+        testClassResolutions: [],
         mutants: [
           {
             id: 'x',

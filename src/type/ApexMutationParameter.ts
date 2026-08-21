@@ -1,4 +1,5 @@
 import { TestClassOrigins } from './TestClassOrigin.js'
+import { TestClassResolutions } from './TestClassResolution.js'
 
 export interface ApexMutationParameter {
   apexClassName: string
@@ -16,4 +17,5 @@ export interface ApexMutationParameter {
   lines?: string[]
   mutationGrouping?: boolean
   testClassOrigins?: TestClassOrigins
+  testClassResolutions?: TestClassResolutions
 }

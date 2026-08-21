@@ -1,12 +1,13 @@
 import type {
   ApexSourceProvider,
   ApexTestSuiteMember,
+  PerimeterAssessment,
   TypeDependencies,
   TypeName,
 } from '../../port/apexSourceProvider.js'
 import type { EngineNotify } from '../../port/executionEngine.js'
 import type { ApexClass } from '../../type/ApexClass.js'
-import type { SkippedTestClass } from '../../type/SkippedTestClass.js'
+import type { TestClassResolution } from '../../type/TestClassResolution.js'
 import type { ApexClassIdentity } from './ApexClassIdentity.js'
 import type { ApexClassRepository } from './apexClassRepository.js'
 import type { ApexTestSuiteRepository } from './apexTestSuiteRepository.js'
@@ -19,6 +20,7 @@ import {
   groupByJoinKey,
   identityTypeName,
   partitionByEntityRow,
+  qualifiedApexClassName,
   qualifiedDeveloperName,
   toApexClassTypeName,
 } from './orgTypeNames.js'
@@ -27,6 +29,24 @@ import {
 // depending on projection, so both must read as usable.
 const isLocal = (identity: ApexClassIdentity): boolean =>
   !identity.NamespacePrefix
+
+// The two forms admitted as input, for one org row. Deliberately branchless:
+// for a row with no namespace the qualified spelling IS the bare one, and the
+// Set the caller builds collapses the duplicate. Case-folded because
+// ApexClass.Name matches case-insensitively on the org and the perimeter entry
+// is user-typed.
+const spellingsOf = (identity: ApexClassIdentity): string[] => [
+  identity.Name.toLowerCase(),
+  qualifiedApexClassName(identity.Name, identity.NamespacePrefix).toLowerCase(),
+]
+
+// One row in, one resolution out. Not a resolution from a spelling: this is a
+// 1:1 mapping from a row, so no candidate is ever picked over another.
+const toResolution = (identity: ApexClassIdentity): TestClassResolution => ({
+  classId: identity.Id,
+  displayName: qualifiedApexClassName(identity.Name, identity.NamespacePrefix),
+  lookupKeys: spellingsOf(identity),
+})
 
 const toError = (value: unknown): Error =>
   value instanceof Error ? value : new Error(String(value))
@@ -170,16 +190,19 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
   /** A name can return two rows when a managed and a local class share it,
    *  and any local row makes the entry usable. Every join is case-folded —
    *  `ApexClass.Name` matches case-insensitively on the org — while the
-   *  reported className keeps the perimeter entry's own spelling. */
+   *  reported className keeps the perimeter entry's own spelling.
+   *  Resolutions are emitted for every row the query returned, not one per
+   *  perimeter entry — a bare entry matching two rows contributes two, so
+   *  whichever class the org actually runs is present under its own Id. */
   public async assessPerimeter(
     apexTestClassNames: string[]
-  ): Promise<SkippedTestClass[]> {
+  ): Promise<PerimeterAssessment> {
     const identities = await this.repository.readIdentities(apexTestClassNames)
     const lowerNames = (rows: ApexClassIdentity[]) =>
       new Set(rows.map(identity => identity.Name.toLowerCase()))
     const known = lowerNames(identities)
     const accessible = lowerNames(identities.filter(isLocal))
-    return apexTestClassNames
+    const skipped = apexTestClassNames
       .filter(name => !accessible.has(name.toLowerCase()))
       .map(name => ({
         className: name,
@@ -187,6 +210,7 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
           ? ('not-accessible' as const)
           : ('not-found' as const),
       }))
+    return { skipped, resolutions: identities.map(toResolution) }
   }
 
   public async readTestSuiteMembers(

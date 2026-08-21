@@ -131,7 +131,7 @@ describe('ApexClassRepository', () => {
 
   describe('when reading ApexClass identities', () => {
     describe('given a perimeter within the chunk limit', () => {
-      it('then issues one find call with an $in filter, no namespace pin, and the Name/NamespacePrefix projection', async () => {
+      it('then issues one find call with an $in filter, no namespace pin, and the Id/Name/NamespacePrefix projection', async () => {
         // Arrange
         const rows = [
           { Name: 'A', NamespacePrefix: null },
@@ -151,7 +151,7 @@ describe('ApexClassRepository', () => {
         // an indistinguishable empty result, the same trap `read` avoids by
         // pinning it deliberately.
         expect(conditions).not.toHaveProperty('NamespacePrefix')
-        expect(fields).toEqual(['Name', 'NamespacePrefix'])
+        expect(fields).toEqual(['Id', 'Name', 'NamespacePrefix'])
       })
     })
 

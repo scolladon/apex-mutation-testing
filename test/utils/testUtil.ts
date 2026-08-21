@@ -129,7 +129,7 @@ export const fakeSourceProvider = (
   listDependencies: vi
     .fn()
     .mockResolvedValue({ apexClasses: [], sObjects: [] }),
-  assessPerimeter: vi.fn().mockResolvedValue([]),
+  assessPerimeter: vi.fn().mockResolvedValue({ skipped: [], resolutions: [] }),
   readTestSuiteMembers: vi.fn().mockResolvedValue([]),
   readExistingTestSuiteNames: vi.fn().mockResolvedValue([]),
   ...overrides,
