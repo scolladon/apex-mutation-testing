@@ -50,8 +50,8 @@ export const selectMutableClass = <T extends ApexClassCandidate>(
   }
   // `find`, not a count check: "exactly one own-namespace candidate" would
   // introduce a more-than-one-own branch that is unreachable (a bare name is
-  // unique within a namespace), and an uncoverable branch fails the 100%
-  // gate outright.
+  // unique within a namespace), and a branch no test can reach fails the
+  // 100% gate outright.
   const own = mutable.find(candidate =>
     isOwnNamespace(candidate.NamespacePrefix, orgNamespace)
   )

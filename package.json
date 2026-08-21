@@ -4,8 +4,8 @@
   "version": "1.8.0",
   "dependencies": {
     "@oclif/core": "4.14.0",
-    "@salesforce/apex-node": "9.0.4",
-    "@salesforce/core": "9.1.4",
+    "@salesforce/apex-node": "9.0.5",
+    "@salesforce/core": "9.1.5",
     "@salesforce/sf-plugins-core": "13.0.3",
     "@stryker-mutator/core": "10.0.0",
     "antlr4ts": "0.5.0-alpha.4",
@@ -15,7 +15,7 @@
     "re2js": "2.8.6"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.9",
+    "@biomejs/biome": "2.5.10",
     "@commitlint/config-conventional": "21.2.2",
     "@oclif/plugin-help": "6.2.58",
     "@salesforce/dev-config": "4.3.3",
