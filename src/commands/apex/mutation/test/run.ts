@@ -8,6 +8,7 @@ import {
   ApexClassAmbiguousError,
   ApexClassNotFoundError,
   ApexClassNotMutableError,
+  ApexClassUnqualifiedError,
   ApexClassValidator,
 } from '../../../../service/apexClassValidator.js'
 import { ConfigReader } from '../../../../service/configReader.js'
@@ -50,6 +51,12 @@ function renderTargetClassError(error: unknown): never {
     throw messages.createError('error.apexClassAmbiguous', [
       error.className,
       error.spellings.join(', '),
+    ])
+  }
+  if (error instanceof ApexClassUnqualifiedError) {
+    throw messages.createError('error.apexClassUnqualified', [
+      error.className,
+      error.spelling,
     ])
   }
   throw error

@@ -3,8 +3,9 @@ export interface TestClassResolution {
   /** The FQN when the class carries a namespace, the bare name otherwise. */
   displayName: string
   /** The folded spellings this class answers to: the qualified spelling
-   *  always, plus the bare spelling when this row is the org's own
-   *  namespace or the bare name's sole claimant among the resolved set. */
+   *  always, plus the bare spelling only when this row is the org's own
+   *  namespace — a bare name is legal source only inside the namespace
+   *  that owns it. */
   lookupKeys: readonly string[]
 }
 

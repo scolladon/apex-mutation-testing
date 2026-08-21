@@ -94,8 +94,10 @@ describe('apexClassMutability', () => {
       expect(result).toEqual({ kind: 'mutable', candidate: own })
     })
 
-    it('Given exactly one mutable candidate and no own-namespace match, When selectMutableClass, Then returns that unique mutable candidate', () => {
-      // Arrange
+    it('Given exactly one mutable candidate and no own-namespace match, When selectMutableClass, Then returns unqualified naming that candidate, never mutable', () => {
+      // Arrange — the write-perimeter defect this fix closes: a lone
+      // foreign mutable row must be refused, not silently written to, even
+      // though it is the only mutable candidate.
       const mutable = {
         NamespacePrefix: 'mockery',
         ManageableState: 'installedEditable',
@@ -110,7 +112,7 @@ describe('apexClassMutability', () => {
       const result = selectMutableClass(sut, 'namespaced')
 
       // Assert
-      expect(result).toEqual({ kind: 'mutable', candidate: mutable })
+      expect(result).toEqual({ kind: 'unqualified', candidate: mutable })
     })
 
     it('Given two mutable candidates in foreign namespaces with no own-namespace match, When selectMutableClass, Then returns ambiguous carrying both competing candidates', () => {
@@ -154,17 +156,23 @@ describe('apexClassMutability', () => {
       expect(result).toEqual({ kind: 'mutable', candidate: own })
     })
 
-    it('Given a candidate with an empty-string namespace in a non-namespaced org, When selectMutableClass, Then treats it as own-namespace and returns it as mutable', () => {
-      // Arrange
-      const sut: ApexClassCandidate[] = [
-        { NamespacePrefix: '', ManageableState: 'installedEditable' },
-      ]
+    it('Given a candidate with an empty-string namespace in a non-namespaced org, When selectMutableClass, Then treats it as own-namespace over a competing foreign mutable candidate', () => {
+      // Arrange — a competing foreign mutable row makes this fixture
+      // genuinely exercise the own-namespace arm: without it, a single
+      // '' candidate would also reach 'mutable' through the now-removed
+      // sole-candidate arm regardless of whether '' folds like null.
+      const own = { NamespacePrefix: '', ManageableState: 'installedEditable' }
+      const foreign = {
+        NamespacePrefix: 'mockery',
+        ManageableState: 'installedEditable',
+      }
+      const sut: ApexClassCandidate[] = [foreign, own]
 
       // Act
       const result = selectMutableClass(sut, null)
 
       // Assert
-      expect(result).toEqual({ kind: 'mutable', candidate: sut[0] })
+      expect(result).toEqual({ kind: 'mutable', candidate: own })
     })
   })
 })

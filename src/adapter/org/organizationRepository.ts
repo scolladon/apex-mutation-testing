@@ -14,6 +14,9 @@ export class OrganizationRepository {
     const result = await this.connection.query<OrganizationRow>(
       'SELECT NamespacePrefix FROM Organization'
     )
-    return result.records[0]?.NamespacePrefix ?? null
+    // `||`, not `??`: the org can report the "no namespace" case as either
+    // `null` or `''`, and both must normalise the same way — isOwnNamespace's
+    // folding treats them alike, so the earliest read must too.
+    return result.records[0]?.NamespacePrefix || null
   }
 }

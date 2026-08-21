@@ -190,6 +190,23 @@ describe('apex.mutation.test.run message bundle', () => {
     )
   })
 
+  it('Given a class name and its qualified spelling, When error.apexClassUnqualified is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
+    // Arrange
+    const className = 'Argument'
+    const spelling = 'mockery.Argument'
+
+    // Act
+    const sut = messages.getMessage('error.apexClassUnqualified', [
+      className,
+      spelling,
+    ])
+
+    // Assert
+    expect(sut).toBe(
+      "Apex class 'Argument' is modifiable on this org only as 'mockery.Argument'. A bare name reaches only the namespace that owns it — re-run naming the qualified spelling."
+    )
+  })
+
   it('Given a malformed class name, When error.invalidClassName is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
     // Arrange
     const className = 'ns.sub.Foo'

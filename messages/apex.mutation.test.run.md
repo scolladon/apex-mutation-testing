@@ -212,6 +212,10 @@ Apex class '%s' cannot be modified on this org (manageable state: %s). Only clas
 
 Apex class '%s' matches more than one modifiable Apex class on this org: %s. Re-run naming one of them.
 
+# error.apexClassUnqualified
+
+Apex class '%s' is modifiable on this org only as '%s'. A bare name reaches only the namespace that owns it — re-run naming the qualified spelling.
+
 # error.noUsableTestClass
 
 No usable Apex test class remains in the perimeter for '%s'. The following test class(es) were skipped:

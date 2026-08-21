@@ -128,10 +128,15 @@ describe('OrgApexSourceProvider', () => {
       expect(result).toEqual({ kind: 'mutable' })
     })
 
-    it('Given a mutable local row and a not-mutable foreign row, When assessTargetClass is qualified with the foreign namespace, Then the qualifier excludes the local row and resolves not-mutable', async () => {
-      // Arrange
+    it('Given a mutable own-namespace row and a not-mutable foreign row, When assessTargetClass is qualified with the foreign namespace, Then the qualifier excludes the own-namespace row and resolves not-mutable', async () => {
+      // Arrange — the own-namespace row carries the org's OWN namespace
+      // explicitly (rather than null), so the pairing with the bare-query
+      // test below genuinely turns on the own-namespace check.
       readCandidatesMock.mockResolvedValueOnce([
-        { NamespacePrefix: null, ManageableState: 'installedEditable' },
+        {
+          NamespacePrefix: ORG_NAMESPACE,
+          ManageableState: 'installedEditable',
+        },
         { NamespacePrefix: 'mockery', ManageableState: 'installed' },
       ])
 
@@ -140,12 +145,19 @@ describe('OrgApexSourceProvider', () => {
 
       // Assert
       expect(result).toEqual({ kind: 'not-mutable', states: ['installed'] })
+      // Regression guard: querying by the full qualified spelling
+      // ('mockery.Argument') would match zero org rows, since ApexClass.Name
+      // never carries the namespace segment.
+      expect(readCandidatesMock).toHaveBeenCalledWith('Argument')
     })
 
-    it('Given the same rows queried bare, When assessTargetClass, Then the unique mutable local row resolves mutable', async () => {
+    it('Given the same rows queried bare, When assessTargetClass, Then the unique mutable own-namespace row resolves mutable', async () => {
       // Arrange
       readCandidatesMock.mockResolvedValueOnce([
-        { NamespacePrefix: null, ManageableState: 'installedEditable' },
+        {
+          NamespacePrefix: ORG_NAMESPACE,
+          ManageableState: 'installedEditable',
+        },
         { NamespacePrefix: 'mockery', ManageableState: 'installed' },
       ])
 
@@ -167,6 +179,40 @@ describe('OrgApexSourceProvider', () => {
 
       // Assert
       expect(result).toEqual({ kind: 'not-found' })
+      expect(readCandidatesMock).toHaveBeenCalledWith('Nope')
+    })
+
+    // The write-perimeter defect this pins closed: in a plain org with an
+    // unlocked package installed, a bare `-c Argument` must not silently
+    // resolve into that package just because it is the only mutable row.
+    it('Given a single mutable candidate in a foreign namespace, When assessTargetClass is queried bare, Then resolves unqualified naming the qualified spelling', async () => {
+      // Arrange
+      readCandidatesMock.mockResolvedValueOnce([
+        { NamespacePrefix: 'mockery', ManageableState: 'installedEditable' },
+      ])
+
+      // Act
+      const result = await sut.assessTargetClass('Argument')
+
+      // Assert
+      expect(result).toEqual({
+        kind: 'unqualified',
+        spelling: 'mockery.Argument',
+      })
+    })
+
+    it('Given the same single foreign mutable candidate, When assessTargetClass is queried already qualified with that namespace, Then resolves mutable through the own-namespace arm', async () => {
+      // Arrange — the qualifier itself becomes the namespace the write
+      // perimeter checks against, so the same row now matches the own arm.
+      readCandidatesMock.mockResolvedValueOnce([
+        { NamespacePrefix: 'mockery', ManageableState: 'installedEditable' },
+      ])
+
+      // Act
+      const result = await sut.assessTargetClass('mockery.Argument')
+
+      // Assert
+      expect(result).toEqual({ kind: 'mutable' })
     })
   })
 
@@ -186,6 +232,25 @@ describe('OrgApexSourceProvider', () => {
 
       // Assert
       expect(result).toEqual(candidate)
+    })
+
+    it('Given a qualified name, When readClass, Then the repository is queried by the bare name only', async () => {
+      // Arrange — the CRITICAL regression this guards: querying by the full
+      // qualified spelling ('mockery.Argument') would match zero org rows,
+      // since ApexClass.Name never carries the namespace segment.
+      const candidate = {
+        Id: '01p000000TargetId',
+        Body: 'class Argument {}',
+        NamespacePrefix: 'mockery',
+        ManageableState: 'installedEditable',
+      }
+      readBodyCandidatesMock.mockResolvedValueOnce([candidate])
+
+      // Act
+      await sut.readClass('mockery.Argument')
+
+      // Assert
+      expect(readBodyCandidatesMock).toHaveBeenCalledWith('Argument')
     })
 
     it.each([
@@ -214,6 +279,17 @@ describe('OrgApexSourceProvider', () => {
             Id: '2',
             Body: 'class Argument {}',
             NamespacePrefix: 'acme',
+            ManageableState: 'installedEditable',
+          },
+        ],
+      ],
+      [
+        'unqualified',
+        [
+          {
+            Id: '1',
+            Body: 'class Argument {}',
+            NamespacePrefix: 'mockery',
             ManageableState: 'installedEditable',
           },
         ],
@@ -957,14 +1033,17 @@ describe('OrgApexSourceProvider', () => {
       // Act
       const result = await sut.assessPerimeter(['TestClassTest'])
 
-      // Assert
+      // Assert — a foreign row never mints a bare key, even as the only row
+      // answering to that name; the bare perimeter entry is still reported
+      // not-accessible rather than not-found, because `known` is derived
+      // from the identity rows directly, independent of lookupKeys.
       expect(result).toEqual({
         skipped: [{ className: 'TestClassTest', reason: 'not-accessible' }],
         resolutions: [
           {
             classId: 'ID1',
             displayName: 'et4ae5.TestClassTest',
-            lookupKeys: ['testclasstest', 'et4ae5.testclasstest'],
+            lookupKeys: ['et4ae5.testclasstest'],
           },
         ],
       })
@@ -1135,7 +1214,7 @@ describe('OrgApexSourceProvider', () => {
           {
             classId: 'ID2',
             displayName: 'et4ae5.NotATest',
-            lookupKeys: ['notatest', 'et4ae5.notatest'],
+            lookupKeys: ['et4ae5.notatest'],
           },
         ],
       })
@@ -1268,9 +1347,12 @@ describe('OrgApexSourceProvider', () => {
       expect(result.resolutions.length).toBe(2)
     })
 
-    it('should mint both the bare and qualified spelling for a foreign row that is the sole claimant of its bare name', async () => {
-      // Arrange — no other row in the set answers to 'ArgumentTest', so the
-      // bare spelling is unambiguous even though the row is foreign.
+    it('should mint only the qualified spelling for a foreign row even when it is the sole claimant of its bare name', async () => {
+      // Arrange — no other row in the set answers to 'ArgumentTest' either,
+      // but being the sole claimant is no longer what decides this: a bare
+      // spelling is legal source only inside the namespace that owns it, and
+      // this row is foreign, so it never mints one — the exact write-
+      // perimeter defect this pins closed.
       readIdentitiesMock.mockResolvedValueOnce([
         {
           Id: CLASS_ID_FOREIGN,
@@ -1288,15 +1370,15 @@ describe('OrgApexSourceProvider', () => {
         {
           classId: CLASS_ID_FOREIGN,
           displayName: 'mockery.ArgumentTest',
-          lookupKeys: ['argumenttest', 'mockery.argumenttest'],
+          lookupKeys: ['mockery.argumenttest'],
         },
       ])
     })
 
     it('should mint no bare key for either row when two foreign rows share a bare name', async () => {
-      // Arrange — neither row is the org's own namespace and neither is the
-      // bare name's sole claimant, so a bare perimeter entry must resolve to
-      // neither rather than to an arbitrary one of them.
+      // Arrange — neither row is the org's own namespace, so a bare
+      // perimeter entry must resolve to neither rather than to an
+      // arbitrary one of them.
       readIdentitiesMock.mockResolvedValueOnce([
         {
           Id: CLASS_ID_FOREIGN,

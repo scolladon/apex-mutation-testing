@@ -31,6 +31,18 @@ export class ApexClassAmbiguousError extends Error {
   }
 }
 
+export class ApexClassUnqualifiedError extends Error {
+  constructor(
+    public readonly className: string,
+    public readonly spelling: string
+  ) {
+    super(
+      `Apex class '${className}' is modifiable on this org only as '${spelling}'`
+    )
+    this.name = 'ApexClassUnqualifiedError'
+  }
+}
+
 export class ApexClassValidator {
   constructor(private readonly source: ApexSourceProvider) {}
 
@@ -47,6 +59,8 @@ export class ApexClassValidator {
         throw new ApexClassNotMutableError(apexClassName, verdict.states)
       case 'ambiguous':
         throw new ApexClassAmbiguousError(apexClassName, verdict.spellings)
+      case 'unqualified':
+        throw new ApexClassUnqualifiedError(apexClassName, verdict.spelling)
     }
   }
 

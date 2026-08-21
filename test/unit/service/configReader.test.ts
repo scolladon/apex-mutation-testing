@@ -963,25 +963,24 @@ describe('ConfigReader', () => {
     })
   })
 
-  describe('test method filter normalization', () => {
-    // A bare method name (one segment) and a class-qualified method name
-    // (two segments) keep their existing meanings exactly; only a
-    // three-segment, namespace-qualified entry loses its leading segment.
-    // All three arities appear together so the segment-COUNT comparison
-    // cannot be faked by a fixture that only exercises one arm.
+  describe('test method filter pass-through', () => {
+    // ConfigReader must not touch a namespace-qualified filter entry:
+    // matchesFilter (mutationTestingService.ts) already resolves a
+    // three-segment entry like 'mockery.ArgumentTest.testFoo' through
+    // testClassResolutions' qualified lookupKeys. Stripping the namespace
+    // segment here contradicted that contract — it reduced the entry to a
+    // two-segment form no class resolves to, silently selecting zero
+    // methods. All three arities appear together so a regression that only
+    // strips one arity cannot hide behind a fixture that exercises just
+    // that arm.
     const qualifiedFilters = [
       'mockery.ArgumentTest.testFoo',
       'ArgumentTest.testBar',
       'testBaz',
     ]
-    const normalizedFilters = [
-      'ArgumentTest.testFoo',
-      'ArgumentTest.testBar',
-      'testBaz',
-    ]
 
     it.each(['includeTestMethods', 'excludeTestMethods'] as const)(
-      'Given a three-segment, a two-segment and a bare entry in %s, When resolving config, Then only the three-segment entry drops its namespace segment',
+      'Given a three-segment, a two-segment and a bare entry in %s, When resolving config, Then every entry passes through unchanged',
       async field => {
         // Arrange
         const parameter: ApexMutationParameter = {
@@ -993,13 +992,12 @@ describe('ConfigReader', () => {
         const result = await sut.resolve(parameter)
 
         // Assert
-        expect(result[field]).toEqual(normalizedFilters)
+        expect(result[field]).toEqual(qualifiedFilters)
       }
     )
 
-    it('Given a three-segment entry sourced from the config file rather than the flag, When resolving config, Then it drops its namespace segment the same way', async () => {
-      // Arrange — the normalization boundary applies after CLI/file merge,
-      // so a config-file-sourced filter is normalized identically
+    it('Given a three-segment entry sourced from the config file rather than the flag, When resolving config, Then it passes through unchanged the same way', async () => {
+      // Arrange
       const config = { testMethods: { include: qualifiedFilters } }
       vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
       const parameter = { ...baseParameter }
@@ -1008,7 +1006,7 @@ describe('ConfigReader', () => {
       const result = await sut.resolve(parameter)
 
       // Assert
-      expect(result.includeTestMethods).toEqual(normalizedFilters)
+      expect(result.includeTestMethods).toEqual(qualifiedFilters)
     })
   })
 

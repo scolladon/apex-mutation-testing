@@ -24,19 +24,6 @@ const APEX_CLASS_NAME_PATTERN =
 // convention typed by mistake for the dotted class convention.
 const OBJECT_CONVENTION_SEPARATOR = '__'
 
-const QUALIFIED_FILTER_SEGMENT_COUNT = 3
-const NAMESPACE_FILTER_CLASS_SEGMENT = 1
-const NAMESPACE_FILTER_METHOD_SEGMENT = 2
-
-// The rule keys on segment COUNT, never on the presence of a dot, so a bare
-// method name takes the same untouched arm a two-segment entry does.
-const dropNamespaceSegment = (entry: string): string => {
-  const segments = entry.split('.')
-  return segments.length === QUALIFIED_FILTER_SEGMENT_COUNT
-    ? `${segments[NAMESPACE_FILTER_CLASS_SEGMENT]}.${segments[NAMESPACE_FILTER_METHOD_SEGMENT]}`
-    : entry
-}
-
 interface MutationTestingConfig {
   mutators?: {
     include?: string[]
@@ -79,12 +66,10 @@ export class ConfigReader {
         parameter.includeMutators ?? fileConfig?.mutators?.include,
       excludeMutators:
         parameter.excludeMutators ?? fileConfig?.mutators?.exclude,
-      includeTestMethods: ConfigReader.normalizeTestMethodFilters(
-        parameter.includeTestMethods ?? fileConfig?.testMethods?.include
-      ),
-      excludeTestMethods: ConfigReader.normalizeTestMethodFilters(
-        parameter.excludeTestMethods ?? fileConfig?.testMethods?.exclude
-      ),
+      includeTestMethods:
+        parameter.includeTestMethods ?? fileConfig?.testMethods?.include,
+      excludeTestMethods:
+        parameter.excludeTestMethods ?? fileConfig?.testMethods?.exclude,
       threshold: parameter.threshold ?? fileConfig?.threshold,
       skipPatterns: parameter.skipPatterns ?? fileConfig?.skipPatterns,
       lines: parameter.lines ?? fileConfig?.lines,
@@ -246,16 +231,6 @@ export class ConfigReader {
       messages,
       'error.blankTestSuite'
     )
-  }
-
-  // Normalizes a namespace-qualified test-method filter entry
-  // ('ns.Class.method') down to the two-segment form the matcher already
-  // understands ('Class.method'), so a user who qualified --test-class can
-  // qualify the filter the same way instead of silently matching nothing.
-  public static normalizeTestMethodFilters(
-    entries: string[] | undefined
-  ): string[] | undefined {
-    return entries?.map(dropNamespaceSegment)
   }
 
   private validate(parameter: ApexMutationParameter): void {

@@ -33,6 +33,7 @@ export type TargetClassSelection<T> =
   | { kind: 'mutable'; candidate: T }
   | { kind: 'not-mutable'; candidates: T[] } // every matching row; all are non-mutable
   | { kind: 'ambiguous'; candidates: T[] } // the competing MUTABLE rows, for the message
+  | { kind: 'unqualified'; candidate: T } // the one mutable row, but not this org's own — refuse and name it
   | { kind: 'not-found' }
 
 // Name-free by construction: both the not-mutable and ambiguous messages are
@@ -58,8 +59,14 @@ export const selectMutableClass = <T extends ApexClassCandidate>(
   if (own !== undefined) {
     return { kind: 'mutable', candidate: own }
   }
+  // A bare name is legal source only inside the namespace that owns it, so a
+  // row selected only by "it is the sole mutable match" — never by owning
+  // this org's namespace — must be refused, not silently used: that is
+  // exactly how a bare `-c Argument` could write into an installed unlocked
+  // package this org does not own. The caller re-runs naming the qualified
+  // spelling instead.
   if (mutable.length === 1) {
-    return { kind: 'mutable', candidate: mutable[0] }
+    return { kind: 'unqualified', candidate: mutable[0] }
   }
   return { kind: 'ambiguous', candidates: mutable }
 }

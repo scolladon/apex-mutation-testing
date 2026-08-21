@@ -36,6 +36,7 @@ export type TargetClassVerdict =
   | { kind: 'mutable' }
   | { kind: 'not-mutable'; states: string[] } // display-ready, e.g. ['installed']
   | { kind: 'ambiguous'; spellings: string[] } // e.g. ['Argument', 'mockery.Argument']
+  | { kind: 'unqualified'; spelling: string } // the one match is foreign, e.g. 'mockery.Argument'
   | { kind: 'not-found' }
 
 export interface ApexSourceProvider {

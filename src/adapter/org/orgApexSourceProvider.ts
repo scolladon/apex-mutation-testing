@@ -45,18 +45,16 @@ const observedState = (state: string | null): string =>
   state ?? NO_STATE_REPORTED
 
 // Every row's qualified spelling is always a lookup key. Its bare spelling
-// joins only when the row is unambiguous as the source of that bare name
-// within the returned set: either its namespace is the org's own, or no
-// other row in the set answers to the same bare name — a bare name shared by
-// two foreign rows resolves to neither, rather than to an arbitrary one of
-// them. A row with no namespace has no separate qualified spelling to begin
-// with (the bare name IS its only spelling), so the ambiguity question never
-// arises for it. Case-folded throughout because ApexClass.Name matches
+// joins only when the row's namespace is this org's own — a bare name is
+// legal source only inside the namespace that owns it, so a foreign row must
+// never mint one, even when it is the only row that answers to that bare
+// name: admitting it there is exactly the write-perimeter defect this rule
+// closes (selectMutableClass's own-namespace arm enforces the identical rule
+// on the write side). Case-folded throughout because ApexClass.Name matches
 // case-insensitively on the org and the perimeter entry is user-typed.
 const spellingsOf = (
   identity: ApexClassIdentity,
-  orgNamespace: string | null,
-  bareNameCounts: ReadonlyMap<string, number>
+  orgNamespace: string | null
 ): string[] => {
   const bare = identity.Name.toLowerCase()
   const qualified = qualifiedApexClassName(
@@ -64,45 +62,29 @@ const spellingsOf = (
     identity.NamespacePrefix
   ).toLowerCase()
   if (bare === qualified) {
+    // A row with no namespace has no separate qualified spelling to begin
+    // with — the bare name IS its only spelling — so withholding it is not
+    // an option: the row would be left with no lookup key at all.
     return [bare]
   }
-  const mintsBare =
-    isOwnNamespace(identity.NamespacePrefix, orgNamespace) ||
-    bareNameCounts.get(bare) === 1
-  return mintsBare ? [bare, qualified] : [qualified]
+  return isOwnNamespace(identity.NamespacePrefix, orgNamespace)
+    ? [bare, qualified]
+    : [qualified]
 }
 
-// Case-folded so a bare name shared by two rows differing only in case is
-// still recognised as contested.
-const countBareNames = (
-  identities: ApexClassIdentity[]
-): Map<string, number> => {
-  const counts = new Map<string, number>()
-  for (const identity of identities) {
-    const bare = identity.Name.toLowerCase()
-    counts.set(bare, (counts.get(bare) ?? 0) + 1)
-  }
-  return counts
-}
-
-// One resolution per row, but a row's lookupKeys now depend on the whole
-// returned set, not on the row alone: a bare spelling shared by more than one
-// row is ambiguous, so only the org's own row — or a row that is the bare
-// name's sole claimant — answers to it.
+// One resolution per row.
 const toResolutions = (
   identities: ApexClassIdentity[],
   orgNamespace: string | null
-): TestClassResolution[] => {
-  const bareNameCounts = countBareNames(identities)
-  return identities.map(identity => ({
+): TestClassResolution[] =>
+  identities.map(identity => ({
     classId: identity.Id,
     displayName: qualifiedApexClassName(
       identity.Name,
       identity.NamespacePrefix
     ),
-    lookupKeys: spellingsOf(identity, orgNamespace, bareNameCounts),
+    lookupKeys: spellingsOf(identity, orgNamespace),
   }))
-}
 
 const toError = (value: unknown): Error =>
   value instanceof Error ? value : new Error(String(value))
@@ -128,7 +110,9 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
         : candidates.filter(c =>
             isOwnNamespace(c.NamespacePrefix, ref.namespace)
           )
-    return selectMutableClass(scoped, this.orgNamespace)
+    // A qualifier names the namespace that owns this lookup; absent one, the
+    // org's own does.
+    return selectMutableClass(scoped, ref.namespace ?? this.orgNamespace)
   }
 
   public async assessTargetClass(name: string): Promise<TargetClassVerdict> {
@@ -152,6 +136,14 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
           kind: 'ambiguous',
           spellings: selection.candidates.map(c =>
             qualifiedApexClassName(ref.name, c.NamespacePrefix)
+          ),
+        }
+      case 'unqualified':
+        return {
+          kind: 'unqualified',
+          spelling: qualifiedApexClassName(
+            ref.name,
+            selection.candidate.NamespacePrefix
           ),
         }
       case 'not-found':
@@ -306,8 +298,19 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
       identity,
       resolution: resolutions[index],
     }))
+    // Independent of lookupKeys on purpose: "does a class by this name exist
+    // at all" and "does it answer to this exact spelling" are different
+    // questions. Since spellingsOf withholds the bare key from a foreign row,
+    // driving `known` off lookupKeys would make a bare entry naming only a
+    // foreign row report not-found instead of not-accessible.
     const known = new Set(
-      rows.flatMap(({ resolution }) => resolution.lookupKeys)
+      identities.flatMap(identity => [
+        identity.Name.toLowerCase(),
+        qualifiedApexClassName(
+          identity.Name,
+          identity.NamespacePrefix
+        ).toLowerCase(),
+      ])
     )
     const accessible = new Set(
       rows

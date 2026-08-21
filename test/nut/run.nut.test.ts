@@ -90,6 +90,7 @@ vi.mock('../../src/service/apexClassValidator.js', async () => {
     ApexClassNotFoundError: actual.ApexClassNotFoundError,
     ApexClassNotMutableError: actual.ApexClassNotMutableError,
     ApexClassAmbiguousError: actual.ApexClassAmbiguousError,
+    ApexClassUnqualifiedError: actual.ApexClassUnqualifiedError,
   }
 })
 
@@ -129,6 +130,7 @@ import {
   ApexClassAmbiguousError,
   ApexClassNotFoundError,
   ApexClassNotMutableError,
+  ApexClassUnqualifiedError,
   ApexClassValidator,
 } from '../../src/service/apexClassValidator.js'
 import { ConfigReader } from '../../src/service/configReader.js'
@@ -661,6 +663,37 @@ describe('apex mutation test run NUT', () => {
       expect(mockMessages.createError).toHaveBeenCalledWith(
         'error.apexClassAmbiguous',
         ['Argument', 'mockery.Argument, acme.Argument']
+      )
+      expect(sut.warn).not.toHaveBeenCalled()
+      expect(MutationTestingService).not.toHaveBeenCalled()
+    })
+
+    it('When the class under mutation matches a modifiable class only under a foreign namespace, Then it rejects with error.apexClassUnqualified and never warns or constructs the mutation service', async () => {
+      // Arrange
+      vi.mocked(ApexClassValidator).mockImplementation(
+        class {
+          validate = vi
+            .fn()
+            .mockRejectedValue(
+              new ApexClassUnqualifiedError(
+                'Argument',
+                'mockery.Argument'
+              ) as never
+            )
+          assessPerimeter = vi
+            .fn()
+            .mockResolvedValue({ skipped: [], resolutions: [] } as never)
+        } as unknown as typeof ApexClassValidator
+      )
+      const sut = buildCommand(['-c', 'Argument', '-t', 'MyClassTest'])
+
+      // Act & Assert
+      await expect(sut.run()).rejects.toThrow(
+        'error.apexClassUnqualified: Argument, mockery.Argument'
+      )
+      expect(mockMessages.createError).toHaveBeenCalledWith(
+        'error.apexClassUnqualified',
+        ['Argument', 'mockery.Argument']
       )
       expect(sut.warn).not.toHaveBeenCalled()
       expect(MutationTestingService).not.toHaveBeenCalled()

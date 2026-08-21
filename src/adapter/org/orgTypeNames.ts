@@ -30,9 +30,14 @@ export const identityTypeName = (name: string): TypeName => ({
 const foldedNamespace = (namespace: string | null): string | null =>
   // isOwnNamespace folds BOTH sides through this function, so the direction
   // of the fold cannot be observed — upper and lower agree on every input
-  // pair. Only folding-versus-not is behavioural, and that is pinned.
+  // pair. Only folding-versus-not is behavioural, and that is pinned. A
+  // falsy check (not a null check) is what makes '' fold to the same null
+  // as an absent namespace — required because
+  // OrganizationRepository.readNamespacePrefix and an ApexClass row can
+  // each report either spelling for "no namespace", and nothing upstream
+  // guarantees they agree.
   // Stryker disable next-line MethodExpression: both sides fold in lockstep.
-  namespace === null ? null : namespace.toLowerCase()
+  namespace ? namespace.toLowerCase() : null
 
 export const isOwnNamespace = (
   namespace: string | null,

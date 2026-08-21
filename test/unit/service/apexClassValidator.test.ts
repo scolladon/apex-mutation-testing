@@ -2,6 +2,7 @@ import {
   ApexClassAmbiguousError,
   ApexClassNotFoundError,
   ApexClassNotMutableError,
+  ApexClassUnqualifiedError,
   ApexClassValidator,
 } from '../../../src/service/apexClassValidator.js'
 import { fakeSourceProvider } from '../../utils/testUtil.js'
@@ -88,6 +89,25 @@ describe('ApexClassValidator', () => {
         className: 'TestClass',
         spellings: ['mockery.Argument', 'acme.Argument'],
         name: 'ApexClassAmbiguousError',
+      })
+    })
+
+    it('should reject with an ApexClassUnqualifiedError carrying the class name and the qualified spelling when the verdict is unqualified', async () => {
+      // Arrange
+      vi.mocked(source.assessTargetClass).mockResolvedValueOnce({
+        kind: 'unqualified',
+        spelling: 'mockery.Argument',
+      })
+
+      // Act
+      const result = sut.validate(params)
+
+      // Assert
+      await expect(result).rejects.toBeInstanceOf(ApexClassUnqualifiedError)
+      await expect(result).rejects.toMatchObject({
+        className: 'TestClass',
+        spelling: 'mockery.Argument',
+        name: 'ApexClassUnqualifiedError',
       })
     })
   })
