@@ -247,7 +247,7 @@ export class GroupExecutor {
   ): ApexMutationTestResult['mutants'] {
     const outcomeByMethod = new Map<TestMethodId, string>(
       (testResult.tests ?? []).map(t => [
-        qualifyTestMethod(t.className, t.methodName),
+        qualifyTestMethod(t.classId, t.methodName),
         t.outcome,
       ])
     )
@@ -302,7 +302,7 @@ export class GroupExecutor {
     expectedMethods: ReadonlySet<TestMethodId>
   ): boolean {
     const reported = new Set(
-      testResult.tests.map(t => qualifyTestMethod(t.className, t.methodName))
+      testResult.tests.map(t => qualifyTestMethod(t.classId, t.methodName))
     )
     for (const name of expectedMethods) {
       if (!reported.has(name)) return true

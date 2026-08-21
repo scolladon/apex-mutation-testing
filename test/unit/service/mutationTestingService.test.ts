@@ -70,6 +70,19 @@ const baselineResult = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
+// Self-mapping resolution: the bare class name plays the classId, and its own
+// lowercase spelling is the only lookup key. This reproduces the pre-Id
+// behaviour for fixtures where the classId/displayName split is not what the
+// test is about — only the tests that ARE about that split build a
+// TestClassResolutions map by hand with a genuinely distinct classId.
+const resolutionsFor = (classNames: string[]): TestClassResolutions =>
+  new Map(
+    classNames.map(name => [
+      name,
+      { classId: name, displayName: name, lookupKeys: [name.toLowerCase()] },
+    ])
+  )
+
 describe('MutationTestingService', () => {
   let sut: MutationTestingService
   let progress: Progress
@@ -180,6 +193,7 @@ describe('MutationTestingService', () => {
       {
         apexClassName: 'TestClass',
         apexTestClassNames: ['TestClassTest'],
+        testClassResolutions: resolutionsFor(['TestClassTest']),
       } as ApexMutationParameter,
       messagesMock,
       outputSinkStub
@@ -228,7 +242,13 @@ describe('MutationTestingService', () => {
             outcome: 'Failed',
             testsRan: 2,
             otherFailureCount: 0,
-            compileFailures: [{ className: 'TestClassTest', message: 'boom' }],
+            compileFailures: [
+              {
+                classId: 'TestClassTest',
+                className: 'TestClassTest',
+                message: 'boom',
+              },
+            ],
             testMethodsPerLine: new Map([
               [1, new Set(['GoodTest.testMethodA'])],
             ]),
@@ -241,6 +261,7 @@ describe('MutationTestingService', () => {
           {
             apexClassName: 'TestClass',
             apexTestClassNames: ['GoodTest', 'TestClassTest'],
+            testClassResolutions: resolutionsFor(['GoodTest', 'TestClassTest']),
           } as ApexMutationParameter,
           messagesMock
         )
@@ -440,7 +461,13 @@ describe('MutationTestingService', () => {
             sourceFile: 'TestClass',
             sourceFileContent: mockApexClass.Body,
             testFiles: ['TestClassTest'],
-            testClassResolutions: [],
+            testClassResolutions: [
+              {
+                classId: 'TestClassTest',
+                displayName: 'TestClassTest',
+                lookupKeys: ['testclasstest'],
+              },
+            ],
             mutants: expectedMutants,
           })
           expect(progress.start).toHaveBeenCalled()
@@ -534,6 +561,7 @@ describe('MutationTestingService', () => {
             apexClassName: 'TestClass',
             apexTestClassNames: ['TestClassTest'],
             dryRun: true,
+            testClassResolutions: resolutionsFor(['TestClassTest']),
           } as ApexMutationParameter,
           messagesMock
         )
@@ -546,7 +574,13 @@ describe('MutationTestingService', () => {
           sourceFile: 'TestClass',
           sourceFileContent: mockApexClass.Body,
           testFiles: ['TestClassTest'],
-          testClassResolutions: [],
+          testClassResolutions: [
+            {
+              classId: 'TestClassTest',
+              displayName: 'TestClassTest',
+              lookupKeys: ['testclasstest'],
+            },
+          ],
           mutants: [
             {
               id: expect.stringContaining('TestClass-'),
@@ -817,7 +851,10 @@ describe('MutationTestingService', () => {
     describe('Given a perimeter class contributes zero covered lines', () => {
       const buildZeroContributionSut = (
         apexTestClassNames: string[],
-        testClassOrigins?: TestClassOrigins
+        testClassOrigins?: TestClassOrigins,
+        testClassResolutions: TestClassResolutions = resolutionsFor(
+          apexTestClassNames
+        )
       ): MutationTestingService =>
         new MutationTestingService(
           progress,
@@ -827,6 +864,7 @@ describe('MutationTestingService', () => {
             apexClassName: 'TestClass',
             apexTestClassNames,
             testClassOrigins,
+            testClassResolutions,
           } as ApexMutationParameter,
           messagesMock
         )
@@ -1124,7 +1162,24 @@ describe('MutationTestingService', () => {
             testMethodsPerLine: new Map([[1, new Set(['FooTest.testA'])]]),
           })
         )
-        const zeroContributionSut = buildZeroContributionSut(['footest'])
+        // The coverage row's classId ('FooTest') and the perimeter's own
+        // spelling ('footest') differ only by case — resolving through a
+        // resolutions map whose lookupKeys are already folded is what makes
+        // them the same class, not a case-fold on the join itself.
+        const zeroContributionSut = buildZeroContributionSut(
+          ['footest'],
+          undefined,
+          new Map([
+            [
+              'FooTest',
+              {
+                classId: 'FooTest',
+                displayName: 'FooTest',
+                lookupKeys: ['footest'],
+              },
+            ],
+          ])
+        )
 
         // Act
         const result = await zeroContributionSut.process()
@@ -1163,6 +1218,7 @@ describe('MutationTestingService', () => {
             apexClassName: 'TestClass',
             apexTestClassNames: ['FooTest', 'BarTest'],
             dryRun: true,
+            testClassResolutions: resolutionsFor(['FooTest', 'BarTest']),
           } as ApexMutationParameter,
           messagesMock
         )
@@ -1203,6 +1259,7 @@ describe('MutationTestingService', () => {
             apexClassName: 'TestClass',
             apexTestClassNames: ['FooTest', 'BarTest'],
             excludeTestMethods: ['BarTest.setup'],
+            testClassResolutions: resolutionsFor(['FooTest', 'BarTest']),
           } as ApexMutationParameter,
           messagesMock
         )
@@ -1221,12 +1278,91 @@ describe('MutationTestingService', () => {
         )
         expect(result.testFiles).toEqual(['FooTest'])
       })
+
+      it('Given two classes share one bare name but hold different class ids, When only the qualified class contributes coverage, Then only the bare-named class is reported silent', async () => {
+        // Arrange — CLASS_ID_LOCAL and CLASS_ID_FOREIGN are different classes
+        // that both answer to the bare perimeter spelling 'Argument'; only
+        // CLASS_ID_FOREIGN contributes coverage, so a name-based join (rather
+        // than an id-based one) would wrongly treat that as covering both.
+        const CLASS_ID_LOCAL = '01pjV000000EE9ZQAW'
+        const CLASS_ID_FOREIGN = '01pjV000000EE9bQAG'
+        // Cast rather than the file's usual bare-class-literal pattern — see
+        // the identical note on the testClassResolutions describe block below.
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          } as unknown as typeof MutantGenerator
+        )
+        engine.testBed = fakeTestBed(
+          baselineResult({
+            outcome: 'Passed',
+            testsRan: 1,
+            testMethodsPerLine: new Map([
+              [1, new Set([`${CLASS_ID_FOREIGN}.testFoo`])],
+            ]),
+          })
+        )
+        // CLASS_ID_FOREIGN's own lookupKeys deliberately do NOT include the
+        // bare 'argument' spelling here (unlike its real-org spellingsOf,
+        // which would): a contributing class's OWN bare-name lookup key
+        // coinciding with a DIFFERENT class's exact perimeter spelling is an
+        // orthogonal, union-of-keys ambiguity this fixture is not testing —
+        // isolating the class-id join from that ambiguity is what proves two
+        // classes sharing a bare name resolve independently here.
+        const resolutions: TestClassResolutions = new Map([
+          [
+            CLASS_ID_LOCAL,
+            {
+              classId: CLASS_ID_LOCAL,
+              displayName: 'Argument',
+              lookupKeys: ['argument'],
+            },
+          ],
+          [
+            CLASS_ID_FOREIGN,
+            {
+              classId: CLASS_ID_FOREIGN,
+              displayName: 'mockery.Argument',
+              lookupKeys: ['mockery.argument'],
+            },
+          ],
+        ])
+        const zeroContributionSut = buildZeroContributionSut(
+          ['Argument', 'mockery.Argument'],
+          undefined,
+          resolutions
+        )
+
+        // Act
+        const result = await zeroContributionSut.process()
+
+        // Assert — only the class that never contributed (Argument) is
+        // skipped; mockery.Argument, which shares the same bare name but a
+        // different id, is not merged into it.
+        expect(spinner.start).toHaveBeenCalledWith(
+          "Skipping test class 'Argument': it contributed no covered lines.",
+          undefined,
+          { stdout: true }
+        )
+        expect(spinner.start).not.toHaveBeenCalledWith(
+          "Skipping test class 'mockery.Argument': it contributed no covered lines.",
+          undefined,
+          { stdout: true }
+        )
+        expect(result.testFiles).toEqual(['mockery.Argument'])
+      })
     })
 
     describe('Given a perimeter class fails to compile in the baseline', () => {
       const buildCompileDropSut = (
         apexTestClassNames: string[],
-        testClassOrigins?: TestClassOrigins
+        testClassOrigins?: TestClassOrigins,
+        testClassResolutions: TestClassResolutions = resolutionsFor(
+          apexTestClassNames
+        )
       ): MutationTestingService =>
         new MutationTestingService(
           progress,
@@ -1236,6 +1372,7 @@ describe('MutationTestingService', () => {
             apexClassName: 'TestClass',
             apexTestClassNames,
             testClassOrigins,
+            testClassResolutions,
           } as ApexMutationParameter,
           messagesMock
         )
@@ -1258,6 +1395,7 @@ describe('MutationTestingService', () => {
           baselineResult({
             compileFailures: [
               {
+                classId: 'BrokenTest',
                 className: 'BrokenTest',
                 message: 'Invalid type: Dep at line 3 column 5',
               },
@@ -1286,6 +1424,7 @@ describe('MutationTestingService', () => {
           baselineResult({
             compileFailures: [
               {
+                classId: 'BrokenTest',
                 className: 'BrokenTest',
                 message: 'Invalid type: Dep at line 3 column 5',
               },
@@ -1308,15 +1447,41 @@ describe('MutationTestingService', () => {
       })
 
       it('Given the org reports the compile failure as FooTest while the perimeter reads footest, When processing, Then the case-folded match renders the perimeter spelling', async () => {
-        // Arrange
+        // Arrange — the failure's classId ('FooTest') and the perimeter's own
+        // spelling ('footest') differ only by case; the resolution's folded
+        // lookupKeys — not a case-fold on the join itself — is what still
+        // recognises them as the same class.
         mockCompilingAdapters()
         engine.testBed = fakeTestBed(
           baselineResult({
-            compileFailures: [{ className: 'FooTest', message: 'boom' }],
+            compileFailures: [
+              { classId: 'FooTest', className: 'FooTest', message: 'boom' },
+            ],
             testMethodsPerLine: new Map([[1, new Set(['GoodTest.testA'])]]),
           })
         )
-        const compileDropSut = buildCompileDropSut(['footest', 'GoodTest'])
+        const compileDropSut = buildCompileDropSut(
+          ['footest', 'GoodTest'],
+          undefined,
+          new Map([
+            [
+              'FooTest',
+              {
+                classId: 'FooTest',
+                displayName: 'FooTest',
+                lookupKeys: ['footest'],
+              },
+            ],
+            [
+              'GoodTest',
+              {
+                classId: 'GoodTest',
+                displayName: 'GoodTest',
+                lookupKeys: ['goodtest'],
+              },
+            ],
+          ])
+        )
 
         // Act
         const result = await compileDropSut.process()
@@ -1337,6 +1502,7 @@ describe('MutationTestingService', () => {
           baselineResult({
             compileFailures: [
               {
+                classId: 'BrokenTest',
                 className: 'BrokenTest',
                 message: 'Invalid type: Dep at line 3 column 5',
               },
@@ -1367,6 +1533,7 @@ describe('MutationTestingService', () => {
           baselineResult({
             compileFailures: [
               {
+                classId: 'BrokenTest',
                 className: 'BrokenTest',
                 message: 'Invalid type: Dep at line 3 column 5',
               },
@@ -1397,8 +1564,8 @@ describe('MutationTestingService', () => {
           baselineResult({
             testsRan: 2,
             compileFailures: [
-              { className: 'FooTest', message: 'boom one' },
-              { className: 'BarTest', message: 'boom two' },
+              { classId: 'FooTest', className: 'FooTest', message: 'boom one' },
+              { classId: 'BarTest', className: 'BarTest', message: 'boom two' },
             ],
             testMethodsPerLine: new Map(),
           })
@@ -1462,7 +1629,13 @@ describe('MutationTestingService', () => {
         mockCompilingAdapters()
         engine.testBed = fakeTestBed(
           baselineResult({
-            compileFailures: [{ className: 'BrokenTest', message: 'boom' }],
+            compileFailures: [
+              {
+                classId: 'BrokenTest',
+                className: 'BrokenTest',
+                message: 'boom',
+              },
+            ],
             testMethodsPerLine: new Map([[1, new Set(['GoodTest.testA'])]]),
             fidelity: 'aggregate',
           })
@@ -1503,7 +1676,13 @@ describe('MutationTestingService', () => {
         mockCompilingAdapters()
         engine.testBed = fakeTestBed(
           baselineResult({
-            compileFailures: [{ className: 'BrokenTest', message: 'boom' }],
+            compileFailures: [
+              {
+                classId: 'BrokenTest',
+                className: 'BrokenTest',
+                message: 'boom',
+              },
+            ],
             testMethodsPerLine: new Map([[1, new Set(['GoodTest.testA'])]]),
           })
         )
@@ -1515,6 +1694,7 @@ describe('MutationTestingService', () => {
             apexClassName: 'TestClass',
             apexTestClassNames: ['GoodTest', 'BrokenTest'],
             dryRun: true,
+            testClassResolutions: resolutionsFor(['GoodTest', 'BrokenTest']),
           } as ApexMutationParameter,
           messagesMock
         )
@@ -1531,7 +1711,13 @@ describe('MutationTestingService', () => {
         mockCompilingAdapters()
         engine.testBed = fakeTestBed(
           baselineResult({
-            compileFailures: [{ className: 'BrokenTest', message: 'boom' }],
+            compileFailures: [
+              {
+                classId: 'BrokenTest',
+                className: 'BrokenTest',
+                message: 'boom',
+              },
+            ],
             testMethodsPerLine: new Map(),
           })
         )
@@ -1543,6 +1729,106 @@ describe('MutationTestingService', () => {
         await expect(compileDropSut.process()).rejects.toThrow(
           "No test coverage found for 'TestClass'. Ensure 'GoodTest, BrokenTest' tests exercise the code you want to mutation test."
         )
+      })
+
+      it('Given two classes share one bare name but hold different class ids, When the compile failure names the qualified class id, Then only the qualified entry is skipped', async () => {
+        // Arrange — CLASS_ID_LOCAL and CLASS_ID_FOREIGN both answer to the
+        // bare perimeter spelling 'Argument'; only CLASS_ID_FOREIGN failed to
+        // compile, so a name-based join would wrongly drop both.
+        const CLASS_ID_LOCAL = '01pjV000000EE9ZQAW'
+        const CLASS_ID_FOREIGN = '01pjV000000EE9bQAG'
+        mockCompilingAdapters()
+        engine.testBed = fakeTestBed(
+          baselineResult({
+            compileFailures: [
+              {
+                classId: CLASS_ID_FOREIGN,
+                className: 'mockery.Argument',
+                message: 'boom',
+              },
+            ],
+            testMethodsPerLine: new Map([
+              [1, new Set([`${CLASS_ID_LOCAL}.testFoo`])],
+            ]),
+          })
+        )
+        // CLASS_ID_FOREIGN's own lookupKeys deliberately do NOT include the
+        // bare 'argument' spelling here (unlike its real-org spellingsOf,
+        // which would): that overlap is an orthogonal union-of-keys
+        // ambiguity this fixture is not testing — isolating the class-id
+        // join from it is what proves the qualified compile failure is
+        // attributed to its own class and not the bare-named one.
+        const resolutions: TestClassResolutions = new Map([
+          [
+            CLASS_ID_LOCAL,
+            {
+              classId: CLASS_ID_LOCAL,
+              displayName: 'Argument',
+              lookupKeys: ['argument'],
+            },
+          ],
+          [
+            CLASS_ID_FOREIGN,
+            {
+              classId: CLASS_ID_FOREIGN,
+              displayName: 'mockery.Argument',
+              lookupKeys: ['mockery.argument'],
+            },
+          ],
+        ])
+        const compileDropSut = buildCompileDropSut(
+          ['Argument', 'mockery.Argument'],
+          undefined,
+          resolutions
+        )
+
+        // Act
+        const result = await compileDropSut.process()
+
+        // Assert — only mockery.Argument is dropped for a compile failure;
+        // Argument (a different class id) compiles and keeps its coverage.
+        expect(spinner.start).toHaveBeenCalledWith(
+          "Skipping test class 'mockery.Argument': it does not compile (boom).",
+          undefined,
+          { stdout: true }
+        )
+        expect(result.testFiles).toEqual(['Argument'])
+      })
+
+      it('Given a compile failure whose class id is absent from the resolutions map, When processing, Then nothing is skipped for it', async () => {
+        // Arrange — this is the named residual: a classId with no resolution
+        // entry misses `?? []` and the class is loudly not skipped, rather
+        // than silently guarded.
+        mockCompilingAdapters()
+        engine.testBed = fakeTestBed(
+          baselineResult({
+            outcome: 'Failed',
+            otherFailureCount: 0,
+            testsRan: 1,
+            compileFailures: [
+              {
+                classId: 'UnresolvedClassId',
+                className: 'GhostTest',
+                message: 'boom',
+              },
+            ],
+            testMethodsPerLine: new Map([[1, new Set(['GoodTest.testA'])]]),
+          })
+        )
+        const compileDropSut = buildCompileDropSut(['GoodTest', 'GhostTest'])
+
+        // Act
+        const result = await compileDropSut.process()
+
+        // Assert — GhostTest's classId never resolves, so it is never marked
+        // does-not-compile; it falls through to the zero-contribution check
+        // instead, which drops it for the real (different) reason.
+        expect(spinner.start).not.toHaveBeenCalledWith(
+          "Skipping test class 'GhostTest': it does not compile (boom).",
+          undefined,
+          { stdout: true }
+        )
+        expect(result.testFiles).toEqual(['GoodTest'])
       })
     })
 
@@ -1984,6 +2270,7 @@ describe('MutationTestingService', () => {
             apexClassName: 'TestClass',
             apexTestClassNames: ['FooTest', 'BarTest'],
             includeTestMethods: ['FooTest.setup'],
+            testClassResolutions: resolutionsFor(['FooTest', 'BarTest']),
           } as ApexMutationParameter,
           messagesMock
         )
@@ -1994,6 +2281,134 @@ describe('MutationTestingService', () => {
         // Assert — the second evaluate() argument is the filtered test set.
         expect(evaluateMock.mock.calls[0]?.[1]).toEqual(
           new Set(['FooTest.setup'])
+        )
+      })
+    })
+
+    describe('Given matchesFilter resolves qualified filter tokens through the resolutions map', () => {
+      const CLASS_ID_FOREIGN = '01pjV000000EE9bQAG'
+      const resolutions: TestClassResolutions = new Map([
+        [
+          CLASS_ID_FOREIGN,
+          {
+            classId: CLASS_ID_FOREIGN,
+            displayName: 'mockery.ArgumentTest',
+            lookupKeys: ['argumenttest', 'mockery.argumenttest'],
+          },
+        ],
+      ])
+
+      const buildFilterResolutionSut = (
+        includeTestMethods: string[]
+      ): MutationTestingService => {
+        // Cast rather than the file's usual bare-class-literal pattern — see
+        // the identical note on the testClassResolutions describe block below.
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          } as unknown as typeof MutantGenerator
+        )
+        engine.testBed = fakeTestBed(
+          baselineResult({
+            outcome: 'Passed',
+            testsRan: 1,
+            testMethodsPerLine: new Map([
+              [1, new Set([`${CLASS_ID_FOREIGN}.testFoo`])],
+            ]),
+          })
+        )
+        return new MutationTestingService(
+          progress,
+          spinner,
+          engine,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassNames: ['mockery.ArgumentTest'],
+            includeTestMethods,
+            testClassResolutions: resolutions,
+          } as ApexMutationParameter,
+          messagesMock
+        )
+      }
+
+      it('Given includeTestMethods holds the three-segment qualified spelling, When processing, Then the method survives the filter', async () => {
+        // Arrange
+        const sutUnderTest = buildFilterResolutionSut([
+          'mockery.argumenttest.testfoo',
+        ])
+
+        // Act
+        const result = await sutUnderTest.process()
+
+        // Assert — the class was not dropped, so mutation generation proceeded.
+        expect(result.mutants).toHaveLength(1)
+      })
+
+      it('Given includeTestMethods holds only the bare method name, When processing, Then the method survives the filter', async () => {
+        // Arrange
+        const sutUnderTest = buildFilterResolutionSut(['testfoo'])
+
+        // Act
+        const result = await sutUnderTest.process()
+
+        // Assert
+        expect(result.mutants).toHaveLength(1)
+      })
+
+      it('Given includeTestMethods holds the two-segment qualified spelling, When processing, Then the method survives the filter', async () => {
+        // Arrange
+        const sutUnderTest = buildFilterResolutionSut(['argumenttest.testFoo'])
+
+        // Act
+        const result = await sutUnderTest.process()
+
+        // Assert
+        expect(result.mutants).toHaveLength(1)
+      })
+
+      it("Given the id's class id is absent from the resolutions map, When includeTestMethods holds its qualified spelling, Then the method is filtered out", async () => {
+        // Arrange — this is what makes the `?? []` arm of matchesFilter
+        // reachable: an unresolvable class id contributes no lookup keys, so
+        // a qualified include filter can never match it. Cast rather than the
+        // file's usual bare-class-literal pattern — see the identical note on
+        // the testClassResolutions describe block below.
+        vi.mocked(MutantGenerator).mockImplementation(
+          class {
+            compute = vi
+              .fn()
+              .mockReturnValue({ mutations: [mockMutation], tokenStream: {} })
+            mutate = vi.fn().mockReturnValue('mutated code')
+          } as unknown as typeof MutantGenerator
+        )
+        engine.testBed = fakeTestBed(
+          baselineResult({
+            outcome: 'Passed',
+            testsRan: 1,
+            testMethodsPerLine: new Map([
+              [1, new Set(['UnresolvedClassId.testFoo'])],
+            ]),
+          })
+        )
+        const sutUnderTest = new MutationTestingService(
+          progress,
+          spinner,
+          engine,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassNames: ['mockery.ArgumentTest'],
+            includeTestMethods: ['mockery.argumenttest.testfoo'],
+            testClassResolutions: resolutions,
+          } as ApexMutationParameter,
+          messagesMock
+        )
+
+        // Act & Assert — every method on the only covered line is filtered
+        // out, so no coverage remains.
+        await expect(sutUnderTest.process()).rejects.toThrow(
+          'No test coverage found'
         )
       })
     })
@@ -3556,7 +3971,11 @@ describe('MutationTestingService', () => {
             otherFailureCount: 1,
             testsRan: 3,
             compileFailures: [
-              { className: 'TestClassTest', message: 'Invalid type: Foo' },
+              {
+                classId: 'TestClassTest',
+                className: 'TestClassTest',
+                message: 'Invalid type: Foo',
+              },
             ],
             testMethodsPerLine: new Map(),
           })
@@ -3888,6 +4307,7 @@ describe('MutationTestingService', () => {
             outcome: 'Failed',
             tests: [
               {
+                classId: 'TestClassTest',
                 className: 'TestClassTest',
                 methodName: 'testMethodA',
                 outcome: 'Fail',
@@ -4147,11 +4567,13 @@ describe('MutationTestingService', () => {
             outcome: 'Failed',
             tests: [
               {
+                classId: 'FooTest',
                 className: 'FooTest',
                 methodName: 'testA',
                 outcome: 'Pass',
               },
               {
+                classId: 'BarTest',
                 className: 'BarTest',
                 methodName: 'testA',
                 outcome: 'Fail',
@@ -4236,6 +4658,7 @@ describe('MutationTestingService', () => {
                 outcome: 'Failed',
                 tests: [
                   {
+                    classId: 'FooTest',
                     className: 'FooTest',
                     methodName: 'testA',
                     outcome: 'Pass',
@@ -4252,6 +4675,7 @@ describe('MutationTestingService', () => {
                 outcome: 'Passed',
                 tests: [
                   {
+                    classId: 'FooTest',
                     className: 'FooTest',
                     methodName: 'testA',
                     outcome: 'Pass',
@@ -4269,6 +4693,7 @@ describe('MutationTestingService', () => {
               outcome: 'Failed',
               tests: [
                 {
+                  classId: 'BarTest',
                   className: 'BarTest',
                   methodName: 'testA',
                   outcome: 'Pass',
@@ -4344,11 +4769,13 @@ describe('MutationTestingService', () => {
             outcome: 'Passed',
             tests: [
               {
+                classId: 'FooTest',
                 className: 'FooTest',
                 methodName: 'testA',
                 outcome: 'Pass',
               },
               {
+                classId: 'BarTest',
                 className: 'BarTest',
                 methodName: 'testA',
                 outcome: 'Pass',
@@ -4406,6 +4833,7 @@ describe('MutationTestingService', () => {
             outcome: 'Failed',
             tests: [
               {
+                classId: 'FooTest',
                 className: 'FooTest',
                 methodName: 'testA',
                 outcome: 'Fail',
@@ -4621,11 +5049,13 @@ describe('MutationTestingService', () => {
               tests: [
                 {
                   methodName: 'testA',
+                  classId: 'TestClassTest',
                   className: 'TestClassTest',
                   outcome: 'Pass',
                 },
                 {
                   methodName: 'testB',
+                  classId: 'TestClassTest',
                   className: 'TestClassTest',
                   outcome: 'Pass',
                 },
@@ -4700,11 +5130,13 @@ describe('MutationTestingService', () => {
             tests: [
               {
                 methodName: 'testA',
+                classId: 'TestClassTest',
                 className: 'TestClassTest',
                 outcome: 'Pass',
               },
               {
                 methodName: 'testB',
+                classId: 'TestClassTest',
                 className: 'TestClassTest',
                 outcome: 'Pass',
               },
@@ -4739,11 +5171,13 @@ describe('MutationTestingService', () => {
               tests: [
                 {
                   methodName: 'testA',
+                  classId: 'TestClassTest',
                   className: 'TestClassTest',
                   outcome: 'Pass',
                 },
                 {
                   methodName: 'testB',
+                  classId: 'TestClassTest',
                   className: 'TestClassTest',
                   outcome: 'Fail',
                 },
@@ -4781,6 +5215,7 @@ describe('MutationTestingService', () => {
               tests: [
                 {
                   methodName: 'testA',
+                  classId: 'TestClassTest',
                   className: 'TestClassTest',
                   outcome: 'Pass',
                 },
@@ -4810,6 +5245,7 @@ describe('MutationTestingService', () => {
             tests: [
               {
                 methodName: 'testA',
+                classId: 'TestClassTest',
                 className: 'TestClassTest',
                 outcome: 'Pass',
               },

@@ -200,8 +200,14 @@ const normalizeSyncCompileFailure = (testResult: TestResult): TestResult => {
   }
 }
 
-// module-local, not exported — keeps the class's public surface unchanged
-type TestItems = { className: string; testMethods?: string[] }[]
+// module-local, not exported — keeps the class's public surface unchanged.
+// The baseline enqueue passes the user's own spelling (which the vendor
+// accepts: TestItem.className is documented as "Should include namespace if
+// needed"); the per-mutant re-run passes the org Id the run already
+// resolved.
+type TestItems =
+  | { className: string; testMethods?: string[] }[]
+  | { classId: string; testMethods: string[] }[]
 
 // Named for the caller's intent rather than the vendor payload's inverted
 // `skipCodeCoverage` field, so a call site reads as what it asks for, not as

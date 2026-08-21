@@ -39,6 +39,7 @@ const mutationAt = (line: number, replacement: string): ApexMutation =>
   }) as unknown as ApexMutation
 
 const testOf = (methodName: string, outcome: string) => ({
+  classId: 'FooTest',
   className: 'FooTest',
   methodName,
   outcome,
@@ -328,6 +329,50 @@ describe('GroupExecutor', () => {
 
       // Assert
       expect(results.map(r => r.status)).toEqual(['RuntimeError'])
+    })
+  })
+
+  describe('Given the mutant run reports a differently-spelled className for the same class id as the baseline', () => {
+    // The baseline mints its TestMethodId from a Pass row of TEST_CLASS_ID;
+    // the mutant run reports a Fail row for the same class id but a
+    // differently-spelled className (as a namespaced org's Fail/Pass rows can
+    // spell it differently — see apexTestRunner.test.ts). The join must key
+    // on classId alone, or the two sides disagree per outcome.
+    const TEST_CLASS_ID = '01pjV000000EE9bQAG'
+    const mutation = mutationAt(9, 'K')
+    const testMethodsPerLine = new Map<number, Set<TestMethodId>>([
+      [9, new Set([`${TEST_CLASS_ID}.testRun`] as TestMethodId[])],
+    ])
+    const group: MutationGroup = {
+      mutations: [mutation],
+      testMethods: new Set([`${TEST_CLASS_ID}.testRun`] as TestMethodId[]),
+    }
+
+    it('When evaluating, Then the mutant is attributed Killed via the class id, not the differently-spelled className', async () => {
+      // Arrange
+      runTestMethodsMock = vi.fn().mockResolvedValue({
+        outcome: 'Failed',
+        tests: [
+          {
+            classId: TEST_CLASS_ID,
+            className: 'namespaced__MutationTest',
+            methodName: 'testRun',
+            outcome: 'Fail',
+          },
+        ],
+      } as unknown as ApexTestRunResult)
+      const sut = buildSut(testMethodsPerLine)
+
+      // Act
+      const results = await sut.evaluate(group, 0, performance.now(), 1)
+
+      // Assert
+      expect(results.map(r => r.status)).toEqual(['Killed'])
+      expect(results[0].attribution).toEqual({
+        coveredBy: [`${TEST_CLASS_ID}.testRun`],
+        killedBy: [`${TEST_CLASS_ID}.testRun`],
+        testsCompleted: 1,
+      })
     })
   })
 })

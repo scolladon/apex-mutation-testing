@@ -2,7 +2,8 @@ import { readFile, realpath, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import * as path from 'path'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
-import { testClassOf } from '../type/TestMethodId.js'
+import type { TestClassResolution } from '../type/TestClassResolution.js'
+import { testClassOf, testMethodOf } from '../type/TestMethodId.js'
 
 // Local module-scope shape of the Stryker mutation-testing-report-schema
 // (2.0.0) subset this reporter emits. mutation-testing-report-schema is only
@@ -76,9 +77,13 @@ export class ApexMutationHTMLReporter {
   private transformApexResults(
     apexMutationTestResult: ApexMutationTestResult
   ): MutationTestResult {
+    const resolutions = new Map(
+      apexMutationTestResult.testClassResolutions.map(r => [r.classId, r])
+    )
     const testFiles = buildTestFilesSection(
       apexMutationTestResult.testFiles,
-      apexMutationTestResult.mutants
+      apexMutationTestResult.mutants,
+      resolutions
     )
     const mutationTestResult: MutationTestResult = {
       schemaVersion: '2.0.0',
@@ -94,19 +99,32 @@ export class ApexMutationHTMLReporter {
     mutationTestResult.files[`${apexMutationTestResult.sourceFile}.cls`] = {
       language: 'java',
       source: apexMutationTestResult.sourceFileContent,
-      mutants: apexMutationTestResult.mutants.map(mapMutant),
+      mutants: apexMutationTestResult.mutants.map(mutant =>
+        mapMutant(mutant, resolutions)
+      ),
     }
 
     return mutationTestResult
   }
 }
 
+// Every identity the report emits is a rendered display name — raw org Ids
+// never leave the engine. On a map miss (see the "residual" note in
+// mutationTestingService.ts) the raw class Id renders as the qualifier:
+// visibly wrong beats plausibly wrong.
+const displayOf = (
+  id: string,
+  resolutions: ReadonlyMap<string, TestClassResolution>
+): string =>
+  `${resolutions.get(testClassOf(id))?.displayName ?? testClassOf(id)}.${testMethodOf(id)}`
+
 // observed = union of every mutant's attribution.coveredBy. Empty ⇒ no run
 // data anywhere in this result (dry run, or every mutant a CompileError) ⇒
 // omit testFiles entirely so the app renders no test view.
 function buildTestFilesSection(
   perimeter: string[],
-  mutants: ApexMutationTestResult['mutants']
+  mutants: ApexMutationTestResult['mutants'],
+  resolutions: ReadonlyMap<string, TestClassResolution>
 ): MutationTestResult['testFiles'] {
   const observed = new Set(
     mutants.flatMap(mutant => mutant.attribution?.coveredBy ?? [])
@@ -116,18 +134,34 @@ function buildTestFilesSection(
   return Object.fromEntries(
     perimeter.map(className => {
       const tests = [...observed]
-        .filter(id => testClassOf(id).toLowerCase() === className.toLowerCase())
+        .filter(id =>
+          (resolutions.get(testClassOf(id))?.lookupKeys ?? []).includes(
+            className.toLowerCase()
+          )
+        )
+        .map(id => displayOf(id, resolutions))
         .sort()
-        .map(id => ({ id, name: id }))
+        .map(display => ({ id: display, name: display }))
       return [className, { tests }]
     })
   )
 }
 
 function mapMutant(
-  mutant: ApexMutationTestResult['mutants'][number]
+  mutant: ApexMutationTestResult['mutants'][number],
+  resolutions: ReadonlyMap<string, TestClassResolution>
 ): ReportMutant {
   const attribution = mutant.attribution
+    ? {
+        coveredBy: mutant.attribution.coveredBy.map(id =>
+          displayOf(id, resolutions)
+        ),
+        killedBy: mutant.attribution.killedBy.map(id =>
+          displayOf(id, resolutions)
+        ),
+        testsCompleted: mutant.attribution.testsCompleted,
+      }
+    : undefined
   return {
     id: mutant.id,
     mutatorName: mutant.mutatorName,

@@ -2,6 +2,7 @@ import { readFile, realpath, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { ApexMutationHTMLReporter } from '../../../src/reporter/HTMLReporter.js'
 import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult.js'
+import type { TestClassResolution } from '../../../src/type/TestClassResolution.js'
 
 vi.mock('node:fs/promises')
 
@@ -44,6 +45,16 @@ const extractReport = (html: string): ParsedReport => {
   return JSON.parse(reportMatch![1]) as ParsedReport
 }
 
+// Self-mapping resolution: the class id equals its own display name and
+// folded lookup key. Reproduces the pre-Id rendering for fixtures where the
+// classId/displayName split is not what the test is about.
+const resolutionsFor = (classIds: string[]): TestClassResolution[] =>
+  classIds.map(classId => ({
+    classId,
+    displayName: classId,
+    lookupKeys: [classId.toLowerCase()],
+  }))
+
 describe('HTMLReporter', () => {
   let sut: ApexMutationHTMLReporter
   const testResults: ApexMutationTestResult = {
@@ -52,7 +63,7 @@ describe('HTMLReporter', () => {
     // Deliberately not alphabetical — pins that testFiles keys follow user
     // (perimeter) order, not a sort.
     testFiles: ['FooTest', 'BazTest', 'BarTest'],
-    testClassResolutions: [],
+    testClassResolutions: resolutionsFor(['FooTest', 'BarTest', 'BazTest']),
     mutants: [
       {
         id: '1',
@@ -254,6 +265,7 @@ describe('HTMLReporter', () => {
       const reversed = {
         ...testResults,
         testFiles: ['ZedTest'],
+        testClassResolutions: resolutionsFor(['ZedTest']),
         mutants: [
           {
             ...testResults.mutants[0],
@@ -346,12 +358,18 @@ describe('HTMLReporter', () => {
 
     it('Then places an id case-insensitively under its differently-cased perimeter key', async () => {
       // Arrange — perimeter spelled lowercase (user input), id qualified from
-      // the org's fullName casing
+      // a class id whose resolution folds to the same lowercase lookup key
       const caseInsensitiveResults: ApexMutationTestResult = {
         sourceFile: 'TestClass',
         sourceFileContent: 'public class TestClass {}',
         testFiles: ['footest'],
-        testClassResolutions: [],
+        testClassResolutions: [
+          {
+            classId: 'FooTest',
+            displayName: 'FooTest',
+            lookupKeys: ['footest'],
+          },
+        ],
         mutants: [
           {
             id: '1',
@@ -389,7 +407,7 @@ describe('HTMLReporter', () => {
         sourceFile: 'TestClass',
         sourceFileContent: 'public class TestClass {}',
         testFiles: ['FooTest'],
-        testClassResolutions: [],
+        testClassResolutions: resolutionsFor(['FooTest']),
         mutants: [
           {
             id: '1',
@@ -420,7 +438,7 @@ describe('HTMLReporter', () => {
         sourceFile: 'TestClass',
         sourceFileContent: 'public class TestClass {}',
         testFiles: ['FooTest'],
-        testClassResolutions: [],
+        testClassResolutions: resolutionsFor(['FooTest']),
         mutants: [
           {
             id: '1',
@@ -483,7 +501,7 @@ describe('HTMLReporter', () => {
         sourceFileContent:
           'public class Evil { /* </script><script>alert(1) */ }',
         testFiles: ['EvilTest'],
-        testClassResolutions: [],
+        testClassResolutions: resolutionsFor(['EvilTest']),
         mutants: [
           {
             id: 'x',
@@ -522,7 +540,7 @@ describe('HTMLReporter', () => {
         sourceFileContent:
           "public class Mailer { static String BODY = '<!-- header --> <script>x</script>'; }",
         testFiles: ['MailerTest'],
-        testClassResolutions: [],
+        testClassResolutions: resolutionsFor(['MailerTest']),
         mutants: [
           {
             id: 'x',
@@ -597,6 +615,132 @@ describe('HTMLReporter', () => {
       const bundleBlock = html.match(/<script>([\s\S]+?)<\/script>/)![1]
       expect(bundleBlock).not.toContain('</script')
       expect(bundleBlock).toContain('<\\/script')
+    })
+  })
+
+  describe('Given ids are qualified by an org class id, When generating report', () => {
+    // CLASS_ID_LOCAL and CLASS_ID_FOREIGN are 18-character org Ids, distinct
+    // from and not derivable from either class's display name — a fixture
+    // where the id and the name are interchangeable could not tell a real
+    // resolution-map render from a vacuous one.
+    const CLASS_ID_LOCAL = '01pjV000000EE9ZQAW'
+    const CLASS_ID_FOREIGN = '01pjV000000EE9bQAG'
+    const resolvedResults: ApexMutationTestResult = {
+      sourceFile: 'TestClass',
+      sourceFileContent: 'public class TestClass {}',
+      testFiles: ['Argument', 'mockery.Argument'],
+      testClassResolutions: [
+        {
+          classId: CLASS_ID_LOCAL,
+          displayName: 'Argument',
+          lookupKeys: ['argument'],
+        },
+        {
+          classId: CLASS_ID_FOREIGN,
+          displayName: 'mockery.Argument',
+          lookupKeys: ['mockery.argument'],
+        },
+      ],
+      mutants: [
+        {
+          id: '1',
+          mutatorName: 'IncrementMutator',
+          status: 'Killed',
+          attribution: {
+            coveredBy: [
+              `${CLASS_ID_LOCAL}.testFoo`,
+              `${CLASS_ID_FOREIGN}.testFoo`,
+            ],
+            killedBy: [`${CLASS_ID_FOREIGN}.testFoo`],
+            testsCompleted: 2,
+          },
+          location: {
+            start: { line: 1, column: 0 },
+            end: { line: 1, column: 10 },
+          },
+          replacement: '--',
+          original: '++',
+        },
+      ],
+    }
+
+    it('Then testFiles groups each id under its own resolved display name', async () => {
+      // Act
+      await sut.generateReport(resolvedResults)
+
+      // Assert
+      const html = vi.mocked(writeFile).mock.calls[0][1] as string
+      const report = extractReport(html)
+      expect(report.testFiles!['Argument'].tests).toEqual([
+        { id: 'Argument.testFoo', name: 'Argument.testFoo' },
+      ])
+      expect(report.testFiles!['mockery.Argument'].tests).toEqual([
+        { id: 'mockery.Argument.testFoo', name: 'mockery.Argument.testFoo' },
+      ])
+    })
+
+    it('Then mutants render coveredBy and killedBy as resolved display names', async () => {
+      // Act
+      await sut.generateReport(resolvedResults)
+
+      // Assert
+      const html = vi.mocked(writeFile).mock.calls[0][1] as string
+      const report = extractReport(html)
+      const mutant = report.files['TestClass.cls'].mutants[0]
+      expect(mutant.coveredBy).toEqual([
+        'Argument.testFoo',
+        'mockery.Argument.testFoo',
+      ])
+      expect(mutant.killedBy).toEqual(['mockery.Argument.testFoo'])
+    })
+
+    it('Then no 18-character org id appears anywhere in the emitted report', async () => {
+      // Act
+      await sut.generateReport(resolvedResults)
+
+      // Assert
+      const html = vi.mocked(writeFile).mock.calls[0][1] as string
+      const report = extractReport(html)
+      expect(JSON.stringify(report)).not.toMatch(/01p[A-Za-z0-9]{15}/)
+    })
+
+    it('Then a class id absent from the resolutions map renders the raw class id as the qualifier', async () => {
+      // Arrange — this is the map-miss branch: visibly wrong beats plausibly
+      // wrong, and the 100% branch gate requires this arm be reachable.
+      const UNRESOLVED_CLASS_ID = '01pjV000000EE9zQAG'
+      const missingResolutionResults: ApexMutationTestResult = {
+        sourceFile: 'TestClass',
+        sourceFileContent: 'public class TestClass {}',
+        testFiles: ['Argument'],
+        testClassResolutions: [],
+        mutants: [
+          {
+            id: '1',
+            mutatorName: 'IncrementMutator',
+            status: 'Killed',
+            attribution: {
+              coveredBy: [`${UNRESOLVED_CLASS_ID}.testFoo`],
+              killedBy: [`${UNRESOLVED_CLASS_ID}.testFoo`],
+              testsCompleted: 1,
+            },
+            location: {
+              start: { line: 1, column: 0 },
+              end: { line: 1, column: 10 },
+            },
+            replacement: '--',
+            original: '++',
+          },
+        ],
+      }
+
+      // Act
+      await sut.generateReport(missingResolutionResults)
+
+      // Assert
+      const html = vi.mocked(writeFile).mock.calls[0][1] as string
+      const report = extractReport(html)
+      const mutant = report.files['TestClass.cls'].mutants[0]
+      expect(mutant.coveredBy).toEqual([`${UNRESOLVED_CLASS_ID}.testFoo`])
     })
   })
 })

@@ -33,7 +33,7 @@ export class PerTestCoverageStrategy implements CoverageStrategy {
             const testMethods =
               testMethodsPerLine.get(line) ?? new Set<TestMethodId>()
             testMethods.add(
-              qualifyTestMethod(test.className, coverage.testMethodName)
+              qualifyTestMethod(test.classId, coverage.testMethodName)
             )
             testMethodsPerLine.set(line, testMethods)
           })
@@ -51,7 +51,7 @@ export class AggregateCoverageStrategy implements CoverageStrategy {
   ): Map<number, Set<TestMethodId>> {
     const testMethodNames = new Set(
       testResult.tests?.map(test =>
-        qualifyTestMethod(test.className, test.methodName)
+        qualifyTestMethod(test.classId, test.methodName)
       ) ?? []
     )
     const aggregateCoverage = testResult.classCoverage?.find(

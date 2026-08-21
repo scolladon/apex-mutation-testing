@@ -53,13 +53,27 @@ import { formatDuration } from './timeUtils.js'
 import { type TypeAnalysisResult, TypeDiscoverer } from './typeDiscoverer.js'
 import { AliasTypeMatcher } from './typeMatcher.js'
 
-// A filter entry matches a coverage-map id either by its full qualified form
-// (scoping the entry to one declaring class) or by its bare method name
-// (applying the entry to that method in every perimeter class). Both the CLI
-// flag and the .mutation-testing.json testMethods block land in the same
-// includeTestMethods/excludeTestMethods fields, so this single rule covers both.
-const matchesFilter = (id: TestMethodId, filterSet: Set<string>): boolean =>
-  filterSet.has(id) || filterSet.has(testMethodOf(id))
+// A filter entry matches a coverage-map id either by its bare method name
+// (applying the entry to that method in every perimeter class) or by one of
+// the declaring class's resolved lookup keys, qualified (scoping the entry to
+// that one class). Both the CLI flag and the .mutation-testing.json
+// testMethods block land in the same includeTestMethods/excludeTestMethods
+// fields, so this single rule covers both. With a bare entry and a qualified
+// one both present in lookupKeys, a two-segment filter entry like
+// `ArgumentTest.testFoo` matches `testFoo` in every class whose bare name is
+// `ArgumentTest`, while `mockery.ArgumentTest.testFoo` matches exactly one —
+// the existing bare-is-broad / qualified-is-narrow principle lifted from the
+// method to the class.
+const matchesFilter = (
+  id: TestMethodId,
+  filterSet: ReadonlySet<string>,
+  resolutions: TestClassResolutions
+): boolean => {
+  const method = testMethodOf(id).toLowerCase()
+  if (filterSet.has(method)) return true
+  const keys = resolutions.get(testClassOf(id))?.lookupKeys ?? []
+  return keys.some(key => filterSet.has(`${key}.${method}`))
+}
 
 // Every mutation belongs to exactly one group and every group reports a result,
 // so no slot is still null by the time the results are assembled — this is a
@@ -259,23 +273,24 @@ export class MutationTestingService {
   private filterTestMethods(
     testMethodsPerLine: Map<number, Set<TestMethodId>>
   ): Map<number, Set<TestMethodId>> {
-    const filterSet = this.includeTestMethods
-      ? new Set(this.includeTestMethods)
-      : this.excludeTestMethods
-        ? new Set(this.excludeTestMethods)
-        : undefined
+    const entries = this.includeTestMethods ?? this.excludeTestMethods
 
-    if (!filterSet) {
+    if (!entries) {
       return testMethodsPerLine
     }
 
+    // Folded: lookupKeys are folded too, and folding the filter set also
+    // makes matching case-insensitive, matching Apex identifier semantics.
+    const filterSet = new Set(entries.map(entry => entry.toLowerCase()))
     const isInclude = Boolean(this.includeTestMethods)
 
     const filteredPerLine = new Map<number, Set<TestMethodId>>()
     for (const [line, methods] of testMethodsPerLine) {
       const filtered = new Set(
         [...methods].filter(m =>
-          isInclude ? matchesFilter(m, filterSet) : !matchesFilter(m, filterSet)
+          isInclude
+            ? matchesFilter(m, filterSet, this.testClassResolutions)
+            : !matchesFilter(m, filterSet, this.testClassResolutions)
         )
       )
       if (filtered.size > 0) {
@@ -479,16 +494,20 @@ export class MutationTestingService {
   // Walking the perimeter (rather than the failures) emits the perimeter
   // entry's own spelling, renders warnings in perimeter order like every
   // other drop, and avoids a non-null assertion on a lookup that can only
-  // miss in a state the platform cannot produce.
+  // miss in a state the platform cannot produce. The failure's classId is
+  // resolved outward through the run's resolutions map to the folded
+  // spellings it answers to; a classId absent from that map (the residual —
+  // see part 4's design notes) contributes no keys, so its class is simply
+  // not skipped here rather than guarded defensively.
   private toCompileSkips(
     failures: BaselineCompileFailure[]
   ): SkippedTestClass[] {
-    const detailByKey = new Map(
-      failures.map(failure => [
-        failure.className.toLowerCase(),
-        failure.message,
-      ])
-    )
+    const detailByKey = new Map<string, string>()
+    for (const failure of failures) {
+      const keys =
+        this.testClassResolutions.get(failure.classId)?.lookupKeys ?? []
+      for (const key of keys) detailByKey.set(key, failure.message)
+    }
     const skips = this.apexTestClassNames.flatMap(name => {
       const detail = detailByKey.get(name.toLowerCase())
       return detail === undefined
@@ -501,23 +520,27 @@ export class MutationTestingService {
   // AggregateCoverageStrategy has no per-test attribution, so this diff
   // only makes sense — and is only computed — under per-test fidelity.
   // Diffs against the compile-reduced perimeter, so a class that failed to
-  // compile is never also reported as contributing nothing. No namespace
-  // guard is needed on the join below: assessPerimeter already dropped every
-  // namespaced entry before the perimeter reached this service, so every
-  // remaining class is local and the org-reported bare class name matches
-  // the perimeter spelling — the case-folded join cannot systematically
-  // miss it.
+  // compile is never also reported as contributing nothing. Each
+  // contributing classId is resolved outward through the run's resolutions
+  // map to the folded spellings it answers to, so two perimeter entries
+  // sharing one bare name but backed by different class ids resolve
+  // independently — a name-based join could not tell them apart.
   private findZeroContributionTestClasses(
     perimeter: string[],
     testMethodsPerLine: Map<number, Set<TestMethodId>>
   ): SkippedTestClass[] {
-    const contributingClasses = new Set(
+    const contributing = new Set(
       [...testMethodsPerLine.values()]
         .flatMap(methods => [...methods])
-        .map(id => testClassOf(id).toLowerCase())
+        .map(testClassOf)
+    )
+    const keys = new Set(
+      [...contributing].flatMap(
+        classId => this.testClassResolutions.get(classId)?.lookupKeys ?? []
+      )
     )
     const silent = perimeter
-      .filter(name => !contributingClasses.has(name.toLowerCase()))
+      .filter(name => !keys.has(name.toLowerCase()))
       .map(className => ({ className, reason: 'no-coverage' as const }))
     return attachSuiteProvenance(silent, this.testClassOrigins)
   }

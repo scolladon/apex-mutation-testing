@@ -1039,7 +1039,7 @@ describe('ApexTestRunner', () => {
         expect(result).toEqual({ outcome: 'Passed', tests: [] })
         expect(runTestSynchronousMock).toHaveBeenCalledWith(
           {
-            tests: [{ className: 'TestClass', testMethods: ['testMethod'] }],
+            tests: [{ classId: 'TestClass', testMethods: ['testMethod'] }],
             skipCodeCoverage: true,
             maxFailedTests: 0,
           },
@@ -1062,7 +1062,7 @@ describe('ApexTestRunner', () => {
         // Assert
         expect(runTestSynchronousMock).toHaveBeenCalledWith(
           {
-            tests: [{ className: 'A', testMethods: ['m1', 'm2'] }],
+            tests: [{ classId: 'A', testMethods: ['m1', 'm2'] }],
             skipCodeCoverage: true,
             maxFailedTests: 0,
           },
@@ -1087,8 +1087,8 @@ describe('ApexTestRunner', () => {
         expect(runTestAsynchronousMock).toHaveBeenCalledWith(
           {
             tests: [
-              { className: 'A', testMethods: ['testOne', 'testTwo'] },
-              { className: 'B', testMethods: ['testThree'] },
+              { classId: 'A', testMethods: ['testOne', 'testTwo'] },
+              { classId: 'B', testMethods: ['testThree'] },
             ],
             testLevel: TestLevel.RunSpecifiedTests,
             skipCodeCoverage: true,
@@ -1143,7 +1143,7 @@ describe('ApexTestRunner', () => {
         expect(result).toEqual({ outcome: 'Passed', tests: [] })
         expect(runTestAsynchronousMock).toHaveBeenCalledWith(
           {
-            tests: [{ className: 'TestClass', testMethods: ['testMethod'] }],
+            tests: [{ classId: 'TestClass', testMethods: ['testMethod'] }],
             testLevel: TestLevel.RunSpecifiedTests,
             skipCodeCoverage: true,
             maxFailedTests: 0,
