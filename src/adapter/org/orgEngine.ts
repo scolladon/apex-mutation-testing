@@ -64,8 +64,7 @@ const buildTestBed = (
   new OrgMutationTestBed(
     apexClassRepository,
     apexTestRunner,
-    new ApexSettingsRepository(ctx.connection),
-    ctx.apexClassName
+    new ApexSettingsRepository(ctx.connection)
   )
 
 export const createOrgEngine = async (

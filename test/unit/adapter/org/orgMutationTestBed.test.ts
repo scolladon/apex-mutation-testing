@@ -17,6 +17,9 @@ import type { ApexClass } from '../../../../src/type/ApexClass.js'
 vi.mock('../../../../src/service/timeUtils.js')
 
 const mockOriginal: ApexClass = { Id: '123', Body: 'class Foo {}' }
+// 18-character org Id, deliberately shaped nothing like the class name so a
+// mutant passing the name instead of the Id is caught.
+const TARGET_CLASS_ID = '01pjV000000EE9ZQAW'
 
 const baselineTestResult = {
   outcome: 'Passed',
@@ -61,8 +64,7 @@ describe('OrgMutationTestBed', () => {
     sut = new OrgMutationTestBed(
       repository as unknown as ApexClassRepository,
       runner as unknown as ApexTestRunner,
-      settings as unknown as ApexSettingsRepository,
-      'TestClass'
+      settings as unknown as ApexSettingsRepository
     )
 
     let call = 0
@@ -94,6 +96,25 @@ describe('OrgMutationTestBed', () => {
         fidelity: 'per-test',
         cost: { applyMs: 11, runMs: 22 },
       })
+    })
+
+    it('Given a resolved class Id, When prepare runs, Then the coverage strategy is built from that Id and not from any name', async () => {
+      // Arrange — Body and the perimeter entry are name-shaped so a mutant
+      // that threads a name into the strategy instead of the Id is caught.
+      const { hooks } = recordingHooks()
+      const resolvedClass: ApexClass = {
+        Id: TARGET_CLASS_ID,
+        Body: 'class MutationTest {}',
+      }
+
+      // Act
+      await sut.prepare(resolvedClass, ['MutationTestTest'], hooks)
+
+      // Assert
+      const strategyArg = runner.getTestMethodsPerLines.mock.calls[0][1] as {
+        targetClassId: string
+      }
+      expect(strategyArg.targetClassId).toBe(TARGET_CLASS_ID)
     })
 
     it('Given the org settings enable aggregate coverage only, When prepare runs, Then the baseline carries aggregate fidelity', async () => {

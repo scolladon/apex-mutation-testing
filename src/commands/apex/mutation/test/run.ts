@@ -129,7 +129,6 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
 
     const engine = await createOrgEngine({
       connection,
-      apexClassName: flags['apex-class'],
       notify: notice => reportEngineNotice(notice, this.spinner, messages),
     })
 

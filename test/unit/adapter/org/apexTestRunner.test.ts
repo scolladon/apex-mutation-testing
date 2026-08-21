@@ -26,7 +26,6 @@ const mappedCoverage = (row: {
   coverage?: { coveredLines: number[] }
 }) => ({
   classId: row.apexClassOrTriggerId,
-  className: row.apexClassOrTriggerName,
   testMethodName: row.apexTestMethodName,
   detail: row.coverage && { coveredLines: row.coverage.coveredLines },
 })
@@ -310,7 +309,6 @@ describe('ApexTestRunner', () => {
           classCoverage: [
             {
               classId: TARGET_CLASS_ID,
-              className: 'Mutation',
               coveredLines: [1],
             },
           ],
@@ -381,7 +379,6 @@ describe('ApexTestRunner', () => {
           classCoverage: [
             {
               classId: 'TestClassId',
-              className: 'TestClass',
               coveredLines: [1],
             },
           ],

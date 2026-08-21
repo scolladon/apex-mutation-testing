@@ -11,7 +11,6 @@ export type EngineNotify = (notice: EngineNotice) => void
 
 export interface EngineContext {
   connection: Connection
-  apexClassName: string
   notify: EngineNotify
 }
 

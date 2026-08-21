@@ -254,7 +254,7 @@ describe('MutationTestingService — golden UI-call sequence', () => {
   // ctx.notify with reportEngineNotice exactly as run.ts wires it, and the
   // real OrgApexSourceProvider/OrgMutationTestBed driving the mocked
   // low-level adapters configured by each test's arrange helpers below.
-  const buildEngine = (ui: UiRecorder, apexClassName: string): EngineBundle => {
+  const buildEngine = (ui: UiRecorder): EngineBundle => {
     const repository = new ApexClassRepository(connection)
     const runner = new ApexTestRunner(connection, {
       onSyncFallback: error =>
@@ -275,12 +275,7 @@ describe('MutationTestingService — golden UI-call sequence', () => {
         null
       ),
       schema: new OrgSObjectSchemaProvider(connection, vi.fn(), null),
-      testBed: new OrgMutationTestBed(
-        repository,
-        runner,
-        settings,
-        apexClassName
-      ),
+      testBed: new OrgMutationTestBed(repository, runner, settings),
     }
   }
 
@@ -292,7 +287,7 @@ describe('MutationTestingService — golden UI-call sequence', () => {
     return new MutationTestingService(
       ui.progress,
       ui.spinner,
-      buildEngine(ui, apexClassName),
+      buildEngine(ui),
       {
         apexClassName,
         apexTestClassNames: ['TestClassTest'],

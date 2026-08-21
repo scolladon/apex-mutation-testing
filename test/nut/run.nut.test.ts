@@ -282,14 +282,11 @@ describe('apex mutation test run NUT', () => {
       )
     })
 
-    it('Then constructs exactly one org engine from the flag-derived context', () => {
+    it('Then constructs exactly one org engine from a context carrying only the connection and notify, never a raw pre-validation class name', () => {
       expect(createOrgEngine).toHaveBeenCalledTimes(1)
-      expect(createOrgEngine).toHaveBeenCalledWith(
-        expect.objectContaining({
-          connection: mockConnection,
-          apexClassName: 'MyClass',
-        })
-      )
+      const ctx = vi.mocked(createOrgEngine).mock.calls[0][0]
+      expect(ctx.connection).toBe(mockConnection)
+      expect(Object.keys(ctx).sort()).toEqual(['connection', 'notify'])
     })
 
     it('Then the same source instance reaches the validator, the suite resolver context and the service bundle', () => {

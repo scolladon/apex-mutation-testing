@@ -29,7 +29,6 @@ describe('createOrgEngine', () => {
     // Arrange
     ctx = {
       connection: {} as Connection,
-      apexClassName: 'TestClass',
       notify: vi.fn(),
     }
     vi.mocked(OrganizationRepository).mockImplementation(
@@ -79,12 +78,13 @@ describe('createOrgEngine', () => {
     })
   })
 
-  it('Given an engine context, When creating the org engine, Then apexClassName reaches the test bed construction', async () => {
+  it('Given an engine context carrying no apex class name, When creating the org engine, Then the bundle builds and the test bed is constructed with exactly three arguments', async () => {
     // Act
-    await createOrgEngine(ctx)
+    const engine = await createOrgEngine(ctx)
 
     // Assert
-    expect(vi.mocked(OrgMutationTestBed).mock.calls[0][3]).toBe('TestClass')
+    expect(engine.testBed).toBeDefined()
+    expect(vi.mocked(OrgMutationTestBed).mock.calls[0]).toHaveLength(3)
   })
 
   it('Given an engine context, When creating the org engine, Then the source is composed from the repository and the suite repository', async () => {

@@ -30,12 +30,12 @@ export interface BaselineTestResult {
 // Maps each transport's own SDK DTO into the domain shape src/service/
 // consumes, so neither transport's coverage/outcome layout leaks past this
 // adapter. Field-for-field translation only — no behavioural decision here.
-// classId (an org Id) is the identity field; className is display only.
+// classId (an org Id) is the identity field; coverage rows carry no
+// className because coverageStrategy.ts only ever joins them on classId.
 const toApexTestMethodCoverage = (
   coverage: PerClassCoverage
 ): ApexTestMethodCoverage => ({
   classId: coverage.apexClassOrTriggerId,
-  className: coverage.apexClassOrTriggerName,
   testMethodName: coverage.apexTestMethodName,
   detail: coverage.coverage && { coveredLines: coverage.coverage.coveredLines },
 })
@@ -54,7 +54,6 @@ const toApexClassCoverage = (
   coverage: CodeCoverageResult
 ): ApexClassCoverage => ({
   classId: coverage.apexId,
-  className: coverage.name,
   coveredLines: coverage.coveredLines,
 })
 

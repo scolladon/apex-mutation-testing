@@ -5,11 +5,12 @@
 // Field names and nesting intentionally track what src/service/ actually
 // reads (see groupExecutor.ts and coverageStrategy.ts) rather than the SDK's
 // own vocabulary. classId is an org Id and the join key across baseline and
-// mutant runs; className is the bare class name, display only.
+// mutant runs. className is the bare class name, display only — coverage
+// rows carry no className because coverageStrategy.ts only ever joins them
+// on classId and never displays them.
 
 export interface ApexTestMethodCoverage {
   classId: string
-  className: string
   testMethodName: string
   detail?: {
     coveredLines: number[]
@@ -26,7 +27,6 @@ export interface ApexTestMethodResult {
 
 export interface ApexClassCoverage {
   classId: string
-  className: string
   coveredLines: number[]
 }
 
