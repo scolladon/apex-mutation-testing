@@ -21,13 +21,13 @@ const MAX_CONCURRENT_DEVELOPER_NAME_QUERIES = 25
 export class EntityDefinitionRepository {
   constructor(private readonly connection: Connection) {}
 
-  // Guarded at this reachable public boundary by relying on chunk's own
-  // tested emptiness contract (see queryChunking.test.ts): an empty array
-  // yields zero chunks, so the sink below is never invoked and no `$in`
-  // query is ever built for `[]` — a legitimate caller input (an empty
-  // perimeter), not a bug. An empty `$in` makes jsforce drop the whole WHERE
-  // clause, and EntityDefinition refuses queryMore(), so an unfiltered read
-  // would throw rather than page through the org.
+  // No explicit empty-array guard here: chunk([]) yields zero chunks (its
+  // own tested emptiness contract, see queryChunking.test.ts), so mapLimit
+  // iterates nothing and the sink below is never invoked — no `$in` query is
+  // ever built for `[]`, a legitimate caller input (an empty perimeter), not
+  // a bug. An empty `$in` makes jsforce drop the whole WHERE clause, and
+  // EntityDefinition refuses queryMore(), so an unfiltered read would throw
+  // rather than page through the org.
   public async readByDeveloperNames(
     names: string[]
   ): Promise<EntityDefinitionRow[]> {

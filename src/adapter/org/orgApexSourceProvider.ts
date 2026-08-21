@@ -186,9 +186,9 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
   }
 
   // A dependency set with no custom object must cost no extra org
-  // round-trip: the early return here is a guard distinct from the
-  // empty-`$in` guard inside the repository, which protects a different
-  // failure mode (an unfiltered query rather than an unneeded one).
+  // round-trip: this early return skips readEntityRows entirely, so the
+  // repository's own empty-list handling (chunk([]) yields zero chunks,
+  // pinned by queryChunking.test.ts) is never even reached from here.
   private async resolveCustomObjects(
     rows: MetadataComponentDependency[]
   ): Promise<TypeName[]> {
