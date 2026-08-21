@@ -140,3 +140,30 @@ export const qualifiedDeveloperName = (
   name: string,
   namespace: string | null
 ): string => (namespace ? `${namespace}__${name}` : name)
+
+export interface EntityRowPartition {
+  resolved: TypeName[]
+  unresolvedNames: Set<string>
+}
+
+// Exactly one candidate resolves; zero or more than one (an ambiguous key)
+// is unresolved, never a guess at which row is right.
+export const partitionByEntityRow = (
+  rows: MetadataComponentDependency[],
+  rowsByJoinKey: Map<string, EntityDefinitionRow[]>,
+  orgNamespace: string | null
+): EntityRowPartition => {
+  const resolved: TypeName[] = []
+  const unresolvedNames = new Set<string>()
+  for (const row of rows) {
+    const { RefMetadataComponentName: name } = row
+    const namespace = row.RefMetadataComponentNamespace
+    const candidates = rowsByJoinKey.get(entityJoinKey(name, namespace))
+    if (candidates?.length === 1) {
+      resolved.push(toCustomObjectTypeName(candidates[0], orgNamespace))
+    } else {
+      unresolvedNames.add(qualifiedDeveloperName(name, namespace))
+    }
+  }
+  return { resolved, unresolvedNames }
+}

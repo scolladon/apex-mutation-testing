@@ -37,36 +37,53 @@ const readOrgNamespace = async (ctx: EngineContext): Promise<string | null> => {
   }
 }
 
+const buildTestRunner = (ctx: EngineContext): ApexTestRunner =>
+  new ApexTestRunner(ctx.connection, {
+    onSyncFallback: error =>
+      ctx.notify({ kind: 'sync-transport-fallback', error }),
+  })
+
+const buildSourceProvider = (
+  ctx: EngineContext,
+  apexClassRepository: ApexClassRepository,
+  orgNamespace: string | null
+): OrgApexSourceProvider =>
+  new OrgApexSourceProvider(
+    apexClassRepository,
+    new ApexTestSuiteRepository(ctx.connection),
+    new EntityDefinitionRepository(ctx.connection),
+    ctx.notify,
+    orgNamespace
+  )
+
+const buildTestBed = (
+  ctx: EngineContext,
+  apexClassRepository: ApexClassRepository,
+  apexTestRunner: ApexTestRunner
+): OrgMutationTestBed =>
+  new OrgMutationTestBed(
+    apexClassRepository,
+    apexTestRunner,
+    new ApexSettingsRepository(ctx.connection),
+    ctx.apexClassName
+  )
+
 export const createOrgEngine = async (
   ctx: EngineContext
 ): Promise<EngineBundle> => {
   const apexClassRepository = new ApexClassRepository(ctx.connection)
-  const apexTestRunner = new ApexTestRunner(ctx.connection, {
-    onSyncFallback: error =>
-      ctx.notify({ kind: 'sync-transport-fallback', error }),
-  })
+  const apexTestRunner = buildTestRunner(ctx)
   // Read once per run, never per class or per mutant: a bare spelling is
   // only legal source for the org's own namespace, and every class mutated
   // in this run shares the same org.
   const orgNamespace = await readOrgNamespace(ctx)
   return {
-    source: new OrgApexSourceProvider(
-      apexClassRepository,
-      new ApexTestSuiteRepository(ctx.connection),
-      new EntityDefinitionRepository(ctx.connection),
-      ctx.notify,
-      orgNamespace
-    ),
+    source: buildSourceProvider(ctx, apexClassRepository, orgNamespace),
     schema: new OrgSObjectSchemaProvider(
       ctx.connection,
       ctx.notify,
       orgNamespace
     ),
-    testBed: new OrgMutationTestBed(
-      apexClassRepository,
-      apexTestRunner,
-      new ApexSettingsRepository(ctx.connection),
-      ctx.apexClassName
-    ),
+    testBed: buildTestBed(ctx, apexClassRepository, apexTestRunner),
   }
 }

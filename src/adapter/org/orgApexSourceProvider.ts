@@ -16,12 +16,11 @@ import type {
 } from './entityDefinitionRepository.js'
 import type { MetadataComponentDependency } from './MetadataComponentDependency.js'
 import {
-  entityJoinKey,
   groupByJoinKey,
   identityTypeName,
+  partitionByEntityRow,
   qualifiedDeveloperName,
   toApexClassTypeName,
-  toCustomObjectTypeName,
 } from './orgTypeNames.js'
 
 // A namespace prefix of `null` or `''` both mean local: the org emits either
@@ -60,11 +59,23 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
     const dependencies = await this.repository.getApexClassDependencies(
       apexClass.Id
     )
+    return {
+      apexClasses: this.resolveApexClasses(dependencies),
+      sObjects: await this.resolveSObjects(dependencies),
+    }
+  }
 
-    const apexClasses = dependencies
+  private resolveApexClasses(
+    dependencies: MetadataComponentDependency[]
+  ): TypeName[] {
+    return dependencies
       .filter(dep => dep.RefMetadataComponentType === 'ApexClass')
       .map(dep => toApexClassTypeName(dep, this.orgNamespace))
+  }
 
+  private async resolveSObjects(
+    dependencies: MetadataComponentDependency[]
+  ): Promise<TypeName[]> {
     const standardEntityTypes = dependencies
       .filter(dep => dep.RefMetadataComponentType === 'StandardEntity')
       .map(dep => identityTypeName(dep.RefMetadataComponentName))
@@ -74,10 +85,7 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
     )
     const customObjectTypes = await this.resolveCustomObjects(customObjectRows)
 
-    return {
-      apexClasses,
-      sObjects: [...standardEntityTypes, ...customObjectTypes],
-    }
+    return [...standardEntityTypes, ...customObjectTypes]
   }
 
   // A dependency set with no custom object must cost no extra org
@@ -91,35 +99,16 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
       return []
     }
 
-    const entityRows = await this.readEntityRows(rows)
-    if (entityRows === undefined) {
+    const rowsByJoinKey = await this.indexEntityRows(rows)
+    if (rowsByJoinKey === undefined) {
       return []
     }
-    const rowsByJoinKey = groupByJoinKey(entityRows)
 
-    const resolved: TypeName[] = []
-    const unresolvedNames = new Set<string>()
-    for (const row of rows) {
-      const candidates = rowsByJoinKey.get(
-        entityJoinKey(
-          row.RefMetadataComponentName,
-          row.RefMetadataComponentNamespace
-        )
-      )
-      // Exactly one candidate resolves; zero or more than one (an ambiguous
-      // key) is unresolved, never a guess at which row is right.
-      if (candidates?.length === 1) {
-        resolved.push(toCustomObjectTypeName(candidates[0], this.orgNamespace))
-      } else {
-        unresolvedNames.add(
-          qualifiedDeveloperName(
-            row.RefMetadataComponentName,
-            row.RefMetadataComponentNamespace
-          )
-        )
-      }
-    }
-
+    const { resolved, unresolvedNames } = partitionByEntityRow(
+      rows,
+      rowsByJoinKey,
+      this.orgNamespace
+    )
     if (unresolvedNames.size > 0) {
       this.notify({
         kind: 'type-resolution-degraded',
@@ -127,6 +116,13 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
       })
     }
     return resolved
+  }
+
+  private async indexEntityRows(
+    rows: MetadataComponentDependency[]
+  ): Promise<Map<string, EntityDefinitionRow[]> | undefined> {
+    const entityRows = await this.readEntityRows(rows)
+    return entityRows === undefined ? undefined : groupByJoinKey(entityRows)
   }
 
   // A failed read must degrade, never abort: on `main` this path was a local
@@ -147,21 +143,28 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
     try {
       return await this.entityDefinitionRepository.readByDeveloperNames(names)
     } catch (error) {
-      const failedNames = new Set(
-        rows.map(row =>
-          qualifiedDeveloperName(
-            row.RefMetadataComponentName,
-            row.RefMetadataComponentNamespace
-          )
-        )
-      )
-      this.notify({
-        kind: 'type-resolution-degraded',
-        typeNames: [...failedNames],
-        error: toError(error),
-      })
+      this.notifyEntityReadFailure(rows, error)
       return undefined
     }
+  }
+
+  private notifyEntityReadFailure(
+    rows: MetadataComponentDependency[],
+    error: unknown
+  ): void {
+    const failedNames = new Set(
+      rows.map(row =>
+        qualifiedDeveloperName(
+          row.RefMetadataComponentName,
+          row.RefMetadataComponentNamespace
+        )
+      )
+    )
+    this.notify({
+      kind: 'type-resolution-degraded',
+      typeNames: [...failedNames],
+      error: toError(error),
+    })
   }
 
   /** A name can return two rows when a managed and a local class share it,
