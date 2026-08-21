@@ -41,6 +41,7 @@ describe('ConfigReader', () => {
           'error.blankTestClass': `Blank apex test class name found: '${args?.[0]}'`,
           'error.blankTestSuite': `Blank apex test suite name found: '${args?.[0]}'`,
           'error.invalidClassName': `Invalid Apex class name: '${args?.[0]}'`,
+          'error.objectConventionClassName': `Object convention: '${args?.[0]}'`,
         }
         return templates[key] || key
       }),
@@ -668,6 +669,22 @@ describe('ConfigReader', () => {
       expect(result.apexTestClassNames).toEqual(['MyClassTest'])
     })
 
+    it('Given a bare name, its namespace-qualified spelling, and a case-variant of the qualified spelling, When resolving config, Then the qualified spelling dedupes against its own case variant but stays distinct from the bare name', async () => {
+      // Arrange — a qualified spelling is a distinct dedup key from its
+      // bare counterpart on purpose: they are different classes. A
+      // case-variant of the same qualified spelling still folds together.
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: ['Foo', 'mockery.Foo', 'MOCKERY.FOO'],
+      }
+
+      // Act
+      const result = await sut.resolve(parameter)
+
+      // Assert
+      expect(result.apexTestClassNames).toEqual(['Foo', 'mockery.Foo'])
+    })
+
     it('Given a config file carrying a testClass-ish key, When resolving config, Then the file key has no effect on the perimeter', async () => {
       // Arrange — MutationTestingConfig declares no test-class key
       const config = { testClass: 'FromFileShouldBeIgnored' }
@@ -746,17 +763,84 @@ describe('ConfigReader', () => {
       expect(result.apexTestClassNames).toEqual(['A'])
     })
 
-    it('Given a dotted namespace-qualified test class name, When resolving config, Then throws before any org call', async () => {
-      // Arrange — the adapter pins NamespacePrefix to '', so a qualified
-      // name never resolved; it now fails locally instead of at the org.
+    it('Given a dotted namespace-qualified name for the class under mutation and for a perimeter entry, When resolving config, Then resolves without throwing and echoes both spellings verbatim', async () => {
+      // Arrange — the grammar now admits exactly one namespace qualifier,
+      // so a dotted spelling resolves locally instead of failing before
+      // ever reaching the org.
       const parameter: ApexMutationParameter = {
         ...baseParameter,
-        apexTestClassNames: ['ns.ClassName'],
+        apexClassName: 'mockery.Argument',
+        apexTestClassNames: ['mockery.ArgumentTest'],
+      }
+
+      // Act
+      const result = await sut.resolve(parameter)
+
+      // Assert
+      expect(result.apexClassName).toBe('mockery.Argument')
+      expect(result.apexTestClassNames).toEqual(['mockery.ArgumentTest'])
+    })
+
+    it.each(['a.b.c', '.Foo', 'Foo.', 'ns..Foo'])(
+      'Given the malformed dotted name %s, When resolving config, Then throws the invalid-name message (kills a widened optional-group mutant)',
+      async name => {
+        // Arrange
+        const parameter: ApexMutationParameter = {
+          ...baseParameter,
+          apexTestClassNames: [name],
+        }
+
+        // Act & Assert
+        await expect(sut.resolve(parameter)).rejects.toThrow(
+          `Invalid Apex class name: '${name}'`
+        )
+      }
+    )
+
+    it("Given a class name using the object convention 'ns__Class', When resolving config, Then throws the object-convention message naming the offending input", async () => {
+      // Arrange — the object convention is uncompilable as an Apex class
+      // name, so it can only be a mistaken spelling of the dotted form
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: ['namespaced__Mutation'],
       }
 
       // Act & Assert
       await expect(sut.resolve(parameter)).rejects.toThrow(
-        "Invalid Apex class name: 'ns.ClassName'"
+        "Object convention: 'namespaced__Mutation'"
+      )
+      expect(messagesMock.getMessage).toHaveBeenCalledWith(
+        'error.objectConventionClassName',
+        ['namespaced__Mutation']
+      )
+    })
+
+    it('Given a class name with a single underscore, When resolving config, Then accepts it (not the object convention)', async () => {
+      // Arrange — a single underscore is the ordinary identifier
+      // separator; only a double underscore is the object convention
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: ['Foo_Bar'],
+      }
+
+      // Act
+      const result = await sut.resolve(parameter)
+
+      // Assert
+      expect(result.apexTestClassNames).toEqual(['Foo_Bar'])
+    })
+
+    it('Given a name that fails the grammar and also uses the object convention, When resolving config, Then throws the grammar message because the grammar check runs first', async () => {
+      // Arrange — pins check ORDER: a name failing both rules must report
+      // the generic grammar message, not the object-convention one
+      const parameter: ApexMutationParameter = {
+        ...baseParameter,
+        apexTestClassNames: ['1namespaced__Mutation'],
+      }
+
+      // Act & Assert
+      await expect(sut.resolve(parameter)).rejects.toThrow(
+        "Invalid Apex class name: '1namespaced__Mutation'"
       )
     })
 
@@ -801,15 +885,16 @@ describe('ConfigReader', () => {
     })
 
     it('Given an invalid name repeated in different case, When resolving config, Then throws once naming the first-seen spelling', async () => {
-      // Arrange — validation runs on the deduped perimeter
+      // Arrange — validation runs on the deduped perimeter; three segments
+      // stay invalid even under the widened grammar
       const parameter: ApexMutationParameter = {
         ...baseParameter,
-        apexTestClassNames: ['ns.Foo', 'NS.FOO'],
+        apexTestClassNames: ['ns.sub.Foo', 'NS.SUB.FOO'],
       }
 
       // Act & Assert
       await expect(sut.resolve(parameter)).rejects.toThrow(
-        "Invalid Apex class name: 'ns.Foo'"
+        "Invalid Apex class name: 'ns.sub.Foo'"
       )
     })
   })
@@ -875,6 +960,55 @@ describe('ConfigReader', () => {
 
       // Assert
       expect(result.apexTestSuiteNames).toEqual([])
+    })
+  })
+
+  describe('test method filter normalization', () => {
+    // A bare method name (one segment) and a class-qualified method name
+    // (two segments) keep their existing meanings exactly; only a
+    // three-segment, namespace-qualified entry loses its leading segment.
+    // All three arities appear together so the segment-COUNT comparison
+    // cannot be faked by a fixture that only exercises one arm.
+    const qualifiedFilters = [
+      'mockery.ArgumentTest.testFoo',
+      'ArgumentTest.testBar',
+      'testBaz',
+    ]
+    const normalizedFilters = [
+      'ArgumentTest.testFoo',
+      'ArgumentTest.testBar',
+      'testBaz',
+    ]
+
+    it.each(['includeTestMethods', 'excludeTestMethods'] as const)(
+      'Given a three-segment, a two-segment and a bare entry in %s, When resolving config, Then only the three-segment entry drops its namespace segment',
+      async field => {
+        // Arrange
+        const parameter: ApexMutationParameter = {
+          ...baseParameter,
+          [field]: qualifiedFilters,
+        }
+
+        // Act
+        const result = await sut.resolve(parameter)
+
+        // Assert
+        expect(result[field]).toEqual(normalizedFilters)
+      }
+    )
+
+    it('Given a three-segment entry sourced from the config file rather than the flag, When resolving config, Then it drops its namespace segment the same way', async () => {
+      // Arrange — the normalization boundary applies after CLI/file merge,
+      // so a config-file-sourced filter is normalized identically
+      const config = { testMethods: { include: qualifiedFilters } }
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
+      const parameter = { ...baseParameter }
+
+      // Act
+      const result = await sut.resolve(parameter)
+
+      // Assert
+      expect(result.includeTestMethods).toEqual(normalizedFilters)
     })
   })
 

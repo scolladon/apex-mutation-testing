@@ -189,4 +189,32 @@ describe('apex.mutation.test.run message bundle', () => {
       "Apex class 'Argument' matches more than one modifiable Apex class on this org: mockery.Argument, acme.Argument. Re-run naming one of them."
     )
   })
+
+  it('Given a malformed class name, When error.invalidClassName is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
+    // Arrange
+    const className = 'ns.sub.Foo'
+
+    // Act
+    const sut = messages.getMessage('error.invalidClassName', [className])
+
+    // Assert
+    expect(sut).toBe(
+      "Invalid Apex class name: 'ns.sub.Foo'. An Apex class name starts with a letter and contains only letters, digits and underscores, optionally prefixed by a namespace and a dot (for example 'MyClass' or 'MyNamespace.MyClass')."
+    )
+  })
+
+  it('Given a class name using the object convention, When error.objectConventionClassName is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
+    // Arrange
+    const className = 'namespaced__Mutation'
+
+    // Act
+    const sut = messages.getMessage('error.objectConventionClassName', [
+      className,
+    ])
+
+    // Assert
+    expect(sut).toBe(
+      "Apex class name 'namespaced__Mutation' uses the object convention 'Namespace__Name'. Apex classes use the dotted convention instead: write 'Namespace.Name'."
+    )
+  })
 })

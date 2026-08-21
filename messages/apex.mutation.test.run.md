@@ -90,7 +90,11 @@ Blank apex test class name found: '%s'. Remove empty entries from the -t/--test-
 
 # error.invalidClassName
 
-Invalid Apex class name: '%s'. An Apex class name starts with a letter and contains only letters, digits and underscores.
+Invalid Apex class name: '%s'. An Apex class name starts with a letter and contains only letters, digits and underscores, optionally prefixed by a namespace and a dot (for example 'MyClass' or 'MyNamespace.MyClass').
+
+# error.objectConventionClassName
+
+Apex class name '%s' uses the object convention 'Namespace__Name'. Apex classes use the dotted convention instead: write 'Namespace.Name'.
 
 # error.blankTestSuite
 
