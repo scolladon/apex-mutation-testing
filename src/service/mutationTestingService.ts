@@ -500,9 +500,9 @@ export class MutationTestingService {
   // compile is never also reported as contributing nothing. No namespace
   // guard is needed on the join below: assessPerimeter already dropped every
   // namespaced entry before the perimeter reached this service, so every
-  // remaining class is local and `test.apexClass.fullName` on the org
-  // matches the perimeter spelling — the case-folded join cannot
-  // systematically miss it.
+  // remaining class is local and the org-reported bare class name matches
+  // the perimeter spelling — the case-folded join cannot systematically
+  // miss it.
   private findZeroContributionTestClasses(
     perimeter: string[],
     testMethodsPerLine: Map<number, Set<TestMethodId>>

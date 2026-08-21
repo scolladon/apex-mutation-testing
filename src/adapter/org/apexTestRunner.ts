@@ -30,9 +30,11 @@ export interface BaselineTestResult {
 // Maps each transport's own SDK DTO into the domain shape src/service/
 // consumes, so neither transport's coverage/outcome layout leaks past this
 // adapter. Field-for-field translation only — no behavioural decision here.
+// classId (an org Id) is the identity field; className is display only.
 const toApexTestMethodCoverage = (
   coverage: PerClassCoverage
 ): ApexTestMethodCoverage => ({
+  classId: coverage.apexClassOrTriggerId,
   className: coverage.apexClassOrTriggerName,
   testMethodName: coverage.apexTestMethodName,
   detail: coverage.coverage && { coveredLines: coverage.coverage.coveredLines },
@@ -41,7 +43,8 @@ const toApexTestMethodCoverage = (
 const toApexTestMethodResult = (
   test: ApexTestResultData
 ): ApexTestMethodResult => ({
-  className: test.apexClass.fullName,
+  classId: test.apexClass.id,
+  className: test.apexClass.name,
   methodName: test.methodName,
   outcome: test.outcome,
   coverage: test.perClassCoverage?.map(toApexTestMethodCoverage),
@@ -50,6 +53,7 @@ const toApexTestMethodResult = (
 const toApexClassCoverage = (
   coverage: CodeCoverageResult
 ): ApexClassCoverage => ({
+  classId: coverage.apexId,
   className: coverage.name,
   coveredLines: coverage.coveredLines,
 })
@@ -64,18 +68,20 @@ const recordCompileFailure = (
   compileFailuresByClass: Map<string, BaselineCompileFailure>,
   test: ApexTestResultData
 ): void => {
-  const key = test.apexClass.fullName.toLowerCase()
+  const key = test.apexClass.id
   if (compileFailuresByClass.has(key)) return
   compileFailuresByClass.set(key, {
-    className: test.apexClass.fullName,
+    classId: test.apexClass.id,
+    className: test.apexClass.name,
     message: test.message ?? '',
   })
 }
 
-// Apex identifiers are case-insensitive, matching the class-name folding
-// `recordCompileFailure` already uses for its own dedup key.
-const testMethodIdentity = (className: string, methodName: string): string =>
-  `${className}.${methodName}`.toLowerCase()
+// The join key is the class Id, not the class name: org Ids are stable
+// identifiers that never vary in case, unlike the Apex class names this
+// key used to fold before identity moved to the Id.
+const testMethodIdentity = (classId: string, methodName: string): string =>
+  `${classId}.${methodName}`
 
 // A @TestSetup method cannot be re-run on its own, so it must never surface
 // as an executable test. The synchronous transport never reports one as a
@@ -86,7 +92,7 @@ const testMethodIdentity = (className: string, methodName: string): string =>
 // ever ended up in both places.
 const setupIdentities = (setup: ApexTestSetupData[]): Set<string> =>
   new Set(
-    setup.map(row => testMethodIdentity(row.apexClass.fullName, row.methodName))
+    setup.map(row => testMethodIdentity(row.apexClass.id, row.methodName))
   )
 
 // One pass, one place: this is the only thing in the codebase that classifies
@@ -97,7 +103,10 @@ const setupIdentities = (setup: ApexTestSetupData[]): Set<string> =>
 // method, so it is excluded from executedTests rather than counted as a
 // failure. A @TestSetup row is excluded before that classification even
 // runs: it never becomes a TestMethodId, never contributes coverage, and
-// never adds to testsRan.
+// never adds to testsRan. Both the CompileFail dedup key above and the
+// @TestSetup cross-reference below key on the class Id, so neither is
+// thrown off by a transport that spells the same class's qualified name
+// differently per outcome.
 const partitionOutcomes = (
   tests: ApexTestResultData[],
   setup: ApexTestSetupData[] = []
@@ -114,9 +123,7 @@ const partitionOutcomes = (
   let testsRan = 0
 
   for (const test of tests) {
-    if (
-      setupIds.has(testMethodIdentity(test.apexClass.fullName, test.methodName))
-    ) {
+    if (setupIds.has(testMethodIdentity(test.apexClass.id, test.methodName))) {
       continue
     }
     testsRan++
