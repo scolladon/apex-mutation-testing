@@ -21,6 +21,10 @@ export const identityTypeName = (name: string): TypeName => ({
 // uses in this file consistent with it instead of assuming, unstated, that
 // org-canonical casing agrees across sources.
 const foldedNamespace = (namespace: string | null): string | null =>
+  // isOwnNamespace folds BOTH sides through this function, so the direction
+  // of the fold cannot be observed — upper and lower agree on every input
+  // pair. Only folding-versus-not is behavioural, and that is pinned.
+  // Stryker disable next-line MethodExpression: both sides fold in lockstep.
   namespace === null ? null : namespace.toLowerCase()
 
 const isOwnNamespace = (
@@ -111,6 +115,11 @@ const toCustomObjectTypeName = (
 // Foo__x and Foo__mdt can all share one key in one namespace — see
 // groupByJoinKey, which is where a shared key is caught.
 const entityJoinKey = (name: string, namespace: string | null): string =>
+  // The separator and the null-namespace stand-in are internal to this key
+  // and never cross a boundary: both the map keys and the lookups are built
+  // by this one function, so any distinct pair of literals partitions the
+  // rows identically.
+  // Stryker disable next-line StringLiteral: an internal-only key literal.
   `${name}::${namespace ?? ''}`
 
 // Groups rather than indexing 1:1, so a key shared by more than one row is

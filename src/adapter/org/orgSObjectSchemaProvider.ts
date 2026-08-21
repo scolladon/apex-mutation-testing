@@ -77,6 +77,11 @@ const buildFieldMap = (
   }
   for (const { foldedName, type } of normalized) {
     const alias = bareFieldAlias(foldedName, orgNamespace)
+    // Forcing the left conjunct true only ever adds an `undefined` key, which
+    // no lookup can reach: resolveFieldType keys on `fieldPath.toLowerCase()`,
+    // always a string. The collision guard beside it is a real pin and is not
+    // covered by this note.
+    // Stryker disable next-line ConditionalExpression: an unreachable key.
     if (alias !== undefined && !fieldMap.has(alias)) {
       fieldMap.set(alias, type)
     }
@@ -129,6 +134,11 @@ const boundCauses = (
     failures,
     mergedCauseCount: 1,
   })
+  // At exactly `limit` the two branches are indistinguishable: the overflow
+  // path would keep limit-1 causes and merge the single remainder, and a
+  // bucket of one carries mergedCauseCount 1, which describeCause renders
+  // unchanged. So `<` and `<=` produce identical notices here.
+  // Stryker disable next-line EqualityOperator: the boundary case is identical.
   if (causes.length <= limit) {
     return causes.map(asBoundCause)
   }
