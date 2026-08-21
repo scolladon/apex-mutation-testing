@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787068299248,
+  "lastUpdate": 1787307176366,
   "repoUrl": "https://github.com/scolladon/apex-mutation-testing",
   "entries": {
     "Runtime Benchmark": [
@@ -2039,6 +2039,108 @@ window.BENCHMARK_DATA = {
             "name": "pipeline-apply-all-mutations",
             "value": 3,
             "range": "±2.43%",
+            "unit": "ops/sec"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "colladonsebastien@gmail.com",
+            "name": "Sebastien",
+            "username": "scolladon"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "88fc4969d942b0d7fa77e9367ba6f54ae2ff4f93",
+          "message": "fix: resolve dependency type names to the org api name (#158)",
+          "timestamp": "2026-08-21T12:10:48+02:00",
+          "tree_id": "6d022601ad7a083b5669b54d48b4c86387c506e6",
+          "url": "https://github.com/scolladon/apex-mutation-testing/commit/88fc4969d942b0d7fa77e9367ba6f54ae2ff4f93"
+        },
+        "date": 1787307175632,
+        "tool": "customBiggerIsBetter",
+        "benches": [
+          {
+            "name": "antlr-lex-small",
+            "value": 10796,
+            "range": "±0.37%",
+            "unit": "ops/sec"
+          },
+          {
+            "name": "antlr-parse-small",
+            "value": 176,
+            "range": "±3.18%",
+            "unit": "ops/sec"
+          },
+          {
+            "name": "antlr-lex-medium",
+            "value": 2311,
+            "range": "±0.37%",
+            "unit": "ops/sec"
+          },
+          {
+            "name": "antlr-parse-medium",
+            "value": 34,
+            "range": "±6.15%",
+            "unit": "ops/sec"
+          },
+          {
+            "name": "antlr-lex-large",
+            "value": 716,
+            "range": "±1.67%",
+            "unit": "ops/sec"
+          },
+          {
+            "name": "antlr-parse-large",
+            "value": 13,
+            "range": "±1.23%",
+            "unit": "ops/sec"
+          },
+          {
+            "name": "pipeline-small-compute-mutations",
+            "value": 166,
+            "range": "±3.47%",
+            "unit": "ops/sec"
+          },
+          {
+            "name": "pipeline-small-type-discovery",
+            "value": 203,
+            "range": "±7.45%",
+            "unit": "ops/sec"
+          },
+          {
+            "name": "pipeline-medium-compute-mutations",
+            "value": 39,
+            "range": "±3.80%",
+            "unit": "ops/sec"
+          },
+          {
+            "name": "pipeline-medium-type-discovery",
+            "value": 50,
+            "range": "±2.22%",
+            "unit": "ops/sec"
+          },
+          {
+            "name": "pipeline-large-compute-mutations",
+            "value": 14,
+            "range": "±2.21%",
+            "unit": "ops/sec"
+          },
+          {
+            "name": "pipeline-large-type-discovery",
+            "value": 17,
+            "range": "±3.46%",
+            "unit": "ops/sec"
+          },
+          {
+            "name": "pipeline-apply-all-mutations",
+            "value": 4,
+            "range": "±0.62%",
             "unit": "ops/sec"
           }
         ]
