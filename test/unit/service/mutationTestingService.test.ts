@@ -14,10 +14,7 @@ import {
   formatRemainingTime,
 } from '../../../src/service/timeUtils.js'
 import { TypeDiscoverer } from '../../../src/service/typeDiscoverer.js'
-import {
-  ApexClassTypeMatcher,
-  SObjectTypeMatcher,
-} from '../../../src/service/typeMatcher.js'
+import { AliasTypeMatcher } from '../../../src/service/typeMatcher.js'
 import { ApexMutation } from '../../../src/type/ApexMutation.js'
 import { ApexMutationParameter } from '../../../src/type/ApexMutationParameter.js'
 import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult.js'
@@ -2238,12 +2235,19 @@ describe('MutationTestingService', () => {
       // OrgApexSourceProvider.listDependencies (see orgApexSourceProvider.test.ts
       // for that filtering behaviour). What is left to prove here is the
       // wiring: whatever the source reports flows straight into the matchers.
-      it('Given the source reports apexClasses and sObjects, When processing, Then ApexClassTypeMatcher and SObjectTypeMatcher are constructed from those sets verbatim', async () => {
+      it('Given the source reports apexClasses and sObjects, When processing, Then AliasTypeMatcher is constructed once for apexClasses and once for sObjects with the schema', async () => {
         // Arrange
-        engine.source.listDependencies = vi.fn().mockResolvedValue({
-          apexClasses: ['MyHelper'],
-          sObjects: ['Account', 'Invoice__c'],
-        })
+        const apexClasses = [{ apiName: 'MyHelper', aliases: ['MyHelper'] }]
+        const sObjects = [
+          { apiName: 'Account', aliases: ['Account'] },
+          {
+            apiName: 'namespaced__Invoice__c',
+            aliases: ['namespaced__Invoice__c', 'Invoice__c'],
+          },
+        ]
+        engine.source.listDependencies = vi
+          .fn()
+          .mockResolvedValue({ apexClasses, sObjects })
         vi.mocked(MutantGenerator).mockImplementation(
           class {
             compute = vi
@@ -2261,15 +2265,7 @@ describe('MutationTestingService', () => {
             ]),
           })
         )
-        vi.mocked(ApexClassTypeMatcher).mockImplementation(
-          class {
-            withMatcher = vi.fn().mockReturnThis()
-            matches = vi.fn().mockReturnValue(false)
-            collect = vi.fn()
-            collectedTypes = new Set<string>()
-          }
-        )
-        vi.mocked(SObjectTypeMatcher).mockImplementation(
+        vi.mocked(AliasTypeMatcher).mockImplementation(
           class {
             withMatcher = vi.fn().mockReturnThis()
             matches = vi.fn().mockReturnValue(false)
@@ -2283,12 +2279,21 @@ describe('MutationTestingService', () => {
         // Act
         await sut.process()
 
-        // Assert
-        expect(vi.mocked(ApexClassTypeMatcher)).toHaveBeenCalledWith(
-          new Set(['MyHelper'])
+        // Assert — pins the wiring, not an ordering claim: discoverTypes
+        // constructs one AliasTypeMatcher per source, apex classes then
+        // sObjects, and only the sObject matcher receives the schema. With
+        // one matcher class, the nth-call position is what distinguishes the
+        // two constructor calls below. Whether the apex-class matcher's
+        // withMatcher registration coming first matters to
+        // TypeRegistry.resolveDottedExpression's matcher loop is not
+        // asserted here — swapping that order today leaves this suite green.
+        expect(vi.mocked(AliasTypeMatcher)).toHaveBeenNthCalledWith(
+          1,
+          apexClasses
         )
-        expect(vi.mocked(SObjectTypeMatcher)).toHaveBeenCalledWith(
-          new Set(['Account', 'Invoice__c']),
+        expect(vi.mocked(AliasTypeMatcher)).toHaveBeenNthCalledWith(
+          2,
+          sObjects,
           engine.schema
         )
       })

@@ -2,22 +2,42 @@ import type {
   ApexSourceProvider,
   ApexTestSuiteMember,
   TypeDependencies,
+  TypeName,
 } from '../../port/apexSourceProvider.js'
+import type { EngineNotify } from '../../port/executionEngine.js'
 import type { ApexClass } from '../../type/ApexClass.js'
 import type { SkippedTestClass } from '../../type/SkippedTestClass.js'
 import type { ApexClassIdentity } from './ApexClassIdentity.js'
 import type { ApexClassRepository } from './apexClassRepository.js'
 import type { ApexTestSuiteRepository } from './apexTestSuiteRepository.js'
+import type {
+  EntityDefinitionRepository,
+  EntityDefinitionRow,
+} from './entityDefinitionRepository.js'
+import type { MetadataComponentDependency } from './MetadataComponentDependency.js'
+import {
+  groupByJoinKey,
+  identityTypeName,
+  partitionByEntityRow,
+  qualifiedDeveloperName,
+  toApexClassTypeName,
+} from './orgTypeNames.js'
 
 // A namespace prefix of `null` or `''` both mean local: the org emits either
 // depending on projection, so both must read as usable.
 const isLocal = (identity: ApexClassIdentity): boolean =>
   !identity.NamespacePrefix
 
+const toError = (value: unknown): Error =>
+  value instanceof Error ? value : new Error(String(value))
+
 export class OrgApexSourceProvider implements ApexSourceProvider {
   constructor(
     private readonly repository: ApexClassRepository,
-    private readonly suiteRepository: ApexTestSuiteRepository
+    private readonly suiteRepository: ApexTestSuiteRepository,
+    private readonly entityDefinitionRepository: EntityDefinitionRepository,
+    private readonly notify: EngineNotify,
+    private readonly orgNamespace: string | null
   ) {}
 
   // Existence-only check: a minimal projection avoids the `*` field list
@@ -39,23 +59,112 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
     const dependencies = await this.repository.getApexClassDependencies(
       apexClass.Id
     )
+    return {
+      apexClasses: this.resolveApexClasses(dependencies),
+      sObjects: await this.resolveSObjects(dependencies),
+    }
+  }
 
-    const apexClasses = dependencies
+  private resolveApexClasses(
+    dependencies: MetadataComponentDependency[]
+  ): TypeName[] {
+    return dependencies
       .filter(dep => dep.RefMetadataComponentType === 'ApexClass')
-      .map(dep => dep.RefMetadataComponentName)
+      .map(dep => toApexClassTypeName(dep, this.orgNamespace))
+  }
 
+  private async resolveSObjects(
+    dependencies: MetadataComponentDependency[]
+  ): Promise<TypeName[]> {
     const standardEntityTypes = dependencies
       .filter(dep => dep.RefMetadataComponentType === 'StandardEntity')
-      .map(dep => dep.RefMetadataComponentName)
+      .map(dep => identityTypeName(dep.RefMetadataComponentName))
 
-    const customObjectTypes = dependencies
-      .filter(dep => dep.RefMetadataComponentType === 'CustomObject')
-      .map(dep => dep.RefMetadataComponentName)
+    const customObjectRows = dependencies.filter(
+      dep => dep.RefMetadataComponentType === 'CustomObject'
+    )
+    const customObjectTypes = await this.resolveCustomObjects(customObjectRows)
 
-    return {
-      apexClasses,
-      sObjects: [...standardEntityTypes, ...customObjectTypes],
+    return [...standardEntityTypes, ...customObjectTypes]
+  }
+
+  // A dependency set with no custom object must cost no extra org
+  // round-trip: this early return skips readEntityRows entirely, so the
+  // repository's own empty-list handling (chunk([]) yields zero chunks,
+  // pinned by queryChunking.test.ts) is never even reached from here.
+  private async resolveCustomObjects(
+    rows: MetadataComponentDependency[]
+  ): Promise<TypeName[]> {
+    if (rows.length === 0) {
+      return []
     }
+
+    const rowsByJoinKey = await this.indexEntityRows(rows)
+    if (rowsByJoinKey === undefined) {
+      return []
+    }
+
+    const { resolved, unresolvedNames } = partitionByEntityRow(
+      rows,
+      rowsByJoinKey,
+      this.orgNamespace
+    )
+    if (unresolvedNames.size > 0) {
+      this.notify({
+        kind: 'type-resolution-degraded',
+        typeNames: [...unresolvedNames],
+      })
+    }
+    return resolved
+  }
+
+  private async indexEntityRows(
+    rows: MetadataComponentDependency[]
+  ): Promise<Map<string, EntityDefinitionRow[]> | undefined> {
+    const entityRows = await this.readEntityRows(rows)
+    return entityRows === undefined ? undefined : groupByJoinKey(entityRows)
+  }
+
+  // A failed read must degrade, never abort: on `main` this path was a local
+  // map that could not fail, but it now crosses the Tooling API and can
+  // reject on permissions, transient network, or the `EXCEEDED_ID_LIMIT`
+  // EntityDefinition is known to throw. Every requested row is reported
+  // unresolved through the same notice the no-row case uses, rather than
+  // letting the rejection propagate through listDependencies -> discoverTypes
+  // -> process() and kill the whole run.
+  private async readEntityRows(
+    rows: MetadataComponentDependency[]
+  ): Promise<EntityDefinitionRow[] | undefined> {
+    // Deduped: the join key is name+namespace precisely because one name can
+    // appear under two namespaces, so a duplicate name here is a redundant
+    // SOQL term the downstream join tolerates without a 1:1 row-to-request
+    // correspondence.
+    const names = [...new Set(rows.map(row => row.RefMetadataComponentName))]
+    try {
+      return await this.entityDefinitionRepository.readByDeveloperNames(names)
+    } catch (error) {
+      this.notifyEntityReadFailure(rows, error)
+      return undefined
+    }
+  }
+
+  private notifyEntityReadFailure(
+    rows: MetadataComponentDependency[],
+    error: unknown
+  ): void {
+    const failedNames = new Set(
+      rows.map(row =>
+        qualifiedDeveloperName(
+          row.RefMetadataComponentName,
+          row.RefMetadataComponentNamespace
+        )
+      )
+    )
+    this.notify({
+      kind: 'type-resolution-degraded',
+      typeNames: [...failedNames],
+      error: toError(error),
+    })
   }
 
   /** A name can return two rows when a managed and a local class share it,

@@ -11,10 +11,7 @@ import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { TrueReturnMutator } from '../../src/mutator/trueReturnMutator.js'
 import { MutantGenerator } from '../../src/service/mutantGenerator.js'
 import { TypeDiscoverer } from '../../src/service/typeDiscoverer.js'
-import {
-  ApexClassTypeMatcher,
-  SObjectTypeMatcher,
-} from '../../src/service/typeMatcher.js'
+import { AliasTypeMatcher } from '../../src/service/typeMatcher.js'
 
 describe('TrueReturnMutator Integration', () => {
   let mutantGenerator: MutantGenerator
@@ -25,8 +22,10 @@ describe('TrueReturnMutator Integration', () => {
 
   const buildTypeRegistry = async (code: string) => {
     const typeDiscoverer = new TypeDiscoverer()
-      .withMatcher(new ApexClassTypeMatcher(new Set()))
-      .withMatcher(new SObjectTypeMatcher(new Set(['Account'])))
+      .withMatcher(new AliasTypeMatcher([]))
+      .withMatcher(
+        new AliasTypeMatcher([{ apiName: 'Account', aliases: ['Account'] }])
+      )
     return typeDiscoverer.analyze(code)
   }
 

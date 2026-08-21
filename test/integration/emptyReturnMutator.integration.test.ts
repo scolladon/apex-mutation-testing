@@ -11,10 +11,7 @@ import { EmptyReturnMutator } from '../../src/mutator/emptyReturnMutator.js'
 import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { MutantGenerator } from '../../src/service/mutantGenerator.js'
 import { TypeDiscoverer } from '../../src/service/typeDiscoverer.js'
-import {
-  ApexClassTypeMatcher,
-  SObjectTypeMatcher,
-} from '../../src/service/typeMatcher.js'
+import { AliasTypeMatcher } from '../../src/service/typeMatcher.js'
 
 describe('EmptyReturnMutator Integration', () => {
   let mutantGenerator: MutantGenerator
@@ -25,8 +22,8 @@ describe('EmptyReturnMutator Integration', () => {
 
   const buildTypeRegistry = async (code: string) => {
     const typeDiscoverer = new TypeDiscoverer()
-      .withMatcher(new ApexClassTypeMatcher(new Set()))
-      .withMatcher(new SObjectTypeMatcher(new Set()))
+      .withMatcher(new AliasTypeMatcher([]))
+      .withMatcher(new AliasTypeMatcher([]))
     return typeDiscoverer.analyze(code)
   }
 

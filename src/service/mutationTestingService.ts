@@ -50,7 +50,7 @@ import {
 } from './skippedTestClassMessage.js'
 import { formatDuration } from './timeUtils.js'
 import { type TypeAnalysisResult, TypeDiscoverer } from './typeDiscoverer.js'
-import { ApexClassTypeMatcher, SObjectTypeMatcher } from './typeMatcher.js'
+import { AliasTypeMatcher } from './typeMatcher.js'
 
 // A filter entry matches a coverage-map id either by its full qualified form
 // (scoping the entry to one declaring class) or by its bare method name
@@ -304,11 +304,14 @@ export class MutationTestingService {
     const { apexClasses, sObjects } =
       await this.engine.source.listDependencies(apexClass)
 
-    const apexClassMatcher = new ApexClassTypeMatcher(new Set(apexClasses))
-    const sObjectMatcher = new SObjectTypeMatcher(
-      new Set(sObjects),
-      this.engine.schema
-    )
+    // Both instances now carry populate()/getFieldType(): the apex-class
+    // instance's populate() awaits `undefined?.describe(...)` — a no-op, no
+    // query — and its getFieldType() returns undefined because it has no
+    // schema, so the matcher loop falls through to the sObject instance
+    // exactly as before. Handing the apex-class instance a schema one day
+    // would make it start answering field lookups first.
+    const apexClassMatcher = new AliasTypeMatcher(apexClasses)
+    const sObjectMatcher = new AliasTypeMatcher(sObjects, this.engine.schema)
 
     const typeDiscoverer = new TypeDiscoverer()
       .withMatcher(apexClassMatcher)

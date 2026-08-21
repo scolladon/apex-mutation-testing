@@ -268,6 +268,40 @@ describe('ApexClassRepository', () => {
       // Assert
       expect(result).toEqual(mockDependencies)
     })
+
+    it('given a classId, When getting dependencies, Then the read projects Id, type, name and namespace explicitly', async () => {
+      // Arrange
+      findMock.mockResolvedValue([])
+
+      // Act
+      await sut.getApexClassDependencies('123')
+
+      // Assert
+      expect(findArgsMock).toHaveBeenCalledWith(
+        { MetadataComponentId: '123' },
+        [
+          'Id',
+          'RefMetadataComponentType',
+          'RefMetadataComponentName',
+          'RefMetadataComponentNamespace',
+        ]
+      )
+    })
+
+    it('Given an undefined classId, When getting dependencies, Then it resolves empty without issuing an unfiltered find', async () => {
+      // Arrange — jsforce drops a predicate whose value is undefined, which
+      // would otherwise turn this into an unfiltered org-wide
+      // MetadataComponentDependency read.
+
+      // Act
+      const result = await sut.getApexClassDependencies(
+        undefined as unknown as string
+      )
+
+      // Assert
+      expect(result).toEqual([])
+      expect(findArgsMock).not.toHaveBeenCalled()
+    })
   })
 
   describe('when updating an ApexClass', () => {

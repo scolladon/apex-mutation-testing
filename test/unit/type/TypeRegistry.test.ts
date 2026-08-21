@@ -1,7 +1,13 @@
-import { TypeMatcher } from '../../../src/service/typeMatcher.js'
+import {
+  AliasTypeMatcher,
+  TypeMatcher,
+} from '../../../src/service/typeMatcher.js'
 import type { ApexMethod } from '../../../src/type/ApexMethod.js'
 import { APEX_TYPE, ApexType } from '../../../src/type/ApexMethod.js'
-import { TypeRegistry } from '../../../src/type/TypeRegistry.js'
+import {
+  classifyApexType,
+  TypeRegistry,
+} from '../../../src/type/TypeRegistry.js'
 
 describe('TypeRegistry', () => {
   describe('resolveType without expression', () => {
@@ -845,6 +851,19 @@ describe('TypeRegistry', () => {
         apexType: APEX_TYPE.VOID,
         typeName: 'UnknownType',
       })
+    })
+
+    it('Given a matcher knowing Mutation, When classifying the lower-cased spelling, Then it is OBJECT', () => {
+      // Arrange
+      const matchers = [
+        new AliasTypeMatcher([{ apiName: 'Mutation', aliases: ['Mutation'] }]),
+      ]
+
+      // Act
+      const result = classifyApexType('mutation', matchers)
+
+      // Assert
+      expect(result).toBe(APEX_TYPE.OBJECT)
     })
   })
 })

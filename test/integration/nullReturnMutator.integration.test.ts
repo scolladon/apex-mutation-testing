@@ -11,10 +11,7 @@ import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { NullReturnMutator } from '../../src/mutator/nullReturnMutator.js'
 import { MutantGenerator } from '../../src/service/mutantGenerator.js'
 import { TypeDiscoverer } from '../../src/service/typeDiscoverer.js'
-import {
-  ApexClassTypeMatcher,
-  SObjectTypeMatcher,
-} from '../../src/service/typeMatcher.js'
+import { AliasTypeMatcher } from '../../src/service/typeMatcher.js'
 
 describe('NullReturnMutator Integration', () => {
   let mutantGenerator: MutantGenerator
@@ -28,8 +25,12 @@ describe('NullReturnMutator Integration', () => {
     sObjectTypes: string[] = []
   ) => {
     const typeDiscoverer = new TypeDiscoverer()
-      .withMatcher(new ApexClassTypeMatcher(new Set()))
-      .withMatcher(new SObjectTypeMatcher(new Set(sObjectTypes)))
+      .withMatcher(new AliasTypeMatcher([]))
+      .withMatcher(
+        new AliasTypeMatcher(
+          sObjectTypes.map(apiName => ({ apiName, aliases: [apiName] }))
+        )
+      )
     return typeDiscoverer.analyze(code)
   }
 

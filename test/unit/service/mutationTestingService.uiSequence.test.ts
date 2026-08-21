@@ -6,6 +6,7 @@ import {
 import { ApexSettingsRepository } from '../../../src/adapter/org/apexSettingsRepository.js'
 import { ApexTestRunner } from '../../../src/adapter/org/apexTestRunner.js'
 import type { ApexTestSuiteRepository } from '../../../src/adapter/org/apexTestSuiteRepository.js'
+import { EntityDefinitionRepository } from '../../../src/adapter/org/entityDefinitionRepository.js'
 import type { MetadataComponentDependency } from '../../../src/adapter/org/MetadataComponentDependency.js'
 import { OrgApexSourceProvider } from '../../../src/adapter/org/orgApexSourceProvider.js'
 import { OrgMutationTestBed } from '../../../src/adapter/org/orgMutationTestBed.js'
@@ -268,9 +269,12 @@ describe('MutationTestingService — golden UI-call sequence', () => {
     return {
       source: new OrgApexSourceProvider(
         repository,
-        {} as unknown as ApexTestSuiteRepository
+        {} as unknown as ApexTestSuiteRepository,
+        new EntityDefinitionRepository(connection),
+        vi.fn(),
+        null
       ),
-      schema: new OrgSObjectSchemaProvider(connection),
+      schema: new OrgSObjectSchemaProvider(connection, vi.fn(), null),
       testBed: new OrgMutationTestBed(
         repository,
         runner,

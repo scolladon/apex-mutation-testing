@@ -9,7 +9,7 @@ import {
 import { ArithmeticOperatorDeletionMutator } from '../../src/mutator/arithmeticOperatorDeletionMutator.js'
 import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { TypeDiscoverer } from '../../src/service/typeDiscoverer.js'
-import { ApexClassTypeMatcher } from '../../src/service/typeMatcher.js'
+import { AliasTypeMatcher } from '../../src/service/typeMatcher.js'
 
 describe('ArithmeticOperatorDeletionMutator Integration', () => {
   const parseAndMutate = (code: string, coveredLines: Set<number>) => {
@@ -35,7 +35,7 @@ describe('ArithmeticOperatorDeletionMutator Integration', () => {
     const tree = parser.compilationUnit()
 
     const typeDiscoverer = new TypeDiscoverer().withMatcher(
-      new ApexClassTypeMatcher(new Set())
+      new AliasTypeMatcher([])
     )
     const typeRegistry = await typeDiscoverer.analyze(code)
 

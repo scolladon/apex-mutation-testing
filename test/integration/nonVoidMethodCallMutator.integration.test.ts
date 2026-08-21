@@ -11,10 +11,7 @@ import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { NonVoidMethodCallMutator } from '../../src/mutator/nonVoidMethodCallMutator.js'
 import { MutantGenerator } from '../../src/service/mutantGenerator.js'
 import { TypeDiscoverer } from '../../src/service/typeDiscoverer.js'
-import {
-  ApexClassTypeMatcher,
-  SObjectTypeMatcher,
-} from '../../src/service/typeMatcher.js'
+import { AliasTypeMatcher } from '../../src/service/typeMatcher.js'
 import { APEX_TYPE } from '../../src/type/ApexMethod.js'
 
 describe('NonVoidMethodCallMutator Integration', () => {
@@ -29,12 +26,12 @@ describe('NonVoidMethodCallMutator Integration', () => {
     const tree = parser.compilationUnit()
 
     const sObjectTypes = sObjectDescribeRepository
-      ? new Set(['Account'])
-      : new Set<string>()
+      ? [{ apiName: 'Account', aliases: ['Account'] }]
+      : []
     const typeDiscoverer = new TypeDiscoverer()
-      .withMatcher(new ApexClassTypeMatcher(new Set()))
+      .withMatcher(new AliasTypeMatcher([]))
       .withMatcher(
-        new SObjectTypeMatcher(sObjectTypes, sObjectDescribeRepository)
+        new AliasTypeMatcher(sObjectTypes, sObjectDescribeRepository)
       )
     const typeRegistry = await typeDiscoverer.analyze(code)
 
@@ -385,8 +382,8 @@ describe('NonVoidMethodCallMutator Integration', () => {
       const tree = parser.compilationUnit()
 
       const typeDiscoverer = new TypeDiscoverer()
-        .withMatcher(new ApexClassTypeMatcher(new Set()))
-        .withMatcher(new SObjectTypeMatcher(new Set()))
+        .withMatcher(new AliasTypeMatcher([]))
+        .withMatcher(new AliasTypeMatcher([]))
       const typeRegistry = await typeDiscoverer.analyze(code)
 
       const nonVoidMethodCallMutator = new NonVoidMethodCallMutator(

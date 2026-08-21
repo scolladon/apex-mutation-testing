@@ -8,9 +8,19 @@ export interface ApexTestSuiteMember {
   className: string
 }
 
+/** One org type with every spelling the source under mutation may write for it.
+ *  `apiName` is the one true name — what describe() receives and what the schema
+ *  is keyed by. `aliases` always contains `apiName`, and a bare (unqualified)
+ *  alias is only ever present for a type the org's own namespace owns — a
+ *  bare spelling is not legal source for a foreign namespace's type. */
+export interface TypeName {
+  apiName: string
+  aliases: string[]
+}
+
 export interface TypeDependencies {
-  apexClasses: string[]
-  sObjects: string[] // StandardEntity ∪ CustomObject, already merged
+  apexClasses: TypeName[]
+  sObjects: TypeName[] // StandardEntity ∪ CustomObject, already merged
 }
 
 export interface ApexSourceProvider {

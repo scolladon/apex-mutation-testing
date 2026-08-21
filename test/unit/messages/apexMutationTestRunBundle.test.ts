@@ -128,6 +128,23 @@ describe('apex.mutation.test.run message bundle', () => {
     )
   })
 
+  it('Given unresolved type names and a reason, When info.typeResolutionDegraded is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
+    // Arrange
+    const names = 'Foo, Bar'
+    const reason = ' (EntityDefinition not accessible)'
+
+    // Act
+    const sut = messages.getMessage('info.typeResolutionDegraded', [
+      names,
+      reason,
+    ])
+
+    // Assert
+    expect(sut).toBe(
+      'Type resolution degraded for Foo, Bar: these types could not be resolved against the org, so type-aware mutators fall back to untyped behaviour and some mutants are not generated (EntityDefinition not accessible).'
+    )
+  })
+
   it('Given a class name, When error.apexClassNotFound is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
     // Arrange
     const className = 'MyClass'

@@ -24,6 +24,7 @@ describe('reportEngineNotice', () => {
     const resolveMessageTemplate = (key: string, args?: string[]): string => {
       const templates: Record<string, string> = {
         'info.syncTransportFallback': `Synchronous test execution is unavailable (${args?.[0]}). Falling back to the asynchronous transport.`,
+        'info.typeResolutionDegraded': `Type resolution degraded for ${args?.[0]}: these types could not be resolved against the org, so type-aware mutators fall back to untyped behaviour and some mutants are not generated${args?.[1]}.`,
       }
       return templates[key] || key
     }
@@ -198,5 +199,58 @@ describe('reportEngineNotice', () => {
     const [written] = sinkStub.mock.calls[0] as [string]
     expect(written).toContain(`${'x'.repeat(199)}😀…`)
     expect(written).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/)
+  })
+
+  it('Given a degraded-type notice carrying names and an org error, When reported, Then the spinner is paused and the sink receives both the names and the sanitized reason', () => {
+    // Act
+    reportEngineNotice(
+      {
+        kind: 'type-resolution-degraded',
+        typeNames: ['Foo', 'Bar'],
+        error: new Error('EntityDefinition not accessible'),
+      },
+      spinnerStub,
+      messagesMock,
+      sinkStub
+    )
+
+    // Assert
+    expect(spinnerStub.pause).toHaveBeenCalled()
+    const [written] = sinkStub.mock.calls[0] as [string]
+    expect(written).toContain('Foo, Bar')
+    expect(written).toContain('EntityDefinition not accessible')
+  })
+
+  it('Given a degraded-type notice with no org error, When reported, Then the written line carries the names and no parenthesised reason', () => {
+    // Act
+    reportEngineNotice(
+      { kind: 'type-resolution-degraded', typeNames: ['Foo'] },
+      spinnerStub,
+      messagesMock,
+      sinkStub
+    )
+
+    // Assert
+    const [written] = sinkStub.mock.calls[0] as [string]
+    expect(written.trim().endsWith('not generated.')).toBe(true)
+    expect(written).not.toContain('(')
+  })
+
+  it('Given a degraded-type notice whose joined names are unbounded, When reported, Then the names are truncated at 200 code points', () => {
+    // Arrange
+    const typeNames = Array.from({ length: 300 }, (_, i) => String(i % 10))
+
+    // Act
+    reportEngineNotice(
+      { kind: 'type-resolution-degraded', typeNames },
+      spinnerStub,
+      messagesMock,
+      sinkStub
+    )
+
+    // Assert
+    const [written] = sinkStub.mock.calls[0] as [string]
+    expect(written).toContain('…')
+    expect(written.length).toBeLessThan(500)
   })
 })

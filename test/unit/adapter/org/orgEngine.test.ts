@@ -3,7 +3,9 @@ import { ApexClassRepository } from '../../../../src/adapter/org/apexClassReposi
 import { ApexSettingsRepository } from '../../../../src/adapter/org/apexSettingsRepository.js'
 import { ApexTestRunner } from '../../../../src/adapter/org/apexTestRunner.js'
 import { ApexTestSuiteRepository } from '../../../../src/adapter/org/apexTestSuiteRepository.js'
+import { EntityDefinitionRepository } from '../../../../src/adapter/org/entityDefinitionRepository.js'
 import { OrgApexSourceProvider } from '../../../../src/adapter/org/orgApexSourceProvider.js'
+import { OrganizationRepository } from '../../../../src/adapter/org/organizationRepository.js'
 import { createOrgEngine } from '../../../../src/adapter/org/orgEngine.js'
 import { OrgMutationTestBed } from '../../../../src/adapter/org/orgMutationTestBed.js'
 import { OrgSObjectSchemaProvider } from '../../../../src/adapter/org/orgSObjectSchemaProvider.js'
@@ -13,12 +15,15 @@ vi.mock('../../../../src/adapter/org/apexClassRepository.js')
 vi.mock('../../../../src/adapter/org/apexSettingsRepository.js')
 vi.mock('../../../../src/adapter/org/apexTestRunner.js')
 vi.mock('../../../../src/adapter/org/apexTestSuiteRepository.js')
+vi.mock('../../../../src/adapter/org/entityDefinitionRepository.js')
 vi.mock('../../../../src/adapter/org/orgApexSourceProvider.js')
 vi.mock('../../../../src/adapter/org/orgMutationTestBed.js')
 vi.mock('../../../../src/adapter/org/orgSObjectSchemaProvider.js')
+vi.mock('../../../../src/adapter/org/organizationRepository.js')
 
 describe('createOrgEngine', () => {
   let ctx: EngineContext
+  const orgNamespace = 'acme'
 
   beforeEach(() => {
     // Arrange
@@ -27,6 +32,13 @@ describe('createOrgEngine', () => {
       apexClassName: 'TestClass',
       notify: vi.fn(),
     }
+    vi.mocked(OrganizationRepository).mockImplementation(
+      class {
+        readNamespacePrefix = vi.fn().mockResolvedValue(orgNamespace)
+      } as unknown as new (
+        connection: Connection
+      ) => OrganizationRepository
+    )
   })
 
   it('Given an engine context, When creating the org engine, Then the same ApexClassRepository instance reaches both the source and the test bed', async () => {
@@ -88,14 +100,50 @@ describe('createOrgEngine', () => {
     )
   })
 
-  it('Given an engine context, When creating the org engine, Then the schema is an OrgSObjectSchemaProvider built from the connection', async () => {
+  it('Given an engine context, When creating the org engine, Then the source is composed from an EntityDefinitionRepository built from the connection', async () => {
+    // Act
+    await createOrgEngine(ctx)
+
+    // Assert
+    expect(vi.mocked(EntityDefinitionRepository)).toHaveBeenCalledWith(
+      ctx.connection
+    )
+    expect(vi.mocked(OrgApexSourceProvider).mock.calls[0][2]).toBe(
+      vi.mocked(EntityDefinitionRepository).mock.instances[0]
+    )
+  })
+
+  it('Given an engine context, When creating the org engine, Then ctx.notify reaches the source construction', async () => {
+    // Act
+    await createOrgEngine(ctx)
+
+    // Assert
+    expect(vi.mocked(OrgApexSourceProvider).mock.calls[0][3]).toBe(ctx.notify)
+  })
+
+  it('Given an engine context, When creating the org engine, Then the schema is an OrgSObjectSchemaProvider built from the connection, notify and the org namespace', async () => {
     // Act
     await createOrgEngine(ctx)
 
     // Assert
     expect(vi.mocked(OrgSObjectSchemaProvider)).toHaveBeenCalledWith(
+      ctx.connection,
+      ctx.notify,
+      orgNamespace
+    )
+  })
+
+  it('Given an engine context, When creating the org engine, Then the organization repository is built from the connection and its namespace reaches the source', async () => {
+    // Act
+    await createOrgEngine(ctx)
+
+    // Assert — the namespace is read exactly once and threaded to every
+    // consumer that decides own-versus-foreign, never re-derived per class.
+    expect(vi.mocked(OrganizationRepository)).toHaveBeenCalledWith(
       ctx.connection
     )
+    expect(vi.mocked(OrganizationRepository).mock.instances).toHaveLength(1)
+    expect(vi.mocked(OrgApexSourceProvider).mock.calls[0][4]).toBe(orgNamespace)
   })
 
   it('Given an engine context, When creating the org engine, Then the settings repository is built from the connection and reaches the test bed', async () => {
@@ -109,5 +157,58 @@ describe('createOrgEngine', () => {
     expect(vi.mocked(OrgMutationTestBed).mock.calls[0][2]).toBe(
       vi.mocked(ApexSettingsRepository).mock.instances[0]
     )
+  })
+
+  it('Given readNamespacePrefix rejects, When creating the org engine, Then the run does not abort, the namespace degrades to null and notify carries the rejection', async () => {
+    // Arrange — this is the first org round-trip of every run, firing before
+    // class validation and before any progress output; a real org (or a
+    // local aer server that does not support this query) must never abort
+    // the whole run over what is pure optional enrichment.
+    const failure = new Error('EXCEEDED_ID_LIMIT')
+    vi.mocked(OrganizationRepository).mockImplementation(
+      class {
+        readNamespacePrefix = vi.fn().mockRejectedValue(failure)
+      } as unknown as new (
+        connection: Connection
+      ) => OrganizationRepository
+    )
+
+    // Act
+    await createOrgEngine(ctx)
+
+    // Assert
+    expect(ctx.notify).toHaveBeenCalledWith({
+      kind: 'type-resolution-degraded',
+      typeNames: [],
+      error: failure,
+    })
+    expect(vi.mocked(OrgApexSourceProvider).mock.calls[0][4]).toBeNull()
+    expect(vi.mocked(OrgSObjectSchemaProvider)).toHaveBeenCalledWith(
+      ctx.connection,
+      ctx.notify,
+      null
+    )
+  })
+
+  it('Given readNamespacePrefix rejects with a non-Error value, When creating the org engine, Then notify carries an Error wrapping that value', async () => {
+    // Arrange — a non-Error rejection value drives the false arm of the
+    // instanceof normalisation.
+    vi.mocked(OrganizationRepository).mockImplementation(
+      class {
+        readNamespacePrefix = vi.fn().mockRejectedValue('boom')
+      } as unknown as new (
+        connection: Connection
+      ) => OrganizationRepository
+    )
+
+    // Act
+    await createOrgEngine(ctx)
+
+    // Assert
+    const [notice] = (ctx.notify as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      { error?: Error },
+    ]
+    expect(notice.error).toBeInstanceOf(Error)
+    expect(notice.error?.message).toContain('boom')
   })
 })
