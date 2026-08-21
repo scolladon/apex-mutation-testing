@@ -271,9 +271,10 @@ describe('MutationTestingService — golden UI-call sequence', () => {
         repository,
         {} as unknown as ApexTestSuiteRepository,
         new EntityDefinitionRepository(connection),
-        vi.fn()
+        vi.fn(),
+        null
       ),
-      schema: new OrgSObjectSchemaProvider(connection, vi.fn()),
+      schema: new OrgSObjectSchemaProvider(connection, vi.fn(), null),
       testBed: new OrgMutationTestBed(
         repository,
         runner,

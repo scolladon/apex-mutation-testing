@@ -35,26 +35,40 @@ const toError = (value: unknown): Error =>
 
 // A local class is a legitimate source spelling as-is. A managed-package
 // class uses the Apex dotted convention (`ns.Name`), unlike the `ns__Name`
-// object convention, and the bare name remains a valid spelling too.
-const toApexClassTypeName = (dep: MetadataComponentDependency): TypeName => {
+// object convention. The bare name is only ever a legal spelling for a class
+// in the org's OWN namespace — source in namespace A can write its own
+// `Mutation` bare, but can never write a foreign package B's class without
+// the `B.` qualifier — so the bare alias is minted only when the row's
+// namespace matches the org's.
+const toApexClassTypeName = (
+  dep: MetadataComponentDependency,
+  orgNamespace: string | null
+): TypeName => {
   const name = dep.RefMetadataComponentName
-  if (hasNoNamespace(dep.RefMetadataComponentNamespace)) {
+  const namespace = dep.RefMetadataComponentNamespace
+  if (hasNoNamespace(namespace)) {
     return identityTypeName(name)
   }
-  const apiName = `${dep.RefMetadataComponentNamespace}.${name}`
-  return { apiName, aliases: [apiName, name] }
+  const apiName = `${namespace}.${name}`
+  const aliases = namespace === orgNamespace ? [apiName, name] : [apiName]
+  return { apiName, aliases }
 }
 
 // Derives the bare object alias (`ProbeObj__c`) from the org-true qualified
-// name (`namespaced__ProbeObj__c`) and its namespace. Rather than blindly
-// slicing a prefix off a name that does not carry it — which would emit a
-// mangled alias — this returns nothing when the qualified name does not
-// start with the row's own namespace.
+// name (`namespaced__ProbeObj__c`) and its namespace — but only when that
+// namespace is the org's OWN: a bare spelling is legal source only inside
+// the namespace that owns it, so a foreign package's object must never mint
+// one (minting it unconditionally is what let a foreign and a local object
+// sharing a developer name collide on the same bare alias). Rather than
+// blindly slicing a prefix off a name that does not carry it — which would
+// emit a mangled alias — this returns nothing when the qualified name does
+// not start with the row's own namespace either.
 const bareObjectAlias = (
   qualifiedApiName: string,
-  namespacePrefix: string | null
+  namespacePrefix: string | null,
+  orgNamespace: string | null
 ): string | undefined => {
-  if (!namespacePrefix) {
+  if (!namespacePrefix || namespacePrefix !== orgNamespace) {
     return undefined
   }
   const prefix = `${namespacePrefix}__`
@@ -67,8 +81,15 @@ const bareObjectAlias = (
 // source can never write `ProbeObj` for a type whose api name is
 // `ProbeObj__c`, so aliasing it would only create false matches against an
 // unrelated Apex class of that name.
-const toCustomObjectTypeName = (row: EntityDefinitionRow): TypeName => {
-  const bareAlias = bareObjectAlias(row.QualifiedApiName, row.NamespacePrefix)
+const toCustomObjectTypeName = (
+  row: EntityDefinitionRow,
+  orgNamespace: string | null
+): TypeName => {
+  const bareAlias = bareObjectAlias(
+    row.QualifiedApiName,
+    row.NamespacePrefix,
+    orgNamespace
+  )
   const aliases =
     bareAlias === undefined
       ? [row.QualifiedApiName]
@@ -76,7 +97,6 @@ const toCustomObjectTypeName = (row: EntityDefinitionRow): TypeName => {
   return {
     apiName: row.QualifiedApiName,
     aliases,
-    namespace: row.NamespacePrefix,
   }
 }
 
@@ -122,7 +142,8 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
     private readonly repository: ApexClassRepository,
     private readonly suiteRepository: ApexTestSuiteRepository,
     private readonly entityDefinitionRepository: EntityDefinitionRepository,
-    private readonly notify: EngineNotify
+    private readonly notify: EngineNotify,
+    private readonly orgNamespace: string | null
   ) {}
 
   // Existence-only check: a minimal projection avoids the `*` field list
@@ -147,7 +168,7 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
 
     const apexClasses = dependencies
       .filter(dep => dep.RefMetadataComponentType === 'ApexClass')
-      .map(toApexClassTypeName)
+      .map(dep => toApexClassTypeName(dep, this.orgNamespace))
 
     const standardEntityTypes = dependencies
       .filter(dep => dep.RefMetadataComponentType === 'StandardEntity')
@@ -193,7 +214,7 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
       // Exactly one candidate resolves; zero or more than one (an ambiguous
       // key) is unresolved, never a guess at which row is right.
       if (candidates?.length === 1) {
-        resolved.push(toCustomObjectTypeName(candidates[0]))
+        resolved.push(toCustomObjectTypeName(candidates[0], this.orgNamespace))
       } else {
         unresolvedNames.add(
           qualifiedDeveloperName(

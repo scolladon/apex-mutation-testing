@@ -1,10 +1,7 @@
 import { Connection } from '@salesforce/core'
 import { mapLimit } from 'async'
 import type { EngineNotify } from '../../port/executionEngine.js'
-import type {
-  DescribedSObject,
-  SObjectSchemaProvider,
-} from '../../port/sObjectSchemaProvider.js'
+import type { SObjectSchemaProvider } from '../../port/sObjectSchemaProvider.js'
 import type { ApexType } from '../../type/ApexMethod.js'
 import { APEX_TYPE, SObjectFieldTypes } from '../../type/ApexMethod.js'
 
@@ -36,14 +33,20 @@ const MAX_CONCURRENT_DESCRIBE_CALLS = 25
 // compound fields, whose component names (`Loc__Latitude__s`) carry an extra
 // `__` segment the developer name never had — that minted a bogus alias for
 // a non-namespaced object and missed the real one for a namespaced object.
+//
+// Strips the ORG's own namespace, not the described object's: a bare field
+// spelling is only legal source inside the namespace that owns the field, so
+// an own-namespace field resolves bare wherever it lives — including on a
+// standard object — while a foreign package's field on that same object
+// mints nothing.
 const bareFieldAlias = (
   foldedFieldName: string,
-  namespacePrefix: string | null
+  orgNamespace: string | null
 ): string | undefined => {
-  if (!namespacePrefix) {
+  if (!orgNamespace) {
     return undefined
   }
-  const prefix = `${namespacePrefix.toLowerCase()}__`
+  const prefix = `${orgNamespace.toLowerCase()}__`
   return foldedFieldName.startsWith(prefix)
     ? foldedFieldName.slice(prefix.length)
     : undefined
@@ -65,7 +68,7 @@ const normalizeFields = (fields: DescribedField[]): NormalizedField[] =>
 // lose to a derived alias.
 const buildFieldMap = (
   fields: DescribedField[],
-  namespacePrefix: string | null
+  orgNamespace: string | null
 ): Map<string, ApexType> => {
   const normalized = normalizeFields(fields)
   const fieldMap = new Map<string, ApexType>()
@@ -73,7 +76,7 @@ const buildFieldMap = (
     fieldMap.set(foldedName, type)
   }
   for (const { foldedName, type } of normalized) {
-    const alias = bareFieldAlias(foldedName, namespacePrefix)
+    const alias = bareFieldAlias(foldedName, orgNamespace)
     if (alias !== undefined && !fieldMap.has(alias)) {
       fieldMap.set(alias, type)
     }
@@ -110,20 +113,21 @@ export class OrgSObjectSchemaProvider implements SObjectSchemaProvider {
 
   constructor(
     private readonly connection: Connection,
-    private readonly notify: EngineNotify
+    private readonly notify: EngineNotify,
+    private readonly orgNamespace: string | null
   ) {}
 
-  public async describe(sObjects: DescribedSObject[]): Promise<void> {
+  public async describe(apiNames: string[]): Promise<void> {
     const failures: DescribeFailure[] = []
     await mapLimit(
-      sObjects,
+      apiNames,
       MAX_CONCURRENT_DESCRIBE_CALLS,
-      async ({ apiName, namespace }: DescribedSObject) => {
+      async (apiName: string) => {
         try {
           const describeResult = await this.connection.describe(apiName)
           this.fieldTypes.set(
             apiName.toLowerCase(),
-            buildFieldMap(describeResult.fields, namespace)
+            buildFieldMap(describeResult.fields, this.orgNamespace)
           )
         } catch (error) {
           failures.push({ name: apiName, error: toError(error) })

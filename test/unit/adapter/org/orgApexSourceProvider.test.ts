@@ -6,6 +6,11 @@ import { OrgApexSourceProvider } from '../../../../src/adapter/org/orgApexSource
 import type { EngineNotify } from '../../../../src/port/executionEngine.js'
 import type { ApexClass } from '../../../../src/type/ApexClass.js'
 
+// The org's own namespace, pinned to a single value throughout this suite so
+// a fixture's namespace either equals it (own) or does not (foreign) — the
+// only two arms the bare-alias derivation cares about.
+const ORG_NAMESPACE = 'namespaced'
+
 describe('OrgApexSourceProvider', () => {
   let sut: OrgApexSourceProvider
   let readMock: ReturnType<typeof vi.fn>
@@ -43,7 +48,8 @@ describe('OrgApexSourceProvider', () => {
       repository,
       suiteRepository,
       entityDefinitionRepository,
-      notifyMock
+      notifyMock,
+      ORG_NAMESPACE
     )
   })
 
@@ -124,14 +130,14 @@ describe('OrgApexSourceProvider', () => {
       expect(readByDeveloperNamesMock).not.toHaveBeenCalled()
     })
 
-    it('Given a namespaced CustomObject dependency, When listing dependencies, Then sObjects carries the qualified api name and the bare alias', async () => {
+    it("Given a CustomObject dependency belonging to the org's own namespace, When listing dependencies, Then sObjects carries the qualified api name and the bare alias", async () => {
       // Arrange
       const dependencies: MetadataComponentDependency[] = [
         {
           Id: 'dep1',
           RefMetadataComponentType: 'CustomObject',
           RefMetadataComponentName: 'ProbeObj',
-          RefMetadataComponentNamespace: 'namespaced',
+          RefMetadataComponentNamespace: ORG_NAMESPACE,
         },
       ]
       getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
@@ -139,7 +145,7 @@ describe('OrgApexSourceProvider', () => {
         {
           DeveloperName: 'ProbeObj',
           QualifiedApiName: 'namespaced__ProbeObj__c',
-          NamespacePrefix: 'namespaced',
+          NamespacePrefix: ORG_NAMESPACE,
         },
       ])
 
@@ -151,10 +157,45 @@ describe('OrgApexSourceProvider', () => {
         {
           apiName: 'namespaced__ProbeObj__c',
           aliases: ['namespaced__ProbeObj__c', 'ProbeObj__c'],
-          namespace: 'namespaced',
         },
       ])
       expect(readByDeveloperNamesMock).toHaveBeenCalledWith(['ProbeObj'])
+    })
+
+    // The defect this whole change closes: a bare spelling is only legal
+    // source for the org's OWN namespace, so a foreign package's object must
+    // never mint one — unconditional minting is what let an org object and a
+    // package object sharing a developer name collide on the same bare
+    // alias, with the winner decided by dependency-row order.
+    it('Given a CustomObject dependency belonging to a foreign namespace, When listing dependencies, Then sObjects carries only the qualified api name with no bare alias', async () => {
+      // Arrange
+      const dependencies: MetadataComponentDependency[] = [
+        {
+          Id: 'dep1',
+          RefMetadataComponentType: 'CustomObject',
+          RefMetadataComponentName: 'ProbeObj',
+          RefMetadataComponentNamespace: 'devedapp',
+        },
+      ]
+      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
+      readByDeveloperNamesMock.mockResolvedValueOnce([
+        {
+          DeveloperName: 'ProbeObj',
+          QualifiedApiName: 'devedapp__ProbeObj__c',
+          NamespacePrefix: 'devedapp',
+        },
+      ])
+
+      // Act
+      const result = await sut.listDependencies(apexClass)
+
+      // Assert
+      expect(result.sObjects).toEqual([
+        {
+          apiName: 'devedapp__ProbeObj__c',
+          aliases: ['devedapp__ProbeObj__c'],
+        },
+      ])
     })
 
     // Diverges from the fixture above by resolving to a __mdt suffix with no
@@ -185,11 +226,11 @@ describe('OrgApexSourceProvider', () => {
 
       // Assert
       expect(result.sObjects).toEqual([
-        { apiName: 'Invoice__mdt', aliases: ['Invoice__mdt'], namespace: null },
+        { apiName: 'Invoice__mdt', aliases: ['Invoice__mdt'] },
       ])
     })
 
-    it('Given an EntityDefinition row whose qualified name does not carry the row namespace, When listing dependencies, Then no bare alias is derived', async () => {
+    it("Given an EntityDefinition row belonging to the org's own namespace whose qualified name does not carry that namespace, When listing dependencies, Then no bare alias is derived", async () => {
       // Arrange — rather than blindly slicing a prefix off a name that does
       // not carry it (which would emit a mangled alias), the derivation
       // returns nothing. The org never produces this shape (it always embeds
@@ -200,7 +241,7 @@ describe('OrgApexSourceProvider', () => {
           Id: 'dep1',
           RefMetadataComponentType: 'CustomObject',
           RefMetadataComponentName: 'Other',
-          RefMetadataComponentNamespace: 'namespaced',
+          RefMetadataComponentNamespace: ORG_NAMESPACE,
         },
       ]
       getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
@@ -208,7 +249,7 @@ describe('OrgApexSourceProvider', () => {
         {
           DeveloperName: 'Other',
           QualifiedApiName: 'Other__c',
-          NamespacePrefix: 'namespaced',
+          NamespacePrefix: ORG_NAMESPACE,
         },
       ])
 
@@ -217,37 +258,39 @@ describe('OrgApexSourceProvider', () => {
 
       // Assert
       expect(result.sObjects).toEqual([
-        { apiName: 'Other__c', aliases: ['Other__c'], namespace: 'namespaced' },
+        { apiName: 'Other__c', aliases: ['Other__c'] },
       ])
     })
 
-    it('Given two EntityDefinition rows sharing a developer name in different namespaces, When listing dependencies, Then each dependency row picks the row matching its own namespace', async () => {
-      // Arrange
+    it("Given two EntityDefinition rows sharing a developer name where only one belongs to the org's own namespace, When listing dependencies, Then each row picks its own match and only the own-namespace row carries a bare alias", async () => {
+      // Arrange — this is the exact shape of the collision the fix removes:
+      // an org object and a foreign package object sharing a developer name
+      // must not both be reachable through the same bare alias.
       const dependencies: MetadataComponentDependency[] = [
         {
           Id: 'dep1',
           RefMetadataComponentType: 'CustomObject',
           RefMetadataComponentName: 'Thing',
-          RefMetadataComponentNamespace: 'nsA',
+          RefMetadataComponentNamespace: ORG_NAMESPACE,
         },
         {
           Id: 'dep2',
           RefMetadataComponentType: 'CustomObject',
           RefMetadataComponentName: 'Thing',
-          RefMetadataComponentNamespace: 'nsB',
+          RefMetadataComponentNamespace: 'devedapp',
         },
       ]
       getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
       readByDeveloperNamesMock.mockResolvedValueOnce([
         {
           DeveloperName: 'Thing',
-          QualifiedApiName: 'nsA__Thing__c',
-          NamespacePrefix: 'nsA',
+          QualifiedApiName: 'namespaced__Thing__c',
+          NamespacePrefix: ORG_NAMESPACE,
         },
         {
           DeveloperName: 'Thing',
-          QualifiedApiName: 'nsB__Thing__c',
-          NamespacePrefix: 'nsB',
+          QualifiedApiName: 'devedapp__Thing__c',
+          NamespacePrefix: 'devedapp',
         },
       ])
 
@@ -257,14 +300,12 @@ describe('OrgApexSourceProvider', () => {
       // Assert
       expect(result.sObjects).toEqual([
         {
-          apiName: 'nsA__Thing__c',
-          aliases: ['nsA__Thing__c', 'Thing__c'],
-          namespace: 'nsA',
+          apiName: 'namespaced__Thing__c',
+          aliases: ['namespaced__Thing__c', 'Thing__c'],
         },
         {
-          apiName: 'nsB__Thing__c',
-          aliases: ['nsB__Thing__c', 'Thing__c'],
-          namespace: 'nsB',
+          apiName: 'devedapp__Thing__c',
+          aliases: ['devedapp__Thing__c'],
         },
       ])
     })
@@ -426,7 +467,7 @@ describe('OrgApexSourceProvider', () => {
 
       // Assert
       expect(result.sObjects).toEqual([
-        { apiName: 'Present__c', aliases: ['Present__c'], namespace: null },
+        { apiName: 'Present__c', aliases: ['Present__c'] },
       ])
       expect(notifyMock).toHaveBeenCalledTimes(1)
       expect(notifyMock).toHaveBeenCalledWith({
@@ -563,8 +604,10 @@ describe('OrgApexSourceProvider', () => {
       ])
     })
 
-    it('Given an ApexClass dependency from a managed package, When listing dependencies, Then apexClasses carries the dotted api name and the bare alias', async () => {
-      // Arrange
+    it('Given an ApexClass dependency from a foreign-namespace managed package, When listing dependencies, Then apexClasses carries only the dotted api name with no bare alias', async () => {
+      // Arrange — a foreign package's class must always be written dotted;
+      // minting a bare alias for it would create false matches against an
+      // unrelated local class of the same name.
       const dependencies: MetadataComponentDependency[] = [
         {
           Id: 'dep1',
@@ -582,7 +625,31 @@ describe('OrgApexSourceProvider', () => {
       expect(result.apexClasses).toEqual([
         {
           apiName: 'devedapp.PostInstallScript',
-          aliases: ['devedapp.PostInstallScript', 'PostInstallScript'],
+          aliases: ['devedapp.PostInstallScript'],
+        },
+      ])
+    })
+
+    it("Given an ApexClass dependency from the org's own namespace, When listing dependencies, Then apexClasses carries the dotted api name and the bare alias", async () => {
+      // Arrange
+      const dependencies: MetadataComponentDependency[] = [
+        {
+          Id: 'dep1',
+          RefMetadataComponentType: 'ApexClass',
+          RefMetadataComponentName: 'Mutation',
+          RefMetadataComponentNamespace: ORG_NAMESPACE,
+        },
+      ]
+      getApexClassDependenciesMock.mockResolvedValueOnce(dependencies)
+
+      // Act
+      const result = await sut.listDependencies(apexClass)
+
+      // Assert
+      expect(result.apexClasses).toEqual([
+        {
+          apiName: 'namespaced.Mutation',
+          aliases: ['namespaced.Mutation', 'Mutation'],
         },
       ])
     })
@@ -628,7 +695,7 @@ describe('OrgApexSourceProvider', () => {
       ])
       expect(result.sObjects).toEqual([
         { apiName: 'Account', aliases: ['Account'] },
-        { apiName: 'Invoice__c', aliases: ['Invoice__c'], namespace: null },
+        { apiName: 'Invoice__c', aliases: ['Invoice__c'] },
       ])
       expect(getApexClassDependenciesMock).toHaveBeenCalledWith('123')
     })
