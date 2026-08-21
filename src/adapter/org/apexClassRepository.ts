@@ -2,6 +2,7 @@ import { Connection } from '@salesforce/core'
 import { mapLimit } from 'async'
 import { type RestorePolicy, RUN_TESTS } from '../../port/mutationTestBed.js'
 import { ApexClass } from '../../type/ApexClass.js'
+import { bareApexClassName } from '../../type/ApexClassName.js'
 import { ApexClassIdentity } from './ApexClassIdentity.js'
 import { MetadataComponentDependency } from './MetadataComponentDependency.js'
 import { chunk } from './queryChunking.js'
@@ -107,11 +108,20 @@ export class ApexClassRepository {
     return (await query.execute())[0]
   }
 
-  // No namespace pin here, unlike `read`: pinning `NamespacePrefix: ''`
-  // makes a namespaced class indistinguishable from one that does not exist
-  // at all, and telling those two apart is the whole point of this query.
-  public async readIdentities(names: string[]): Promise<ApexClassIdentity[]> {
-    const chunks = chunk(names, IDENTITY_QUERY_CHUNK_SIZE)
+  // No namespace pin here, unlike `read`, and no `ManageableState` predicate
+  // either: either filter would make a managed class and a nonexistent
+  // class both come back as zero rows, destroying the not-found /
+  // not-accessible distinction this query exists to preserve.
+  // `ApexClass.Name` is always bare on the org, so every spelling is
+  // bare-ified before the query; deduped afterwards since `-t Foo -t
+  // mockery.Foo` is a legal perimeter that maps to one bare SOQL term.
+  public async readIdentities(
+    spellings: string[]
+  ): Promise<ApexClassIdentity[]> {
+    const chunks = chunk(
+      [...new Set(spellings.map(bareApexClassName))],
+      IDENTITY_QUERY_CHUNK_SIZE
+    )
     const rows = await mapLimit(
       chunks,
       MAX_CONCURRENT_IDENTITY_QUERIES,
@@ -130,7 +140,12 @@ export class ApexClassRepository {
     }
     return (await this.connection.tooling
       .sobject('ApexClass')
-      .find({ Name: { $in: names } }, ['Id', 'Name', 'NamespacePrefix'])
+      .find({ Name: { $in: names } }, [
+        'Id',
+        'Name',
+        'NamespacePrefix',
+        'ManageableState',
+      ])
       .execute()) as unknown as ApexClassIdentity[]
   }
 

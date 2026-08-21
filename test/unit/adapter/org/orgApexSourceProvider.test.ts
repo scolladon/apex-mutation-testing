@@ -817,9 +817,14 @@ describe('OrgApexSourceProvider', () => {
     })
 
     it('should resolve with a not-accessible verdict when the only identity row carries a namespace prefix', async () => {
-      // Arrange
+      // Arrange — installed: a closed managed package, not mutable.
       readIdentitiesMock.mockResolvedValueOnce([
-        { Id: 'ID1', Name: 'TestClassTest', NamespacePrefix: 'et4ae5' },
+        {
+          Id: 'ID1',
+          Name: 'TestClassTest',
+          NamespacePrefix: 'et4ae5',
+          ManageableState: 'installed',
+        },
       ])
 
       // Act
@@ -839,9 +844,14 @@ describe('OrgApexSourceProvider', () => {
     })
 
     it('should resolve with an empty list when the identity row carries a null namespace prefix', async () => {
-      // Arrange
+      // Arrange — unmanaged: source this org owns, mutable.
       readIdentitiesMock.mockResolvedValueOnce([
-        { Id: 'ID1', Name: 'TestClassTest', NamespacePrefix: null },
+        {
+          Id: 'ID1',
+          Name: 'TestClassTest',
+          NamespacePrefix: null,
+          ManageableState: 'unmanaged',
+        },
       ])
 
       // Act
@@ -862,9 +872,14 @@ describe('OrgApexSourceProvider', () => {
     })
 
     it('should resolve with an empty list when the identity row carries an empty-string namespace prefix', async () => {
-      // Arrange
+      // Arrange — unmanaged: source this org owns, mutable.
       readIdentitiesMock.mockResolvedValueOnce([
-        { Id: 'ID1', Name: 'TestClassTest', NamespacePrefix: '' },
+        {
+          Id: 'ID1',
+          Name: 'TestClassTest',
+          NamespacePrefix: '',
+          ManageableState: 'unmanaged',
+        },
       ])
 
       // Act
@@ -887,8 +902,18 @@ describe('OrgApexSourceProvider', () => {
       // Arrange — a managed and a local class can share a name; any local
       // row makes the perimeter entry usable.
       readIdentitiesMock.mockResolvedValueOnce([
-        { Id: 'ID1', Name: 'TestClassTest', NamespacePrefix: 'et4ae5' },
-        { Id: 'ID2', Name: 'TestClassTest', NamespacePrefix: null },
+        {
+          Id: 'ID1',
+          Name: 'TestClassTest',
+          NamespacePrefix: 'et4ae5',
+          ManageableState: 'installed',
+        },
+        {
+          Id: 'ID2',
+          Name: 'TestClassTest',
+          NamespacePrefix: null,
+          ManageableState: 'unmanaged',
+        },
       ])
 
       // Act
@@ -918,7 +943,12 @@ describe('OrgApexSourceProvider', () => {
       // Arrange — the join is case-folded both ways so a differently-cased
       // org row still matches the perimeter entry.
       readIdentitiesMock.mockResolvedValueOnce([
-        { Id: 'ID1', Name: 'FooTest', NamespacePrefix: null },
+        {
+          Id: 'ID1',
+          Name: 'FooTest',
+          NamespacePrefix: null,
+          ManageableState: 'unmanaged',
+        },
       ])
 
       // Act
@@ -942,8 +972,18 @@ describe('OrgApexSourceProvider', () => {
     it('should name exactly the unusable entries, in perimeter order, when the first and last of a three-class perimeter are unusable', async () => {
       // Arrange
       readIdentitiesMock.mockResolvedValueOnce([
-        { Id: 'ID1', Name: 'Usable', NamespacePrefix: null },
-        { Id: 'ID2', Name: 'NotATest', NamespacePrefix: 'et4ae5' },
+        {
+          Id: 'ID1',
+          Name: 'Usable',
+          NamespacePrefix: null,
+          ManageableState: 'unmanaged',
+        },
+        {
+          Id: 'ID2',
+          Name: 'NotATest',
+          NamespacePrefix: 'et4ae5',
+          ManageableState: 'installed',
+        },
       ])
 
       // Act
@@ -1002,9 +1042,24 @@ describe('OrgApexSourceProvider', () => {
       // Arrange
       const perimeter = ['A', 'B', 'C']
       readIdentitiesMock.mockResolvedValueOnce([
-        { Id: 'ID_A', Name: 'A', NamespacePrefix: null },
-        { Id: 'ID_B', Name: 'B', NamespacePrefix: null },
-        { Id: 'ID_C', Name: 'C', NamespacePrefix: null },
+        {
+          Id: 'ID_A',
+          Name: 'A',
+          NamespacePrefix: null,
+          ManageableState: 'unmanaged',
+        },
+        {
+          Id: 'ID_B',
+          Name: 'B',
+          NamespacePrefix: null,
+          ManageableState: 'unmanaged',
+        },
+        {
+          Id: 'ID_C',
+          Name: 'C',
+          NamespacePrefix: null,
+          ManageableState: 'unmanaged',
+        },
       ])
 
       // Act
@@ -1032,8 +1087,14 @@ describe('OrgApexSourceProvider', () => {
           Id: CLASS_ID_LOCAL,
           Name: 'Argument',
           NamespacePrefix: ORG_NAMESPACE,
+          ManageableState: 'unmanaged',
         },
-        { Id: CLASS_ID_FOREIGN, Name: 'Argument', NamespacePrefix: 'mockery' },
+        {
+          Id: CLASS_ID_FOREIGN,
+          Name: 'Argument',
+          NamespacePrefix: 'mockery',
+          ManageableState: 'installed',
+        },
       ])
 
       // Act
@@ -1059,8 +1120,18 @@ describe('OrgApexSourceProvider', () => {
     it('should resolve one resolution per org row, not per perimeter entry', async () => {
       // Arrange — one perimeter entry, two matching org rows
       readIdentitiesMock.mockResolvedValueOnce([
-        { Id: CLASS_ID_LOCAL, Name: 'Argument', NamespacePrefix: null },
-        { Id: CLASS_ID_FOREIGN, Name: 'Argument', NamespacePrefix: 'mockery' },
+        {
+          Id: CLASS_ID_LOCAL,
+          Name: 'Argument',
+          NamespacePrefix: null,
+          ManageableState: 'unmanaged',
+        },
+        {
+          Id: CLASS_ID_FOREIGN,
+          Name: 'Argument',
+          NamespacePrefix: 'mockery',
+          ManageableState: 'installed',
+        },
       ])
 
       // Act
@@ -1078,6 +1149,7 @@ describe('OrgApexSourceProvider', () => {
           Id: CLASS_ID_FOREIGN,
           Name: 'ArgumentTest',
           NamespacePrefix: 'mockery',
+          ManageableState: 'installed',
         },
       ])
 
@@ -1099,8 +1171,18 @@ describe('OrgApexSourceProvider', () => {
       // bare name's sole claimant, so a bare perimeter entry must resolve to
       // neither rather than to an arbitrary one of them.
       readIdentitiesMock.mockResolvedValueOnce([
-        { Id: CLASS_ID_FOREIGN, Name: 'Argument', NamespacePrefix: 'mockery' },
-        { Id: CLASS_ID_OTHER, Name: 'Argument', NamespacePrefix: 'other' },
+        {
+          Id: CLASS_ID_FOREIGN,
+          Name: 'Argument',
+          NamespacePrefix: 'mockery',
+          ManageableState: 'installed',
+        },
+        {
+          Id: CLASS_ID_OTHER,
+          Name: 'Argument',
+          NamespacePrefix: 'other',
+          ManageableState: 'installed',
+        },
       ])
 
       // Act
@@ -1122,6 +1204,134 @@ describe('OrgApexSourceProvider', () => {
           lookupKeys: ['other.argument'],
         },
       ])
+    })
+
+    describe('mutability', () => {
+      it('should resolve with an empty skipped list when an own-namespace released row is mutable', async () => {
+        // Arrange — MutationTest as reported by dev-namespaced: released and
+        // carrying the org's own namespace, the acceptance command's own case.
+        readIdentitiesMock.mockResolvedValueOnce([
+          {
+            Id: '01p000000000004',
+            Name: 'MutationTest',
+            NamespacePrefix: ORG_NAMESPACE,
+            ManageableState: 'released',
+          },
+        ])
+
+        // Act
+        const result = await sut.assessPerimeter(['MutationTest'])
+
+        // Assert
+        expect(result.skipped).toEqual([])
+      })
+
+      it('should resolve with a not-accessible verdict when a null-namespace row is installed', async () => {
+        // Arrange — separates the mutability rule from the namespace rule:
+        // no namespace, yet still a closed managed-package state.
+        readIdentitiesMock.mockResolvedValueOnce([
+          {
+            Id: '01p000000000005',
+            Name: 'LegacyInstalled',
+            NamespacePrefix: null,
+            ManageableState: 'installed',
+          },
+        ])
+
+        // Act
+        const result = await sut.assessPerimeter(['LegacyInstalled'])
+
+        // Assert
+        expect(result.skipped).toEqual([
+          { className: 'LegacyInstalled', reason: 'not-accessible' },
+        ])
+      })
+
+      it('should resolve with a not-accessible verdict when a row carries a null ManageableState', async () => {
+        // Arrange — an unrecognised/absent state fails closed; this is also
+        // the shape a local `aer` backend produces, since it omits the field.
+        readIdentitiesMock.mockResolvedValueOnce([
+          {
+            Id: '01p000000000006',
+            Name: 'MutationTest',
+            NamespacePrefix: null,
+            ManageableState: null,
+          },
+        ])
+
+        // Act
+        const result = await sut.assessPerimeter(['MutationTest'])
+
+        // Assert
+        expect(result.skipped).toEqual([
+          { className: 'MutationTest', reason: 'not-accessible' },
+        ])
+      })
+
+      it('should resolve a qualified entry as not-accessible when only the local row is mutable', async () => {
+        // Arrange — a mutable LOCAL row must not make a foreign qualified
+        // entry usable.
+        readIdentitiesMock.mockResolvedValueOnce([
+          {
+            Id: CLASS_ID_LOCAL,
+            Name: 'Argument',
+            NamespacePrefix: null,
+            ManageableState: 'installedEditable',
+          },
+          {
+            Id: CLASS_ID_FOREIGN,
+            Name: 'Argument',
+            NamespacePrefix: 'mockery',
+            ManageableState: 'installed',
+          },
+        ])
+
+        // Act
+        const result = await sut.assessPerimeter(['mockery.Argument'])
+
+        // Assert
+        expect(result.skipped).toEqual([
+          { className: 'mockery.Argument', reason: 'not-accessible' },
+        ])
+      })
+
+      it('should resolve a qualified entry as accessible when only the foreign row is mutable', async () => {
+        // Arrange — states inverted from the previous case: now the FOREIGN
+        // row is the mutable one.
+        readIdentitiesMock.mockResolvedValueOnce([
+          {
+            Id: CLASS_ID_LOCAL,
+            Name: 'Argument',
+            NamespacePrefix: null,
+            ManageableState: 'installed',
+          },
+          {
+            Id: CLASS_ID_FOREIGN,
+            Name: 'Argument',
+            NamespacePrefix: 'mockery',
+            ManageableState: 'installedEditable',
+          },
+        ])
+
+        // Act
+        const result = await sut.assessPerimeter(['mockery.Argument'])
+
+        // Assert
+        expect(result.skipped).toEqual([])
+      })
+
+      it("should echo the caller's exact-case spelling when the entry is unusable", async () => {
+        // Arrange
+        readIdentitiesMock.mockResolvedValueOnce([])
+
+        // Act
+        const result = await sut.assessPerimeter(['MOCKERY.ARGUMENT'])
+
+        // Assert
+        expect(result.skipped).toEqual([
+          { className: 'MOCKERY.ARGUMENT', reason: 'not-found' },
+        ])
+      })
     })
   })
 

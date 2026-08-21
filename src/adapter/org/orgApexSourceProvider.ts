@@ -9,6 +9,7 @@ import type { EngineNotify } from '../../port/executionEngine.js'
 import type { ApexClass } from '../../type/ApexClass.js'
 import type { TestClassResolution } from '../../type/TestClassResolution.js'
 import type { ApexClassIdentity } from './ApexClassIdentity.js'
+import { isMutableApexClass } from './apexClassMutability.js'
 import type { ApexClassRepository } from './apexClassRepository.js'
 import type { ApexTestSuiteRepository } from './apexTestSuiteRepository.js'
 import type {
@@ -25,11 +26,6 @@ import {
   qualifiedDeveloperName,
   toApexClassTypeName,
 } from './orgTypeNames.js'
-
-// A namespace prefix of `null` or `''` both mean local: the org emits either
-// depending on projection, so both must read as usable.
-const isLocal = (identity: ApexClassIdentity): boolean =>
-  !identity.NamespacePrefix
 
 // Every row's qualified spelling is always a lookup key. Its bare spelling
 // joins only when the row is unambiguous as the source of that bare name
@@ -231,32 +227,41 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
   }
 
   /** A name can return two rows when a managed and a local class share it,
-   *  and any local row makes the entry usable. Every join is case-folded —
+   *  and any *mutable* row makes the entry usable — a qualified entry can
+   *  match at most one row, so "is at least one row for this entry usable"
+   *  reduces to "is *the* row usable". Every join is case-folded —
    *  `ApexClass.Name` matches case-insensitively on the org — while the
-   *  reported className keeps the perimeter entry's own spelling.
-   *  Resolutions are emitted for every row the query returned, not one per
-   *  perimeter entry — a bare entry matching two rows contributes two, so
-   *  whichever class the org actually runs is present under its own Id. */
+   *  reported className keeps the perimeter entry's own spelling. The same
+   *  query also yields every resolution: one per row the query returned,
+   *  not one per perimeter entry — a bare entry matching two rows
+   *  contributes two, so whichever class the org actually runs is present
+   *  under its own Id. */
   public async assessPerimeter(
     apexTestClassNames: string[]
   ): Promise<PerimeterAssessment> {
     const identities = await this.repository.readIdentities(apexTestClassNames)
-    const lowerNames = (rows: ApexClassIdentity[]) =>
-      new Set(rows.map(identity => identity.Name.toLowerCase()))
-    const known = lowerNames(identities)
-    const accessible = lowerNames(identities.filter(isLocal))
+    const resolutions = toResolutions(identities, this.orgNamespace)
+    const rows = identities.map((identity, index) => ({
+      identity,
+      resolution: resolutions[index],
+    }))
+    const known = new Set(
+      rows.flatMap(({ resolution }) => resolution.lookupKeys)
+    )
+    const accessible = new Set(
+      rows
+        .filter(({ identity }) => isMutableApexClass(identity))
+        .flatMap(({ resolution }) => resolution.lookupKeys)
+    )
     const skipped = apexTestClassNames
       .filter(name => !accessible.has(name.toLowerCase()))
       .map(name => ({
-        className: name,
+        className: name, // the caller's own spelling — load-bearing, see below
         reason: known.has(name.toLowerCase())
           ? ('not-accessible' as const)
           : ('not-found' as const),
       }))
-    return {
-      skipped,
-      resolutions: toResolutions(identities, this.orgNamespace),
-    }
+    return { skipped, resolutions }
   }
 
   public async readTestSuiteMembers(

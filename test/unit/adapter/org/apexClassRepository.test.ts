@@ -131,7 +131,7 @@ describe('ApexClassRepository', () => {
 
   describe('when reading ApexClass identities', () => {
     describe('given a perimeter within the chunk limit', () => {
-      it('then issues one find call with an $in filter, no namespace pin, and the Id/Name/NamespacePrefix projection', async () => {
+      it('then issues one find call with an $in filter, no namespace pin, and the Id/Name/NamespacePrefix/ManageableState projection', async () => {
         // Arrange
         const rows = [
           { Name: 'A', NamespacePrefix: null },
@@ -151,7 +151,33 @@ describe('ApexClassRepository', () => {
         // an indistinguishable empty result, the same trap `read` avoids by
         // pinning it deliberately.
         expect(conditions).not.toHaveProperty('NamespacePrefix')
-        expect(fields).toEqual(['Id', 'Name', 'NamespacePrefix'])
+        // ManageableState is projected, never filtered on: a server-side
+        // predicate would make a managed class and a nonexistent class both
+        // come back as zero rows, destroying the not-found/not-accessible
+        // distinction this query exists to preserve.
+        expect(fields).toEqual([
+          'Id',
+          'Name',
+          'NamespacePrefix',
+          'ManageableState',
+        ])
+      })
+    })
+
+    describe('given a perimeter mixing qualified and duplicate bare spellings', () => {
+      it('then bare-ifies each spelling and dedupes before building the $in filter', async () => {
+        // Arrange
+        findMock.mockResolvedValueOnce([])
+
+        // Act
+        await sut.readIdentities(['Foo', 'mockery.Foo', 'foo'])
+
+        // Assert — 'mockery.Foo' bare-ifies to 'Foo', already present, so it
+        // dedupes away; 'foo' stays distinct under case-sensitive Set
+        // semantics.
+        expect(findArgsMock).toHaveBeenCalledTimes(1)
+        const [conditions] = findArgsMock.mock.calls[0]
+        expect(conditions).toEqual({ Name: { $in: ['Foo', 'foo'] } })
       })
     })
 

@@ -1344,11 +1344,17 @@ describe('MutationTestingService', () => {
         // two classes' silent/contributing verdicts independent.
         const resolutions = await resolveViaOrgAdapter(
           [
-            { Id: CLASS_ID_LOCAL, Name: 'Argument', NamespacePrefix: null },
+            {
+              Id: CLASS_ID_LOCAL,
+              Name: 'Argument',
+              NamespacePrefix: null,
+              ManageableState: 'unmanaged',
+            },
             {
               Id: CLASS_ID_FOREIGN,
               Name: 'Argument',
               NamespacePrefix: 'mockery',
+              ManageableState: 'installed',
             },
           ],
           ['Argument', 'mockery.Argument']
@@ -1782,11 +1788,17 @@ describe('MutationTestingService', () => {
         // too, since both answer to the bare perimeter spelling 'Argument'.
         const resolutions = await resolveViaOrgAdapter(
           [
-            { Id: CLASS_ID_LOCAL, Name: 'Argument', NamespacePrefix: null },
+            {
+              Id: CLASS_ID_LOCAL,
+              Name: 'Argument',
+              NamespacePrefix: null,
+              ManageableState: 'unmanaged',
+            },
             {
               Id: CLASS_ID_FOREIGN,
               Name: 'Argument',
               NamespacePrefix: 'mockery',
+              ManageableState: 'installed',
             },
           ],
           ['Argument', 'mockery.Argument']
