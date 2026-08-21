@@ -2,14 +2,24 @@ import type {
   ApexSourceProvider,
   ApexTestSuiteMember,
   PerimeterAssessment,
+  TargetClassVerdict,
   TypeDependencies,
   TypeName,
 } from '../../port/apexSourceProvider.js'
 import type { EngineNotify } from '../../port/executionEngine.js'
 import type { ApexClass } from '../../type/ApexClass.js'
+import type { ApexClassRef } from '../../type/ApexClassName.js'
+import { splitApexClassName } from '../../type/ApexClassName.js'
 import type { TestClassResolution } from '../../type/TestClassResolution.js'
 import type { ApexClassIdentity } from './ApexClassIdentity.js'
-import { isMutableApexClass } from './apexClassMutability.js'
+import type {
+  ApexClassCandidate,
+  TargetClassSelection,
+} from './apexClassMutability.js'
+import {
+  isMutableApexClass,
+  selectMutableClass,
+} from './apexClassMutability.js'
 import type { ApexClassRepository } from './apexClassRepository.js'
 import type { ApexTestSuiteRepository } from './apexTestSuiteRepository.js'
 import type {
@@ -26,6 +36,13 @@ import {
   qualifiedDeveloperName,
   toApexClassTypeName,
 } from './orgTypeNames.js'
+
+// Absent is a verdict, not an exception: the local `aer` backend may not
+// populate ManageableState at all, and the message must say so readably
+// rather than printing `null`.
+const NO_STATE_REPORTED = 'none reported'
+const observedState = (state: string | null): string =>
+  state ?? NO_STATE_REPORTED
 
 // Every row's qualified spelling is always a lookup key. Its bare spelling
 // joins only when the row is unambiguous as the source of that bare name
@@ -99,17 +116,61 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
     private readonly orgNamespace: string | null
   ) {}
 
-  // Existence-only check: a minimal projection avoids the `*` field list
-  // jsforce resolves for an unprojected find (a describe$ round-trip
-  // pulling every ApexClass field, including Body and SymbolTable).
-  // readClass re-reads the same class in full when mutation actually
-  // starts, so that full read is deliberately left alone.
-  public async classExists(name: string): Promise<boolean> {
-    return Boolean(await this.repository.read(name, ['Id']))
+  // The qualifier narrows the candidate set BEFORE the tie-break runs; it
+  // never becomes a new verdict kind and never reaches a downstream join.
+  private select<T extends ApexClassCandidate>(
+    candidates: readonly T[],
+    ref: ApexClassRef
+  ): TargetClassSelection<T> {
+    const scoped =
+      ref.namespace === null
+        ? candidates
+        : candidates.filter(c =>
+            isOwnNamespace(c.NamespacePrefix, ref.namespace)
+          )
+    return selectMutableClass(scoped, this.orgNamespace)
+  }
+
+  public async assessTargetClass(name: string): Promise<TargetClassVerdict> {
+    const ref = splitApexClassName(name)
+    const selection = this.select(
+      await this.repository.readCandidates(ref.name),
+      ref
+    )
+    switch (selection.kind) {
+      case 'mutable':
+        return { kind: 'mutable' }
+      case 'not-mutable':
+        return {
+          kind: 'not-mutable',
+          states: selection.candidates.map(c =>
+            observedState(c.ManageableState)
+          ),
+        }
+      case 'ambiguous':
+        return {
+          kind: 'ambiguous',
+          spellings: selection.candidates.map(c =>
+            qualifiedApexClassName(ref.name, c.NamespacePrefix)
+          ),
+        }
+      case 'not-found':
+        return { kind: 'not-found' }
+    }
   }
 
   public async readClass(name: string): Promise<ApexClass> {
-    return (await this.repository.read(name)) as unknown as ApexClass
+    const ref = splitApexClassName(name)
+    const selection = this.select(
+      await this.repository.readBodyCandidates(ref.name),
+      ref
+    )
+    if (selection.kind !== 'mutable') {
+      throw new Error(
+        `Apex class '${name}' cannot be read for mutation (${selection.kind})`
+      )
+    }
+    return selection.candidate
   }
 
   public async listDependencies(

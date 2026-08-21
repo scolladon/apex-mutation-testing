@@ -71,61 +71,61 @@ describe('ApexClassRepository', () => {
     vi.clearAllMocks()
   })
 
-  describe('when reading an ApexClass', () => {
-    describe('given the class exists', () => {
-      it('then should return the ApexClass', async () => {
-        // Arrange
-        const mockApexClass = {
+  describe('when reading ApexClass candidates', () => {
+    it('then issues one find call with only the Name filter and the NamespacePrefix/ManageableState projection', async () => {
+      // Arrange
+      const rows = [
+        { NamespacePrefix: 'namespaced', ManageableState: 'deprecated' },
+      ]
+      findMock.mockResolvedValueOnce(rows)
+
+      // Act
+      const result = await sut.readCandidates('Mutation')
+
+      // Assert
+      expect(result).toEqual(rows)
+      expect(sobjectMock).toHaveBeenCalledWith('ApexClass')
+      expect(findArgsMock).toHaveBeenCalledTimes(1)
+      const [conditions, fields] = findArgsMock.mock.calls[0]
+      // Namespace and manageable state are classified in memory, never
+      // filtered on here: either predicate would collapse a managed class
+      // and a genuinely absent class into the same zero-row result, which
+      // is the exact defect a discriminated verdict exists to fix.
+      expect(conditions).toEqual({ Name: 'Mutation' })
+      expect(conditions).not.toHaveProperty('NamespacePrefix')
+      expect(fields).toEqual(['NamespacePrefix', 'ManageableState'])
+    })
+  })
+
+  describe('when reading ApexClass body candidates', () => {
+    it('then issues one find call with only the Name filter and the Id/Body/NamespacePrefix/ManageableState projection', async () => {
+      // Arrange
+      const rows = [
+        {
           Id: '123',
-          Name: 'TestClass',
-          Body: 'public class TestClass {}',
-        }
-        findMock.mockResolvedValue([mockApexClass])
+          Body: 'class Mutation {}',
+          NamespacePrefix: 'namespaced',
+          ManageableState: 'deprecated',
+        },
+      ]
+      findMock.mockResolvedValueOnce(rows)
 
-        // Act
-        const result = await sut.read('TestClass')
+      // Act
+      const result = await sut.readBodyCandidates('Mutation')
 
-        // Assert
-        expect(result).toEqual(mockApexClass)
-        expect(sobjectMock).toHaveBeenCalledWith('ApexClass')
-        // The namespace filter must stay an explicit empty string — dropping it
-        // would widen the lookup to managed-package classes of the same name.
-        expect(findArgsMock).toHaveBeenCalledWith({
-          Name: 'TestClass',
-          NamespacePrefix: '',
-        })
-      })
-    })
-
-    describe('given the class does not exist', () => {
-      it('then should throw an error', async () => {
-        // Arrange
-        findMock.mockRejectedValue(
-          new Error('ApexClass NonExistentClass not found')
-        )
-
-        // Act & Assert
-        await expect(sut.read('NonExistentClass')).rejects.toThrow(
-          'ApexClass NonExistentClass not found'
-        )
-      })
-    })
-
-    describe('given a fields projection is requested', () => {
-      it('then issues the find call with the projection as a second argument', async () => {
-        // Arrange
-        findMock.mockResolvedValue([{ Id: '123' }])
-
-        // Act
-        const result = await sut.read('TestClass', ['Id'])
-
-        // Assert
-        expect(result).toEqual({ Id: '123' })
-        expect(findArgsMock).toHaveBeenCalledWith(
-          { Name: 'TestClass', NamespacePrefix: '' },
-          ['Id']
-        )
-      })
+      // Assert
+      expect(result).toEqual(rows)
+      expect(sobjectMock).toHaveBeenCalledWith('ApexClass')
+      expect(findArgsMock).toHaveBeenCalledTimes(1)
+      const [conditions, fields] = findArgsMock.mock.calls[0]
+      expect(conditions).toEqual({ Name: 'Mutation' })
+      expect(conditions).not.toHaveProperty('NamespacePrefix')
+      expect(fields).toEqual([
+        'Id',
+        'Body',
+        'NamespacePrefix',
+        'ManageableState',
+      ])
     })
   })
 

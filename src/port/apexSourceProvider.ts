@@ -29,8 +29,17 @@ export interface PerimeterAssessment {
   resolutions: TestClassResolution[]
 }
 
+// Strings only, no org vocabulary: both list-carrying verdicts are rendered
+// by the adapter that classified the candidates, so the port never leaks a
+// ManageableState spelling or a namespace shape to its callers.
+export type TargetClassVerdict =
+  | { kind: 'mutable' }
+  | { kind: 'not-mutable'; states: string[] } // display-ready, e.g. ['installed']
+  | { kind: 'ambiguous'; spellings: string[] } // e.g. ['Argument', 'mockery.Argument']
+  | { kind: 'not-found' }
+
 export interface ApexSourceProvider {
-  classExists(name: string): Promise<boolean>
+  assessTargetClass(name: string): Promise<TargetClassVerdict>
   readClass(name: string): Promise<ApexClass>
   listDependencies(apexClass: ApexClass): Promise<TypeDependencies>
   assessPerimeter(names: string[]): Promise<PerimeterAssessment>

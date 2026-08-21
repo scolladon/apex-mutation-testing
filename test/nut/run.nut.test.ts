@@ -88,6 +88,8 @@ vi.mock('../../src/service/apexClassValidator.js', async () => {
   return {
     ApexClassValidator: vi.fn(),
     ApexClassNotFoundError: actual.ApexClassNotFoundError,
+    ApexClassNotMutableError: actual.ApexClassNotMutableError,
+    ApexClassAmbiguousError: actual.ApexClassAmbiguousError,
   }
 })
 
@@ -124,7 +126,9 @@ import { createOrgEngine } from '../../src/adapter/org/orgEngine.js'
 import { default as ApexMutationTest } from '../../src/commands/apex/mutation/test/run.js'
 import { ApexMutationHTMLReporter } from '../../src/reporter/HTMLReporter.js'
 import {
+  ApexClassAmbiguousError,
   ApexClassNotFoundError,
+  ApexClassNotMutableError,
   ApexClassValidator,
 } from '../../src/service/apexClassValidator.js'
 import { ConfigReader } from '../../src/service/configReader.js'
@@ -596,6 +600,67 @@ describe('apex mutation test run NUT', () => {
       expect(mockMessages.createError).toHaveBeenCalledWith(
         'error.apexClassNotFound',
         ['InvalidClass']
+      )
+      expect(sut.warn).not.toHaveBeenCalled()
+      expect(MutationTestingService).not.toHaveBeenCalled()
+    })
+
+    it('When the class under mutation is not mutable, Then it rejects with error.apexClassNotMutable and never warns or constructs the mutation service', async () => {
+      // Arrange
+      vi.mocked(ApexClassValidator).mockImplementation(
+        class {
+          validate = vi
+            .fn()
+            .mockRejectedValue(
+              new ApexClassNotMutableError('InvalidClass', [
+                'installed',
+              ]) as never
+            )
+          assessPerimeter = vi
+            .fn()
+            .mockResolvedValue({ skipped: [], resolutions: [] } as never)
+        } as unknown as typeof ApexClassValidator
+      )
+      const sut = buildCommand(['-c', 'InvalidClass', '-t', 'MyClassTest'])
+
+      // Act & Assert
+      await expect(sut.run()).rejects.toThrow(
+        'error.apexClassNotMutable: InvalidClass, installed'
+      )
+      expect(mockMessages.createError).toHaveBeenCalledWith(
+        'error.apexClassNotMutable',
+        ['InvalidClass', 'installed']
+      )
+      expect(sut.warn).not.toHaveBeenCalled()
+      expect(MutationTestingService).not.toHaveBeenCalled()
+    })
+
+    it('When the class under mutation matches more than one modifiable class, Then it rejects with error.apexClassAmbiguous and never warns or constructs the mutation service', async () => {
+      // Arrange
+      vi.mocked(ApexClassValidator).mockImplementation(
+        class {
+          validate = vi
+            .fn()
+            .mockRejectedValue(
+              new ApexClassAmbiguousError('Argument', [
+                'mockery.Argument',
+                'acme.Argument',
+              ]) as never
+            )
+          assessPerimeter = vi
+            .fn()
+            .mockResolvedValue({ skipped: [], resolutions: [] } as never)
+        } as unknown as typeof ApexClassValidator
+      )
+      const sut = buildCommand(['-c', 'Argument', '-t', 'MyClassTest'])
+
+      // Act & Assert
+      await expect(sut.run()).rejects.toThrow(
+        'error.apexClassAmbiguous: Argument, mockery.Argument, acme.Argument'
+      )
+      expect(mockMessages.createError).toHaveBeenCalledWith(
+        'error.apexClassAmbiguous',
+        ['Argument', 'mockery.Argument, acme.Argument']
       )
       expect(sut.warn).not.toHaveBeenCalled()
       expect(MutationTestingService).not.toHaveBeenCalled()

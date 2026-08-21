@@ -200,6 +200,14 @@ it does not compile%s
 
 Apex class '%s' not found.
 
+# error.apexClassNotMutable
+
+Apex class '%s' cannot be modified on this org (manageable state: %s). Only classes this org owns — unmanaged, unlocked-package or packaging-org source — can be mutated.
+
+# error.apexClassAmbiguous
+
+Apex class '%s' matches more than one modifiable Apex class on this org: %s. Re-run naming one of them.
+
 # error.noUsableTestClass
 
 No usable Apex test class remains in the perimeter for '%s'. The following test class(es) were skipped:

@@ -1,5 +1,7 @@
 import {
+  ApexClassAmbiguousError,
   ApexClassNotFoundError,
+  ApexClassNotMutableError,
   ApexClassValidator,
 } from '../../../src/service/apexClassValidator.js'
 import { fakeSourceProvider } from '../../utils/testUtil.js'
@@ -20,9 +22,25 @@ describe('ApexClassValidator', () => {
   })
 
   describe('validate', () => {
-    it('should reject with an ApexClassNotFoundError carrying the class name when the class under mutation does not exist', async () => {
+    it('should resolve and assess the target class exactly once when the verdict is mutable', async () => {
       // Arrange
-      source.classExists.mockResolvedValueOnce(false)
+      vi.mocked(source.assessTargetClass).mockResolvedValueOnce({
+        kind: 'mutable',
+      })
+
+      // Act
+      await expect(sut.validate(params)).resolves.not.toThrow()
+
+      // Assert
+      expect(source.assessTargetClass).toHaveBeenCalledTimes(1)
+      expect(source.assessTargetClass).toHaveBeenCalledWith('TestClass')
+    })
+
+    it('should reject with an ApexClassNotFoundError carrying the class name when the verdict is not-found', async () => {
+      // Arrange
+      vi.mocked(source.assessTargetClass).mockResolvedValueOnce({
+        kind: 'not-found',
+      })
 
       // Act
       const result = sut.validate(params)
@@ -35,29 +53,42 @@ describe('ApexClassValidator', () => {
       })
     })
 
-    it('should reject with a developer-facing message naming the class', async () => {
+    it('should reject with an ApexClassNotMutableError carrying the class name and states when the verdict is not-mutable', async () => {
       // Arrange
-      source.classExists.mockResolvedValueOnce(false)
+      vi.mocked(source.assessTargetClass).mockResolvedValueOnce({
+        kind: 'not-mutable',
+        states: ['installed'],
+      })
 
       // Act
       const result = sut.validate(params)
 
       // Assert
+      await expect(result).rejects.toBeInstanceOf(ApexClassNotMutableError)
       await expect(result).rejects.toMatchObject({
-        message: "Apex class 'TestClass' not found",
+        className: 'TestClass',
+        states: ['installed'],
+        name: 'ApexClassNotMutableError',
       })
     })
 
-    it('should resolve and check existence exactly once when the class under mutation exists', async () => {
+    it('should reject with an ApexClassAmbiguousError carrying the class name and spellings when the verdict is ambiguous', async () => {
       // Arrange
-      source.classExists.mockResolvedValueOnce(true)
+      vi.mocked(source.assessTargetClass).mockResolvedValueOnce({
+        kind: 'ambiguous',
+        spellings: ['mockery.Argument', 'acme.Argument'],
+      })
 
       // Act
-      await expect(sut.validate(params)).resolves.not.toThrow()
+      const result = sut.validate(params)
 
       // Assert
-      expect(source.classExists).toHaveBeenCalledTimes(1)
-      expect(source.classExists).toHaveBeenCalledWith('TestClass')
+      await expect(result).rejects.toBeInstanceOf(ApexClassAmbiguousError)
+      await expect(result).rejects.toMatchObject({
+        className: 'TestClass',
+        spellings: ['mockery.Argument', 'acme.Argument'],
+        name: 'ApexClassAmbiguousError',
+      })
     })
   })
 

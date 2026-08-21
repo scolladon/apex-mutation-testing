@@ -155,4 +155,38 @@ describe('apex.mutation.test.run message bundle', () => {
     // Assert
     expect(sut).toBe("Apex class 'MyClass' not found.")
   })
+
+  it('Given a class name and a joined state list, When error.apexClassNotMutable is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
+    // Arrange
+    const className = 'MyClass'
+    const states = 'installed'
+
+    // Act
+    const sut = messages.getMessage('error.apexClassNotMutable', [
+      className,
+      states,
+    ])
+
+    // Assert
+    expect(sut).toBe(
+      "Apex class 'MyClass' cannot be modified on this org (manageable state: installed). Only classes this org owns — unmanaged, unlocked-package or packaging-org source — can be mutated."
+    )
+  })
+
+  it('Given a class name and a joined spelling list, When error.apexClassAmbiguous is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
+    // Arrange
+    const className = 'Argument'
+    const spellings = 'mockery.Argument, acme.Argument'
+
+    // Act
+    const sut = messages.getMessage('error.apexClassAmbiguous', [
+      className,
+      spellings,
+    ])
+
+    // Assert
+    expect(sut).toBe(
+      "Apex class 'Argument' matches more than one modifiable Apex class on this org: mockery.Argument, acme.Argument. Re-run naming one of them."
+    )
+  })
 })

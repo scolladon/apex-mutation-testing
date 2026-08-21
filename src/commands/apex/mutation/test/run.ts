@@ -5,7 +5,9 @@ import type { ApexSourceProvider } from '../../../../port/apexSourceProvider.js'
 import type { EngineBundle } from '../../../../port/executionEngine.js'
 import { ApexMutationHTMLReporter } from '../../../../reporter/HTMLReporter.js'
 import {
+  ApexClassAmbiguousError,
   ApexClassNotFoundError,
+  ApexClassNotMutableError,
   ApexClassValidator,
 } from '../../../../service/apexClassValidator.js'
 import { ConfigReader } from '../../../../service/configReader.js'
@@ -37,6 +39,18 @@ export type ApexMutationTestResult = {
 function renderTargetClassError(error: unknown): never {
   if (error instanceof ApexClassNotFoundError) {
     throw messages.createError('error.apexClassNotFound', [error.className])
+  }
+  if (error instanceof ApexClassNotMutableError) {
+    throw messages.createError('error.apexClassNotMutable', [
+      error.className,
+      error.states.join(', '),
+    ])
+  }
+  if (error instanceof ApexClassAmbiguousError) {
+    throw messages.createError('error.apexClassAmbiguous', [
+      error.className,
+      error.spellings.join(', '),
+    ])
   }
   throw error
 }

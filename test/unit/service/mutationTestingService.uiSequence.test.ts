@@ -202,15 +202,24 @@ const compileFailsForEveryMutantDeploy = (): UpdateImpl => {
   }
 }
 
+// A single own-namespace, mutable candidate — the engine bundle in this
+// suite is built with `orgNamespace: null`, so a `null` NamespacePrefix is
+// the org's own and the selection resolves 'mutable' without ambiguity.
+const candidateFor = (apexClass: { Id: string; Body: string }) => ({
+  ...apexClass,
+  NamespacePrefix: null,
+  ManageableState: 'unmanaged',
+})
+
 const arrangeApexClassRepository = (update: UpdateImpl): void => {
   vi.mocked(ApexClassRepository).mockImplementation(
     class {
-      read = vi
+      readBodyCandidates = vi
         .fn()
         .mockImplementation((name: string) =>
-          name === 'TestClass'
-            ? Promise.resolve(mockApexClass)
-            : Promise.resolve(mockTestClass)
+          Promise.resolve([
+            candidateFor(name === 'TestClass' ? mockApexClass : mockTestClass),
+          ])
         )
       update = vi.fn().mockImplementation(update)
       getApexClassDependencies = vi

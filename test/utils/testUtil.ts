@@ -7,7 +7,10 @@ import {
   MethodDeclarationContext,
 } from 'apex-parser'
 import { vi } from 'vitest'
-import type { ApexSourceProvider } from '../../src/port/apexSourceProvider.js'
+import type {
+  ApexSourceProvider,
+  TargetClassVerdict,
+} from '../../src/port/apexSourceProvider.js'
 import type {
   Baseline,
   MutationTestBed,
@@ -124,7 +127,9 @@ export const fakeTestBed = (baseline: Partial<Baseline> = {}) => {
 export const fakeSourceProvider = (
   overrides: Partial<ApexSourceProvider> = {}
 ) => ({
-  classExists: vi.fn().mockResolvedValue(true),
+  assessTargetClass: vi
+    .fn()
+    .mockResolvedValue({ kind: 'mutable' } as TargetClassVerdict),
   readClass: vi.fn().mockResolvedValue({} as ApexClass),
   listDependencies: vi
     .fn()

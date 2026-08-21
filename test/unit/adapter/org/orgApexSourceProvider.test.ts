@@ -13,7 +13,8 @@ const ORG_NAMESPACE = 'namespaced'
 
 describe('OrgApexSourceProvider', () => {
   let sut: OrgApexSourceProvider
-  let readMock: ReturnType<typeof vi.fn>
+  let readCandidatesMock: ReturnType<typeof vi.fn>
+  let readBodyCandidatesMock: ReturnType<typeof vi.fn>
   let readIdentitiesMock: ReturnType<typeof vi.fn>
   let getApexClassDependenciesMock: ReturnType<typeof vi.fn>
   let readMembersMock: ReturnType<typeof vi.fn>
@@ -23,7 +24,8 @@ describe('OrgApexSourceProvider', () => {
 
   beforeEach(() => {
     // Arrange
-    readMock = vi.fn()
+    readCandidatesMock = vi.fn()
+    readBodyCandidatesMock = vi.fn()
     readIdentitiesMock = vi.fn()
     getApexClassDependenciesMock = vi.fn()
     readMembersMock = vi.fn()
@@ -32,7 +34,8 @@ describe('OrgApexSourceProvider', () => {
     notifyMock = vi.fn()
 
     const repository = {
-      read: readMock,
+      readCandidates: readCandidatesMock,
+      readBodyCandidates: readBodyCandidatesMock,
       readIdentities: readIdentitiesMock,
       getApexClassDependencies: getApexClassDependenciesMock,
     } as unknown as ApexClassRepository
@@ -53,56 +56,180 @@ describe('OrgApexSourceProvider', () => {
     )
   })
 
-  describe('classExists', () => {
-    it('should resolve false when the repository finds no matching row', async () => {
+  describe('assessTargetClass', () => {
+    it('Given a mutable own-source candidate, When assessTargetClass, Then resolves mutable', async () => {
       // Arrange
-      readMock.mockResolvedValueOnce(null)
+      readCandidatesMock.mockResolvedValueOnce([
+        { NamespacePrefix: 'namespaced', ManageableState: 'deprecated' },
+      ])
 
       // Act
-      const result = await sut.classExists('TestClass')
+      const result = await sut.assessTargetClass('Mutation')
 
       // Assert
-      expect(result).toBe(false)
+      expect(result).toEqual({ kind: 'mutable' })
     })
 
-    it('should resolve true when the repository finds a matching row', async () => {
+    it('Given no candidate rows, When assessTargetClass, Then resolves not-found', async () => {
       // Arrange
-      readMock.mockResolvedValueOnce({ Id: '123' })
+      readCandidatesMock.mockResolvedValueOnce([])
 
       // Act
-      const result = await sut.classExists('TestClass')
+      const result = await sut.assessTargetClass('Argument')
 
       // Assert
-      expect(result).toBe(true)
+      expect(result).toEqual({ kind: 'not-found' })
     })
 
-    it('should read only a minimal projection rather than every ApexClass field', async () => {
-      // Arrange — the existence check only needs `!apexClass`; a wildcard
-      // read would drag Body and SymbolTable for no reason, and readClass
-      // re-reads the class in full when mutation actually starts.
-      readMock.mockResolvedValueOnce({ Id: '123' })
+    it('Given two non-mutable candidates, one with no reported state, When assessTargetClass, Then resolves not-mutable carrying every observed state', async () => {
+      // Arrange
+      readCandidatesMock.mockResolvedValueOnce([
+        { NamespacePrefix: 'devedapp', ManageableState: 'installed' },
+        { NamespacePrefix: 'acme', ManageableState: null },
+      ])
 
       // Act
-      await sut.classExists('TestClass')
+      const result = await sut.assessTargetClass('Argument')
 
       // Assert
-      expect(readMock).toHaveBeenCalledWith('TestClass', ['Id'])
+      expect(result).toEqual({
+        kind: 'not-mutable',
+        states: ['installed', 'none reported'],
+      })
+    })
+
+    it('Given two mutable candidates in two foreign namespaces, When assessTargetClass, Then resolves ambiguous carrying both qualified spellings', async () => {
+      // Arrange
+      readCandidatesMock.mockResolvedValueOnce([
+        { NamespacePrefix: 'mockery', ManageableState: 'installedEditable' },
+        { NamespacePrefix: 'acme', ManageableState: 'installedEditable' },
+      ])
+
+      // Act
+      const result = await sut.assessTargetClass('Argument')
+
+      // Assert
+      expect(result).toEqual({
+        kind: 'ambiguous',
+        spellings: ['mockery.Argument', 'acme.Argument'],
+      })
+    })
+
+    it('Given a single own-namespace mutable candidate, When assessTargetClass, Then resolves mutable', async () => {
+      // Arrange
+      readCandidatesMock.mockResolvedValueOnce([
+        { NamespacePrefix: 'namespaced', ManageableState: 'unmanaged' },
+      ])
+
+      // Act
+      const result = await sut.assessTargetClass('Argument')
+
+      // Assert
+      expect(result).toEqual({ kind: 'mutable' })
+    })
+
+    it('Given a mutable local row and a not-mutable foreign row, When assessTargetClass is qualified with the foreign namespace, Then the qualifier excludes the local row and resolves not-mutable', async () => {
+      // Arrange
+      readCandidatesMock.mockResolvedValueOnce([
+        { NamespacePrefix: null, ManageableState: 'installedEditable' },
+        { NamespacePrefix: 'mockery', ManageableState: 'installed' },
+      ])
+
+      // Act
+      const result = await sut.assessTargetClass('mockery.Argument')
+
+      // Assert
+      expect(result).toEqual({ kind: 'not-mutable', states: ['installed'] })
+    })
+
+    it('Given the same rows queried bare, When assessTargetClass, Then the unique mutable local row resolves mutable', async () => {
+      // Arrange
+      readCandidatesMock.mockResolvedValueOnce([
+        { NamespacePrefix: null, ManageableState: 'installedEditable' },
+        { NamespacePrefix: 'mockery', ManageableState: 'installed' },
+      ])
+
+      // Act
+      const result = await sut.assessTargetClass('Argument')
+
+      // Assert
+      expect(result).toEqual({ kind: 'mutable' })
+    })
+
+    it('Given a qualified request for a foreign namespace with no candidate, When assessTargetClass, Then resolves not-found rather than redirecting to a local class sharing the bare name', async () => {
+      // Arrange
+      readCandidatesMock.mockResolvedValueOnce([
+        { NamespacePrefix: null, ManageableState: 'unmanaged' },
+      ])
+
+      // Act
+      const result = await sut.assessTargetClass('mockery.Nope')
+
+      // Assert
+      expect(result).toEqual({ kind: 'not-found' })
     })
   })
 
   describe('readClass', () => {
-    it('should resolve with the full class row returned by the repository', async () => {
+    it('Given a mutable candidate, When readClass, Then resolves the selected candidate', async () => {
       // Arrange
-      const mockApexClass = { Id: '123', Body: 'class TestClass {}' }
-      readMock.mockResolvedValueOnce(mockApexClass)
+      const candidate = {
+        Id: '01p000000TargetId',
+        Body: 'class Mutation {}',
+        NamespacePrefix: 'namespaced',
+        ManageableState: 'deprecated',
+      }
+      readBodyCandidatesMock.mockResolvedValueOnce([candidate])
 
       // Act
-      const result = await sut.readClass('TestClass')
+      const result = await sut.readClass('Mutation')
 
       // Assert
-      expect(result).toEqual(mockApexClass)
-      expect(readMock).toHaveBeenCalledWith('TestClass')
+      expect(result).toEqual(candidate)
     })
+
+    it.each([
+      ['not-found', []],
+      [
+        'not-mutable',
+        [
+          {
+            Id: '1',
+            Body: '(hidden)',
+            NamespacePrefix: 'devedapp',
+            ManageableState: 'installed',
+          },
+        ],
+      ],
+      [
+        'ambiguous',
+        [
+          {
+            Id: '1',
+            Body: 'class Argument {}',
+            NamespacePrefix: 'mockery',
+            ManageableState: 'installedEditable',
+          },
+          {
+            Id: '2',
+            Body: 'class Argument {}',
+            NamespacePrefix: 'acme',
+            ManageableState: 'installedEditable',
+          },
+        ],
+      ],
+    ])(
+      'Given a %s selection, When readClass, Then rejects naming the class and the verdict kind',
+      async (kind, candidates) => {
+        // Arrange
+        readBodyCandidatesMock.mockResolvedValueOnce(candidates)
+
+        // Act & Assert
+        await expect(sut.readClass('Argument')).rejects.toThrow(
+          `Apex class 'Argument' cannot be read for mutation (${kind})`
+        )
+      }
+    )
   })
 
   describe('listDependencies', () => {
