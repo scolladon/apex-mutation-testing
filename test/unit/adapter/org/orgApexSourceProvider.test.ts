@@ -1337,9 +1337,8 @@ describe('OrgApexSourceProvider', () => {
       expect(readIdentitiesMock).toHaveBeenCalledWith(perimeter)
     })
 
-    // The two-ids-one-bare-name fixture the rest of the plan depends on: both
-    // rows must be present or the merge that Id identity prevents is never
-    // demonstrated to be prevented.
+    // Two ids, one bare name: both rows must be present, or the merge that Id
+    // identity prevents is never demonstrated to be prevented.
     const CLASS_ID_LOCAL = '01p000000000001'
     const CLASS_ID_FOREIGN = '01p000000000002'
     const CLASS_ID_OTHER = '01p000000000003'

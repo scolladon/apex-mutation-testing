@@ -496,9 +496,9 @@ export class MutationTestingService {
   // other drop, and avoids a non-null assertion on a lookup that can only
   // miss in a state the platform cannot produce. The failure's classId is
   // resolved outward through the run's resolutions map to the folded
-  // spellings it answers to; a classId absent from that map (the residual —
-  // see part 4's design notes) contributes no keys, so its class is simply
-  // not skipped here rather than guarded defensively.
+  // spellings it answers to; a classId absent from that map contributes no
+  // keys, so its class is simply not skipped here rather than guarded
+  // defensively — a guard would be a branch no fixture can reach.
   private toCompileSkips(
     failures: BaselineCompileFailure[]
   ): SkippedTestClass[] {

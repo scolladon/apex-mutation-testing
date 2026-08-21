@@ -1190,12 +1190,12 @@ describe('MutationTestingService', () => {
             testMethodsPerLine: new Map([[1, new Set(['FooTest.testA'])]]),
           })
         )
-        // The coverage row's classId ('FooTest') and the perimeter's own
-        // spelling ('footest') differ only by case — resolving through a
-        // resolutions map whose lookupKeys are already folded is what makes
-        // them the same class, not a case-fold on the join itself.
+        // The perimeter is typed 'FooTest' while the resolution's lookupKeys
+        // are folded to 'footest'. The join folds the perimeter entry too
+        // (keys.has(name.toLowerCase())), and that fold is what makes the two
+        // the same class — drop it and this class is wrongly reported silent.
         const zeroContributionSut = buildZeroContributionSut(
-          ['footest'],
+          ['FooTest'],
           undefined,
           new Map([
             [
@@ -1212,13 +1212,13 @@ describe('MutationTestingService', () => {
         // Act
         const result = await zeroContributionSut.process()
 
-        // Assert — 'footest' (user spelling) vs 'FooTest' (org fullName) must
-        // still be recognized as the same class, and its own spelling survives.
+        // Assert — the differently-cased spellings resolve to one class, and
+        // the user's own spelling is what survives into the result.
         expect(messagesMock.getMessage).not.toHaveBeenCalledWith(
           'info.testClassNotUsable',
           expect.anything()
         )
-        expect(result.testFiles).toEqual(['footest'])
+        expect(result.testFiles).toEqual(['FooTest'])
       })
 
       it('Given --dry-run and a class that contributed nothing, When processing, Then result.testFiles reflects the stage-B reduction', async () => {
