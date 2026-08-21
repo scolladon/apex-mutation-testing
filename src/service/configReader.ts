@@ -15,6 +15,15 @@ const DEFAULT_CONFIG_FILE = '.mutation-testing.json'
 // on into the rest of the WHERE clause. The added segment admits exactly
 // one '.' between two identifier segments, so no quote, backslash or
 // whitespace becomes representable — the injection guard is intact.
+//
+// A second downstream SOQL sink this grammar also guards against:
+// @salesforce/apex-node's testService.js builds
+// `... WHERE Name = '${shortName}' ...` with zero escaping, in the helper
+// reached only through getApexClassIds / buildSuite. This plugin never
+// calls that path — it only calls runTestSynchronous / runTestAsynchronous
+// — so there is no live exposure today, but a future widening of this
+// grammar must be evaluated against both sinks, not just jsforce's
+// quote-only escaping.
 const APEX_CLASS_NAME_PATTERN =
   /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)?$/
 

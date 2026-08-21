@@ -818,10 +818,6 @@ describe('apex mutation test run NUT', () => {
     it('When the port resolves a classId resolution, Then MutationTestingService is constructed with a map keyed by classId', async () => {
       // Arrange
       const TEST_CLASS_ID = '01p000000000123'
-      // Cast rather than following the file's usual bare-class-literal
-      // pattern: an un-cast literal here would add a fresh instance of the
-      // partial-mock/full-class structural mismatch tsconfig.test.json
-      // already carries a dozen times over, pushing that orphaned count up.
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
           validate = vi.fn().mockResolvedValue(undefined as never)

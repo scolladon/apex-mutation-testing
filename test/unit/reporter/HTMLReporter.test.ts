@@ -357,12 +357,12 @@ describe('HTMLReporter', () => {
     })
 
     it('Then places an id case-insensitively under its differently-cased perimeter key', async () => {
-      // Arrange — perimeter spelled lowercase (user input), id qualified from
-      // a class id whose resolution folds to the same lowercase lookup key
+      // Arrange — perimeter spelled uppercase (user input), id qualified from
+      // a class id whose resolution folds to a lowercase lookup key
       const caseInsensitiveResults: ApexMutationTestResult = {
         sourceFile: 'TestClass',
         sourceFileContent: 'public class TestClass {}',
-        testFiles: ['footest'],
+        testFiles: ['FOOTEST'],
         testClassResolutions: [
           {
             classId: 'FooTest',
@@ -396,7 +396,7 @@ describe('HTMLReporter', () => {
       // Assert
       const html = vi.mocked(writeFile).mock.calls[0][1] as string
       const report = extractReport(html)
-      expect(report.testFiles!.footest.tests).toEqual([
+      expect(report.testFiles!.FOOTEST.tests).toEqual([
         { id: 'FooTest.a', name: 'FooTest.a' },
       ])
     })
@@ -741,6 +741,55 @@ describe('HTMLReporter', () => {
       const report = extractReport(html)
       const mutant = report.files['TestClass.cls'].mutants[0]
       expect(mutant.coveredBy).toEqual([`${UNRESOLVED_CLASS_ID}.testFoo`])
+    })
+
+    it('Then a class answering to both a bare and a qualified perimeter spelling contributes its tests to only one group', async () => {
+      // Arrange — an own-namespace class mints both spellings as lookup
+      // keys (spellingsOf), so a perimeter naming both ('-t Foo -t
+      // acme.Foo') would otherwise place the same test id under two
+      // groups. The Stryker report schema treats tests[].id as globally
+      // unique — coveredBy/killedBy link mutants to tests through it.
+      const dualSpellingResults: ApexMutationTestResult = {
+        sourceFile: 'TestClass',
+        sourceFileContent: 'public class TestClass {}',
+        testFiles: ['Foo', 'acme.Foo'],
+        testClassResolutions: [
+          {
+            classId: CLASS_ID_LOCAL,
+            displayName: 'acme.Foo',
+            lookupKeys: ['foo', 'acme.foo'],
+          },
+        ],
+        mutants: [
+          {
+            id: '1',
+            mutatorName: 'IncrementMutator',
+            status: 'Killed',
+            attribution: {
+              coveredBy: [`${CLASS_ID_LOCAL}.testA`],
+              killedBy: [`${CLASS_ID_LOCAL}.testA`],
+              testsCompleted: 1,
+            },
+            location: {
+              start: { line: 1, column: 0 },
+              end: { line: 1, column: 10 },
+            },
+            replacement: '--',
+            original: '++',
+          },
+        ],
+      }
+
+      // Act
+      await sut.generateReport(dualSpellingResults)
+
+      // Assert
+      const html = vi.mocked(writeFile).mock.calls[0][1] as string
+      const report = extractReport(html)
+      expect(report.testFiles!['Foo'].tests).toEqual([
+        { id: 'acme.Foo.testA', name: 'acme.Foo.testA' },
+      ])
+      expect(report.testFiles!['acme.Foo'].tests).toEqual([])
     })
   })
 })

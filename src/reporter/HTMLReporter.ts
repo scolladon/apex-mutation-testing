@@ -121,6 +121,15 @@ const displayOf = (
 // observed = union of every mutant's attribution.coveredBy. Empty ⇒ no run
 // data anywhere in this result (dry run, or every mutant a CompileError) ⇒
 // omit testFiles entirely so the app renders no test view.
+//
+// A class's resolution can carry two lookup keys (its bare and its
+// qualified spelling, for an own-namespace class — see spellingsOf), so a
+// perimeter naming both ('-t Foo -t acme.Foo') would otherwise place the
+// same test id under two groups. The Stryker report schema treats
+// `tests[].id` as globally unique — coveredBy/killedBy link mutants to
+// tests through it — so each classId is claimed by the first perimeter
+// entry it answers to; a later spelling of the same class reports no
+// tests of its own.
 function buildTestFilesSection(
   perimeter: string[],
   mutants: ApexMutationTestResult['mutants'],
@@ -131,14 +140,24 @@ function buildTestFilesSection(
   )
   if (observed.size === 0) return undefined
 
+  const idsByClassId = new Map<string, string[]>()
+  for (const id of observed) {
+    const classId = testClassOf(id)
+    idsByClassId.set(classId, [...(idsByClassId.get(classId) ?? []), id])
+  }
+
+  const claimedClassIds = new Set<string>()
   return Object.fromEntries(
     perimeter.map(className => {
-      const tests = [...observed]
-        .filter(id =>
-          (resolutions.get(testClassOf(id))?.lookupKeys ?? []).includes(
-            className.toLowerCase()
-          )
-        )
+      const key = className.toLowerCase()
+      const claims = [...idsByClassId].filter(
+        ([classId]) =>
+          !claimedClassIds.has(classId) &&
+          (resolutions.get(classId)?.lookupKeys ?? []).includes(key)
+      )
+      for (const [classId] of claims) claimedClassIds.add(classId)
+      const tests = claims
+        .flatMap(([, ids]) => ids)
         .map(id => displayOf(id, resolutions))
         .sort()
         .map(display => ({ id: display, name: display }))

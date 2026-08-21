@@ -506,6 +506,11 @@ export class MutationTestingService {
     for (const failure of failures) {
       const keys =
         this.testClassResolutions.get(failure.classId)?.lookupKeys ?? []
+      // Last-write-wins: two failing classIds can share a lookup key when
+      // an own-namespace row and a namespace-less installed row both answer
+      // to the same bare name (orgApexSourceProvider's spellingsOf mints
+      // that bare key from both), in which case the later failure's message
+      // silently overwrites the earlier one for that key.
       for (const key of keys) detailByKey.set(key, failure.message)
     }
     const skips = this.apexTestClassNames.flatMap(name => {

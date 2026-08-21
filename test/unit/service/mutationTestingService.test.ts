@@ -1314,8 +1314,6 @@ describe('MutationTestingService', () => {
         // than an id-based one) would wrongly treat that as covering both.
         const CLASS_ID_LOCAL = '01pjV000000EE9ZQAW'
         const CLASS_ID_FOREIGN = '01pjV000000EE9bQAG'
-        // Cast rather than the file's usual bare-class-literal pattern — see
-        // the identical note on the testClassResolutions describe block below.
         vi.mocked(MutantGenerator).mockImplementation(
           class {
             compute = vi
@@ -1472,11 +1470,13 @@ describe('MutationTestingService', () => {
         )
       })
 
-      it('Given the org reports the compile failure as FooTest while the perimeter reads footest, When processing, Then the case-folded match renders the perimeter spelling', async () => {
-        // Arrange — the failure's classId ('FooTest') and the perimeter's own
-        // spelling ('footest') differ only by case; the resolution's folded
-        // lookupKeys — not a case-fold on the join itself — is what still
-        // recognises them as the same class.
+      it('Given the perimeter reads FooTest while its resolution only folds to a lowercase lookup key, When processing, Then the case-folded join still matches and renders the perimeter spelling', async () => {
+        // Arrange — toCompileSkips joins by lowercasing the perimeter's own
+        // spelling (`name.toLowerCase()`) and looking it up against the
+        // resolution's lookupKeys, which are already lowercase. The
+        // perimeter entry ('FooTest') and the lookup key ('footest') differ
+        // by case, so the match only succeeds because of that fold on the
+        // join itself.
         mockCompilingAdapters()
         engine.testBed = fakeTestBed(
           baselineResult({
@@ -1485,7 +1485,7 @@ describe('MutationTestingService', () => {
           })
         )
         const compileDropSut = buildCompileDropSut(
-          ['footest', 'GoodTest'],
+          ['FooTest', 'GoodTest'],
           undefined,
           new Map([
             [
@@ -1512,7 +1512,7 @@ describe('MutationTestingService', () => {
 
         // Assert
         expect(spinner.start).toHaveBeenCalledWith(
-          "Skipping test class 'footest': it does not compile (boom).",
+          "Skipping test class 'FooTest': it does not compile (boom).",
           undefined,
           { stdout: true }
         )
@@ -2321,8 +2321,6 @@ describe('MutationTestingService', () => {
       const buildFilterResolutionSut = (
         includeTestMethods: string[]
       ): MutationTestingService => {
-        // Cast rather than the file's usual bare-class-literal pattern — see
-        // the identical note on the testClassResolutions describe block below.
         vi.mocked(MutantGenerator).mockImplementation(
           class {
             compute = vi
@@ -2392,9 +2390,7 @@ describe('MutationTestingService', () => {
       it("Given the id's class id is absent from the resolutions map, When includeTestMethods holds its qualified spelling, Then the method is filtered out", async () => {
         // Arrange — this is what makes the `?? []` arm of matchesFilter
         // reachable: an unresolvable class id contributes no lookup keys, so
-        // a qualified include filter can never match it. Cast rather than the
-        // file's usual bare-class-literal pattern — see the identical note on
-        // the testClassResolutions describe block below.
+        // a qualified include filter can never match it.
         vi.mocked(MutantGenerator).mockImplementation(
           class {
             compute = vi
@@ -5475,10 +5471,6 @@ describe('MutationTestingService', () => {
       )
 
     beforeEach(() => {
-      // Cast rather than following the file's usual bare-class-literal
-      // pattern: an un-cast literal here would add a fresh instance of the
-      // partial-mock/full-class structural mismatch tsconfig.test.json
-      // already carries ~70 times over, pushing that orphaned count up.
       vi.mocked(MutantGenerator).mockImplementation(
         class {
           compute = vi

@@ -8,8 +8,9 @@ import {
 // 18-character org Ids, pinned equal in width on both namespaced and
 // non-namespaced orgs. CLASS_ID_LOCAL and CLASS_ID_FOREIGN differ in more
 // than case, so a fixture using both can tell a real id join from a vacuous
-// one.
-const TEST_CLASS_ID = '01pjV000000EE9bQAG'
+// one. TEST_CLASS_ID is a distinct third value, used by tests that don't
+// need to distinguish two class ids.
+const TEST_CLASS_ID = '01pjV000000EE9cQAG'
 const CLASS_ID_LOCAL = '01pjV000000EE9ZQAW'
 const CLASS_ID_FOREIGN = '01pjV000000EE9bQAG'
 
@@ -20,7 +21,7 @@ describe('TestMethodId', () => {
       const result = qualifyTestMethod(TEST_CLASS_ID, 'testRun')
 
       // Assert
-      expect(result).toBe('01pjV000000EE9bQAG.testRun')
+      expect(result).toBe('01pjV000000EE9cQAG.testRun')
     })
   })
 

@@ -111,10 +111,10 @@ describe('OrgMutationTestBed', () => {
       await sut.prepare(resolvedClass, ['MutationTestTest'], hooks)
 
       // Assert
-      const strategyArg = runner.getTestMethodsPerLines.mock.calls[0][1] as {
-        targetClassId: string
-      }
-      expect(strategyArg.targetClassId).toBe(TARGET_CLASS_ID)
+      const strategyArg = runner.getTestMethodsPerLines.mock.calls[0][1]
+      expect(strategyArg).toBeInstanceOf(PerTestCoverageStrategy)
+      const { targetClassId } = strategyArg as { targetClassId: string }
+      expect(targetClassId).toBe(TARGET_CLASS_ID)
     })
 
     it('Given the org settings enable aggregate coverage only, When prepare runs, Then the baseline carries aggregate fidelity', async () => {
