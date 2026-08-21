@@ -108,6 +108,26 @@ const groupByErrorMessage = (
   return grouped
 }
 
+// Caps stdout fan-out: jsforce commonly embeds the object name in the error
+// message ("Object not found: BadA"), so a large org failing to describe
+// many distinct objects would otherwise degrade to one line per object. The
+// first (limit - 1) causes keep their own notice; every cause beyond that is
+// merged into one final notice, so the total notice count never exceeds the
+// limit.
+const MAX_DESCRIBE_FAILURE_NOTICES = 5
+
+const boundCauses = (
+  causes: DescribeFailure[][],
+  limit: number
+): DescribeFailure[][] => {
+  if (causes.length <= limit) {
+    return causes
+  }
+  const kept = causes.slice(0, limit - 1)
+  const overflow = causes.slice(limit - 1).flat()
+  return [...kept, overflow]
+}
+
 export class OrgSObjectSchemaProvider implements SObjectSchemaProvider {
   private readonly fieldTypes: SObjectFieldTypes = new Map()
 
@@ -151,9 +171,14 @@ export class OrgSObjectSchemaProvider implements SObjectSchemaProvider {
   // of being fatal — or, as before, silently discarded. One notice per
   // distinct cause, not one for all of them collapsed onto the first: naming
   // every failed sObject next to a reason only some of them share would make
-  // causes 2..N untraceable.
+  // causes 2..N untraceable — bounded by MAX_DESCRIBE_FAILURE_NOTICES so that
+  // this per-cause granularity cannot itself degrade to one line per object.
   private reportFailures(failures: DescribeFailure[]): void {
-    for (const causeFailures of groupByErrorMessage(failures).values()) {
+    const causes = [...groupByErrorMessage(failures).values()]
+    for (const causeFailures of boundCauses(
+      causes,
+      MAX_DESCRIBE_FAILURE_NOTICES
+    )) {
       this.notify({
         kind: 'type-resolution-degraded',
         typeNames: causeFailures.map(failure => failure.name),

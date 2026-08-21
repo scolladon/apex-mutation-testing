@@ -185,6 +185,30 @@ describe('OrgSObjectSchemaProvider', () => {
       })
     })
 
+    // Bounds the notice COUNT, not just each notice's text: jsforce commonly
+    // embeds the object name in the error message, so N distinct failures
+    // would otherwise degrade to N stdout lines in a large org. Six distinct
+    // causes is the smallest input that exceeds the five-notice cap.
+    it('Given describe failures spanning more distinct causes than the notice cap, When describing, Then only the capped number of notices are emitted and the causes beyond the cap are merged into the last notice', async () => {
+      // Arrange
+      const names = ['BadA', 'BadB', 'BadC', 'BadD', 'BadE', 'BadF']
+      const errors = names.map(name => new Error(`Object not found: ${name}`))
+      for (const error of errors) {
+        describeMock.mockRejectedValueOnce(error)
+      }
+
+      // Act
+      await sut.describe(names)
+
+      // Assert
+      expect(notifyMock).toHaveBeenCalledTimes(5)
+      expect(notifyMock).toHaveBeenCalledWith({
+        kind: 'type-resolution-degraded',
+        typeNames: ['BadE', 'BadF'],
+        error: errors[4],
+      })
+    })
+
     it('Given a describe rejects with a non-Error value, When describing, Then the notice still carries an Error carrying that value', async () => {
       // Arrange — a non-Error rejection value drives the false arm of the
       // instanceof normalisation
