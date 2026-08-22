@@ -1,3 +1,9 @@
+import {
+  ApexClassAmbiguousError,
+  ApexClassNotFoundError,
+  ApexClassNotMutableError,
+  ApexClassUnqualifiedError,
+} from '../../port/apexClassErrors.js'
 import type {
   ApexSourceProvider,
   ApexTestSuiteMember,
@@ -7,15 +13,10 @@ import type {
   TypeName,
 } from '../../port/apexSourceProvider.js'
 import type { EngineNotify } from '../../port/executionEngine.js'
-import {
-  ApexClassAmbiguousError,
-  ApexClassNotFoundError,
-  ApexClassNotMutableError,
-  ApexClassUnqualifiedError,
-} from '../../service/apexClassValidator.js'
 import type { ApexClass } from '../../type/ApexClass.js'
 import type { ApexClassRef } from '../../type/ApexClassName.js'
 import { splitApexClassName } from '../../type/ApexClassName.js'
+import type { UnusableReason } from '../../type/SkippedTestClass.js'
 import type { TestClassResolution } from '../../type/TestClassResolution.js'
 import type { ApexClassIdentity } from './ApexClassIdentity.js'
 import type {
@@ -315,6 +316,40 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
     })
   }
 
+  // The rows whose bare spelling spellingsOf withheld because they are
+  // foreign — a bare perimeter entry naming one of them is not merely
+  // "not-accessible" (a dead end), it is missing only the namespace
+  // qualifier, which the caller can supply and re-run. A row that mints its
+  // own bare key (own-namespace, or no namespace to withhold in the first
+  // place) is never a member, regardless of its ManageableState.
+  private static withheldBareNames(
+    rows: readonly {
+      identity: ApexClassIdentity
+      resolution: TestClassResolution
+    }[]
+  ): Set<string> {
+    return new Set(
+      rows
+        .filter(
+          ({ identity, resolution }) =>
+            !resolution.lookupKeys.includes(identity.Name.toLowerCase())
+        )
+        .map(({ identity }) => identity.Name.toLowerCase())
+    )
+  }
+
+  private static classifyUnusable(
+    name: string,
+    known: ReadonlySet<string>,
+    withheldBareNames: ReadonlySet<string>
+  ): Extract<UnusableReason, 'not-found' | 'not-qualified' | 'not-accessible'> {
+    const key = name.toLowerCase()
+    if (!known.has(key)) {
+      return 'not-found'
+    }
+    return withheldBareNames.has(key) ? 'not-qualified' : 'not-accessible'
+  }
+
   /** A name can return two rows when a managed and a local class share it,
    *  and any *mutable* row makes the entry usable — a qualified entry can
    *  match at most one row, so "is at least one row for this entry usable"
@@ -338,7 +373,7 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
     // at all" and "does it answer to this exact spelling" are different
     // questions. Since spellingsOf withholds the bare key from a foreign row,
     // driving `known` off lookupKeys would make a bare entry naming only a
-    // foreign row report not-found instead of not-accessible.
+    // foreign row report not-found instead of not-qualified/not-accessible.
     const known = new Set(
       identities.flatMap(identity => [
         identity.Name.toLowerCase(),
@@ -348,6 +383,7 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
         ).toLowerCase(),
       ])
     )
+    const withheldBareNames = OrgApexSourceProvider.withheldBareNames(rows)
     const accessible = new Set(
       rows
         .filter(({ identity }) => isMutableApexClass(identity))
@@ -357,9 +393,11 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
       .filter(name => !accessible.has(name.toLowerCase()))
       .map(name => ({
         className: name, // the caller's own spelling — load-bearing, see below
-        reason: known.has(name.toLowerCase())
-          ? ('not-accessible' as const)
-          : ('not-found' as const),
+        reason: OrgApexSourceProvider.classifyUnusable(
+          name,
+          known,
+          withheldBareNames
+        ),
       }))
     return { skipped, resolutions }
   }

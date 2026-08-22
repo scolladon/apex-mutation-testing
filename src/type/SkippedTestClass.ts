@@ -3,6 +3,7 @@ import { TestClassOrigins } from './TestClassOrigin.js'
 export type UnusableReason =
   | 'not-found'
   | 'not-accessible'
+  | 'not-qualified'
   | 'does-not-compile'
   | 'no-coverage'
 

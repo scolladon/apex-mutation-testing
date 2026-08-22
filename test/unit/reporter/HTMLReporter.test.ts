@@ -743,53 +743,63 @@ describe('HTMLReporter', () => {
       expect(mutant.coveredBy).toEqual([`${UNRESOLVED_CLASS_ID}.testFoo`])
     })
 
-    it('Then a class answering to both a bare and a qualified perimeter spelling contributes its tests to only one group', async () => {
-      // Arrange — an own-namespace class mints both spellings as lookup
-      // keys (spellingsOf), so a perimeter naming both ('-t Foo -t
-      // acme.Foo') would otherwise place the same test id under two
-      // groups. The Stryker report schema treats tests[].id as globally
-      // unique — coveredBy/killedBy link mutants to tests through it.
-      const dualSpellingResults: ApexMutationTestResult = {
-        sourceFile: 'TestClass',
-        sourceFileContent: 'public class TestClass {}',
-        testFiles: ['Foo', 'acme.Foo'],
-        testClassResolutions: [
-          {
-            classId: CLASS_ID_LOCAL,
-            displayName: 'acme.Foo',
-            lookupKeys: ['foo', 'acme.foo'],
-          },
-        ],
-        mutants: [
-          {
-            id: '1',
-            mutatorName: 'IncrementMutator',
-            status: 'Killed',
-            attribution: {
-              coveredBy: [`${CLASS_ID_LOCAL}.testA`],
-              killedBy: [`${CLASS_ID_LOCAL}.testA`],
-              testsCompleted: 1,
+    it.each([
+      ['Foo', 'acme.Foo'],
+      ['acme.Foo', 'Foo'],
+    ])(
+      'Then a class answering to both a bare and a qualified perimeter spelling contributes its tests to only the first-listed entry (%s before %s)',
+      async (first, second) => {
+        // Arrange — an own-namespace class mints both spellings as lookup
+        // keys (spellingsOf), so a perimeter naming both ('-t Foo -t
+        // acme.Foo') would otherwise place the same test id under two
+        // groups. The Stryker report schema treats tests[].id as globally
+        // unique — coveredBy/killedBy link mutants to tests through it.
+        // Parametrized over both orderings so "the first perimeter entry
+        // wins" is pinned distinctly from "the bare spelling wins" — the two
+        // claims coincide only when the bare spelling happens to be listed
+        // first.
+        const dualSpellingResults: ApexMutationTestResult = {
+          sourceFile: 'TestClass',
+          sourceFileContent: 'public class TestClass {}',
+          testFiles: [first, second],
+          testClassResolutions: [
+            {
+              classId: CLASS_ID_LOCAL,
+              displayName: 'acme.Foo',
+              lookupKeys: ['foo', 'acme.foo'],
             },
-            location: {
-              start: { line: 1, column: 0 },
-              end: { line: 1, column: 10 },
+          ],
+          mutants: [
+            {
+              id: '1',
+              mutatorName: 'IncrementMutator',
+              status: 'Killed',
+              attribution: {
+                coveredBy: [`${CLASS_ID_LOCAL}.testA`],
+                killedBy: [`${CLASS_ID_LOCAL}.testA`],
+                testsCompleted: 1,
+              },
+              location: {
+                start: { line: 1, column: 0 },
+                end: { line: 1, column: 10 },
+              },
+              replacement: '--',
+              original: '++',
             },
-            replacement: '--',
-            original: '++',
-          },
-        ],
+          ],
+        }
+
+        // Act
+        await sut.generateReport(dualSpellingResults)
+
+        // Assert
+        const html = vi.mocked(writeFile).mock.calls[0][1] as string
+        const report = extractReport(html)
+        expect(report.testFiles![first].tests).toEqual([
+          { id: 'acme.Foo.testA', name: 'acme.Foo.testA' },
+        ])
+        expect(report.testFiles![second].tests).toEqual([])
       }
-
-      // Act
-      await sut.generateReport(dualSpellingResults)
-
-      // Assert
-      const html = vi.mocked(writeFile).mock.calls[0][1] as string
-      const report = extractReport(html)
-      expect(report.testFiles!['Foo'].tests).toEqual([
-        { id: 'acme.Foo.testA', name: 'acme.Foo.testA' },
-      ])
-      expect(report.testFiles!['acme.Foo'].tests).toEqual([])
-    })
+    )
   })
 })

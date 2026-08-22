@@ -32,10 +32,10 @@ const foldedNamespace = (namespace: string | null): string | null =>
   // of the fold cannot be observed — upper and lower agree on every input
   // pair. Only folding-versus-not is behavioural, and that is pinned. A
   // falsy check (not a null check) is what makes '' fold to the same null
-  // as an absent namespace — required because
-  // OrganizationRepository.readNamespacePrefix and an ApexClass row can
-  // each report either spelling for "no namespace", and nothing upstream
-  // guarantees they agree.
+  // as an absent namespace — required because an ApexClass row's
+  // NamespacePrefix arrives unnormalised straight from the org and can
+  // report either spelling for "no namespace", with nothing upstream
+  // guaranteeing which.
   // Stryker disable next-line MethodExpression: both sides fold in lockstep.
   namespace ? namespace.toLowerCase() : null
 

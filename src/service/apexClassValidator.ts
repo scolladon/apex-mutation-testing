@@ -1,66 +1,60 @@
+import {
+  ApexClassAmbiguousError,
+  ApexClassNotFoundError,
+  ApexClassNotMutableError,
+  ApexClassUnqualifiedError,
+} from '../port/apexClassErrors.js'
 import type {
   ApexSourceProvider,
   PerimeterAssessment,
+  TargetClassVerdict,
 } from '../port/apexSourceProvider.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 
-export class ApexClassNotFoundError extends Error {
-  constructor(public readonly className: string) {
-    super(`Apex class '${className}' not found`)
-    this.name = 'ApexClassNotFoundError'
-  }
-}
-
-export class ApexClassNotMutableError extends Error {
-  constructor(
-    public readonly className: string,
-    public readonly states: string[]
-  ) {
-    super(`Apex class '${className}' is not modifiable on this org`)
-    this.name = 'ApexClassNotMutableError'
-  }
-}
-
-export class ApexClassAmbiguousError extends Error {
-  constructor(
-    public readonly className: string,
-    public readonly spellings: string[]
-  ) {
-    super(`Apex class '${className}' matches more than one modifiable class`)
-    this.name = 'ApexClassAmbiguousError'
-  }
-}
-
-export class ApexClassUnqualifiedError extends Error {
-  constructor(
-    public readonly className: string,
-    public readonly spelling: string
-  ) {
-    super(
-      `Apex class '${className}' is modifiable on this org only as '${spelling}'`
-    )
-    this.name = 'ApexClassUnqualifiedError'
-  }
-}
+// Re-exported so existing importers of this module (run.ts, tests) are
+// unaffected by the four error types' actual home moving to the port — see
+// apexClassErrors.ts for why they live there.
+export {
+  ApexClassAmbiguousError,
+  ApexClassNotFoundError,
+  ApexClassNotMutableError,
+  ApexClassUnqualifiedError,
+} from '../port/apexClassErrors.js'
 
 export class ApexClassValidator {
   constructor(private readonly source: ApexSourceProvider) {}
+
+  // A non-void return restores TS2366 exhaustiveness checking on the switch
+  // below: validate() itself returns Promise<void>, under which TypeScript
+  // does not flag a missing case — silently permitting the run to proceed
+  // and write to the org, the one dangerous default this dispatch must never
+  // fall into. Returning the rejection (rather than throwing from inside the
+  // switch) keeps that guarantee live.
+  private static toRejection(
+    verdict: TargetClassVerdict,
+    className: string
+  ): Error | null {
+    switch (verdict.kind) {
+      case 'mutable':
+        return null
+      case 'not-found':
+        return new ApexClassNotFoundError(className)
+      case 'not-mutable':
+        return new ApexClassNotMutableError(className, verdict.states)
+      case 'ambiguous':
+        return new ApexClassAmbiguousError(className, verdict.spellings)
+      case 'unqualified':
+        return new ApexClassUnqualifiedError(className, verdict.spelling)
+    }
+  }
 
   public async validate({
     apexClassName,
   }: ApexMutationParameter): Promise<void> {
     const verdict = await this.source.assessTargetClass(apexClassName)
-    switch (verdict.kind) {
-      case 'mutable':
-        return
-      case 'not-found':
-        throw new ApexClassNotFoundError(apexClassName)
-      case 'not-mutable':
-        throw new ApexClassNotMutableError(apexClassName, verdict.states)
-      case 'ambiguous':
-        throw new ApexClassAmbiguousError(apexClassName, verdict.spellings)
-      case 'unqualified':
-        throw new ApexClassUnqualifiedError(apexClassName, verdict.spelling)
+    const rejection = ApexClassValidator.toRejection(verdict, apexClassName)
+    if (rejection) {
+      throw rejection
     }
   }
 

@@ -1079,7 +1079,7 @@ describe('OrgApexSourceProvider', () => {
       })
     })
 
-    it('should resolve with a not-accessible verdict when the only identity row carries a namespace prefix', async () => {
+    it('should resolve with a not-qualified verdict when the only identity row carries a namespace prefix', async () => {
       // Arrange — installed: a closed managed package, not mutable.
       readIdentitiesMock.mockResolvedValueOnce([
         {
@@ -1095,10 +1095,12 @@ describe('OrgApexSourceProvider', () => {
 
       // Assert — a foreign row never mints a bare key, even as the only row
       // answering to that name; the bare perimeter entry is still reported
-      // not-accessible rather than not-found, because `known` is derived
-      // from the identity rows directly, independent of lookupKeys.
+      // (not-found would be wrong, because `known` is derived from the
+      // identity rows directly, independent of lookupKeys) — but
+      // not-qualified rather than not-accessible, because the row this bare
+      // name matches exists only under a withheld qualified spelling.
       expect(result).toEqual({
-        skipped: [{ className: 'TestClassTest', reason: 'not-accessible' }],
+        skipped: [{ className: 'TestClassTest', reason: 'not-qualified' }],
         resolutions: [
           {
             classId: 'ID1',
@@ -1107,6 +1109,28 @@ describe('OrgApexSourceProvider', () => {
           },
         ],
       })
+    })
+
+    it('should resolve with a not-qualified verdict when a bare entry matches only a mutable foreign row', async () => {
+      // Arrange — installedEditable: the row IS mutable, so it genuinely
+      // would be accessible under its qualified spelling
+      // (mockery.ArgumentTest) — only the bare spelling is unusable here.
+      readIdentitiesMock.mockResolvedValueOnce([
+        {
+          Id: 'ID1',
+          Name: 'ArgumentTest',
+          NamespacePrefix: 'mockery',
+          ManageableState: 'installedEditable',
+        },
+      ])
+
+      // Act
+      const result = await sut.assessPerimeter(['ArgumentTest'])
+
+      // Assert
+      expect(result.skipped).toEqual([
+        { className: 'ArgumentTest', reason: 'not-qualified' },
+      ])
     })
 
     it('should resolve with an empty list when the identity row carries a null namespace prefix', async () => {
@@ -1263,7 +1287,7 @@ describe('OrgApexSourceProvider', () => {
       expect(result).toEqual({
         skipped: [
           { className: 'Missing', reason: 'not-found' },
-          { className: 'NotATest', reason: 'not-accessible' },
+          { className: 'NotATest', reason: 'not-qualified' },
         ],
         resolutions: [
           {

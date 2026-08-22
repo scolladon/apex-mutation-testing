@@ -192,6 +192,10 @@ it could not be found on this org
 
 it is not accessible on this org
 
+# info.reasonNotQualified
+
+it is accessible on this org only under a qualified spelling — re-run naming the qualified spelling
+
 # info.reasonNoCoverage
 
 it contributed no covered lines

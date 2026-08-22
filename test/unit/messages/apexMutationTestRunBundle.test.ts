@@ -48,6 +48,22 @@ describe('apex.mutation.test.run message bundle', () => {
     )
   })
 
+  it('Given a not-qualified skip, When formatted against the real bundle, Then the exact shipped sentence is produced', () => {
+    // Arrange
+    const skipped: SkippedTestClass = {
+      className: 'ArgumentTest',
+      reason: 'not-qualified',
+    }
+
+    // Act
+    const sut = formatSkippedTestClass(skipped, messages)
+
+    // Assert
+    expect(sut).toBe(
+      "Skipping test class 'ArgumentTest': it is accessible on this org only under a qualified spelling — re-run naming the qualified spelling."
+    )
+  })
+
   it('Given a does-not-compile skip carrying a detail, When formatted against the real bundle, Then the detail renders as a parenthetical after the reason', () => {
     // Arrange
     const skipped: SkippedTestClass = {

@@ -16,6 +16,8 @@ describe('formatSkippedTestClass', () => {
           'info.contributedBySuite': `(contributed by test suite ${args?.[0]})`,
           'info.reasonNotFound': 'it could not be found on this org',
           'info.reasonNotAccessible': 'it is not accessible on this org',
+          'info.reasonNotQualified':
+            'it is accessible on this org only under a qualified spelling — re-run naming the qualified spelling',
           'info.reasonNoCoverage': 'it contributed no covered lines',
           'info.reasonDoesNotCompile': `it does not compile${args?.[0] ?? ''}`,
         }
@@ -53,6 +55,22 @@ describe('formatSkippedTestClass', () => {
     // Assert
     expect(sut).toBe(
       "Skipping test class 'MyClasTest': it is not accessible on this org."
+    )
+  })
+
+  it('Given a not-qualified skip, When formatted, Then the reason fragment points the caller at the qualified spelling', () => {
+    // Arrange
+    const skipped: SkippedTestClass = {
+      className: 'ArgumentTest',
+      reason: 'not-qualified',
+    }
+
+    // Act
+    const sut = formatSkippedTestClass(skipped, messages)
+
+    // Assert
+    expect(sut).toBe(
+      "Skipping test class 'ArgumentTest': it is accessible on this org only under a qualified spelling — re-run naming the qualified spelling."
     )
   })
 

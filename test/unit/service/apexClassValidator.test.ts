@@ -110,6 +110,26 @@ describe('ApexClassValidator', () => {
         name: 'ApexClassUnqualifiedError',
       })
     })
+
+    it('should keep the org-supplied spelling off the raw error message, matching its ApexClassNotMutableError/ApexClassAmbiguousError siblings', async () => {
+      // Arrange — spelling embeds NamespacePrefix, org-supplied text
+      // unconstrained by any grammar. The raw .message is a terminal sink
+      // on the readClass/TOCTOU path (see orgApexSourceProvider.ts), which
+      // bypasses run.ts's sanitizeForDisplay rendering — so the field, not
+      // the message, must carry it.
+      vi.mocked(source.assessTargetClass).mockResolvedValueOnce({
+        kind: 'unqualified',
+        spelling: 'mockery.Argument',
+      })
+
+      // Act
+      const error = await sut
+        .validate(params)
+        .catch((rejection: unknown) => rejection)
+
+      // Assert
+      expect((error as Error).message).not.toContain('mockery.Argument')
+    })
   })
 
   describe('assessPerimeter', () => {

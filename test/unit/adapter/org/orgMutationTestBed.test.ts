@@ -13,6 +13,7 @@ import {
 } from '../../../../src/service/coverageStrategy.js'
 import { timeExecution } from '../../../../src/service/timeUtils.js'
 import type { ApexClass } from '../../../../src/type/ApexClass.js'
+import type { ApexTestRunResult } from '../../../../src/type/ApexTestRunResult.js'
 
 vi.mock('../../../../src/service/timeUtils.js')
 
@@ -20,6 +21,10 @@ const mockOriginal: ApexClass = { Id: '123', Body: 'class Foo {}' }
 // 18-character org Id, deliberately shaped nothing like the class name so a
 // mutant passing the name instead of the Id is caught.
 const TARGET_CLASS_ID = '01pjV000000EE9ZQAW'
+// A second, differently-shaped org Id — proves the assertion below is a real
+// join on the resolved class's Id rather than one that would pass no matter
+// which classId a coverage row carries.
+const FOREIGN_CLASS_ID = '01pjV000000EE9bQAG'
 
 const baselineTestResult = {
   outcome: 'Passed',
@@ -110,11 +115,46 @@ describe('OrgMutationTestBed', () => {
       // Act
       await sut.prepare(resolvedClass, ['MutationTestTest'], hooks)
 
-      // Assert
+      // Assert — pinned through the public surface rather than reaching
+      // into the private targetClassId field: a coverage row carrying the
+      // resolved class's Id joins, one carrying the name-shaped foreign Id
+      // ('MutationTestTest' itself, the perimeter entry) does not.
       const strategyArg = runner.getTestMethodsPerLines.mock.calls[0][1]
       expect(strategyArg).toBeInstanceOf(PerTestCoverageStrategy)
-      const { targetClassId } = strategyArg as { targetClassId: string }
-      expect(targetClassId).toBe(TARGET_CLASS_ID)
+      const strategy = strategyArg as PerTestCoverageStrategy
+      const matchingResult = {
+        tests: [
+          {
+            classId: FOREIGN_CLASS_ID,
+            methodName: 'testMethodA',
+            coverage: [
+              {
+                classId: TARGET_CLASS_ID,
+                testMethodName: 'testMethodA',
+                detail: { coveredLines: [1] },
+              },
+            ],
+          },
+        ],
+      } as unknown as ApexTestRunResult
+      expect(strategy.getTestMethodsPerLine(matchingResult).size).toBe(1)
+
+      const nonMatchingResult = {
+        tests: [
+          {
+            classId: FOREIGN_CLASS_ID,
+            methodName: 'testMethodA',
+            coverage: [
+              {
+                classId: 'MutationTestTest',
+                testMethodName: 'testMethodA',
+                detail: { coveredLines: [1] },
+              },
+            ],
+          },
+        ],
+      } as unknown as ApexTestRunResult
+      expect(strategy.getTestMethodsPerLine(nonMatchingResult).size).toBe(0)
     })
 
     it('Given the org settings enable aggregate coverage only, When prepare runs, Then the baseline carries aggregate fidelity', async () => {
