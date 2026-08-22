@@ -153,6 +153,9 @@ function buildTestFilesSection(
       const claims = [...idsByClassId].filter(
         ([classId]) =>
           !claimedClassIds.has(classId) &&
+          // Stryker disable next-line ArrayDeclaration: this is only ever
+          // .includes()-checked against `key`, already toLowerCase()'d
+          // above; the injected uppercase literal can never match.
           (resolutions.get(classId)?.lookupKeys ?? []).includes(key)
       )
       for (const [classId] of claims) claimedClassIds.add(classId)

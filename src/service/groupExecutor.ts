@@ -246,6 +246,10 @@ export class GroupExecutor {
     testResult: ApexTestRunResult
   ): ApexMutationTestResult['mutants'] {
     const outcomeByMethod = new Map<TestMethodId, string>(
+      // Stryker disable next-line ArrayDeclaration: tests is typed
+      // non-nullable, so this fallback never executes; forced anyway, the
+      // resulting "undefined.undefined" entry is never looked up — only
+      // real ids are queried.
       (testResult.tests ?? []).map(t => [
         qualifyTestMethod(t.classId, t.methodName),
         t.outcome,

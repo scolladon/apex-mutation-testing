@@ -25,6 +25,10 @@ export class ApexClassValidator {
     className: string
   ): Error | null {
     switch (verdict.kind) {
+      // Stryker disable next-line StringLiteral: an unmatched case falls
+      // through to an implicit undefined instead of null; the sole
+      // consumer (`if (rejection) throw`) treats both as falsy, and
+      // verdict.kind can never literally be '' by the type.
       case 'mutable':
         return null
       case 'not-found':

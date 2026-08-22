@@ -71,6 +71,9 @@ const matchesFilter = (
 ): boolean => {
   const method = testMethodOf(id).toLowerCase()
   if (filterSet.has(method)) return true
+  // Stryker disable next-line ArrayDeclaration: filterSet is built
+  // exclusively via .map(entry => entry.toLowerCase()); the injected
+  // uppercase literal can never be a member.
   const keys = resolutions.get(testClassOf(id))?.lookupKeys ?? []
   return keys.some(key => filterSet.has(`${key}.${method}`))
 }
@@ -505,6 +508,9 @@ export class MutationTestingService {
     const detailByKey = new Map<string, string>()
     for (const failure of failures) {
       const keys =
+        // Stryker disable next-line ArrayDeclaration: detailByKey is only
+        // ever queried via .get(name.toLowerCase()); the injected
+        // uppercase key can never match.
         this.testClassResolutions.get(failure.classId)?.lookupKeys ?? []
       // Last-write-wins: two failing classIds can share a lookup key when
       // an own-namespace row and a namespace-less installed row both answer
@@ -541,6 +547,9 @@ export class MutationTestingService {
     )
     const keys = new Set(
       [...contributing].flatMap(
+        // Stryker disable next-line ArrayDeclaration: this set is only
+        // ever queried via .has(name.toLowerCase()); the injected
+        // uppercase entry can never match.
         classId => this.testClassResolutions.get(classId)?.lookupKeys ?? []
       )
     )

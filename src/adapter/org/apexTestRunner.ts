@@ -156,6 +156,11 @@ const ASYNC_COMPILE_METHOD_NAME = '<compile>' // the token the async path emits
 // match: getting this wrong in the permissive direction would silently
 // reclassify a real test failure as a compile skip.
 const isSyncCompileFailureFingerprint = (testResult: TestResult): boolean => {
+  // The real [] fails the length check below and returns false. A forced
+  // non-empty fallback would pass that check but then fail
+  // methodName === null once destructured — both routes return false.
+  // Stryker disable next-line ArrayDeclaration: any fallback array still
+  // fails methodName === null below.
   const tests = testResult.tests ?? []
   if (tests.length !== SYNC_COMPILE_FAILURE_ROW_COUNT) return false
   const [row] = tests
@@ -252,11 +257,18 @@ const PERMANENT_SYNC_ERROR_CODES: ReadonlySet<string> = new Set([
 
 const readErrorCode = (error: Error): string | undefined => {
   const code = (error as { errorCode?: unknown }).errorCode
+  // Stryker disable next-line ConditionalExpression: the only consumer
+  // feeds this into a Set<string>.has(...), which answers false for a
+  // non-string exactly as this short-circuit does.
   return typeof code === 'string' ? code : undefined
 }
 
 const isPermanentSyncFailure = (error: Error): boolean => {
   const code = readErrorCode(error)
+  // Stryker disable next-line ConditionalExpression: the only caller is
+  // this function, and PERMANENT_SYNC_ERROR_CODES.has(...) — a
+  // Set<string> — answers false for a non-string exactly as this
+  // short-circuit does.
   return code !== undefined && PERMANENT_SYNC_ERROR_CODES.has(code)
 }
 
@@ -312,6 +324,8 @@ export class ApexTestRunner {
   ): Promise<ApexTestRunResult> {
     const testResult = await this.runTests(
       toTestItems(testMethods),
+      // Stryker disable next-line StringLiteral: this value is only ever
+      // compared via === 'with-coverage'; no other reader exists.
       'without-coverage'
     )
     return toApexTestRunResult(testResult)

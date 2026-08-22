@@ -338,6 +338,11 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
         .filter(
           ({ identity, resolution }) =>
             isMutableApexClass(identity) &&
+            // Stryker disable next-line MethodExpression: structurally
+            // unreachable — any mutable row whose bare name is in its own
+            // lookupKeys is already in the unconditionally-built
+            // `accessible` set, so this path never runs for it regardless
+            // of case.
             !resolution.lookupKeys.includes(identity.Name.toLowerCase())
         )
         .map(({ identity }) => identity.Name.toLowerCase())
