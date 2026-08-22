@@ -10,11 +10,11 @@ The plugin provides insights into how trustworthy your test suite is by measurin
 
 # flags.apex-class.summary
 
-Apex class name to mutate
+Apex class name to mutate. A bare name reaches only the namespace that owns it; name a class from another namespace as `namespace.ClassName`.
 
 # flags.test-class.summary
 
-Apex test class name(s) to validate mutations. Repeat the flag or pass a comma-delimited list to cover a class with multiple test classes.
+Apex test class name(s) to validate mutations. Repeat the flag or pass a comma-delimited list to cover a class with multiple test classes. A bare name reaches only the namespace that owns it; name a class from another namespace as `namespace.ClassName`.
 
 # flags.test-suite.summary
 
@@ -138,11 +138,11 @@ Mutator names to exclude
 
 # flags.include-test-methods.summary
 
-Test method names to include. Bare `methodName` applies to that method in every test class in the perimeter; qualified `ClassName.methodName` applies to that one class only.
+Test method names to include. Bare `methodName` applies to that method in every test class in the perimeter; qualified `ClassName.methodName` applies to that one class only; `namespace.ClassName.methodName` names a class from another namespace. Matching ignores case.
 
 # flags.exclude-test-methods.summary
 
-Test method names to exclude. Bare `methodName` applies to that method in every test class in the perimeter; qualified `ClassName.methodName` applies to that one class only.
+Test method names to exclude. Bare `methodName` applies to that method in every test class in the perimeter; qualified `ClassName.methodName` applies to that one class only; `namespace.ClassName.methodName` names a class from another namespace. Matching ignores case.
 
 # flags.threshold.summary
 

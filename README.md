@@ -516,7 +516,8 @@ USAGE
     [--mutation-grouping] [--api-version <value>]
 
 FLAGS
-  -c, --apex-class=<value>               (required) Apex class name to mutate
+  -c, --apex-class=<value>               (required) Apex class name to mutate. A bare name reaches only the namespace
+                                         that owns it; name a class from another namespace as `namespace.ClassName`.
   -d, --dry-run                          Preview mutations without deploying or running tests
   -l, --lines=<value>...                 Line ranges to mutate (e.g., 1-10, 42). Only these lines are eligible for
                                          mutation.
@@ -526,17 +527,21 @@ FLAGS
                                          generated
   -s, --skip-patterns=<value>...         RE2 regex patterns to skip lines from mutation (e.g., System\.debug)
   -t, --test-class=<value>...            Apex test class name(s) to validate mutations. Repeat the flag or pass a
-                                         comma-delimited list to cover a class with multiple test classes.
+                                         comma-delimited list to cover a class with multiple test classes. A bare name
+                                         reaches only the namespace that owns it; name a class from another namespace as
+                                         `namespace.ClassName`.
       --api-version=<value>              Override the api version used for api requests made by this command
       --config-file=<value>              Path to mutation testing configuration file
       --exclude-mutators=<value>...      Mutator names to exclude
       --exclude-test-methods=<value>...  Test method names to exclude. Bare `methodName` applies to that method in every
                                          test class in the perimeter; qualified `ClassName.methodName` applies to that
-                                         one class only.
+                                         one class only; `namespace.ClassName.methodName` names a class from another
+                                         namespace. Matching ignores case.
       --include-mutators=<value>...      Mutator names to include (e.g. ArithmeticOperator, BoundaryCondition)
       --include-test-methods=<value>...  Test method names to include. Bare `methodName` applies to that method in every
                                          test class in the perimeter; qualified `ClassName.methodName` applies to that
-                                         one class only.
+                                         one class only; `namespace.ClassName.methodName` names a class from another
+                                         namespace. Matching ignores case.
       --mutation-grouping                Group mutations whose covering tests are disjoint into a single deploy + test
                                          run. Reduces deployments and async test-run kickoffs at the cost of larger
                                          blast radius on compile errors. Runs the full pipeline: test-induced clique
