@@ -257,18 +257,16 @@ const PERMANENT_SYNC_ERROR_CODES: ReadonlySet<string> = new Set([
 
 const readErrorCode = (error: Error): string | undefined => {
   const code = (error as { errorCode?: unknown }).errorCode
-  // Stryker disable next-line ConditionalExpression: the only consumer
-  // feeds this into a Set<string>.has(...), which answers false for a
-  // non-string exactly as this short-circuit does.
+  // The only consumer feeds this into a Set<string>.has(...), which answers
+  // false for a non-string exactly as this short-circuit does.
   return typeof code === 'string' ? code : undefined
 }
 
 const isPermanentSyncFailure = (error: Error): boolean => {
   const code = readErrorCode(error)
-  // Stryker disable next-line ConditionalExpression: the only caller is
-  // this function, and PERMANENT_SYNC_ERROR_CODES.has(...) — a
-  // Set<string> — answers false for a non-string exactly as this
-  // short-circuit does.
+  // The only caller is this function, and
+  // PERMANENT_SYNC_ERROR_CODES.has(...) — a Set<string> — answers false for
+  // a non-string exactly as this short-circuit does.
   return code !== undefined && PERMANENT_SYNC_ERROR_CODES.has(code)
 }
 
