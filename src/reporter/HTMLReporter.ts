@@ -173,14 +173,19 @@ function mapMutant(
   mutant: ApexMutationTestResult['mutants'][number],
   resolutions: ReadonlyMap<string, TestClassResolution>
 ): ReportMutant {
+  // Re-sorted after resolution, not before: the engine sorts these by
+  // TestMethodId, which is class-id-qualified, so the order it produces is
+  // stable but keyed on something no reader of the report can see. Sorting the
+  // rendered display names is what makes the report deterministic in the
+  // reader's own terms — and is what the e2e snapshot asserts byte-for-byte.
   const attribution = mutant.attribution
     ? {
-        coveredBy: mutant.attribution.coveredBy.map(id =>
-          displayOf(id, resolutions)
-        ),
-        killedBy: mutant.attribution.killedBy.map(id =>
-          displayOf(id, resolutions)
-        ),
+        coveredBy: mutant.attribution.coveredBy
+          .map(id => displayOf(id, resolutions))
+          .sort(),
+        killedBy: mutant.attribution.killedBy
+          .map(id => displayOf(id, resolutions))
+          .sort(),
         testsCompleted: mutant.attribution.testsCompleted,
       }
     : undefined

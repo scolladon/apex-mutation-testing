@@ -35,7 +35,7 @@ export class ApexClassAmbiguousError extends Error {
 // spelling is org-supplied (embeds NamespacePrefix) and deliberately kept off
 // the super() message — see ApexClassNotMutableError/ApexClassAmbiguousError
 // above, which keep their org-supplied lists on fields for the same reason:
-// the raw .message is a terminal sink on the readClass/TOCTOU path, which
+// the raw .message is a terminal sink on the readClass check-then-use path,
 // bypasses run.ts's sanitizeForDisplay rendering.
 export class ApexClassUnqualifiedError extends Error {
   constructor(

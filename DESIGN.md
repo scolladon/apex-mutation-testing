@@ -188,7 +188,7 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │     engine.source.readClass(MyClass) → { Id, Body }
 │       (OrgApexSourceProvider → ApexClassRepository.readBodyCandidates,
 │        re-run through the same mutable-candidate selection as step 3 —
-│        a TOCTOU race between the two org round-trips surfaces through
+│        a check-then-use race between the two org round-trips surfaces through
 │        the same typed error vocabulary, not a raw internal-verdict Error)
 │
 ├─ 5. DISCOVER DEPENDENCIES

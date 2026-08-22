@@ -169,7 +169,7 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
   // Rejects with the same typed errors apexClassValidator.ts throws for the
   // identical conditions, rather than a raw Error naming its internal
   // verdict kind: assessTargetClass and readClass are two separate org
-  // round-trips classifying the same rows, so a TOCTOU race between them
+  // round-trips classifying the same rows, so a check-then-use race between them
   // must surface through the one curated, already-handled error vocabulary.
   public async readClass(name: string): Promise<ApexClass> {
     const ref = splitApexClassName(name)

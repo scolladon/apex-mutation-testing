@@ -118,7 +118,7 @@ describe('ApexClassValidator', () => {
     it('should keep the org-supplied spelling off the raw error message, matching its ApexClassNotMutableError/ApexClassAmbiguousError siblings', async () => {
       // Arrange — spelling embeds NamespacePrefix, org-supplied text
       // unconstrained by any grammar. The raw .message is a terminal sink
-      // on the readClass/TOCTOU path (see orgApexSourceProvider.ts), which
+      // on the readClass check-then-use path (see orgApexSourceProvider.ts),
       // bypasses run.ts's sanitizeForDisplay rendering — so the field, not
       // the message, must carry it.
       vi.mocked(source.assessTargetClass).mockResolvedValueOnce({

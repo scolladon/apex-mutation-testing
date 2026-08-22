@@ -802,4 +802,60 @@ describe('HTMLReporter', () => {
       }
     )
   })
+
+  describe('attribution ordering', () => {
+    it('Given class ids whose sort order is the reverse of their display names, When generating the report, Then coveredBy and killedBy are ordered by display name', async () => {
+      // Arrange — the engine sorts attribution by TestMethodId, which is
+      // class-id-qualified. These two ids sort in the OPPOSITE order to the
+      // names they resolve to, so a report that simply preserved the engine's
+      // order would come out reverse-alphabetical and this fixture would fail.
+      const ID_FIRST = '01p000000000001'
+      const ID_SECOND = '01p000000000002'
+      const resolutions = [
+        {
+          classId: ID_FIRST,
+          displayName: 'ZebraTest',
+          lookupKeys: ['zebratest'],
+        },
+        {
+          classId: ID_SECOND,
+          displayName: 'AlphaTest',
+          lookupKeys: ['alphatest'],
+        },
+      ]
+      const orderingResults: ApexMutationTestResult = {
+        sourceFile: 'Foo',
+        sourceFileContent: 'public class Foo {}',
+        testClassResolutions: resolutions,
+        testFiles: ['ZebraTest', 'AlphaTest'],
+        mutants: [
+          {
+            id: '1',
+            mutatorName: 'IncrementMutator',
+            status: 'Killed',
+            attribution: {
+              coveredBy: [`${ID_FIRST}.testA`, `${ID_SECOND}.testB`],
+              killedBy: [`${ID_FIRST}.testA`, `${ID_SECOND}.testB`],
+              testsCompleted: 2,
+            },
+            location: {
+              start: { line: 1, column: 0 },
+              end: { line: 1, column: 10 },
+            },
+            replacement: '--',
+            original: '++',
+          },
+        ],
+      }
+
+      // Act
+      await sut.generateReport(orderingResults)
+
+      // Assert — display-name order, not class-id order
+      const html = vi.mocked(writeFile).mock.calls[0][1] as string
+      const mutant = extractReport(html).files['Foo.cls'].mutants[0]
+      expect(mutant.coveredBy).toEqual(['AlphaTest.testB', 'ZebraTest.testA'])
+      expect(mutant.killedBy).toEqual(['AlphaTest.testB', 'ZebraTest.testA'])
+    })
+  })
 })
