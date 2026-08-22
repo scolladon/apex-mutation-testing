@@ -42,7 +42,9 @@ export class ApexClassUnqualifiedError extends Error {
     public readonly className: string,
     public readonly spelling: string
   ) {
-    super(`Apex class '${className}' is modifiable on this org only`)
+    super(
+      `Apex class '${className}' is modifiable on this org only under its namespace-qualified spelling`
+    )
     this.name = 'ApexClassUnqualifiedError'
   }
 }

@@ -3,8 +3,8 @@ import {
   ApexClassNotFoundError,
   ApexClassNotMutableError,
   ApexClassUnqualifiedError,
-  ApexClassValidator,
-} from '../../../src/service/apexClassValidator.js'
+} from '../../../src/port/apexClassErrors.js'
+import { ApexClassValidator } from '../../../src/service/apexClassValidator.js'
 import { fakeSourceProvider } from '../../utils/testUtil.js'
 
 describe('ApexClassValidator', () => {
@@ -128,6 +128,9 @@ describe('ApexClassValidator', () => {
         .catch((rejection: unknown) => rejection)
 
       // Assert
+      expect((error as Error).message).toBe(
+        "Apex class 'TestClass' is modifiable on this org only under its namespace-qualified spelling"
+      )
       expect((error as Error).message).not.toContain('mockery.Argument')
     })
   })

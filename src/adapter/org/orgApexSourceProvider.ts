@@ -319,9 +319,14 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
   // The rows whose bare spelling spellingsOf withheld because they are
   // foreign — a bare perimeter entry naming one of them is not merely
   // "not-accessible" (a dead end), it is missing only the namespace
-  // qualifier, which the caller can supply and re-run. A row that mints its
-  // own bare key (own-namespace, or no namespace to withhold in the first
-  // place) is never a member, regardless of its ManageableState.
+  // qualifier, which the caller can supply and re-run *and have it work*.
+  // That last part is the reason for the isMutableApexClass guard: a foreign
+  // row this org cannot modify (e.g. a closed managed package) would still
+  // fail under its qualified spelling, so it is not-accessible, not
+  // not-qualified — mirroring selectMutableClass, which filters mutable
+  // before ever reaching its `unqualified` arm. A row that mints its own
+  // bare key (own-namespace, or no namespace to withhold in the first place)
+  // is never a member, regardless of its ManageableState.
   private static withheldBareNames(
     rows: readonly {
       identity: ApexClassIdentity
@@ -332,6 +337,7 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
       rows
         .filter(
           ({ identity, resolution }) =>
+            isMutableApexClass(identity) &&
             !resolution.lookupKeys.includes(identity.Name.toLowerCase())
         )
         .map(({ identity }) => identity.Name.toLowerCase())

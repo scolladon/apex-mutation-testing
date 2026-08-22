@@ -1079,7 +1079,7 @@ describe('OrgApexSourceProvider', () => {
       })
     })
 
-    it('should resolve with a not-qualified verdict when the only identity row carries a namespace prefix', async () => {
+    it('should resolve with a not-accessible verdict when the only identity row is a closed managed package', async () => {
       // Arrange — installed: a closed managed package, not mutable.
       readIdentitiesMock.mockResolvedValueOnce([
         {
@@ -1097,10 +1097,11 @@ describe('OrgApexSourceProvider', () => {
       // answering to that name; the bare perimeter entry is still reported
       // (not-found would be wrong, because `known` is derived from the
       // identity rows directly, independent of lookupKeys) — but
-      // not-qualified rather than not-accessible, because the row this bare
-      // name matches exists only under a withheld qualified spelling.
+      // not-accessible rather than not-qualified, because the row this bare
+      // name matches is not mutable: re-running under the qualified spelling
+      // would not help.
       expect(result).toEqual({
-        skipped: [{ className: 'TestClassTest', reason: 'not-qualified' }],
+        skipped: [{ className: 'TestClassTest', reason: 'not-accessible' }],
         resolutions: [
           {
             classId: 'ID1',
@@ -1287,7 +1288,7 @@ describe('OrgApexSourceProvider', () => {
       expect(result).toEqual({
         skipped: [
           { className: 'Missing', reason: 'not-found' },
-          { className: 'NotATest', reason: 'not-qualified' },
+          { className: 'NotATest', reason: 'not-accessible' },
         ],
         resolutions: [
           {

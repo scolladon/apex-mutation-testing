@@ -1,16 +1,16 @@
 import { Messages } from '@salesforce/core'
 import { Flags, SfCommand } from '@salesforce/sf-plugins-core'
 import { createOrgEngine } from '../../../../adapter/org/orgEngine.js'
-import type { ApexSourceProvider } from '../../../../port/apexSourceProvider.js'
-import type { EngineBundle } from '../../../../port/executionEngine.js'
-import { ApexMutationHTMLReporter } from '../../../../reporter/HTMLReporter.js'
 import {
   ApexClassAmbiguousError,
   ApexClassNotFoundError,
   ApexClassNotMutableError,
   ApexClassUnqualifiedError,
-  ApexClassValidator,
-} from '../../../../service/apexClassValidator.js'
+} from '../../../../port/apexClassErrors.js'
+import type { ApexSourceProvider } from '../../../../port/apexSourceProvider.js'
+import type { EngineBundle } from '../../../../port/executionEngine.js'
+import { ApexMutationHTMLReporter } from '../../../../reporter/HTMLReporter.js'
+import { ApexClassValidator } from '../../../../service/apexClassValidator.js'
 import { ConfigReader } from '../../../../service/configReader.js'
 import { reportEngineNotice } from '../../../../service/engineNotice.js'
 import { MutationTestingService } from '../../../../service/mutationTestingService.js'

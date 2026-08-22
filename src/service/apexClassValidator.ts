@@ -11,16 +11,6 @@ import type {
 } from '../port/apexSourceProvider.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 
-// Re-exported so existing importers of this module (run.ts, tests) are
-// unaffected by the four error types' actual home moving to the port — see
-// apexClassErrors.ts for why they live there.
-export {
-  ApexClassAmbiguousError,
-  ApexClassNotFoundError,
-  ApexClassNotMutableError,
-  ApexClassUnqualifiedError,
-} from '../port/apexClassErrors.js'
-
 export class ApexClassValidator {
   constructor(private readonly source: ApexSourceProvider) {}
 

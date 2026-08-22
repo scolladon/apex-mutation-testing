@@ -81,18 +81,9 @@ vi.mock('@salesforce/sf-plugins-core', () => {
   }
 })
 
-vi.mock('../../src/service/apexClassValidator.js', async () => {
-  const actual = await vi.importActual<
-    typeof import('../../src/service/apexClassValidator.js')
-  >('../../src/service/apexClassValidator.js')
-  return {
-    ApexClassValidator: vi.fn(),
-    ApexClassNotFoundError: actual.ApexClassNotFoundError,
-    ApexClassNotMutableError: actual.ApexClassNotMutableError,
-    ApexClassAmbiguousError: actual.ApexClassAmbiguousError,
-    ApexClassUnqualifiedError: actual.ApexClassUnqualifiedError,
-  }
-})
+vi.mock('../../src/service/apexClassValidator.js', () => ({
+  ApexClassValidator: vi.fn(),
+}))
 
 vi.mock('../../src/service/mutationTestingService.js', () => ({
   MutationTestingService: vi.fn(),
@@ -125,14 +116,14 @@ vi.mock('../../src/adapter/org/orgEngine.js', () => ({
 
 import { createOrgEngine } from '../../src/adapter/org/orgEngine.js'
 import { default as ApexMutationTest } from '../../src/commands/apex/mutation/test/run.js'
-import { ApexMutationHTMLReporter } from '../../src/reporter/HTMLReporter.js'
 import {
   ApexClassAmbiguousError,
   ApexClassNotFoundError,
   ApexClassNotMutableError,
   ApexClassUnqualifiedError,
-  ApexClassValidator,
-} from '../../src/service/apexClassValidator.js'
+} from '../../src/port/apexClassErrors.js'
+import { ApexMutationHTMLReporter } from '../../src/reporter/HTMLReporter.js'
+import { ApexClassValidator } from '../../src/service/apexClassValidator.js'
 import { ConfigReader } from '../../src/service/configReader.js'
 import { MutationTestingService } from '../../src/service/mutationTestingService.js'
 import { TestSuiteResolver } from '../../src/service/testSuiteResolver.js'
