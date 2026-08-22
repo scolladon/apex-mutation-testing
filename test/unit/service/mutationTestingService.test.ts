@@ -253,6 +253,42 @@ describe('MutationTestingService', () => {
       })
     })
 
+    describe('When test class fails with compile failures for two classes', () => {
+      it('then should join their skip sentences with a newline in the thrown message', async () => {
+        // Arrange — a run-together pair would read as one garbled sentence
+        // instead of two, so the separator between them is load-bearing.
+        const twoClassSut = new MutationTestingService(
+          progress,
+          spinner,
+          engine,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassNames: ['FooTest', 'BarTest'],
+            testClassResolutions: resolutionsFor(['FooTest', 'BarTest']),
+          } as ApexMutationParameter,
+          messagesMock
+        )
+        engine.testBed = fakeTestBed(
+          baselineResult({
+            outcome: 'Failed',
+            otherFailureCount: 1,
+            testsRan: 2,
+            compileFailures: [
+              { classId: 'FooTest', message: 'boom one' },
+              { classId: 'BarTest', message: 'boom two' },
+            ],
+            testMethodsPerLine: new Map(),
+          })
+        )
+
+        // Act & Assert
+        await expect(twoClassSut.process()).rejects.toThrow(
+          "Skipping test class 'FooTest': it does not compile (boom one).\n" +
+            "Skipping test class 'BarTest': it does not compile (boom two)."
+        )
+      })
+    })
+
     describe('When baseline includes a CompileFail row alongside a passing test', () => {
       it('then should not treat the compile failure as an aborting test failure', async () => {
         // Arrange — a two-class perimeter: TestClassTest never compiles and is
@@ -345,6 +381,9 @@ describe('MutationTestingService', () => {
         await expect(sut.process()).rejects.toThrow(
           'No tests were executed! Check that:'
         )
+        // The baseline spinner must be torn down before the abort, not left
+        // running underneath it.
+        expect(spinner.stop).toHaveBeenCalledWith()
       })
     })
 

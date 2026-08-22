@@ -90,6 +90,10 @@ describe('ApexClassValidator', () => {
         spellings: ['mockery.Argument', 'acme.Argument'],
         name: 'ApexClassAmbiguousError',
       })
+      await expect(result).rejects.toHaveProperty(
+        'message',
+        "Apex class 'TestClass' matches more than one modifiable class"
+      )
     })
 
     it('should reject with an ApexClassUnqualifiedError carrying the class name and the qualified spelling when the verdict is unqualified', async () => {

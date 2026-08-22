@@ -1162,6 +1162,60 @@ describe('OrgApexSourceProvider', () => {
       })
     })
 
+    it('should resolve with the bare name only once when both the identity row and the org itself carry no namespace', async () => {
+      // Arrange — a non-namespaced org (unlike every other test in this
+      // suite, which pins ORG_NAMESPACE) is the one case where bare and
+      // qualified fold to the same value AND isOwnNamespace agrees with
+      // itself: skipping spellingsOf's early return would fall through into
+      // the own-namespace branch and duplicate the bare name instead of
+      // returning it once.
+      const repository = {
+        readCandidates: readCandidatesMock,
+        readBodyCandidates: readBodyCandidatesMock,
+        readIdentities: readIdentitiesMock,
+        getApexClassDependencies: getApexClassDependenciesMock,
+      } as unknown as ApexClassRepository
+      const suiteRepository = {
+        readMembers: readMembersMock,
+        readExistingSuiteNames: readExistingSuiteNamesMock,
+      } as unknown as ApexTestSuiteRepository
+      const entityDefinitionRepository = {
+        readByDeveloperNames: readByDeveloperNamesMock,
+      } as unknown as EntityDefinitionRepository
+      const nonNamespacedOrgSut = new OrgApexSourceProvider(
+        repository,
+        suiteRepository,
+        entityDefinitionRepository,
+        notifyMock,
+        null
+      )
+      readIdentitiesMock.mockResolvedValueOnce([
+        {
+          Id: 'ID1',
+          Name: 'TestClassTest',
+          NamespacePrefix: null,
+          ManageableState: 'unmanaged',
+        },
+      ])
+
+      // Act
+      const result = await nonNamespacedOrgSut.assessPerimeter([
+        'TestClassTest',
+      ])
+
+      // Assert
+      expect(result).toEqual({
+        skipped: [],
+        resolutions: [
+          {
+            classId: 'ID1',
+            displayName: 'TestClassTest',
+            lookupKeys: ['testclasstest'],
+          },
+        ],
+      })
+    })
+
     it('should resolve with an empty list when the identity row carries an empty-string namespace prefix', async () => {
       // Arrange — unmanaged: source this org owns, mutable.
       readIdentitiesMock.mockResolvedValueOnce([

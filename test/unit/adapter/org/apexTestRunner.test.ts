@@ -1093,6 +1093,38 @@ describe('ApexTestRunner', () => {
       })
     })
 
+    describe('given a synchronous single-class result matching the compile-failure fingerprint', () => {
+      it('then should surface the normalised row carrying the async transport token as its method name', async () => {
+        // Arrange
+        const syncCompileFailureRow = {
+          apexClass: { id: PROBE_CLASS_ID, name: 'AmtSyncDepTest' },
+          methodName: null,
+          outcome: ApexTestResultOutcome.Fail,
+          message: 'line 5, column 37: Variable does not exist: AmtSyncDep',
+          runTime: -1,
+        }
+        runTestSynchronousMock.mockResolvedValue({
+          summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 0 },
+          tests: [syncCompileFailureRow],
+        })
+
+        // Act
+        const result = await sut.runTestMethods(
+          new Set<TestMethodId>(['AmtSyncDepTest.someMethod'])
+        )
+
+        // Assert — the sync transport's methodName: null marker is rewritten
+        // to the same token the async transport emits for a compile failure.
+        expect(result.tests).toEqual([
+          mappedTest({
+            ...syncCompileFailureRow,
+            methodName: '<compile>',
+            outcome: ApexTestResultOutcome.CompileFail,
+          }),
+        ])
+      })
+    })
+
     describe('given a single-class id set spanning multiple methods', () => {
       it('then should fold every method into one synchronous test entry', async () => {
         // Arrange — no payload cap: every method travels in one item,
