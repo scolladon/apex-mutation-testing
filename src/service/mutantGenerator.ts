@@ -198,11 +198,15 @@ const mutatorNameSet = (mutatorFilter?: MutatorFilter): Set<string> =>
 const selectMutators = (
   mutatorFilter?: MutatorFilter
 ): MutatorRegistryEntry[] => {
+  // Read `include` up front, where `mutatorFilter` may genuinely be absent.
+  // Deferring the optional chain until after the size check would put it where
+  // an undefined filter is already impossible, making it dead syntax.
+  const include = mutatorFilter?.include
   const nameSet = mutatorNameSet(mutatorFilter)
   if (nameSet.size === 0) {
     return MUTATOR_REGISTRY
   }
-  const isInclude = Boolean(mutatorFilter?.include)
+  const isInclude = include !== undefined
   return MUTATOR_REGISTRY.filter(
     entry => isInclude === nameSet.has(entry.name.toLowerCase())
   )
@@ -326,10 +330,10 @@ export class MutantGenerator {
   private filterRegistry(
     mutatorFilter?: MutatorFilter
   ): MutatorRegistryEntry[] {
-    const nameSet = mutatorNameSet(mutatorFilter)
-    if (nameSet.size > 0) {
-      this.warnUnknownMutators(nameSet)
-    }
+    // Unguarded: warnUnknownMutators loops over the set, so an empty one is
+    // already a no-op. A `size > 0` guard would only be a mutation-proof
+    // equivalent — it cannot change the outcome for any input.
+    this.warnUnknownMutators(mutatorNameSet(mutatorFilter))
 
     const filtered = selectMutators(mutatorFilter)
     if (filtered.length === 0) {
