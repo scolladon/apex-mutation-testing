@@ -19,6 +19,16 @@ export const isLineSkipped = (
   // index yields `undefined`, and RE2JS `test(undefined)` throws rather than
   // failing to match. Both bounds matter — the walker never asks about a
   // non-positive line, but the diagnosis iterates org-supplied covered lines.
+  //
+  // The leading `skipPatterns.length === 0` clause, however, is not
+  // observable: dropping it does not skip the range guard (still evaluated
+  // via `||`), so when patterns are empty `sourceLine` stays a valid,
+  // in-range access and `[].some(...)` below is false regardless — same
+  // verdict, one extra no-op array access. Verified by hand-mutating this
+  // clause to `false` and running the full unit+integration+NUT suite
+  // (2115 tests): all pass unchanged. (No `Stryker disable` here — a prior
+  // stale disable on this exact line once hid four genuinely-killed
+  // mutants; do not reintroduce one.)
   if (skipPatterns.length === 0 || line < 1 || sourceLines.length < line) {
     return false
   }

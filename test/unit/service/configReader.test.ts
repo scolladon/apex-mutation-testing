@@ -273,6 +273,73 @@ describe('ConfigReader', () => {
     )
   })
 
+  it('Given config file with an array mixing a string and a non-string entry, When resolving config, Then rejects the shape (kills every→some)', async () => {
+    // Arrange — a single-non-string array like [42] cannot distinguish
+    // `.every` from `.some`: both return false, so isStringArray would look
+    // correct either way. Mixing in a real string entry separates them —
+    // `.every` still sees the non-string and returns false (invalid, as
+    // required), but `.some` would find the string entry and return true
+    // (wrongly valid), so only the `.every` implementation rejects this.
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({ mutators: { include: ['ArithmeticOperator', 42] } })
+    )
+
+    // Act & Assert
+    await expect(sut.resolve({ ...baseParameter })).rejects.toThrow(
+      "Invalid 'mutators.include' in config file '.mutation-testing.json': expected an array of strings (for example [\"90-100\"]), found an array with a non-string entry."
+    )
+  })
+
+  it('Given config file with skipPatterns as a bare string, When resolving config, Then rejects the shape naming skipPatterns', async () => {
+    // Arrange — pins the field-name argument passed to assertStringArray;
+    // without it, an emptied field name would still throw a matching enough
+    // message for a loose assertion to miss.
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({ skipPatterns: 'System\\.debug' })
+    )
+
+    // Act & Assert
+    await expect(sut.resolve({ ...baseParameter })).rejects.toThrow(
+      "Invalid 'skipPatterns' in config file '.mutation-testing.json': expected an array of strings (for example [\"90-100\"]), found string."
+    )
+  })
+
+  it('Given config file with a non-string entry in mutators.exclude, When resolving config, Then rejects the shape naming mutators.exclude', async () => {
+    // Arrange
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({ mutators: { exclude: [42] } })
+    )
+
+    // Act & Assert
+    await expect(sut.resolve({ ...baseParameter })).rejects.toThrow(
+      "Invalid 'mutators.exclude' in config file '.mutation-testing.json': expected an array of strings (for example [\"90-100\"]), found an array with a non-string entry."
+    )
+  })
+
+  it('Given config file with a non-string entry in testMethods.include, When resolving config, Then rejects the shape naming testMethods.include', async () => {
+    // Arrange
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({ testMethods: { include: [42] } })
+    )
+
+    // Act & Assert
+    await expect(sut.resolve({ ...baseParameter })).rejects.toThrow(
+      "Invalid 'testMethods.include' in config file '.mutation-testing.json': expected an array of strings (for example [\"90-100\"]), found an array with a non-string entry."
+    )
+  })
+
+  it('Given config file with a non-string entry in testMethods.exclude, When resolving config, Then rejects the shape naming testMethods.exclude', async () => {
+    // Arrange
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({ testMethods: { exclude: [42] } })
+    )
+
+    // Act & Assert
+    await expect(sut.resolve({ ...baseParameter })).rejects.toThrow(
+      "Invalid 'testMethods.exclude' in config file '.mutation-testing.json': expected an array of strings (for example [\"90-100\"]), found an array with a non-string entry."
+    )
+  })
+
   it('Given config file with threshold as a string, When resolving config, Then rejects the shape', async () => {
     // Arrange
     vi.mocked(readFile).mockResolvedValue(JSON.stringify({ threshold: '50' }))
@@ -388,25 +455,30 @@ describe('ConfigReader', () => {
     expect(result.lines).toEqual(['50-60'])
   })
 
-  it('Given config file with invalid line range format, When resolving config, Then throws validation error', async () => {
-    // Arrange
+  it('Given config file with invalid line range format, When resolving config, Then throws validation error naming the offending range', async () => {
+    // Arrange — asserts the full rendered sentence, not just a loose
+    // /Invalid line range/ match: a getMessage([range]) → getMessage([])
+    // mutant still renders "Invalid line range 'undefined': ..." which the
+    // loose regex could not tell apart from the real range.
     const config = { lines: ['abc'] }
     vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
     const parameter = { ...baseParameter }
 
     // Act & Assert
-    await expect(sut.resolve(parameter)).rejects.toThrow(/Invalid line range/)
+    await expect(sut.resolve(parameter)).rejects.toThrow(
+      "Invalid line range 'abc': must be a number or range (e.g., '10' or '1-10')"
+    )
   })
 
-  it('Given config file with reversed line range, When resolving config, Then throws validation error', async () => {
-    // Arrange
+  it('Given config file with reversed line range, When resolving config, Then throws validation error naming the offending range', async () => {
+    // Arrange — same rationale as above, for the invalidLineRangeOrder branch.
     const config = { lines: ['10-5'] }
     vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
     const parameter = { ...baseParameter }
 
     // Act & Assert
     await expect(sut.resolve(parameter)).rejects.toThrow(
-      /start must be less than or equal to end/
+      "Invalid line range '10-5': start must be less than or equal to end"
     )
   })
 

@@ -153,6 +153,17 @@ export class MutationTestingService {
     this.excludeTestMethods = excludeTestMethods
     this.skipPatterns = ConfigReader.compileSkipPatterns(skipPatterns, messages)
     this.allowedLines = ConfigReader.parseLineRanges(lines, messages)
+    // The `?? []` fallback is not observable: `this.requestedLines` is only
+    // read in buildNoMutationsError's 'line-range' arm, which diagnoseNoMutations
+    // only reaches when `this.allowedLines` is defined (see isLineWithinAllowed —
+    // an undefined allowedLines makes every line "in range", so `inRange` can
+    // never come back empty). ConfigReader.parseLineRanges only returns a
+    // defined Set when `lines` is a non-empty array, so whenever the fallback
+    // would matter (`lines` falsy/empty), `allowedLines` is undefined and the
+    // 'line-range' arm — the only reader of requestedLines — is unreachable.
+    // Verified by hand-mutating the fallback to a non-empty sentinel array and
+    // running the full unit+integration+NUT suite (2115 tests): all pass
+    // unchanged.
     this.requestedLines = lines ?? []
     this.mutationGroupingEnabled = mutationGrouping ?? false
     this.testClassOrigins = testClassOrigins

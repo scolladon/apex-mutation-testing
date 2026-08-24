@@ -1956,8 +1956,14 @@ describe('MutationTestingService', () => {
           // Arrange
           const localSut = serviceWithNoMutations()
 
-          // Act & Assert
-          await expect(localSut.process()).rejects.toThrow(
+          // Act
+          const outcome = localSut.process()
+
+          // Assert — kills the 'no-mutable-pattern' case-label mutants: a
+          // gutted switch arm rejects with `undefined`, which
+          // `.rejects.toThrow(string)` alone does not catch.
+          await expect(outcome).rejects.toBeInstanceOf(Error)
+          await expect(outcome).rejects.toThrow(
             "No mutations could be generated for 'TestClass'. 1 eligible line(s) but no mutable patterns found."
           )
         })
@@ -1969,8 +1975,12 @@ describe('MutationTestingService', () => {
           // registry for an empty list, so all 25 mutators actually ran.
           const localSut = serviceWithNoMutations({ includeMutators: [] })
 
-          // Act & Assert
-          await expect(localSut.process()).rejects.toThrow(
+          // Act
+          const outcome = localSut.process()
+
+          // Assert
+          await expect(outcome).rejects.toBeInstanceOf(Error)
+          await expect(outcome).rejects.toThrow(
             "No mutations could be generated for 'TestClass'. 1 eligible line(s) but no mutable patterns found."
           )
         })
@@ -1983,8 +1993,14 @@ describe('MutationTestingService', () => {
             lines: ['90-95', '98-100'],
           })
 
-          // Act & Assert
-          await expect(localSut.process()).rejects.toThrow(
+          // Act
+          const outcome = localSut.process()
+
+          // Assert — kills the 'line-range' case-label mutant: a gutted
+          // switch arm rejects with `undefined`, which `.rejects.toThrow`
+          // does not catch on its own.
+          await expect(outcome).rejects.toBeInstanceOf(Error)
+          await expect(outcome).rejects.toThrow(
             "No mutations could be generated for 'TestClass'. None of the 1 covered line(s) fall within the requested --lines range (90-95, 98-100)."
           )
         })
@@ -1998,8 +2014,14 @@ describe('MutationTestingService', () => {
             [1, 2]
           )
 
-          // Act & Assert
-          await expect(localSut.process()).rejects.toThrow(
+          // Act
+          const outcome = localSut.process()
+
+          // Assert — kills the 'skip-patterns' case-label mutant: a gutted
+          // switch arm rejects with `undefined`, which `.rejects.toThrow`
+          // does not catch on its own.
+          await expect(outcome).rejects.toBeInstanceOf(Error)
+          await expect(outcome).rejects.toThrow(
             "No mutations could be generated for 'TestClass'. All 1 candidate line(s) were excluded by --skip-patterns."
           )
         })
@@ -2016,8 +2038,14 @@ describe('MutationTestingService', () => {
             [1, 2]
           )
 
-          // Act & Assert
-          await expect(localSut.process()).rejects.toThrow(
+          // Act
+          const outcome = localSut.process()
+
+          // Assert — kills the 'mutator-filter' case-label mutant: a gutted
+          // switch arm rejects with `undefined`, which `.rejects.toThrow`
+          // does not catch on its own.
+          await expect(outcome).rejects.toBeInstanceOf(Error)
+          await expect(outcome).rejects.toThrow(
             "No mutations could be generated for 'TestClass'. 1 line(s) are eligible but no enabled mutator matched them. Widen --include-mutators or drop --exclude-mutators."
           )
         })
@@ -2032,8 +2060,12 @@ describe('MutationTestingService', () => {
             [1, 2]
           )
 
-          // Act & Assert
-          await expect(localSut.process()).rejects.toThrow(
+          // Act
+          const outcome = localSut.process()
+
+          // Assert
+          await expect(outcome).rejects.toBeInstanceOf(Error)
+          await expect(outcome).rejects.toThrow(
             "No mutations could be generated for 'TestClass'. 1 eligible line(s) but no mutable patterns found."
           )
         })
@@ -2051,8 +2083,12 @@ describe('MutationTestingService', () => {
             [1, 2]
           )
 
-          // Act & Assert
-          await expect(localSut.process()).rejects.toThrow(
+          // Act
+          const outcome = localSut.process()
+
+          // Assert
+          await expect(outcome).rejects.toBeInstanceOf(Error)
+          await expect(outcome).rejects.toThrow(
             "No mutations could be generated for 'TestClass'. 1 eligible line(s) but no mutable patterns found."
           )
         })
@@ -2069,8 +2105,12 @@ describe('MutationTestingService', () => {
             [1, 2]
           )
 
-          // Act & Assert
-          await expect(localSut.process()).rejects.toThrow(
+          // Act
+          const outcome = localSut.process()
+
+          // Assert
+          await expect(outcome).rejects.toBeInstanceOf(Error)
+          await expect(outcome).rejects.toThrow(
             "No mutations could be generated for 'TestClass'. 1 line(s) are eligible but no enabled mutator matched them. Widen --include-mutators or drop --exclude-mutators."
           )
         })
