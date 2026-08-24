@@ -180,6 +180,9 @@ describe('MutationTestingService', () => {
       const templates: Record<string, string> = {
         'error.noCoverage': `No test coverage found for '${args?.[0]}'. Ensure '${args?.[1]}' tests exercise the code you want to mutation test.`,
         'error.noMutations': `No mutations could be generated for '${args?.[0]}'. ${args?.[1]} line(s) covered but no mutable patterns found.`,
+        'error.noMutationsInLineRange': `No mutations could be generated for '${args?.[0]}'. None of the ${args?.[1]} covered line(s) fall within the requested --lines range (${args?.[2]}).`,
+        'error.noMutationsAfterSkipPatterns': `No mutations could be generated for '${args?.[0]}'. All ${args?.[1]} candidate line(s) were excluded by --skip-patterns.`,
+        'error.noMutationsForMutatorFilter': `No mutations could be generated for '${args?.[0]}'. ${args?.[1]} line(s) are eligible but no enabled mutator matched them. Widen --include-mutators or drop --exclude-mutators.`,
         'error.compilabilityCheckFailed': `The Apex class '${args?.[0]}' does not compile on the target org. Fix compilation errors before running mutation testing.\nError: ${args?.[1]}`,
         'info.timeEstimate': `Estimated time: ${args?.[0]}`,
         'info.timeEstimateBreakdown': `Deploy: ${args?.[0]}/mutant | Test: ${args?.[1]}/mutant | Mutants: ${args?.[2]}`,
@@ -1892,13 +1895,17 @@ describe('MutationTestingService', () => {
     })
 
     describe('When coverage exists but no mutations are generated', () => {
-      it('then should throw an error with helpful message', async () => {
-        // Arrange
+      // Every case below differs only in which filter the service was given;
+      // "the generator produced nothing, on a single covered line" is the
+      // shared arrangement.
+      const serviceWithNoMutations = (
+        parameters: Partial<ApexMutationParameter> = {}
+      ): MutationTestingService => {
         vi.mocked(MutantGenerator).mockImplementation(
           class {
             compute = vi
               .fn()
-              .mockReturnValue({ mutations: [], tokenStream: {} }) // No mutations
+              .mockReturnValue({ mutations: [], tokenStream: {} })
             mutate = vi.fn()
           }
         )
@@ -1911,11 +1918,69 @@ describe('MutationTestingService', () => {
             ]),
           })
         )
-
-        // Act & Assert
-        await expect(sut.process()).rejects.toThrow(
-          "No mutations could be generated for 'TestClass'. 1 line(s) covered but no mutable patterns found."
+        return new MutationTestingService(
+          progress,
+          spinner,
+          engine,
+          {
+            apexClassName: 'TestClass',
+            apexTestClassNames: ['TestClassTest'],
+            testClassResolutions: resolutionsFor(['TestClassTest']),
+            ...parameters,
+          } as ApexMutationParameter,
+          messagesMock,
+          outputSinkStub
         )
+      }
+
+      describe('given no filter narrowed the candidate set', () => {
+        it('then should report that no mutable pattern was found', async () => {
+          // Arrange
+          sut = serviceWithNoMutations()
+
+          // Act & Assert
+          await expect(sut.process()).rejects.toThrow(
+            "No mutations could be generated for 'TestClass'. 1 line(s) covered but no mutable patterns found."
+          )
+        })
+      })
+
+      describe('given a line range excluding every covered line', () => {
+        it('then should name the line range and echo the requested ranges', async () => {
+          // Arrange
+          sut = serviceWithNoMutations({ lines: ['90-100'] })
+
+          // Act & Assert
+          await expect(sut.process()).rejects.toThrow(
+            "No mutations could be generated for 'TestClass'. None of the 1 covered line(s) fall within the requested --lines range (90-100)."
+          )
+        })
+      })
+
+      describe('given skip patterns matching every candidate line', () => {
+        it('then should name the skip patterns', async () => {
+          // Arrange
+          sut = serviceWithNoMutations({ skipPatterns: ['getValue'] })
+
+          // Act & Assert
+          await expect(sut.process()).rejects.toThrow(
+            "No mutations could be generated for 'TestClass'. All 1 candidate line(s) were excluded by --skip-patterns."
+          )
+        })
+      })
+
+      describe('given a mutator filter with eligible lines remaining', () => {
+        it('then should name the mutator filter', async () => {
+          // Arrange
+          sut = serviceWithNoMutations({
+            includeMutators: ['ArithmeticOperator'],
+          })
+
+          // Act & Assert
+          await expect(sut.process()).rejects.toThrow(
+            "No mutations could be generated for 'TestClass'. 1 line(s) are eligible but no enabled mutator matched them. Widen --include-mutators or drop --exclude-mutators."
+          )
+        })
       })
     })
 

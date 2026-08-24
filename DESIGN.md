@@ -1660,6 +1660,31 @@ isLineEligible(line)
 
 When `--lines` is not provided, `allowedLines` is `undefined` (no range filter). When `--skip-patterns` is not provided, `skipPatterns` is an empty array (no pattern filter). This means the default behavior (no flags) is identical to the previous `coveredLines.has()` check.
 
+The two configurable filters live in `src/service/lineEligibility.ts` (`isLineWithinAllowed`, `isLineSkipped`) rather than inline, because the empty-mutation-set diagnosis below replays the same rules. One definition per rule means a change to either filter cannot silently make the diagnosis disagree with the walker.
+
+### Diagnosing an Empty Mutation Set
+
+When `MutantGenerator.compute()` returns zero mutations, the mutators are rarely the cause — far more often one of the user's own filters emptied the candidate set first. Reporting the class-wide covered-line count in that situation is actively misleading, because that count is taken *before* `--lines` narrowing. `diagnoseNoMutations()` (`src/service/noMutationsDiagnosis.ts`) replays the line filters over `coveredLines` and reports the **first** filter that emptied the set, so the message names the flag the user actually has to change:
+
+```text
+diagnoseNoMutations({ coveredLines, allowedLines, skipPatterns,
+                      sourceLines, mutatorFilterActive })
+    │
+    ├─ no covered line within allowedLines?    → 'line-range'
+    │                                            (error.noMutationsInLineRange)
+    │
+    ├─ every in-range line skipped by pattern? → 'skip-patterns'
+    │                                            (error.noMutationsAfterSkipPatterns)
+    │
+    ├─ mutator filter active?                  → 'mutator-filter'
+    │                                            (error.noMutationsForMutatorFilter)
+    │
+    └─ otherwise                               → 'no-mutable-pattern'
+                                                 (error.noMutations)
+```
+
+`MutationTestingService.buildNoMutationsError()` maps each reason onto its message key, echoing the raw `--lines` ranges the user typed for the `line-range` case. The diagnosis runs only on the empty path, so the Proxy's hot path stays uninstrumented. Precondition: `coveredLines` is non-empty — `extractCoveredLines()` throws `error.noCoverage` before this point.
+
 ### re2js for Regex Safety
 
 Skip patterns use [re2js](https://github.com/le0pard/re2js) — a pure-JS port of Google's RE2/J

@@ -44,6 +44,7 @@ import {
   calculateMutationPosition,
   extractMutationOriginalText,
 } from './mutationLocation.js'
+import { diagnoseNoMutations } from './noMutationsDiagnosis.js'
 import type { SkipPattern } from './skipPattern.js'
 import {
   formatSkippedTestClasses,
@@ -109,6 +110,9 @@ export class MutationTestingService {
   protected readonly excludeTestMethods: string[] | undefined
   private readonly skipPatterns: SkipPattern[]
   private readonly allowedLines: Set<number> | undefined
+  // Kept alongside the parsed set so the empty-mutation-set diagnosis can echo
+  // the ranges the user actually typed, not a reconstruction of them.
+  private readonly requestedLines: string[]
   private readonly mutationGroupingEnabled: boolean
   private readonly testClassOrigins: TestClassOrigins | undefined
   private readonly testClassResolutions: TestClassResolutions
@@ -145,6 +149,7 @@ export class MutationTestingService {
     this.excludeTestMethods = excludeTestMethods
     this.skipPatterns = ConfigReader.compileSkipPatterns(skipPatterns)
     this.allowedLines = ConfigReader.parseLineRanges(lines)
+    this.requestedLines = lines ?? []
     this.mutationGroupingEnabled = mutationGrouping ?? false
     this.testClassOrigins = testClassOrigins
     this.testClassResolutions = testClassResolutions ?? new Map()
@@ -609,16 +614,59 @@ export class MutationTestingService {
 
     if (mutations.length === 0) {
       this.spinner.stop('0 mutations generated')
-      throw new Error(
-        this.messages.getMessage('error.noMutations', [
-          this.apexClassName,
-          coveredLines.size,
-        ])
-      )
+      throw this.buildNoMutationsError(coveredLines, apexClass.Body)
     }
 
     this.spinner.stop(`${mutations.length} mutations generated`)
     return { mutations, mutantGenerator, tokenStream }
+  }
+
+  // An empty mutation set is almost never "the mutators found nothing" — far
+  // more often one of the user's own filters emptied the candidate set first.
+  // Naming the filter that did it turns a dead end into an actionable message.
+  private buildNoMutationsError(
+    coveredLines: Set<number>,
+    classContent: string
+  ): Error {
+    const diagnosis = diagnoseNoMutations({
+      coveredLines,
+      allowedLines: this.allowedLines,
+      skipPatterns: this.skipPatterns,
+      sourceLines: classContent.split('\n'),
+      mutatorFilterActive: this.buildMutatorFilter() !== undefined,
+    })
+
+    switch (diagnosis.reason) {
+      case 'line-range':
+        return new Error(
+          this.messages.getMessage('error.noMutationsInLineRange', [
+            this.apexClassName,
+            diagnosis.coveredCount,
+            this.requestedLines.join(', '),
+          ])
+        )
+      case 'skip-patterns':
+        return new Error(
+          this.messages.getMessage('error.noMutationsAfterSkipPatterns', [
+            this.apexClassName,
+            diagnosis.inRangeCount,
+          ])
+        )
+      case 'mutator-filter':
+        return new Error(
+          this.messages.getMessage('error.noMutationsForMutatorFilter', [
+            this.apexClassName,
+            diagnosis.eligibleCount,
+          ])
+        )
+      default:
+        return new Error(
+          this.messages.getMessage('error.noMutations', [
+            this.apexClassName,
+            diagnosis.coveredCount,
+          ])
+        )
+    }
   }
 
   private buildMutatorFilter():

@@ -1,4 +1,5 @@
 import { MutantGenerator } from '../../src/service/mutantGenerator.js'
+import { compileSkipPattern } from '../../src/service/skipPattern.js'
 
 describe('MutantGenerator filtering integration', () => {
   const apexCode = `public class MultiMutatorClass {
@@ -58,5 +59,59 @@ describe('MutantGenerator filtering integration', () => {
     expect(result.some(m => m.mutationName === 'IncrementMutator')).toBe(false)
     const mutatorNames = new Set(result.map(m => m.mutationName))
     expect(mutatorNames.size).toBeGreaterThan(1)
+  })
+
+  it('Given a line range excluding every covered line, When computing, Then no mutations returned', () => {
+    // Arrange
+    const sut = new MutantGenerator()
+
+    // Act
+    const { mutations: result } = sut.compute(
+      apexCode,
+      allLines,
+      undefined,
+      undefined,
+      [],
+      new Set([90, 100])
+    )
+
+    // Assert
+    expect(result).toEqual([])
+  })
+
+  it('Given a line range covering the comparison, When computing, Then only mutations on that line returned', () => {
+    // Arrange
+    const sut = new MutantGenerator()
+
+    // Act
+    const { mutations: result } = sut.compute(
+      apexCode,
+      allLines,
+      undefined,
+      undefined,
+      [],
+      new Set([3])
+    )
+
+    // Assert
+    expect(result.length).toBeGreaterThan(0)
+    expect(result.every(m => m.target.startToken.line === 3)).toBe(true)
+  })
+
+  it('Given a skip pattern matching every covered line, When computing, Then no mutations returned', () => {
+    // Arrange
+    const sut = new MutantGenerator()
+
+    // Act
+    const { mutations: result } = sut.compute(
+      apexCode,
+      allLines,
+      undefined,
+      undefined,
+      [compileSkipPattern('.')]
+    )
+
+    // Assert
+    expect(result).toEqual([])
   })
 })

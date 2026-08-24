@@ -112,6 +112,18 @@ Apex test suite '%s' contains no Apex test classes. Add classes to it in Setup >
 
 No mutations could be generated for '%s'. %s line(s) covered but no mutable patterns found.
 
+# error.noMutationsInLineRange
+
+No mutations could be generated for '%s'. None of the %s covered line(s) fall within the requested --lines range (%s).
+
+# error.noMutationsAfterSkipPatterns
+
+No mutations could be generated for '%s'. All %s candidate line(s) were excluded by --skip-patterns.
+
+# error.noMutationsForMutatorFilter
+
+No mutations could be generated for '%s'. %s line(s) are eligible but no enabled mutator matched them. Widen --include-mutators or drop --exclude-mutators.
+
 # flags.dry-run.summary
 
 Preview mutations without deploying or running tests

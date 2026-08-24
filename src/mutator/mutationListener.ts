@@ -1,5 +1,9 @@
 import { ParserRuleContext } from 'antlr4ts'
 import { ApexParserListener } from 'apex-parser'
+import {
+  isLineSkipped,
+  isLineWithinAllowed,
+} from '../service/lineEligibility.js'
 import type { SkipPattern } from '../service/skipPattern.js'
 import { ApexMutation } from '../type/ApexMutation.js'
 import { BaseListener } from './baseListener.js'
@@ -80,18 +84,9 @@ export class MutationListener implements ApexParserListener {
     if (!this.coveredLines.has(line)) {
       return false
     }
-    if (this.allowedLines !== undefined && !this.allowedLines.has(line)) {
+    if (!isLineWithinAllowed(line, this.allowedLines)) {
       return false
     }
-    // The length check is a short circuit: `some` over an empty pattern list is
-    // already false, so skipping it changes cost, not the verdict.
-    // Stryker disable next-line ConditionalExpression,EqualityOperator: short circuit only.
-    if (this.skipPatterns.length > 0 && this.sourceLines.length >= line) {
-      const sourceLine = this.sourceLines[line - 1]
-      if (this.skipPatterns.some(pattern => pattern.test(sourceLine))) {
-        return false
-      }
-    }
-    return true
+    return !isLineSkipped(line, this.skipPatterns, this.sourceLines)
   }
 }

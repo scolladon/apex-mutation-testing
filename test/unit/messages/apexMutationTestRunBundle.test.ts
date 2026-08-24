@@ -250,4 +250,44 @@ describe('apex.mutation.test.run message bundle', () => {
       "Apex class name 'namespaced__Mutation' uses the object convention 'Namespace__Name'. Apex classes use the dotted convention instead: write 'Namespace.Name'."
     )
   })
+
+  it('Given a line range excluding every covered line, When error.noMutationsInLineRange is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
+    // Act
+    const sut = messages.getMessage('error.noMutationsInLineRange', [
+      'PersonDataService',
+      63,
+      '90-100',
+    ])
+
+    // Assert
+    expect(sut).toBe(
+      "No mutations could be generated for 'PersonDataService'. None of the 63 covered line(s) fall within the requested --lines range (90-100)."
+    )
+  })
+
+  it('Given skip patterns matching every candidate line, When error.noMutationsAfterSkipPatterns is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
+    // Act
+    const sut = messages.getMessage('error.noMutationsAfterSkipPatterns', [
+      'PersonDataService',
+      63,
+    ])
+
+    // Assert
+    expect(sut).toBe(
+      "No mutations could be generated for 'PersonDataService'. All 63 candidate line(s) were excluded by --skip-patterns."
+    )
+  })
+
+  it('Given a mutator filter leaving eligible lines, When error.noMutationsForMutatorFilter is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
+    // Act
+    const sut = messages.getMessage('error.noMutationsForMutatorFilter', [
+      'PersonDataService',
+      63,
+    ])
+
+    // Assert
+    expect(sut).toBe(
+      "No mutations could be generated for 'PersonDataService'. 63 line(s) are eligible but no enabled mutator matched them. Widen --include-mutators or drop --exclude-mutators."
+    )
+  })
 })
