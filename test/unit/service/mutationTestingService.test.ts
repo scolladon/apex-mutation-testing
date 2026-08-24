@@ -12,7 +12,10 @@ import {
   RUN_TESTS,
   SKIP_TESTS,
 } from '../../../src/port/mutationTestBed.js'
-import { MutantGenerator } from '../../../src/service/mutantGenerator.js'
+import {
+  MutantGenerator,
+  mutatorFilterNarrows,
+} from '../../../src/service/mutantGenerator.js'
 import { MutationTestingService } from '../../../src/service/mutationTestingService.js'
 import {
   formatDuration,
@@ -34,6 +37,10 @@ import {
 
 vi.mock('../../../src/service/mutantGenerator.js')
 vi.mock('../../../src/service/typeDiscoverer.js')
+const { mutatorFilterNarrows: realMutatorFilterNarrows } =
+  await vi.importActual<
+    typeof import('../../../src/service/mutantGenerator.js')
+  >('../../../src/service/mutantGenerator.js')
 vi.mock('../../../src/service/timeUtils.js')
 vi.mock('../../../src/service/typeMatcher.js')
 // Partial mock — keep buildAdjacency/decideExactOutcome real so the
@@ -212,6 +219,11 @@ describe('MutationTestingService', () => {
         analyzeFull = vi.fn().mockResolvedValue(mockAnalyzeFullResult)
       }
     )
+
+    // The module is auto-mocked for the MutantGenerator class, but the
+    // no-mutation diagnosis must consult the REAL registry — otherwise these
+    // tests assert a mock's opinion of whether a filter narrowed anything.
+    vi.mocked(mutatorFilterNarrows).mockImplementation(realMutatorFilterNarrows)
 
     vi.mocked(formatDuration).mockReturnValue('~5s')
     vi.mocked(formatRemainingTime).mockReturnValue('Remaining: ~5s | ')
@@ -2007,6 +2019,41 @@ describe('MutationTestingService', () => {
           // Act & Assert
           await expect(localSut.process()).rejects.toThrow(
             "No mutations could be generated for 'TestClass'. 1 line(s) are eligible but no enabled mutator matched them. Widen --include-mutators or drop --exclude-mutators."
+          )
+        })
+      })
+
+      describe('given skip patterns that narrowed without emptying the set', () => {
+        it('then should report the eligible count, not the covered count', async () => {
+          // Arrange — covered 2, eligible 1. Reading coveredLines.size here
+          // would reprint the misleading figure issue #161 is about.
+          const localSut = serviceWithNoMutations(
+            { skipPatterns: ['getValue'] },
+            [1, 2]
+          )
+
+          // Act & Assert
+          await expect(localSut.process()).rejects.toThrow(
+            "No mutations could be generated for 'TestClass'. 1 eligible line(s) but no mutable patterns found."
+          )
+        })
+      })
+
+      describe('given an exclude filter naming no known mutator', () => {
+        it('then should not blame the mutator filter', async () => {
+          // Arrange — a typo excludes nothing, so all mutators still ran and
+          // dropping the flag could not help.
+          const localSut = serviceWithNoMutations(
+            {
+              skipPatterns: ['getValue'],
+              excludeMutators: ['NoSuchMutator'],
+            },
+            [1, 2]
+          )
+
+          // Act & Assert
+          await expect(localSut.process()).rejects.toThrow(
+            "No mutations could be generated for 'TestClass'. 1 eligible line(s) but no mutable patterns found."
           )
         })
       })

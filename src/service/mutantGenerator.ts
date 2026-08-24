@@ -182,6 +182,39 @@ const MUTATOR_REGISTRY: MutatorRegistryEntry[] = [
   },
 ]
 
+export type MutatorFilter = { include?: string[]; exclude?: string[] }
+
+const mutatorNameSet = (mutatorFilter?: MutatorFilter): Set<string> =>
+  new Set(
+    (mutatorFilter?.include ?? mutatorFilter?.exclude ?? []).map(name =>
+      name.toLowerCase()
+    )
+  )
+
+// The registry the walker will actually run. An absent filter and one whose
+// name list is empty both select everything — the two are indistinguishable
+// downstream, which is why callers must not treat "a filter object exists" as
+// "a filter narrowed something".
+const selectMutators = (
+  mutatorFilter?: MutatorFilter
+): MutatorRegistryEntry[] => {
+  const nameSet = mutatorNameSet(mutatorFilter)
+  if (nameSet.size === 0) {
+    return MUTATOR_REGISTRY
+  }
+  const isInclude = Boolean(mutatorFilter?.include)
+  return MUTATOR_REGISTRY.filter(
+    entry => isInclude === nameSet.has(entry.name.toLowerCase())
+  )
+}
+
+// True only when the filter removes at least one mutator. A list of names that
+// match nothing — a typo in --exclude-mutators — leaves the registry whole, so
+// blaming it for an empty mutation set would send the user after a flag that
+// never narrowed anything.
+export const mutatorFilterNarrows = (mutatorFilter?: MutatorFilter): boolean =>
+  selectMutators(mutatorFilter).length < MUTATOR_REGISTRY.length
+
 interface MutantGeneratorComputeResult {
   mutations: ApexMutation[]
   tokenStream: CommonTokenStream
@@ -202,7 +235,7 @@ export class MutantGenerator {
     classContent: string,
     coveredLines: Set<number>,
     typeRegistry?: TypeRegistry,
-    mutatorFilter?: { include?: string[]; exclude?: string[] },
+    mutatorFilter?: MutatorFilter,
     skipPatterns: SkipPattern[] = [],
     allowedLines?: Set<number>,
     preParsed?: PreParsedInput
@@ -290,27 +323,15 @@ export class MutantGenerator {
     }
   }
 
-  private filterRegistry(mutatorFilter?: {
-    include?: string[]
-    exclude?: string[]
-  }): MutatorRegistryEntry[] {
-    if (!mutatorFilter) {
-      return MUTATOR_REGISTRY
+  private filterRegistry(
+    mutatorFilter?: MutatorFilter
+  ): MutatorRegistryEntry[] {
+    const nameSet = mutatorNameSet(mutatorFilter)
+    if (nameSet.size > 0) {
+      this.warnUnknownMutators(nameSet)
     }
 
-    const names = mutatorFilter.include ?? mutatorFilter.exclude ?? []
-    const nameSet = new Set(names.map(n => n.toLowerCase()))
-    if (nameSet.size === 0) {
-      return MUTATOR_REGISTRY
-    }
-    this.warnUnknownMutators(nameSet)
-
-    const isInclude = Boolean(mutatorFilter.include)
-    const filtered = MUTATOR_REGISTRY.filter(entry => {
-      const match = nameSet.has(entry.name.toLowerCase())
-      return isInclude ? match : !match
-    })
-
+    const filtered = selectMutators(mutatorFilter)
     if (filtered.length === 0) {
       throw new Error('All mutators have been excluded by configuration')
     }

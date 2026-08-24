@@ -34,7 +34,11 @@ import {
 } from './engineNotice.js'
 import { decideExactOutcome, solveColoring } from './exactColoring.js'
 import { GroupExecutor } from './groupExecutor.js'
-import { MutantGenerator } from './mutantGenerator.js'
+import {
+  MutantGenerator,
+  type MutatorFilter,
+  mutatorFilterNarrows,
+} from './mutantGenerator.js'
 import {
   assembleGroups,
   groupMutationsWithInternals,
@@ -626,19 +630,17 @@ export class MutationTestingService {
   // Naming the filter that did it turns a dead end into an actionable message.
   private buildNoMutationsError(
     coveredLines: Set<number>,
-    mutatorFilter: { include?: string[]; exclude?: string[] } | undefined
+    mutatorFilter: MutatorFilter | undefined
   ): Error {
     const diagnosis = diagnoseNoMutations({
       coveredLines,
       allowedLines: this.allowedLines,
       skipPatterns: this.skipPatterns,
       sourceLines: this.apexClassContent.split('\n'),
-      // An empty include/exclude list is NOT a filter: MutantGenerator's
-      // filterRegistry falls back to the full registry for it. Deriving this
-      // from `mutatorFilter !== undefined` would blame a knob that never
-      // narrowed anything.
-      mutatorFilterActive:
-        (mutatorFilter?.include ?? mutatorFilter?.exclude ?? []).length > 0,
+      // Asks the generator whether the registry actually shrank, rather than
+      // re-deriving it here: an empty list and a list of unknown names both
+      // leave every mutator enabled, and neither should be blamed.
+      mutatorFilterActive: mutatorFilterNarrows(mutatorFilter),
     })
 
     switch (diagnosis.reason) {

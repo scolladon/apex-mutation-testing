@@ -1685,7 +1685,7 @@ diagnoseNoMutations({ coveredLines, allowedLines, skipPatterns,
 
 Every reason reports the count of the set that was actually examined — `coveredCount` for `line-range`, `inRangeCount` for `skip-patterns`, `eligibleCount` for both `mutator-filter` and `no-mutable-pattern`. The last one matters: on a narrowed run the class-wide covered count is precisely the misleading figure the change exists to remove, so the fall-through arm reports eligible lines too. With no flags set the two coincide, so an unfiltered run reports the same number it always did.
 
-`mutatorFilterActive` is derived from the include/exclude list being **non-empty**, not from its presence: `MutantGenerator.filterRegistry()` falls back to the full registry for an empty list, so `{"mutators": {"include": []}}` in a config file runs all 25 mutators and must not be blamed for an empty result.
+`mutatorFilterActive` is answered by `mutantGenerator.mutatorFilterNarrows()` rather than re-derived from the filter object, so the diagnosis cannot disagree with the registry the walker actually ran. Two shapes leave the full registry in place and must therefore never be blamed: an empty list (`{"mutators": {"include": []}}` in a config file) and a list whose names match no mutator (a typo in `--exclude-mutators`).
 
 `MutationTestingService.buildNoMutationsError()` maps each reason onto its message key, echoing the raw `--lines` ranges the user typed for the `line-range` case. The diagnosis runs only on the empty path, so the Proxy's hot path stays uninstrumented. Precondition: `coveredLines` is non-empty — `extractCoveredLines()` throws `error.noCoverage` before this point.
 
