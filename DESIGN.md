@@ -1584,7 +1584,11 @@ CLI flags > config file > defaults (all mutators, all tests, no threshold)
 
 `ConfigReader.resolve()` merges config file values with CLI flag overrides using `??` (CLI wins when present). Include/exclude pairs are mutually exclusive — enforced by oclif `exclusive` flag attribute. `skipPatterns` and `lines` follow the same merge precedence: CLI flags override config file values.
 
-**Config file shape is validated before merging.** `readConfigFile()` ends in `JSON.parse(content) as MutationTestingConfig` — an unchecked cast, so the declared types are a promise the file never had to keep. `assertConfigShape()` runs immediately afterwards and rejects any field whose runtime type contradicts the interface, naming the field, the file and the type found.
+**Config file shape is validated before merging.** `readConfigFile()` returns the raw `JSON.parse` result — deliberately `unknown`, not a cast — and `assertConfigShape()` parses it through a zod schema, returning the validated value. The schema is the single source of truth: `MutationTestingConfig` is `z.infer<typeof configSchema>`, so a field cannot be added to the type and forgotten in the check. Unknown keys are stripped rather than rejected, so a config written for a newer plugin version stays readable by an older one.
+
+zod is already in the dependency graph via `@salesforce/core`, so declaring it direct adds no install weight — but it must stay pinned to the same version to remain deduped.
+
+Errors are reported through the message bundle, not zod's default text: the failing `issue.path` names the field (`mutators.include.1` for a bad array element), and the offending value is read back out of the input to name the type found, since zod reports `expected` but not `received`. Four keys cover every shape the schema can reject — `error.configFieldNotStringArray`, `error.configEntryNotString`, `error.configFieldNotNumber`, `error.configFieldNotBoolean`.
 
 The field that makes this load-bearing is `lines`. Both `validate()` and `parseLineRanges()` walk it with `for...of`, and `for...of` iterates a **string** character by character — so a scalar where an array belongs is not a type error at runtime, it is a different, silently-accepted input:
 

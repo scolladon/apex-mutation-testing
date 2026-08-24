@@ -245,6 +245,10 @@ Failed to parse config file '%s': %s
 
 Invalid '%s' in config file '%s': expected an array of strings (for example ["90-100"]), found %s. A bare value is not accepted — wrap it in an array.
 
+# error.configEntryNotString
+
+Invalid entry at '%s' in config file '%s': expected a string, found %s.
+
 # error.configFieldNotNumber
 
 Invalid '%s' in config file '%s': expected a number, found %s.

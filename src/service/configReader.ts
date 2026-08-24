@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 
 import { Messages } from '@salesforce/core'
+import { z } from 'zod'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { compileSkipPattern, type SkipPattern } from './skipPattern.js'
 
@@ -33,28 +34,52 @@ const APEX_CLASS_NAME_PATTERN =
 // convention typed by mistake for the dotted class convention.
 const OBJECT_CONVENTION_SEPARATOR = '__'
 
-interface MutationTestingConfig {
-  mutators?: {
-    include?: string[]
-    exclude?: string[]
-  }
-  testMethods?: {
-    include?: string[]
-    exclude?: string[]
-  }
-  threshold?: number
-  skipPatterns?: string[]
-  lines?: string[]
-  mutationGrouping?: boolean
+const nameListSchema = z
+  .object({
+    include: z.array(z.string()).optional(),
+    exclude: z.array(z.string()).optional(),
+  })
+  .optional()
+
+// The schema is the single source of truth for the config file's shape: the
+// type below is inferred from it, so a field cannot be added to one and
+// forgotten in the other. Unknown keys are stripped rather than rejected,
+// which keeps a config written for a newer plugin version readable by an
+// older one.
+const configSchema = z.object({
+  mutators: nameListSchema,
+  testMethods: nameListSchema,
+  threshold: z.number().optional(),
+  skipPatterns: z.array(z.string()).optional(),
+  lines: z.array(z.string()).optional(),
+  mutationGrouping: z.boolean().optional(),
+})
+
+type MutationTestingConfig = z.infer<typeof configSchema>
+
+// zod reports `expected` but not the value it found, so the offending value is
+// read back out of the input by walking the issue path.
+const valueAtPath = (
+  root: unknown,
+  path: ReadonlyArray<PropertyKey>
+): unknown =>
+  path.reduce<unknown>(
+    (value, key) => (value as Record<PropertyKey, unknown> | undefined)?.[key],
+    root
+  )
+
+const MESSAGE_KEY_BY_EXPECTED: Record<string, string> = {
+  number: 'error.configFieldNotNumber',
+  boolean: 'error.configFieldNotBoolean',
+  string: 'error.configEntryNotString',
 }
 
-const isStringArray = (value: unknown): boolean =>
-  Array.isArray(value) && value.every(entry => typeof entry === 'string')
+const CONFIG_ARRAY_MESSAGE_KEY = 'error.configFieldNotStringArray'
 
 // Names the shape the user actually wrote, so the message can contrast it with
 // the expected one. `typeof []` is 'object', which tells the reader nothing.
 const describeType = (value: unknown): string =>
-  Array.isArray(value) ? 'an array with a non-string entry' : typeof value
+  Array.isArray(value) ? 'an array' : typeof value
 
 export class ConfigReader {
   constructor(private readonly messages: Messages<string>) {}
@@ -67,10 +92,11 @@ export class ConfigReader {
     ConfigReader.assertClassName(parameter.apexClassName, this.messages)
 
     const configPath = parameter.configFile ?? DEFAULT_CONFIG_FILE
-    const fileConfig = await this.readConfigFile(configPath)
-    if (fileConfig) {
-      this.assertConfigShape(fileConfig, configPath)
-    }
+    const rawConfig = await this.readConfigFile(configPath)
+    const fileConfig =
+      rawConfig === undefined
+        ? undefined
+        : this.assertConfigShape(rawConfig, configPath)
 
     const resolved: ApexMutationParameter = {
       ...parameter,
@@ -102,12 +128,12 @@ export class ConfigReader {
     return resolved
   }
 
-  private async readConfigFile(
-    configPath: string
-  ): Promise<MutationTestingConfig | undefined> {
+  // Returns the raw parse: the shape is asserted by assertConfigShape, not
+  // claimed by a cast here.
+  private async readConfigFile(configPath: string): Promise<unknown> {
     try {
       const content = await readFile(configPath, 'utf-8')
-      return JSON.parse(content) as MutationTestingConfig
+      return JSON.parse(content)
     } catch (error: unknown) {
       if (
         error &&
@@ -126,86 +152,33 @@ export class ConfigReader {
     }
   }
 
-  // `JSON.parse(...) as MutationTestingConfig` is an unchecked cast, so the
-  // declared types are a promise the file never had to keep. The shapes below
-  // are the ones whose consumers would otherwise misread a wrong type rather
-  // than reject it — `lines` most of all: `validate()` and `parseLineRanges()`
-  // both walk it with `for...of`, which iterates a STRING character by
-  // character, so `"lines": "42"` would silently mutate lines 4 and 2.
+  // The config file is untrusted input: `JSON.parse` returns `any`, so without
+  // this the declared shape is a promise the file never had to keep. `lines` is
+  // why it matters most — both `validate()` and `parseLineRanges()` walk it with
+  // `for...of`, which iterates a STRING character by character, so
+  // `"lines": "42"` would silently mutate lines 4 and 2 instead of failing.
   private assertConfigShape(
-    config: MutationTestingConfig,
+    config: unknown,
     configPath: string
-  ): void {
-    this.assertStringArray(config.lines, 'lines', configPath)
-    this.assertStringArray(config.skipPatterns, 'skipPatterns', configPath)
-    this.assertStringArray(
-      config.mutators?.include,
-      'mutators.include',
-      configPath
-    )
-    this.assertStringArray(
-      config.mutators?.exclude,
-      'mutators.exclude',
-      configPath
-    )
-    this.assertStringArray(
-      config.testMethods?.include,
-      'testMethods.include',
-      configPath
-    )
-    this.assertStringArray(
-      config.testMethods?.exclude,
-      'testMethods.exclude',
-      configPath
-    )
-    this.assertPrimitive(
-      config.threshold,
-      'number',
-      'error.configFieldNotNumber',
-      'threshold',
-      configPath
-    )
-    this.assertPrimitive(
-      config.mutationGrouping,
-      'boolean',
-      'error.configFieldNotBoolean',
-      'mutationGrouping',
-      configPath
-    )
-  }
-
-  private assertStringArray(
-    value: unknown,
-    field: string,
-    configPath: string
-  ): void {
-    if (value === undefined || isStringArray(value)) {
-      return
+  ): MutationTestingConfig {
+    const result = configSchema.safeParse(config)
+    if (result.success) {
+      return result.data
     }
-    throw new Error(
-      this.messages.getMessage('error.configFieldNotStringArray', [
-        field,
-        configPath,
-        describeType(value),
-      ])
-    )
-  }
 
-  private assertPrimitive(
-    value: unknown,
-    expected: 'number' | 'boolean',
-    messageKey: string,
-    field: string,
-    configPath: string
-  ): void {
-    if (value === undefined || typeof value === expected) {
-      return
-    }
+    const [issue] = result.error.issues
+    // Every issue this schema can raise is an `invalid_type`: it uses only
+    // object/array/string/number/boolean, and unknown keys are stripped rather
+    // than reported. Narrowing on `issue.code` would add a branch no input can
+    // exercise, which the 100% branch-coverage gate would then reject.
+    const { expected } = issue as { expected?: string }
+    const messageKey =
+      MESSAGE_KEY_BY_EXPECTED[String(expected)] ?? CONFIG_ARRAY_MESSAGE_KEY
     throw new Error(
       this.messages.getMessage(messageKey, [
-        field,
+        issue.path.join('.'),
         configPath,
-        describeType(value),
+        describeType(valueAtPath(config, issue.path)),
       ])
     )
   }

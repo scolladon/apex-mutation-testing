@@ -268,6 +268,11 @@ describe('apex.mutation.test.run message bundle', () => {
       "Invalid 'lines' in config file '.mutation-testing.json': expected an array of strings (for example [\"90-100\"]), found string. A bare value is not accepted — wrap it in an array.",
     ],
     [
+      'error.configEntryNotString',
+      ['mutators.include.1', '.mutation-testing.json', 'number'],
+      "Invalid entry at 'mutators.include.1' in config file '.mutation-testing.json': expected a string, found number.",
+    ],
+    [
       'error.configFieldNotNumber',
       ['threshold', '.mutation-testing.json', 'string'],
       "Invalid 'threshold' in config file '.mutation-testing.json': expected a number, found string.",

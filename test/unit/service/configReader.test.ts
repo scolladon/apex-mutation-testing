@@ -44,6 +44,7 @@ describe('ConfigReader', () => {
           'error.objectConventionClassName': `Object convention: '${args?.[0]}'`,
           'error.configFileUnreadable': `Failed to parse config file '${args?.[0]}': ${args?.[1]}`,
           'error.configFieldNotStringArray': `Invalid '${args?.[0]}' in config file '${args?.[1]}': expected an array of strings (for example ["90-100"]), found ${args?.[2]}. A bare value is not accepted — wrap it in an array.`,
+          'error.configEntryNotString': `Invalid entry at '${args?.[0]}' in config file '${args?.[1]}': expected a string, found ${args?.[2]}.`,
           'error.configFieldNotNumber': `Invalid '${args?.[0]}' in config file '${args?.[1]}': expected a number, found ${args?.[2]}.`,
           'error.configFieldNotBoolean': `Invalid '${args?.[0]}' in config file '${args?.[1]}': expected a boolean, found ${args?.[2]}.`,
           'error.invalidLineRange': `Invalid line range '${args?.[0]}': must be a number or range (e.g., '10' or '1-10')`,
@@ -261,32 +262,16 @@ describe('ConfigReader', () => {
     )
   })
 
-  it('Given config file with a non-string entry in a string array, When resolving config, Then rejects the shape', async () => {
-    // Arrange
-    vi.mocked(readFile).mockResolvedValue(
-      JSON.stringify({ mutators: { include: [42] } })
-    )
-
-    // Act & Assert
-    await expect(sut.resolve({ ...baseParameter })).rejects.toThrow(
-      "Invalid 'mutators.include' in config file '.mutation-testing.json': expected an array of strings (for example [\"90-100\"]), found an array with a non-string entry."
-    )
-  })
-
-  it('Given config file with an array mixing a string and a non-string entry, When resolving config, Then rejects the shape (kills every→some)', async () => {
-    // Arrange — a single-non-string array like [42] cannot distinguish
-    // `.every` from `.some`: both return false, so isStringArray would look
-    // correct either way. Mixing in a real string entry separates them —
-    // `.every` still sees the non-string and returns false (invalid, as
-    // required), but `.some` would find the string entry and return true
-    // (wrongly valid), so only the `.every` implementation rejects this.
+  it('Given config file with a non-string entry in a string array, When resolving config, Then names the offending entry by index', async () => {
+    // Arrange — the second entry is the bad one, so an implementation that
+    // reported the field rather than the entry could not produce this path.
     vi.mocked(readFile).mockResolvedValue(
       JSON.stringify({ mutators: { include: ['ArithmeticOperator', 42] } })
     )
 
     // Act & Assert
     await expect(sut.resolve({ ...baseParameter })).rejects.toThrow(
-      "Invalid 'mutators.include' in config file '.mutation-testing.json': expected an array of strings (for example [\"90-100\"]), found an array with a non-string entry."
+      "Invalid entry at 'mutators.include.1' in config file '.mutation-testing.json': expected a string, found number."
     )
   })
 
@@ -304,39 +289,39 @@ describe('ConfigReader', () => {
     )
   })
 
-  it('Given config file with a non-string entry in mutators.exclude, When resolving config, Then rejects the shape naming mutators.exclude', async () => {
+  it('Given config file with mutators.exclude as a bare string, When resolving config, Then rejects the shape naming mutators.exclude', async () => {
     // Arrange
     vi.mocked(readFile).mockResolvedValue(
-      JSON.stringify({ mutators: { exclude: [42] } })
+      JSON.stringify({ mutators: { exclude: 'ArithmeticOperator' } })
     )
 
     // Act & Assert
     await expect(sut.resolve({ ...baseParameter })).rejects.toThrow(
-      "Invalid 'mutators.exclude' in config file '.mutation-testing.json': expected an array of strings (for example [\"90-100\"]), found an array with a non-string entry."
+      "Invalid 'mutators.exclude' in config file '.mutation-testing.json': expected an array of strings (for example [\"90-100\"]), found string."
     )
   })
 
-  it('Given config file with a non-string entry in testMethods.include, When resolving config, Then rejects the shape naming testMethods.include', async () => {
+  it('Given config file with testMethods.include as a bare string, When resolving config, Then rejects the shape naming testMethods.include', async () => {
     // Arrange
     vi.mocked(readFile).mockResolvedValue(
-      JSON.stringify({ testMethods: { include: [42] } })
+      JSON.stringify({ testMethods: { include: 'ArithmeticOperator' } })
     )
 
     // Act & Assert
     await expect(sut.resolve({ ...baseParameter })).rejects.toThrow(
-      "Invalid 'testMethods.include' in config file '.mutation-testing.json': expected an array of strings (for example [\"90-100\"]), found an array with a non-string entry."
+      "Invalid 'testMethods.include' in config file '.mutation-testing.json': expected an array of strings (for example [\"90-100\"]), found string."
     )
   })
 
-  it('Given config file with a non-string entry in testMethods.exclude, When resolving config, Then rejects the shape naming testMethods.exclude', async () => {
+  it('Given config file with testMethods.exclude as a bare string, When resolving config, Then rejects the shape naming testMethods.exclude', async () => {
     // Arrange
     vi.mocked(readFile).mockResolvedValue(
-      JSON.stringify({ testMethods: { exclude: [42] } })
+      JSON.stringify({ testMethods: { exclude: 'ArithmeticOperator' } })
     )
 
     // Act & Assert
     await expect(sut.resolve({ ...baseParameter })).rejects.toThrow(
-      "Invalid 'testMethods.exclude' in config file '.mutation-testing.json': expected an array of strings (for example [\"90-100\"]), found an array with a non-string entry."
+      "Invalid 'testMethods.exclude' in config file '.mutation-testing.json': expected an array of strings (for example [\"90-100\"]), found string."
     )
   })
 
@@ -347,6 +332,17 @@ describe('ConfigReader', () => {
     // Act & Assert
     await expect(sut.resolve({ ...baseParameter })).rejects.toThrow(
       "Invalid 'threshold' in config file '.mutation-testing.json': expected a number, found string."
+    )
+  })
+
+  it('Given config file with threshold as an array, When resolving config, Then names the array rather than reporting object', async () => {
+    // Arrange — `typeof []` is 'object', which tells the reader nothing about
+    // what they wrote; the message has to say it was an array.
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ threshold: [50] }))
+
+    // Act & Assert
+    await expect(sut.resolve({ ...baseParameter })).rejects.toThrow(
+      "Invalid 'threshold' in config file '.mutation-testing.json': expected a number, found an array."
     )
   })
 
