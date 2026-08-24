@@ -251,6 +251,20 @@ describe('apex.mutation.test.run message bundle', () => {
     )
   })
 
+  it('Given eligible lines with nothing mutable on them, When error.noMutations is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
+    // Act
+    const sut = messages.getMessage('error.noMutations', [
+      'PersonDataService',
+      12,
+    ])
+
+    // Assert — "eligible", not "covered": on a narrowed run the class-wide
+    // covered count is the misleading figure issue #161 was about.
+    expect(sut).toBe(
+      "No mutations could be generated for 'PersonDataService'. 12 eligible line(s) but no mutable patterns found."
+    )
+  })
+
   it('Given a line range excluding every covered line, When error.noMutationsInLineRange is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
     // Act
     const sut = messages.getMessage('error.noMutationsInLineRange', [

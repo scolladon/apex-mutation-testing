@@ -110,7 +110,7 @@ Apex test suite '%s' contains no Apex test classes. Add classes to it in Setup >
 
 # error.noMutations
 
-No mutations could be generated for '%s'. %s line(s) covered but no mutable patterns found.
+No mutations could be generated for '%s'. %s eligible line(s) but no mutable patterns found.
 
 # error.noMutationsInLineRange
 

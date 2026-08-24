@@ -9,8 +9,11 @@ export type NoMutationsDiagnosis =
   | { reason: 'line-range'; coveredCount: number }
   | { reason: 'skip-patterns'; inRangeCount: number }
   | { reason: 'mutator-filter'; eligibleCount: number }
-  | { reason: 'no-mutable-pattern'; coveredCount: number }
+  | { reason: 'no-mutable-pattern'; eligibleCount: number }
 
+// Precondition: `coveredLines` is non-empty — extractCoveredLines() throws
+// error.noCoverage before this runs. An empty set would make the line-range
+// verdict below fabricate a filter the caller never set.
 export interface NoMutationsInputs {
   coveredLines: Set<number>
   allowedLines: Set<number> | undefined
@@ -46,5 +49,7 @@ export const diagnoseNoMutations = ({
     return { reason: 'mutator-filter', eligibleCount: eligible.length }
   }
 
-  return { reason: 'no-mutable-pattern', coveredCount }
+  // Reports the ELIGIBLE count, not the class-wide covered count: on a
+  // narrowed run the latter is the misleading figure issue #161 was about.
+  return { reason: 'no-mutable-pattern', eligibleCount: eligible.length }
 }

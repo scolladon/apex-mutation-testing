@@ -1683,6 +1683,10 @@ diagnoseNoMutations({ coveredLines, allowedLines, skipPatterns,
                                                  (error.noMutations)
 ```
 
+Every reason reports the count of the set that was actually examined — `coveredCount` for `line-range`, `inRangeCount` for `skip-patterns`, `eligibleCount` for both `mutator-filter` and `no-mutable-pattern`. The last one matters: on a narrowed run the class-wide covered count is precisely the misleading figure the change exists to remove, so the fall-through arm reports eligible lines too. With no flags set the two coincide, so an unfiltered run reports the same number it always did.
+
+`mutatorFilterActive` is derived from the include/exclude list being **non-empty**, not from its presence: `MutantGenerator.filterRegistry()` falls back to the full registry for an empty list, so `{"mutators": {"include": []}}` in a config file runs all 25 mutators and must not be blamed for an empty result.
+
 `MutationTestingService.buildNoMutationsError()` maps each reason onto its message key, echoing the raw `--lines` ranges the user typed for the `line-range` case. The diagnosis runs only on the empty path, so the Proxy's hot path stays uninstrumented. Precondition: `coveredLines` is non-empty — `extractCoveredLines()` throws `error.noCoverage` before this point.
 
 ### re2js for Regex Safety

@@ -53,7 +53,7 @@ describe('diagnoseNoMutations', () => {
         // Assert
         expect(result).toEqual({
           reason: 'no-mutable-pattern',
-          coveredCount: 2,
+          eligibleCount: 1,
         })
       })
     })
@@ -62,13 +62,14 @@ describe('diagnoseNoMutations', () => {
   describe('when skip patterns are configured', () => {
     describe('given they match every in-range covered line', () => {
       it('then should blame the skip patterns and report the in-range total', () => {
-        // Arrange
+        // Arrange — two covered lines but only one in range, so the reported
+        // count can only come from the in-range set, never from coveredLines.
         const sut = diagnoseNoMutations
 
         // Act
         const result = sut({
-          coveredLines: new Set([2]),
-          allowedLines: undefined,
+          coveredLines: new Set([2, 3]),
+          allowedLines: new Set([2]),
           skipPatterns: [matching('System.debug')],
           sourceLines: SOURCE_LINES,
           mutatorFilterActive: false,
@@ -96,7 +97,7 @@ describe('diagnoseNoMutations', () => {
         // Assert
         expect(result).toEqual({
           reason: 'no-mutable-pattern',
-          coveredCount: 2,
+          eligibleCount: 1,
         })
       })
     })
@@ -118,7 +119,7 @@ describe('diagnoseNoMutations', () => {
         // Assert
         expect(result).toEqual({
           reason: 'no-mutable-pattern',
-          coveredCount: 1,
+          eligibleCount: 1,
         })
       })
     })
@@ -141,6 +142,27 @@ describe('diagnoseNoMutations', () => {
 
         // Assert
         expect(result).toEqual({ reason: 'mutator-filter', eligibleCount: 1 })
+      })
+    })
+
+    describe('given the skip patterns already emptied the candidate set', () => {
+      it('then should blame the skip patterns instead', () => {
+        // Arrange — both filters would fire; only the earlier one is actionable.
+        // Three distinct totals so the reported count cannot be confused:
+        // covered 3, in-range 2, eligible 0.
+        const sut = diagnoseNoMutations
+
+        // Act
+        const result = sut({
+          coveredLines: new Set([2, 3, 4]),
+          allowedLines: new Set([2, 3]),
+          skipPatterns: [matching('  ')],
+          sourceLines: SOURCE_LINES,
+          mutatorFilterActive: true,
+        })
+
+        // Assert
+        expect(result).toEqual({ reason: 'skip-patterns', inRangeCount: 2 })
       })
     })
 
@@ -182,7 +204,7 @@ describe('diagnoseNoMutations', () => {
         // Assert
         expect(result).toEqual({
           reason: 'no-mutable-pattern',
-          coveredCount: 3,
+          eligibleCount: 3,
         })
       })
     })

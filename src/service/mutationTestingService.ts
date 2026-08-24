@@ -614,7 +614,7 @@ export class MutationTestingService {
 
     if (mutations.length === 0) {
       this.spinner.stop('0 mutations generated')
-      throw this.buildNoMutationsError(coveredLines, apexClass.Body)
+      throw this.buildNoMutationsError(coveredLines, mutatorFilter)
     }
 
     this.spinner.stop(`${mutations.length} mutations generated`)
@@ -626,14 +626,19 @@ export class MutationTestingService {
   // Naming the filter that did it turns a dead end into an actionable message.
   private buildNoMutationsError(
     coveredLines: Set<number>,
-    classContent: string
+    mutatorFilter: { include?: string[]; exclude?: string[] } | undefined
   ): Error {
     const diagnosis = diagnoseNoMutations({
       coveredLines,
       allowedLines: this.allowedLines,
       skipPatterns: this.skipPatterns,
-      sourceLines: classContent.split('\n'),
-      mutatorFilterActive: this.buildMutatorFilter() !== undefined,
+      sourceLines: this.apexClassContent.split('\n'),
+      // An empty include/exclude list is NOT a filter: MutantGenerator's
+      // filterRegistry falls back to the full registry for it. Deriving this
+      // from `mutatorFilter !== undefined` would blame a knob that never
+      // narrowed anything.
+      mutatorFilterActive:
+        (mutatorFilter?.include ?? mutatorFilter?.exclude ?? []).length > 0,
     })
 
     switch (diagnosis.reason) {
@@ -659,11 +664,13 @@ export class MutationTestingService {
             diagnosis.eligibleCount,
           ])
         )
-      default:
+      // Listed explicitly rather than via `default:` so a future variant
+      // fails to compile instead of silently rendering the generic message.
+      case 'no-mutable-pattern':
         return new Error(
           this.messages.getMessage('error.noMutations', [
             this.apexClassName,
-            diagnosis.coveredCount,
+            diagnosis.eligibleCount,
           ])
         )
     }
