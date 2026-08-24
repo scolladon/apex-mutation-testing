@@ -151,8 +151,8 @@ export class MutationTestingService {
     this.excludeMutators = excludeMutators
     this.includeTestMethods = includeTestMethods
     this.excludeTestMethods = excludeTestMethods
-    this.skipPatterns = ConfigReader.compileSkipPatterns(skipPatterns)
-    this.allowedLines = ConfigReader.parseLineRanges(lines)
+    this.skipPatterns = ConfigReader.compileSkipPatterns(skipPatterns, messages)
+    this.allowedLines = ConfigReader.parseLineRanges(lines, messages)
     this.requestedLines = lines ?? []
     this.mutationGroupingEnabled = mutationGrouping ?? false
     this.testClassOrigins = testClassOrigins

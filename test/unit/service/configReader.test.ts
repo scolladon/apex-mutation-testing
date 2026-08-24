@@ -42,6 +42,18 @@ describe('ConfigReader', () => {
           'error.blankTestSuite': `Blank apex test suite name found: '${args?.[0]}'`,
           'error.invalidClassName': `Invalid Apex class name: '${args?.[0]}'`,
           'error.objectConventionClassName': `Object convention: '${args?.[0]}'`,
+          'error.configFileUnreadable': `Failed to parse config file '${args?.[0]}': ${args?.[1]}`,
+          'error.configFieldNotStringArray': `Invalid '${args?.[0]}' in config file '${args?.[1]}': expected an array of strings (for example ["90-100"]), found ${args?.[2]}. A bare value is not accepted — wrap it in an array.`,
+          'error.configFieldNotNumber': `Invalid '${args?.[0]}' in config file '${args?.[1]}': expected a number, found ${args?.[2]}.`,
+          'error.configFieldNotBoolean': `Invalid '${args?.[0]}' in config file '${args?.[1]}': expected a boolean, found ${args?.[2]}.`,
+          'error.invalidLineRange': `Invalid line range '${args?.[0]}': must be a number or range (e.g., '10' or '1-10')`,
+          'error.invalidLineRangeOrder': `Invalid line range '${args?.[0]}': start must be less than or equal to end`,
+          'error.invalidSkipPattern': `Invalid skip pattern '${args?.[0]}': ${args?.[1]}`,
+          'error.mutuallyExclusiveMutators':
+            'Cannot specify both includeMutators and excludeMutators',
+          'error.mutuallyExclusiveTestMethods':
+            'Cannot specify both includeTestMethods and excludeTestMethods',
+          'error.thresholdOutOfRange': 'Threshold must be between 0 and 100',
         }
         return templates[key] || key
       }),
@@ -236,6 +248,74 @@ describe('ConfigReader', () => {
     await expect(sut.resolve(parameter)).rejects.toThrow(
       'Cannot specify both includeTestMethods and excludeTestMethods'
     )
+  })
+
+  it('Given config file with lines as a bare string, When resolving config, Then rejects the shape instead of walking its characters', async () => {
+    // Arrange — `for...of` iterates a string character by character, so this
+    // would otherwise pass validation and mutate lines 4 and 2.
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ lines: '42' }))
+
+    // Act & Assert
+    await expect(sut.resolve({ ...baseParameter })).rejects.toThrow(
+      "Invalid 'lines' in config file '.mutation-testing.json': expected an array of strings (for example [\"90-100\"]), found string."
+    )
+  })
+
+  it('Given config file with a non-string entry in a string array, When resolving config, Then rejects the shape', async () => {
+    // Arrange
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({ mutators: { include: [42] } })
+    )
+
+    // Act & Assert
+    await expect(sut.resolve({ ...baseParameter })).rejects.toThrow(
+      "Invalid 'mutators.include' in config file '.mutation-testing.json': expected an array of strings (for example [\"90-100\"]), found an array with a non-string entry."
+    )
+  })
+
+  it('Given config file with threshold as a string, When resolving config, Then rejects the shape', async () => {
+    // Arrange
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ threshold: '50' }))
+
+    // Act & Assert
+    await expect(sut.resolve({ ...baseParameter })).rejects.toThrow(
+      "Invalid 'threshold' in config file '.mutation-testing.json': expected a number, found string."
+    )
+  })
+
+  it('Given config file with mutationGrouping as a string, When resolving config, Then rejects the shape', async () => {
+    // Arrange
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({ mutationGrouping: 'yes' })
+    )
+
+    // Act & Assert
+    await expect(sut.resolve({ ...baseParameter })).rejects.toThrow(
+      "Invalid 'mutationGrouping' in config file '.mutation-testing.json': expected a boolean, found string."
+    )
+  })
+
+  it('Given config file with every field correctly shaped, When resolving config, Then accepts it', async () => {
+    // Arrange — the negative cases above must not be passing for a trivial
+    // reason: the same fields in their declared shapes have to survive.
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({
+        lines: ['1-3'],
+        skipPatterns: ['System\\.debug'],
+        mutators: { include: ['ArithmeticOperator'] },
+        testMethods: { include: ['MyClassTest.testOne'] },
+        threshold: 50,
+        mutationGrouping: true,
+      })
+    )
+
+    // Act
+    const result = await sut.resolve({ ...baseParameter })
+
+    // Assert
+    expect(result.lines).toEqual(['1-3'])
+    expect(result.threshold).toBe(50)
+    expect(result.mutationGrouping).toBe(true)
   })
 
   it('Given config file with threshold below 0, When resolving config, Then throws validation error', async () => {
@@ -437,7 +517,7 @@ describe('ConfigReader', () => {
     const result = await sut.resolve(parameter)
 
     // Assert — '42' is valid single number; parsed set should include 42
-    const parsed = ConfigReader.parseLineRanges(result.lines)
+    const parsed = ConfigReader.parseLineRanges(result.lines, messagesMock)
     expect(parsed).toEqual(new Set([42]))
   })
 
@@ -579,9 +659,9 @@ describe('ConfigReader', () => {
 
   it('Given skip patterns with invalid regex, When compiling, Then throws error', () => {
     // Act & Assert
-    expect(() => ConfigReader.compileSkipPatterns(['([unclosed'])).toThrow(
-      /Invalid skip pattern '\(\[unclosed': error parsing regexp/
-    )
+    expect(() =>
+      ConfigReader.compileSkipPatterns(['([unclosed'], messagesMock)
+    ).toThrow(/Invalid skip pattern '\(\[unclosed': error parsing regexp/)
   })
 
   it('Given skip patterns with non-Error throw, When compiling, Then wraps it in error message', () => {
@@ -589,9 +669,9 @@ describe('ConfigReader', () => {
     skipPatternThrows = 'string'
 
     // Act & Assert
-    expect(() => ConfigReader.compileSkipPatterns(['some-pattern'])).toThrow(
-      /Invalid skip pattern 'some-pattern': string thrown/
-    )
+    expect(() =>
+      ConfigReader.compileSkipPatterns(['some-pattern'], messagesMock)
+    ).toThrow(/Invalid skip pattern 'some-pattern': string thrown/)
   })
 
   describe('perimeter normalization', () => {
@@ -1013,7 +1093,7 @@ describe('ConfigReader', () => {
   describe('parseLineRanges', () => {
     it('Given single line number, When parsing, Then returns set with that number', () => {
       // Arrange & Act
-      const sut = ConfigReader.parseLineRanges(['42'])
+      const sut = ConfigReader.parseLineRanges(['42'], messagesMock)
 
       // Assert
       expect(sut).toEqual(new Set([42]))
@@ -1021,7 +1101,7 @@ describe('ConfigReader', () => {
 
     it('Given range, When parsing, Then returns expanded set', () => {
       // Arrange & Act
-      const sut = ConfigReader.parseLineRanges(['1-3'])
+      const sut = ConfigReader.parseLineRanges(['1-3'], messagesMock)
 
       // Assert
       expect(sut).toEqual(new Set([1, 2, 3]))
@@ -1029,7 +1109,10 @@ describe('ConfigReader', () => {
 
     it('Given multiple ranges and singles, When parsing, Then returns combined set', () => {
       // Arrange & Act
-      const sut = ConfigReader.parseLineRanges(['1-3', '10', '20-22'])
+      const sut = ConfigReader.parseLineRanges(
+        ['1-3', '10', '20-22'],
+        messagesMock
+      )
 
       // Assert
       expect(sut).toEqual(new Set([1, 2, 3, 10, 20, 21, 22]))
@@ -1039,14 +1122,14 @@ describe('ConfigReader', () => {
       // Arrange & Act & Assert — only one side is unparseable, so requiring
       // BOTH bounds to be non-finite would let this through and silently
       // produce an empty range instead of reporting the bad input.
-      expect(() => ConfigReader.parseLineRanges(['5-abc'])).toThrow(
-        /Invalid line range '5-abc'/
-      )
+      expect(() =>
+        ConfigReader.parseLineRanges(['5-abc'], messagesMock)
+      ).toThrow(/Invalid line range '5-abc'/)
     })
 
     it('Given undefined, When parsing, Then returns undefined', () => {
       // Arrange & Act
-      const sut = ConfigReader.parseLineRanges(undefined)
+      const sut = ConfigReader.parseLineRanges(undefined, messagesMock)
 
       // Assert
       expect(sut).toBeUndefined()
@@ -1054,7 +1137,7 @@ describe('ConfigReader', () => {
 
     it('Given empty array, When parsing, Then returns undefined', () => {
       // Arrange & Act
-      const sut = ConfigReader.parseLineRanges([])
+      const sut = ConfigReader.parseLineRanges([], messagesMock)
 
       // Assert
       expect(sut).toBeUndefined()
@@ -1063,28 +1146,28 @@ describe('ConfigReader', () => {
     it('Given a non-numeric range bound, When parsing, Then throws (defensive NaN guard)', () => {
       // Arrange & Act & Assert — H4 hardening: the static method must reject
       // NaN inputs itself, not rely on a prior validate() pass.
-      expect(() => ConfigReader.parseLineRanges(['foo-bar'])).toThrow(
-        /Invalid line range 'foo-bar'/
-      )
+      expect(() =>
+        ConfigReader.parseLineRanges(['foo-bar'], messagesMock)
+      ).toThrow(/Invalid line range 'foo-bar'/)
     })
 
     it('Given a non-numeric single value, When parsing, Then throws', () => {
       // Arrange & Act & Assert
-      expect(() => ConfigReader.parseLineRanges(['abc'])).toThrow(
+      expect(() => ConfigReader.parseLineRanges(['abc'], messagesMock)).toThrow(
         /Invalid line range 'abc'/
       )
     })
 
     it('Given an inverted range (start > end), When parsing, Then throws', () => {
       // Arrange & Act & Assert
-      expect(() => ConfigReader.parseLineRanges(['10-5'])).toThrow(
-        /Invalid line range '10-5'/
-      )
+      expect(() =>
+        ConfigReader.parseLineRanges(['10-5'], messagesMock)
+      ).toThrow(/Invalid line range '10-5'/)
     })
 
     it('Given overlapping ranges, When parsing, Then returns deduplicated set', () => {
       // Arrange & Act
-      const sut = ConfigReader.parseLineRanges(['1-5', '3-8'])
+      const sut = ConfigReader.parseLineRanges(['1-5', '3-8'], messagesMock)
 
       // Assert
       expect(sut).toEqual(new Set([1, 2, 3, 4, 5, 6, 7, 8]))
@@ -1096,7 +1179,7 @@ describe('ConfigReader', () => {
       // Original: only empty arrays return undefined.
 
       // Act
-      const sut = ConfigReader.parseLineRanges(['5'])
+      const sut = ConfigReader.parseLineRanges(['5'], messagesMock)
 
       // Assert — non-empty array must return a Set, not undefined
       expect(sut).not.toBeUndefined()
@@ -1108,7 +1191,7 @@ describe('ConfigReader', () => {
       // With `<=`, 1-3 produces {1, 2, 3}; with `<`, produces {1, 2}.
 
       // Act
-      const sut = ConfigReader.parseLineRanges(['1-3'])
+      const sut = ConfigReader.parseLineRanges(['1-3'], messagesMock)
 
       // Assert — end must be included
       expect(sut).toContain(3)
@@ -1120,7 +1203,7 @@ describe('ConfigReader', () => {
       // because i=5 < 5 is false immediately.
 
       // Act
-      const sut = ConfigReader.parseLineRanges(['5-5'])
+      const sut = ConfigReader.parseLineRanges(['5-5'], messagesMock)
 
       // Assert
       expect(sut).toEqual(new Set([5]))
@@ -1130,7 +1213,7 @@ describe('ConfigReader', () => {
   describe('compileSkipPatterns', () => {
     it('Given undefined, When compiling, Then returns empty array', () => {
       // Arrange & Act
-      const sut = ConfigReader.compileSkipPatterns(undefined)
+      const sut = ConfigReader.compileSkipPatterns(undefined, messagesMock)
 
       // Assert
       expect(sut).toEqual([])
@@ -1138,10 +1221,10 @@ describe('ConfigReader', () => {
 
     it('Given patterns, When compiling, Then returns SkipPattern instances', () => {
       // Arrange & Act
-      const sut = ConfigReader.compileSkipPatterns([
-        'System\\.debug',
-        'Logger\\.',
-      ])
+      const sut = ConfigReader.compileSkipPatterns(
+        ['System\\.debug', 'Logger\\.'],
+        messagesMock
+      )
 
       // Assert
       expect(sut).toHaveLength(2)

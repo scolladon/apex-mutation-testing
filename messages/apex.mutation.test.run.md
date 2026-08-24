@@ -236,3 +236,43 @@ Apex class '%s' is modifiable on this org only as '%s'. A bare name reaches only
 
 No usable Apex test class remains in the perimeter for '%s'. The following test class(es) were skipped:
 %s
+
+# error.configFileUnreadable
+
+Failed to parse config file '%s': %s
+
+# error.configFieldNotStringArray
+
+Invalid '%s' in config file '%s': expected an array of strings (for example ["90-100"]), found %s. A bare value is not accepted — wrap it in an array.
+
+# error.configFieldNotNumber
+
+Invalid '%s' in config file '%s': expected a number, found %s.
+
+# error.configFieldNotBoolean
+
+Invalid '%s' in config file '%s': expected a boolean, found %s.
+
+# error.invalidLineRange
+
+Invalid line range '%s': must be a number or range (e.g., '10' or '1-10')
+
+# error.invalidLineRangeOrder
+
+Invalid line range '%s': start must be less than or equal to end
+
+# error.invalidSkipPattern
+
+Invalid skip pattern '%s': %s
+
+# error.mutuallyExclusiveMutators
+
+Cannot specify both includeMutators and excludeMutators
+
+# error.mutuallyExclusiveTestMethods
+
+Cannot specify both includeTestMethods and excludeTestMethods
+
+# error.thresholdOutOfRange
+
+Threshold must be between 0 and 100

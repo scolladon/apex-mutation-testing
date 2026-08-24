@@ -1584,6 +1584,19 @@ CLI flags > config file > defaults (all mutators, all tests, no threshold)
 
 `ConfigReader.resolve()` merges config file values with CLI flag overrides using `??` (CLI wins when present). Include/exclude pairs are mutually exclusive — enforced by oclif `exclusive` flag attribute. `skipPatterns` and `lines` follow the same merge precedence: CLI flags override config file values.
 
+**Config file shape is validated before merging.** `readConfigFile()` ends in `JSON.parse(content) as MutationTestingConfig` — an unchecked cast, so the declared types are a promise the file never had to keep. `assertConfigShape()` runs immediately afterwards and rejects any field whose runtime type contradicts the interface, naming the field, the file and the type found.
+
+The field that makes this load-bearing is `lines`. Both `validate()` and `parseLineRanges()` walk it with `for...of`, and `for...of` iterates a **string** character by character — so a scalar where an array belongs is not a type error at runtime, it is a different, silently-accepted input:
+
+```text
+{"lines": "5"}      → validate ACCEPTED → allowedLines {5}     (accidentally right)
+{"lines": "42"}     → validate ACCEPTED → allowedLines {4, 2}  (silently wrong scope)
+{"lines": "90-100"} → validate THROWS "Invalid line range '-'" (loud, but baffling)
+{"lines": ["90-100"]} → allowedLines {90…100}                  (correct)
+```
+
+The `"42"` row is the reason the check exists: the run mutates lines 4 and 2, reports a score for them, and warns about nothing. Every other array-typed config field is consumed by `.map()`, which strings do not have, so those fail fast on their own — `lines` was the only silent one.
+
 ### Class Name Validation
 
 Every Apex class name — the `-c` class under mutation and every `-t` perimeter class — must

@@ -1,4 +1,14 @@
+import { Messages } from '@salesforce/core'
 import { ConfigReader } from '../../../src/service/configReader.js'
+
+// compileSkipPatterns can reach exactly one message key; everything else
+// falls through to the key name, which would fail the assertions loudly.
+const messagesFake = {
+  getMessage: (key: string, args?: string[]) =>
+    key === 'error.invalidSkipPattern'
+      ? `Invalid skip pattern '${args?.[0]}': ${args?.[1]}`
+      : key,
+} as unknown as Messages<string>
 
 // Golden master pinning the user-facing skip-pattern contract through the
 // ConfigReader public API — substring matching, anchors, case sensitivity,
@@ -7,7 +17,10 @@ import { ConfigReader } from '../../../src/service/configReader.js'
 describe('ConfigReader.compileSkipPatterns (skip-pattern behaviour contract)', () => {
   it('Given a substring pattern, When the line contains a match anywhere, Then test returns true', () => {
     // Arrange
-    const sut = ConfigReader.compileSkipPatterns(['System\\.debug'])[0]
+    const sut = ConfigReader.compileSkipPatterns(
+      ['System\\.debug'],
+      messagesFake
+    )[0]
 
     // Act
     const result = sut.test('        System.debug("hi");')
@@ -18,7 +31,10 @@ describe('ConfigReader.compileSkipPatterns (skip-pattern behaviour contract)', (
 
   it('Given a substring pattern, When the line does not contain a match, Then test returns false', () => {
     // Arrange
-    const sut = ConfigReader.compileSkipPatterns(['System\\.debug'])[0]
+    const sut = ConfigReader.compileSkipPatterns(
+      ['System\\.debug'],
+      messagesFake
+    )[0]
 
     // Act
     const result = sut.test('no logging here')
@@ -29,7 +45,10 @@ describe('ConfigReader.compileSkipPatterns (skip-pattern behaviour contract)', (
 
   it('Given a start-anchored pattern, When the match starts the line after leading whitespace, Then test returns true', () => {
     // Arrange
-    const sut = ConfigReader.compileSkipPatterns(['^\\s*System'])[0]
+    const sut = ConfigReader.compileSkipPatterns(
+      ['^\\s*System'],
+      messagesFake
+    )[0]
 
     // Act
     const result = sut.test('    System.debug(x)')
@@ -40,7 +59,7 @@ describe('ConfigReader.compileSkipPatterns (skip-pattern behaviour contract)', (
 
   it('Given an end-anchored pattern, When the match ends the line, Then test returns true', () => {
     // Arrange
-    const sut = ConfigReader.compileSkipPatterns(['System$'])[0]
+    const sut = ConfigReader.compileSkipPatterns(['System$'], messagesFake)[0]
 
     // Act
     const result = sut.test('   call System')
@@ -51,7 +70,7 @@ describe('ConfigReader.compileSkipPatterns (skip-pattern behaviour contract)', (
 
   it('Given a pattern, When the line differs only by case, Then test returns false as matching is case-sensitive by default', () => {
     // Arrange
-    const sut = ConfigReader.compileSkipPatterns(['System'])[0]
+    const sut = ConfigReader.compileSkipPatterns(['System'], messagesFake)[0]
 
     // Act
     const result = sut.test('call system.debug')
@@ -62,7 +81,7 @@ describe('ConfigReader.compileSkipPatterns (skip-pattern behaviour contract)', (
 
   it('Given a digit character-class pattern, When the line contains digits, Then test returns true', () => {
     // Arrange
-    const sut = ConfigReader.compileSkipPatterns(['\\d+'])[0]
+    const sut = ConfigReader.compileSkipPatterns(['\\d+'], messagesFake)[0]
 
     // Act
     const result = sut.test('Integer x = 42;')
@@ -73,7 +92,7 @@ describe('ConfigReader.compileSkipPatterns (skip-pattern behaviour contract)', (
 
   it('Given a unicode literal pattern, When the line contains the unicode text, Then test returns true', () => {
     // Arrange
-    const sut = ConfigReader.compileSkipPatterns(['café'])[0]
+    const sut = ConfigReader.compileSkipPatterns(['café'], messagesFake)[0]
 
     // Act
     const result = sut.test('un café ici')
@@ -84,7 +103,10 @@ describe('ConfigReader.compileSkipPatterns (skip-pattern behaviour contract)', (
 
   it('Given one compiled pattern reused across lines, When testing several distinct lines, Then each result is correct for its own line', () => {
     // Arrange
-    const sut = ConfigReader.compileSkipPatterns(['System\\.debug'])[0]
+    const sut = ConfigReader.compileSkipPatterns(
+      ['System\\.debug'],
+      messagesFake
+    )[0]
 
     // Act
     const results = [
@@ -99,15 +121,15 @@ describe('ConfigReader.compileSkipPatterns (skip-pattern behaviour contract)', (
 
   it("Given an invalid pattern, When compiling, Then throws with the stable 'Invalid skip pattern' message prefix", () => {
     // Arrange & Act & Assert
-    expect(() => ConfigReader.compileSkipPatterns(['([unclosed'])).toThrow(
-      /Invalid skip pattern '\(\[unclosed':/
-    )
+    expect(() =>
+      ConfigReader.compileSkipPatterns(['([unclosed'], messagesFake)
+    ).toThrow(/Invalid skip pattern '\(\[unclosed':/)
   })
 
   it('Given a backreference pattern, When compiling, Then throws per the RE2 no-backreference guarantee', () => {
     // Arrange & Act & Assert
-    expect(() => ConfigReader.compileSkipPatterns(['(a)\\1'])).toThrow(
-      /Invalid skip pattern/
-    )
+    expect(() =>
+      ConfigReader.compileSkipPatterns(['(a)\\1'], messagesFake)
+    ).toThrow(/Invalid skip pattern/)
   })
 })

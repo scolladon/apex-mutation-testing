@@ -48,6 +48,14 @@ interface MutationTestingConfig {
   mutationGrouping?: boolean
 }
 
+const isStringArray = (value: unknown): boolean =>
+  Array.isArray(value) && value.every(entry => typeof entry === 'string')
+
+// Names the shape the user actually wrote, so the message can contrast it with
+// the expected one. `typeof []` is 'object', which tells the reader nothing.
+const describeType = (value: unknown): string =>
+  Array.isArray(value) ? 'an array with a non-string entry' : typeof value
+
 export class ConfigReader {
   constructor(private readonly messages: Messages<string>) {}
 
@@ -60,6 +68,9 @@ export class ConfigReader {
 
     const configPath = parameter.configFile ?? DEFAULT_CONFIG_FILE
     const fileConfig = await this.readConfigFile(configPath)
+    if (fileConfig) {
+      this.assertConfigShape(fileConfig, configPath)
+    }
 
     const resolved: ApexMutationParameter = {
       ...parameter,
@@ -107,13 +118,101 @@ export class ConfigReader {
         return undefined
       }
       throw new Error(
-        `Failed to parse config file '${configPath}': ${error instanceof Error ? error.message : String(error)}`
+        this.messages.getMessage('error.configFileUnreadable', [
+          configPath,
+          error instanceof Error ? error.message : String(error),
+        ])
       )
     }
   }
 
+  // `JSON.parse(...) as MutationTestingConfig` is an unchecked cast, so the
+  // declared types are a promise the file never had to keep. The shapes below
+  // are the ones whose consumers would otherwise misread a wrong type rather
+  // than reject it — `lines` most of all: `validate()` and `parseLineRanges()`
+  // both walk it with `for...of`, which iterates a STRING character by
+  // character, so `"lines": "42"` would silently mutate lines 4 and 2.
+  private assertConfigShape(
+    config: MutationTestingConfig,
+    configPath: string
+  ): void {
+    this.assertStringArray(config.lines, 'lines', configPath)
+    this.assertStringArray(config.skipPatterns, 'skipPatterns', configPath)
+    this.assertStringArray(
+      config.mutators?.include,
+      'mutators.include',
+      configPath
+    )
+    this.assertStringArray(
+      config.mutators?.exclude,
+      'mutators.exclude',
+      configPath
+    )
+    this.assertStringArray(
+      config.testMethods?.include,
+      'testMethods.include',
+      configPath
+    )
+    this.assertStringArray(
+      config.testMethods?.exclude,
+      'testMethods.exclude',
+      configPath
+    )
+    this.assertPrimitive(
+      config.threshold,
+      'number',
+      'error.configFieldNotNumber',
+      'threshold',
+      configPath
+    )
+    this.assertPrimitive(
+      config.mutationGrouping,
+      'boolean',
+      'error.configFieldNotBoolean',
+      'mutationGrouping',
+      configPath
+    )
+  }
+
+  private assertStringArray(
+    value: unknown,
+    field: string,
+    configPath: string
+  ): void {
+    if (value === undefined || isStringArray(value)) {
+      return
+    }
+    throw new Error(
+      this.messages.getMessage('error.configFieldNotStringArray', [
+        field,
+        configPath,
+        describeType(value),
+      ])
+    )
+  }
+
+  private assertPrimitive(
+    value: unknown,
+    expected: 'number' | 'boolean',
+    messageKey: string,
+    field: string,
+    configPath: string
+  ): void {
+    if (value === undefined || typeof value === expected) {
+      return
+    }
+    throw new Error(
+      this.messages.getMessage(messageKey, [
+        field,
+        configPath,
+        describeType(value),
+      ])
+    )
+  }
+
   public static parseLineRanges(
-    lines: string[] | undefined
+    lines: string[] | undefined,
+    messages: Messages<string>
   ): Set<number> | undefined {
     if (!lines || lines.length === 0) {
       return undefined
@@ -124,7 +223,7 @@ export class ConfigReader {
         const [start, end] = range.split('-').map(Number)
         if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) {
           throw new Error(
-            `Invalid line range '${range}': must be a number or range (e.g., '10' or '1-10')`
+            messages.getMessage('error.invalidLineRange', [range])
           )
         }
         for (let i = start; i <= end; i++) {
@@ -134,7 +233,7 @@ export class ConfigReader {
         const value = Number(range)
         if (!Number.isFinite(value)) {
           throw new Error(
-            `Invalid line range '${range}': must be a number or range (e.g., '10' or '1-10')`
+            messages.getMessage('error.invalidLineRange', [range])
           )
         }
         result.add(value)
@@ -144,7 +243,8 @@ export class ConfigReader {
   }
 
   public static compileSkipPatterns(
-    patterns: string[] | undefined
+    patterns: string[] | undefined,
+    messages: Messages<string>
   ): SkipPattern[] {
     if (!patterns) {
       return []
@@ -154,7 +254,9 @@ export class ConfigReader {
         return compileSkipPattern(pattern)
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error)
-        throw new Error(`Invalid skip pattern '${pattern}': ${message}`)
+        throw new Error(
+          messages.getMessage('error.invalidSkipPattern', [pattern, message])
+        )
       }
     })
   }
@@ -244,11 +346,13 @@ export class ConfigReader {
 
   private validate(parameter: ApexMutationParameter): void {
     if (parameter.includeMutators && parameter.excludeMutators) {
-      throw new Error('Cannot specify both includeMutators and excludeMutators')
+      throw new Error(
+        this.messages.getMessage('error.mutuallyExclusiveMutators')
+      )
     }
     if (parameter.includeTestMethods && parameter.excludeTestMethods) {
       throw new Error(
-        'Cannot specify both includeTestMethods and excludeTestMethods'
+        this.messages.getMessage('error.mutuallyExclusiveTestMethods')
       )
     }
     // The `!== undefined` half is type narrowing only: `undefined < 0` and
@@ -256,13 +360,13 @@ export class ConfigReader {
     const { threshold } = parameter
     // Stryker disable next-line ConditionalExpression: type narrowing only.
     if (threshold !== undefined && (threshold < 0 || threshold > 100)) {
-      throw new Error('Threshold must be between 0 and 100')
+      throw new Error(this.messages.getMessage('error.thresholdOutOfRange'))
     }
     if (parameter.lines) {
       for (const range of parameter.lines) {
         if (!/^\d+(-\d+)?$/.test(range)) {
           throw new Error(
-            `Invalid line range '${range}': must be a number or range (e.g., '10' or '1-10')`
+            this.messages.getMessage('error.invalidLineRange', [range])
           )
         }
         // Not observable: the regex above already accepted the range, and for a
@@ -273,7 +377,7 @@ export class ConfigReader {
           const [start, end] = range.split('-').map(Number)
           if (start > end) {
             throw new Error(
-              `Invalid line range '${range}': start must be less than or equal to end`
+              this.messages.getMessage('error.invalidLineRangeOrder', [range])
             )
           }
         }

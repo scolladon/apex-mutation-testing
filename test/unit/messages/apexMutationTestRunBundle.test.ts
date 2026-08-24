@@ -251,6 +251,71 @@ describe('apex.mutation.test.run message bundle', () => {
     )
   })
 
+  // Table-driven rather than one `it` per key: these ten moved out of
+  // hardcoded `throw new Error('…')` sites in ConfigReader, and what has to
+  // stay pinned is that every key still RESOLVES with the shipped wording. A
+  // missing key throws MissingMessageError here, exactly as it would in the
+  // command, on failure paths no happy-path run reaches.
+  const CONFIG_MESSAGES: ReadonlyArray<[string, string[], string]> = [
+    [
+      'error.configFileUnreadable',
+      ['.mutation-testing.json', 'Unexpected token }'],
+      "Failed to parse config file '.mutation-testing.json': Unexpected token }",
+    ],
+    [
+      'error.configFieldNotStringArray',
+      ['lines', '.mutation-testing.json', 'string'],
+      "Invalid 'lines' in config file '.mutation-testing.json': expected an array of strings (for example [\"90-100\"]), found string. A bare value is not accepted — wrap it in an array.",
+    ],
+    [
+      'error.configFieldNotNumber',
+      ['threshold', '.mutation-testing.json', 'string'],
+      "Invalid 'threshold' in config file '.mutation-testing.json': expected a number, found string.",
+    ],
+    [
+      'error.configFieldNotBoolean',
+      ['mutationGrouping', '.mutation-testing.json', 'string'],
+      "Invalid 'mutationGrouping' in config file '.mutation-testing.json': expected a boolean, found string.",
+    ],
+    [
+      'error.invalidLineRange',
+      ['5-abc'],
+      "Invalid line range '5-abc': must be a number or range (e.g., '10' or '1-10')",
+    ],
+    [
+      'error.invalidLineRangeOrder',
+      ['10-5'],
+      "Invalid line range '10-5': start must be less than or equal to end",
+    ],
+    [
+      'error.invalidSkipPattern',
+      ['([unclosed', 'error parsing regexp'],
+      "Invalid skip pattern '([unclosed': error parsing regexp",
+    ],
+    [
+      'error.mutuallyExclusiveMutators',
+      [],
+      'Cannot specify both includeMutators and excludeMutators',
+    ],
+    [
+      'error.mutuallyExclusiveTestMethods',
+      [],
+      'Cannot specify both includeTestMethods and excludeTestMethods',
+    ],
+    ['error.thresholdOutOfRange', [], 'Threshold must be between 0 and 100'],
+  ]
+
+  it.each(CONFIG_MESSAGES)(
+    'Given config error %s, When rendered against the real bundle, Then the exact shipped sentence is produced',
+    (key, args, expected) => {
+      // Act
+      const sut = messages.getMessage(key, args)
+
+      // Assert
+      expect(sut).toBe(expected)
+    }
+  )
+
   it('Given eligible lines with nothing mutable on them, When error.noMutations is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
     // Act
     const sut = messages.getMessage('error.noMutations', [
