@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 
 import { Messages } from '@salesforce/core'
+import { z } from 'zod'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
 import { compileSkipPattern, type SkipPattern } from './skipPattern.js'
 
@@ -33,20 +34,52 @@ const APEX_CLASS_NAME_PATTERN =
 // convention typed by mistake for the dotted class convention.
 const OBJECT_CONVENTION_SEPARATOR = '__'
 
-interface MutationTestingConfig {
-  mutators?: {
-    include?: string[]
-    exclude?: string[]
-  }
-  testMethods?: {
-    include?: string[]
-    exclude?: string[]
-  }
-  threshold?: number
-  skipPatterns?: string[]
-  lines?: string[]
-  mutationGrouping?: boolean
+const nameListSchema = z
+  .object({
+    include: z.array(z.string()).optional(),
+    exclude: z.array(z.string()).optional(),
+  })
+  .optional()
+
+// The schema is the single source of truth for the config file's shape: the
+// type below is inferred from it, so a field cannot be added to one and
+// forgotten in the other. Unknown keys are stripped rather than rejected,
+// which keeps a config written for a newer plugin version readable by an
+// older one.
+const configSchema = z.object({
+  mutators: nameListSchema,
+  testMethods: nameListSchema,
+  threshold: z.number().optional(),
+  skipPatterns: z.array(z.string()).optional(),
+  lines: z.array(z.string()).optional(),
+  mutationGrouping: z.boolean().optional(),
+})
+
+type MutationTestingConfig = z.infer<typeof configSchema>
+
+// zod reports `expected` but not the value it found, so the offending value is
+// read back out of the input by walking the issue path.
+const valueAtPath = (
+  root: unknown,
+  path: ReadonlyArray<PropertyKey>
+): unknown =>
+  path.reduce<unknown>(
+    (value, key) => (value as Record<PropertyKey, unknown> | undefined)?.[key],
+    root
+  )
+
+const MESSAGE_KEY_BY_EXPECTED: Record<string, string> = {
+  number: 'error.configFieldNotNumber',
+  boolean: 'error.configFieldNotBoolean',
+  string: 'error.configEntryNotString',
 }
+
+const CONFIG_ARRAY_MESSAGE_KEY = 'error.configFieldNotStringArray'
+
+// Names the shape the user actually wrote, so the message can contrast it with
+// the expected one. `typeof []` is 'object', which tells the reader nothing.
+const describeType = (value: unknown): string =>
+  Array.isArray(value) ? 'an array' : typeof value
 
 export class ConfigReader {
   constructor(private readonly messages: Messages<string>) {}
@@ -59,7 +92,11 @@ export class ConfigReader {
     ConfigReader.assertClassName(parameter.apexClassName, this.messages)
 
     const configPath = parameter.configFile ?? DEFAULT_CONFIG_FILE
-    const fileConfig = await this.readConfigFile(configPath)
+    const rawConfig = await this.readConfigFile(configPath)
+    const fileConfig =
+      rawConfig === undefined
+        ? undefined
+        : this.assertConfigShape(rawConfig, configPath)
 
     const resolved: ApexMutationParameter = {
       ...parameter,
@@ -91,12 +128,12 @@ export class ConfigReader {
     return resolved
   }
 
-  private async readConfigFile(
-    configPath: string
-  ): Promise<MutationTestingConfig | undefined> {
+  // Returns the raw parse: the shape is asserted by assertConfigShape, not
+  // claimed by a cast here.
+  private async readConfigFile(configPath: string): Promise<unknown> {
     try {
       const content = await readFile(configPath, 'utf-8')
-      return JSON.parse(content) as MutationTestingConfig
+      return JSON.parse(content)
     } catch (error: unknown) {
       if (
         error &&
@@ -107,13 +144,48 @@ export class ConfigReader {
         return undefined
       }
       throw new Error(
-        `Failed to parse config file '${configPath}': ${error instanceof Error ? error.message : String(error)}`
+        this.messages.getMessage('error.configFileUnreadable', [
+          configPath,
+          error instanceof Error ? error.message : String(error),
+        ])
       )
     }
   }
 
+  // The config file is untrusted input: `JSON.parse` returns `any`, so without
+  // this the declared shape is a promise the file never had to keep. `lines` is
+  // why it matters most — both `validate()` and `parseLineRanges()` walk it with
+  // `for...of`, which iterates a STRING character by character, so
+  // `"lines": "42"` would silently mutate lines 4 and 2 instead of failing.
+  private assertConfigShape(
+    config: unknown,
+    configPath: string
+  ): MutationTestingConfig {
+    const result = configSchema.safeParse(config)
+    if (result.success) {
+      return result.data
+    }
+
+    const [issue] = result.error.issues
+    // Every issue this schema can raise is an `invalid_type`: it uses only
+    // object/array/string/number/boolean, and unknown keys are stripped rather
+    // than reported. Narrowing on `issue.code` would add a branch no input can
+    // exercise, which the 100% branch-coverage gate would then reject.
+    const { expected } = issue as { expected?: string }
+    const messageKey =
+      MESSAGE_KEY_BY_EXPECTED[String(expected)] ?? CONFIG_ARRAY_MESSAGE_KEY
+    throw new Error(
+      this.messages.getMessage(messageKey, [
+        issue.path.join('.'),
+        configPath,
+        describeType(valueAtPath(config, issue.path)),
+      ])
+    )
+  }
+
   public static parseLineRanges(
-    lines: string[] | undefined
+    lines: string[] | undefined,
+    messages: Messages<string>
   ): Set<number> | undefined {
     if (!lines || lines.length === 0) {
       return undefined
@@ -124,7 +196,7 @@ export class ConfigReader {
         const [start, end] = range.split('-').map(Number)
         if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) {
           throw new Error(
-            `Invalid line range '${range}': must be a number or range (e.g., '10' or '1-10')`
+            messages.getMessage('error.invalidLineRange', [range])
           )
         }
         for (let i = start; i <= end; i++) {
@@ -134,7 +206,7 @@ export class ConfigReader {
         const value = Number(range)
         if (!Number.isFinite(value)) {
           throw new Error(
-            `Invalid line range '${range}': must be a number or range (e.g., '10' or '1-10')`
+            messages.getMessage('error.invalidLineRange', [range])
           )
         }
         result.add(value)
@@ -144,7 +216,8 @@ export class ConfigReader {
   }
 
   public static compileSkipPatterns(
-    patterns: string[] | undefined
+    patterns: string[] | undefined,
+    messages: Messages<string>
   ): SkipPattern[] {
     if (!patterns) {
       return []
@@ -154,7 +227,9 @@ export class ConfigReader {
         return compileSkipPattern(pattern)
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error)
-        throw new Error(`Invalid skip pattern '${pattern}': ${message}`)
+        throw new Error(
+          messages.getMessage('error.invalidSkipPattern', [pattern, message])
+        )
       }
     })
   }
@@ -244,11 +319,13 @@ export class ConfigReader {
 
   private validate(parameter: ApexMutationParameter): void {
     if (parameter.includeMutators && parameter.excludeMutators) {
-      throw new Error('Cannot specify both includeMutators and excludeMutators')
+      throw new Error(
+        this.messages.getMessage('error.mutuallyExclusiveMutators')
+      )
     }
     if (parameter.includeTestMethods && parameter.excludeTestMethods) {
       throw new Error(
-        'Cannot specify both includeTestMethods and excludeTestMethods'
+        this.messages.getMessage('error.mutuallyExclusiveTestMethods')
       )
     }
     // The `!== undefined` half is type narrowing only: `undefined < 0` and
@@ -256,13 +333,13 @@ export class ConfigReader {
     const { threshold } = parameter
     // Stryker disable next-line ConditionalExpression: type narrowing only.
     if (threshold !== undefined && (threshold < 0 || threshold > 100)) {
-      throw new Error('Threshold must be between 0 and 100')
+      throw new Error(this.messages.getMessage('error.thresholdOutOfRange'))
     }
     if (parameter.lines) {
       for (const range of parameter.lines) {
         if (!/^\d+(-\d+)?$/.test(range)) {
           throw new Error(
-            `Invalid line range '${range}': must be a number or range (e.g., '10' or '1-10')`
+            this.messages.getMessage('error.invalidLineRange', [range])
           )
         }
         // Not observable: the regex above already accepted the range, and for a
@@ -273,7 +350,7 @@ export class ConfigReader {
           const [start, end] = range.split('-').map(Number)
           if (start > end) {
             throw new Error(
-              `Invalid line range '${range}': start must be less than or equal to end`
+              this.messages.getMessage('error.invalidLineRangeOrder', [range])
             )
           }
         }

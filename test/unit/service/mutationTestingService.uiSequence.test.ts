@@ -328,7 +328,7 @@ describe('MutationTestingService — golden UI-call sequence', () => {
     const resolveMessageTemplate = (key: string, args?: string[]): string => {
       const templates: Record<string, string> = {
         'error.noCoverage': `No test coverage found for '${args?.[0]}'. Ensure '${args?.[1]}' tests exercise the code you want to mutation test.`,
-        'error.noMutations': `No mutations could be generated for '${args?.[0]}'. ${args?.[1]} line(s) covered but no mutable patterns found.`,
+        'error.noMutations': `No mutations could be generated for '${args?.[0]}'. ${args?.[1]} eligible line(s) but no mutable patterns found.`,
         'error.compilabilityCheckFailed': `The Apex class '${args?.[0]}' does not compile on the target org. Fix compilation errors before running mutation testing.\nError: ${args?.[1]}`,
         'info.timeEstimate': `Estimated time: ${args?.[0]}`,
         'info.timeEstimateBreakdown': `Deploy: ${args?.[0]}/mutant | Test: ${args?.[1]}/mutant | Mutants: ${args?.[2]}`,

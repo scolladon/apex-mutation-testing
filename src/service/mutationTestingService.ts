@@ -34,7 +34,11 @@ import {
 } from './engineNotice.js'
 import { decideExactOutcome, solveColoring } from './exactColoring.js'
 import { GroupExecutor } from './groupExecutor.js'
-import { MutantGenerator } from './mutantGenerator.js'
+import {
+  MutantGenerator,
+  type MutatorFilter,
+  mutatorFilterNarrows,
+} from './mutantGenerator.js'
 import {
   assembleGroups,
   groupMutationsWithInternals,
@@ -44,6 +48,7 @@ import {
   calculateMutationPosition,
   extractMutationOriginalText,
 } from './mutationLocation.js'
+import { diagnoseNoMutations } from './noMutationsDiagnosis.js'
 import type { SkipPattern } from './skipPattern.js'
 import {
   formatSkippedTestClasses,
@@ -109,6 +114,9 @@ export class MutationTestingService {
   protected readonly excludeTestMethods: string[] | undefined
   private readonly skipPatterns: SkipPattern[]
   private readonly allowedLines: Set<number> | undefined
+  // Kept alongside the parsed set so the empty-mutation-set diagnosis can echo
+  // the ranges the user actually typed, not a reconstruction of them.
+  private readonly requestedLines: string[]
   private readonly mutationGroupingEnabled: boolean
   private readonly testClassOrigins: TestClassOrigins | undefined
   private readonly testClassResolutions: TestClassResolutions
@@ -143,8 +151,20 @@ export class MutationTestingService {
     this.excludeMutators = excludeMutators
     this.includeTestMethods = includeTestMethods
     this.excludeTestMethods = excludeTestMethods
-    this.skipPatterns = ConfigReader.compileSkipPatterns(skipPatterns)
-    this.allowedLines = ConfigReader.parseLineRanges(lines)
+    this.skipPatterns = ConfigReader.compileSkipPatterns(skipPatterns, messages)
+    this.allowedLines = ConfigReader.parseLineRanges(lines, messages)
+    // The `?? []` fallback is not observable: `this.requestedLines` is only
+    // read in buildNoMutationsError's 'line-range' arm, which diagnoseNoMutations
+    // only reaches when `this.allowedLines` is defined (see isLineWithinAllowed —
+    // an undefined allowedLines makes every line "in range", so `inRange` can
+    // never come back empty). ConfigReader.parseLineRanges only returns a
+    // defined Set when `lines` is a non-empty array, so whenever the fallback
+    // would matter (`lines` falsy/empty), `allowedLines` is undefined and the
+    // 'line-range' arm — the only reader of requestedLines — is unreachable.
+    // Verified by hand-mutating the fallback to a non-empty sentinel array and
+    // running the full unit+integration+NUT suite (2115 tests): all pass
+    // unchanged.
+    this.requestedLines = lines ?? []
     this.mutationGroupingEnabled = mutationGrouping ?? false
     this.testClassOrigins = testClassOrigins
     this.testClassResolutions = testClassResolutions ?? new Map()
@@ -609,16 +629,64 @@ export class MutationTestingService {
 
     if (mutations.length === 0) {
       this.spinner.stop('0 mutations generated')
-      throw new Error(
-        this.messages.getMessage('error.noMutations', [
-          this.apexClassName,
-          coveredLines.size,
-        ])
-      )
+      throw this.buildNoMutationsError(coveredLines, mutatorFilter)
     }
 
     this.spinner.stop(`${mutations.length} mutations generated`)
     return { mutations, mutantGenerator, tokenStream }
+  }
+
+  // An empty mutation set is almost never "the mutators found nothing" — far
+  // more often one of the user's own filters emptied the candidate set first.
+  // Naming the filter that did it turns a dead end into an actionable message.
+  private buildNoMutationsError(
+    coveredLines: Set<number>,
+    mutatorFilter: MutatorFilter | undefined
+  ): Error {
+    const diagnosis = diagnoseNoMutations({
+      coveredLines,
+      allowedLines: this.allowedLines,
+      skipPatterns: this.skipPatterns,
+      sourceLines: this.apexClassContent.split('\n'),
+      // Asks the generator whether the registry actually shrank, rather than
+      // re-deriving it here: an empty list and a list of unknown names both
+      // leave every mutator enabled, and neither should be blamed.
+      mutatorFilterActive: mutatorFilterNarrows(mutatorFilter),
+    })
+
+    switch (diagnosis.reason) {
+      case 'line-range':
+        return new Error(
+          this.messages.getMessage('error.noMutationsInLineRange', [
+            this.apexClassName,
+            diagnosis.coveredCount,
+            this.requestedLines.join(', '),
+          ])
+        )
+      case 'skip-patterns':
+        return new Error(
+          this.messages.getMessage('error.noMutationsAfterSkipPatterns', [
+            this.apexClassName,
+            diagnosis.inRangeCount,
+          ])
+        )
+      case 'mutator-filter':
+        return new Error(
+          this.messages.getMessage('error.noMutationsForMutatorFilter', [
+            this.apexClassName,
+            diagnosis.eligibleCount,
+          ])
+        )
+      // Listed explicitly rather than via `default:` so a future variant
+      // fails to compile instead of silently rendering the generic message.
+      case 'no-mutable-pattern':
+        return new Error(
+          this.messages.getMessage('error.noMutations', [
+            this.apexClassName,
+            diagnosis.eligibleCount,
+          ])
+        )
+    }
   }
 
   private buildMutatorFilter():

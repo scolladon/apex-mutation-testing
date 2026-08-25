@@ -1584,6 +1584,23 @@ CLI flags > config file > defaults (all mutators, all tests, no threshold)
 
 `ConfigReader.resolve()` merges config file values with CLI flag overrides using `??` (CLI wins when present). Include/exclude pairs are mutually exclusive — enforced by oclif `exclusive` flag attribute. `skipPatterns` and `lines` follow the same merge precedence: CLI flags override config file values.
 
+**Config file shape is validated before merging.** `readConfigFile()` returns the raw `JSON.parse` result — deliberately `unknown`, not a cast — and `assertConfigShape()` parses it through a zod schema, returning the validated value. The schema is the single source of truth: `MutationTestingConfig` is `z.infer<typeof configSchema>`, so a field cannot be added to the type and forgotten in the check. Unknown keys are stripped rather than rejected, so a config written for a newer plugin version stays readable by an older one.
+
+zod is already in the dependency graph via `@salesforce/core`, so declaring it direct adds no install weight — but it must stay pinned to the same version to remain deduped.
+
+Errors are reported through the message bundle, not zod's default text: the failing `issue.path` names the field (`mutators.include.1` for a bad array element), and the offending value is read back out of the input to name the type found, since zod reports `expected` but not `received`. Four keys cover every shape the schema can reject — `error.configFieldNotStringArray`, `error.configEntryNotString`, `error.configFieldNotNumber`, `error.configFieldNotBoolean`.
+
+The field that makes this load-bearing is `lines`. Both `validate()` and `parseLineRanges()` walk it with `for...of`, and `for...of` iterates a **string** character by character — so a scalar where an array belongs is not a type error at runtime, it is a different, silently-accepted input:
+
+```text
+{"lines": "5"}      → validate ACCEPTED → allowedLines {5}     (accidentally right)
+{"lines": "42"}     → validate ACCEPTED → allowedLines {4, 2}  (silently wrong scope)
+{"lines": "90-100"} → validate THROWS "Invalid line range '-'" (loud, but baffling)
+{"lines": ["90-100"]} → allowedLines {90…100}                  (correct)
+```
+
+The `"42"` row is the reason the check exists: the run mutates lines 4 and 2, reports a score for them, and warns about nothing. Every other array-typed config field is consumed by `.map()`, which strings do not have, so those fail fast on their own — `lines` was the only silent one.
+
 ### Class Name Validation
 
 Every Apex class name — the `-c` class under mutation and every `-t` perimeter class — must
@@ -1659,6 +1676,35 @@ isLineEligible(line)
 ```
 
 When `--lines` is not provided, `allowedLines` is `undefined` (no range filter). When `--skip-patterns` is not provided, `skipPatterns` is an empty array (no pattern filter). This means the default behavior (no flags) is identical to the previous `coveredLines.has()` check.
+
+The two configurable filters live in `src/service/lineEligibility.ts` (`isLineWithinAllowed`, `isLineSkipped`) rather than inline, because the empty-mutation-set diagnosis below replays the same rules. One definition per rule means a change to either filter cannot silently make the diagnosis disagree with the walker.
+
+### Diagnosing an Empty Mutation Set
+
+When `MutantGenerator.compute()` returns zero mutations, the mutators are rarely the cause — far more often one of the user's own filters emptied the candidate set first. Reporting the class-wide covered-line count in that situation is actively misleading, because that count is taken *before* `--lines` narrowing. `diagnoseNoMutations()` (`src/service/noMutationsDiagnosis.ts`) replays the line filters over `coveredLines` and reports the **first** filter that emptied the set, so the message names the flag the user actually has to change:
+
+```text
+diagnoseNoMutations({ coveredLines, allowedLines, skipPatterns,
+                      sourceLines, mutatorFilterActive })
+    │
+    ├─ no covered line within allowedLines?    → 'line-range'
+    │                                            (error.noMutationsInLineRange)
+    │
+    ├─ every in-range line skipped by pattern? → 'skip-patterns'
+    │                                            (error.noMutationsAfterSkipPatterns)
+    │
+    ├─ mutator filter active?                  → 'mutator-filter'
+    │                                            (error.noMutationsForMutatorFilter)
+    │
+    └─ otherwise                               → 'no-mutable-pattern'
+                                                 (error.noMutations)
+```
+
+Every reason reports the count of the set that was actually examined — `coveredCount` for `line-range`, `inRangeCount` for `skip-patterns`, `eligibleCount` for both `mutator-filter` and `no-mutable-pattern`. The last one matters: on a narrowed run the class-wide covered count is precisely the misleading figure the change exists to remove, so the fall-through arm reports eligible lines too. With no flags set the two coincide, so an unfiltered run reports the same number it always did.
+
+`mutatorFilterActive` is answered by `mutantGenerator.mutatorFilterNarrows()` rather than re-derived from the filter object, so the diagnosis cannot disagree with the registry the walker actually ran. Two shapes leave the full registry in place and must therefore never be blamed: an empty list (`{"mutators": {"include": []}}` in a config file) and a list whose names match no mutator (a typo in `--exclude-mutators`).
+
+`MutationTestingService.buildNoMutationsError()` maps each reason onto its message key, echoing the raw `--lines` ranges the user typed for the `line-range` case. The diagnosis runs only on the empty path, so the Proxy's hot path stays uninstrumented. Precondition: `coveredLines` is non-empty — `extractCoveredLines()` throws `error.noCoverage` before this point.
 
 ### re2js for Regex Safety
 
