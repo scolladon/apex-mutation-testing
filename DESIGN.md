@@ -106,12 +106,14 @@ grouped by cause, and announced through `EngineNotice` after the batch resolves 
 swallowed, and the namespace lets it alias a namespaced field to the bare spelling source
 may legally write inside the org's own namespace (see [Type Classification](#type-classification)).
 
-Two more `src/adapter/org/` modules carry no port implementation of their own.
+Three more `src/adapter/org/` modules carry no port implementation of their own.
 `orgTypeNames.ts` — module-private, extracted from `OrgApexSourceProvider` — derives every
 `TypeName { apiName, aliases }` from a dependency row, an `EntityDefinition` row, or a bare
 identity, plus the org namespace threaded in from `orgEngine.ts`. `queryChunking.ts` holds
 the `chunk()` helper both `ApexClassRepository` and `EntityDefinitionRepository` batch their
-`IN`-clause reads through.
+`IN`-clause reads through. `soqlLiteral.ts` owns the one question every query in this layer
+has to answer — how a value becomes query text — and is described under
+[SOQL Literal Safety](#soql-literal-safety).
 
 ---
 
@@ -1617,20 +1619,51 @@ Every Apex class name — the `-c` class under mutation and every `-t` perimeter
 match `/^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)?$/` before any file or org I/O: an
 Apex identifier, optionally preceded by one namespace qualifier and a dot (`MyClass` or
 `MyNamespace.MyClass`). `ApexClassRepository.readCandidates` / `readBodyCandidates` /
-`readIdentities` reach the Tooling API through jsforce's `.find()`, whose string-literal
-builder escapes single quotes but leaves backslashes raw: a name ending in a backslash
-escapes its own closing quote, so the literal runs on into the rest of the `WHERE` clause
-and the org answers `MALFORMED_QUERY`. Constraining the name to this grammar keeps every
-such character out of the query text, and covers every one of those call sites at once
-rather than one. A name that fits the grammar but contains the object-record separator
-`__` (e.g. `ns__MyClass`) is rejected separately: it cannot compile as an Apex identifier,
-so it can only be the object/field convention typed by mistake for the dotted class
-convention — the error names the dotted spelling to use instead.
+`readIdentities` reach the Tooling API through jsforce's `.find()`. Constraining the name
+to this grammar rejects a typo at the CLI boundary rather than as a puzzling zero-row org
+result, and covers every one of those call sites at once rather than one. A name that fits
+the grammar but contains the object-record separator `__` (e.g. `ns__MyClass`) is rejected
+separately: it cannot compile as an Apex identifier, so it can only be the object/field
+convention typed by mistake for the dotted class convention — the error names the dotted
+spelling to use instead.
 
 Suite names are deliberately excluded from this rule: they name a different field
-(`ApexTestSuite.TestSuiteName`), reach the org through `ApexTestSuiteRepository`, which
-builds raw SOQL with correct escaping (backslash before quote — the order is load-bearing),
-and their permitted character set is not the class identifier grammar.
+(`ApexTestSuite.TestSuiteName`), reach the org through `ApexTestSuiteRepository`, and their
+permitted character set is not the class identifier grammar.
+
+### SOQL Literal Safety
+
+The grammar above is a **usability** guard. Query-text integrity is a separate concern and
+belongs to the layer that builds the query, not to a validator four modules upstream —
+`src/adapter/org/soqlLiteral.ts` owns it.
+
+Exactly two characters can alter a query from inside a single-quoted literal: a quote closes
+it, and a backslash escapes whatever follows — including the closing quote, which lets the
+literal run on into the rest of the `WHERE` clause. Neither builder this layer hands values
+to handles both: jsforce's `soql-builder` escapes quotes and leaves backslashes raw, and
+`@salesforce/apex-node` builds `... WHERE Name = '${shortName}' ...` with no escaping at all
+(in `getApexClassIds` / `buildSuite`, a path `ApexTestRunner` never takes — it only calls
+`runTestSynchronous` / `runTestAsynchronous`).
+
+So the module splits by ownership:
+
+- **Queries this layer writes itself** are escaped. `escapeSoqlLiteral` doubles backslashes
+  *before* escaping quotes — the order is load-bearing, since the reverse would let a
+  payload's own trailing backslash escape the backslash just added in front of the closing
+  quote. `toSoqlLiteralList` wraps it for `IN` clauses; `ApexTestSuiteRepository` is its
+  only consumer today.
+- **Predicates handed to a builder whose escaping this layer does not own** are refused.
+  `assertSoqlLiteralSafe` throws on a quote or a backslash at the three `.find({ Name })`
+  sinks in `ApexClassRepository`. No reachable input reaches that throw — `ConfigReader`
+  rejects both characters first — which is the point: the guard exists so that widening the
+  class-name grammar makes the query fail to build rather than build wrong. It is a plain
+  `Error` — deliberately outside the message bundle, and deliberately *not* quoting the
+  rejected value: this is an invariant breach aimed at whoever widened the grammar, and
+  echoing attacker-shaped text into CLI output would make the guard its own output sink.
+
+`EntityDefinition.DeveloperName` reads are left unguarded on purpose. Those names are not
+user text — they are identifiers the ANTLR Apex lexer produced from source the org already
+compiled, so a guard there would be asserting against the lexer, not against an input.
 
 ### Mutator Registry
 

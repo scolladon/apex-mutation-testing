@@ -96,6 +96,25 @@ describe('ApexClassRepository', () => {
       expect(fields).toEqual(['NamespacePrefix', 'ManageableState'])
     })
 
+    it.each(["Mutation' OR Name != '", 'Mutation\\'])(
+      'Given a name carrying a quote or backslash (%j), When reading ApexClass candidates, Then it refuses to build the predicate',
+      async hostileName => {
+        // Arrange — jsforce's literal builder escapes quotes but leaves
+        // backslashes raw, so a name it accepts can still close its own
+        // literal and run on into the WHERE clause. ConfigReader rejects
+        // both characters upstream; this asserts the sink no longer depends
+        // on that being true.
+
+        // Act
+        const act = sut.readCandidates(hostileName)
+
+        // Assert
+        await expect(act).rejects.toBeInstanceOf(Error)
+        await expect(act).rejects.toThrow(/does not escape it/)
+        expect(findArgsMock).not.toHaveBeenCalled()
+      }
+    )
+
     it.each([undefined, ''])(
       'Given a falsy name (%j), When reading ApexClass candidates, Then it resolves empty without issuing an unfiltered find',
       async falsyName => {

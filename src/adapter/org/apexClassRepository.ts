@@ -7,6 +7,7 @@ import { ApexClassIdentity } from './ApexClassIdentity.js'
 import type { ApexClassCandidate } from './apexClassMutability.js'
 import { MetadataComponentDependency } from './MetadataComponentDependency.js'
 import { chunk } from './queryChunking.js'
+import { assertSoqlLiteralSafe } from './soqlLiteral.js'
 
 const DEFAULT_POLL_INITIAL_INTERVAL_MS = 100
 const DEFAULT_POLL_MAX_INTERVAL_MS = 2000
@@ -130,7 +131,7 @@ export class ApexClassRepository {
     }
     return (await this.connection.tooling
       .sobject('ApexClass')
-      .find({ Name: name }, CANDIDATE_PROJECTION)
+      .find({ Name: assertSoqlLiteralSafe(name) }, CANDIDATE_PROJECTION)
       .execute()) as unknown as ApexClassCandidate[]
   }
 
@@ -152,7 +153,7 @@ export class ApexClassRepository {
     }
     return (await this.connection.tooling
       .sobject('ApexClass')
-      .find({ Name: name }, BODY_CANDIDATE_PROJECTION)
+      .find({ Name: assertSoqlLiteralSafe(name) }, BODY_CANDIDATE_PROJECTION)
       .execute()) as unknown as ApexClassBodyCandidate[]
   }
 
@@ -189,7 +190,7 @@ export class ApexClassRepository {
     }
     return (await this.connection.tooling
       .sobject('ApexClass')
-      .find({ Name: { $in: names } }, [
+      .find({ Name: { $in: names.map(name => assertSoqlLiteralSafe(name)) } }, [
         'Id',
         'Name',
         'NamespacePrefix',

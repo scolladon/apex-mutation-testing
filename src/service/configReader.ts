@@ -9,22 +9,21 @@ const DEFAULT_CONFIG_FILE = '.mutation-testing.json'
 
 // An Apex class name is a letter followed by letters, digits or
 // underscores, optionally preceded by one namespace qualifier and a dot
-// (e.g. 'MyClass' or 'MyNamespace.MyClass'). Enforcing that shape keeps
-// every other character out of the Tooling API query text: its
-// string-literal builder escapes quotes but leaves backslashes raw, so a
-// name carrying a backslash escapes the closing quote and the literal runs
-// on into the rest of the WHERE clause. The added segment admits exactly
-// one '.' between two identifier segments, so no quote, backslash or
-// whitespace becomes representable — the injection guard is intact.
+// (e.g. 'MyClass' or 'MyNamespace.MyClass'). The added segment admits
+// exactly one '.' between two identifier segments, so no quote, backslash
+// or whitespace is representable.
 //
-// A second downstream SOQL sink this grammar also guards against:
-// @salesforce/apex-node's testService.js builds
-// `... WHERE Name = '${shortName}' ...` with zero escaping, in the helper
-// reached only through getApexClassIds / buildSuite. This plugin never
-// calls that path — it only calls runTestSynchronous / runTestAsynchronous
-// — so there is no live exposure today, but a future widening of this
-// grammar must be evaluated against both sinks, not just jsforce's
-// quote-only escaping.
+// This grammar is a usability guard — it rejects a typo'd name here rather
+// than as a puzzling zero-row org result — and it is no longer the only
+// thing standing between a hostile name and the Tooling API query text.
+// It used to be: jsforce's literal builder escapes quotes but leaves
+// backslashes raw, and @salesforce/apex-node builds
+// `... WHERE Name = '${shortName}' ...` with no escaping at all, so
+// widening this regex silently widened both sinks. Query-text integrity now
+// belongs to the adapter that builds the query — see
+// adapter/org/soqlLiteral.ts, which escapes what it owns and refuses what it
+// does not. Widening this grammar is now a product decision, not a security
+// one.
 const APEX_CLASS_NAME_PATTERN =
   /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)?$/
 

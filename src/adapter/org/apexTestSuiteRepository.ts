@@ -1,5 +1,6 @@
 import { Connection } from '@salesforce/core'
 import type { ApexTestSuiteMember } from '../../port/apexSourceProvider.js'
+import { toSoqlLiteralList } from './soqlLiteral.js'
 
 interface TestSuiteMembershipRecord {
   ApexTestSuite: { TestSuiteName: string }
@@ -9,12 +10,6 @@ interface TestSuiteMembershipRecord {
 interface ApexTestSuiteRecord {
   TestSuiteName: string
 }
-
-const escapeSoqlLiteral = (value: string): string =>
-  value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
-
-const toSoqlLiteralList = (values: string[]): string =>
-  values.map(value => `'${escapeSoqlLiteral(value)}'`).join(', ')
 
 export class ApexTestSuiteRepository {
   constructor(private readonly connection: Connection) {}
