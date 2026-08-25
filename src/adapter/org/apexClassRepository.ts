@@ -2,7 +2,9 @@ import { Connection } from '@salesforce/core'
 import { mapLimit } from 'async'
 import { type RestorePolicy, RUN_TESTS } from '../../port/mutationTestBed.js'
 import { ApexClass } from '../../type/ApexClass.js'
+import { bareApexClassName } from '../../type/ApexClassName.js'
 import { ApexClassIdentity } from './ApexClassIdentity.js'
+import type { ApexClassCandidate } from './apexClassMutability.js'
 import { MetadataComponentDependency } from './MetadataComponentDependency.js'
 import { chunk } from './queryChunking.js'
 
@@ -29,14 +31,28 @@ const MAX_CONCURRENT_IDENTITY_QUERIES = 25
 
 // A named projection is load-bearing here (RefMetadataComponentNamespace is
 // consumed downstream), and naming it also avoids the describe round-trip an
-// unprojected find resolves through — see the classExists comment in
-// orgApexSourceProvider.ts for the cost this pattern otherwise pays.
+// unprojected find resolves through — see readCandidates/readBodyCandidates
+// below for the other two queries this repository projects for the same
+// reason.
 const DEPENDENCY_PROJECTION = [
   'Id',
   'RefMetadataComponentType',
   'RefMetadataComponentName',
   'RefMetadataComponentNamespace',
 ]
+
+const CANDIDATE_PROJECTION = ['NamespacePrefix', 'ManageableState']
+const BODY_CANDIDATE_PROJECTION = [
+  'Id',
+  'Body',
+  'NamespacePrefix',
+  'ManageableState',
+]
+
+export interface ApexClassBodyCandidate extends ApexClassCandidate {
+  Id: string
+  Body: string
+}
 
 interface PollOptions {
   initialIntervalMs?: number
@@ -99,19 +115,62 @@ export class ApexClassRepository {
     }
   }
 
-  public async read(name: string, fields?: string[]) {
-    const finder = this.connection.tooling.sobject('ApexClass')
-    const query = fields
-      ? finder.find({ Name: name, NamespacePrefix: '' }, fields)
-      : finder.find({ Name: name, NamespacePrefix: '' })
-    return (await query.execute())[0]
+  // No namespace or ManageableState predicate: either filter would make a
+  // managed class and a genuinely absent class both come back as zero rows,
+  // collapsing the very distinction a discriminated verdict exists to
+  // preserve. Classification happens in memory, over every candidate row
+  // this bare name returns across every namespace.
+  // Guards the sink rather than trusting a caller's name to always be
+  // truthy: jsforce drops a predicate whose value is undefined, which would
+  // turn this into an unfiltered org-wide read — the first mutable row of
+  // the whole org, handed back as if it were the requested class.
+  public async readCandidates(name: string): Promise<ApexClassCandidate[]> {
+    if (!name) {
+      return []
+    }
+    return (await this.connection.tooling
+      .sobject('ApexClass')
+      .find({ Name: name }, CANDIDATE_PROJECTION)
+      .execute()) as unknown as ApexClassCandidate[]
   }
 
-  // No namespace pin here, unlike `read`: pinning `NamespacePrefix: ''`
-  // makes a namespaced class indistinguishable from one that does not exist
-  // at all, and telling those two apart is the whole point of this query.
-  public async readIdentities(names: string[]): Promise<ApexClassIdentity[]> {
-    const chunks = chunk(names, IDENTITY_QUERY_CHUNK_SIZE)
+  // Same candidate set as readCandidates, with the fields a mutation run
+  // needs once a candidate is actually selected. A managed row's Body reads
+  // back as the literal string "(hidden)", but that hazard cannot reach the
+  // parser here: the row count is bounded to one per namespace and an
+  // `installed` row is excluded by state before any body is used.
+  // Guards the sink rather than trusting a caller's name to always be
+  // truthy: jsforce drops a predicate whose value is undefined, which would
+  // turn this into an unfiltered org-wide read — the first mutable row of
+  // the whole org, handed back (body included) as if it were the requested
+  // class.
+  public async readBodyCandidates(
+    name: string
+  ): Promise<ApexClassBodyCandidate[]> {
+    if (!name) {
+      return []
+    }
+    return (await this.connection.tooling
+      .sobject('ApexClass')
+      .find({ Name: name }, BODY_CANDIDATE_PROJECTION)
+      .execute()) as unknown as ApexClassBodyCandidate[]
+  }
+
+  // No namespace pin here, matching readCandidates/readBodyCandidates above,
+  // and no `ManageableState` predicate either: either filter would make a
+  // managed class and a nonexistent class both come back as zero rows,
+  // destroying the not-found / not-accessible distinction this query exists
+  // to preserve.
+  // `ApexClass.Name` is always bare on the org, so every spelling is
+  // bare-ified before the query; deduped afterwards since `-t Foo -t
+  // mockery.Foo` is a legal perimeter that maps to one bare SOQL term.
+  public async readIdentities(
+    spellings: string[]
+  ): Promise<ApexClassIdentity[]> {
+    const chunks = chunk(
+      [...new Set(spellings.map(bareApexClassName))],
+      IDENTITY_QUERY_CHUNK_SIZE
+    )
     const rows = await mapLimit(
       chunks,
       MAX_CONCURRENT_IDENTITY_QUERIES,
@@ -130,7 +189,12 @@ export class ApexClassRepository {
     }
     return (await this.connection.tooling
       .sobject('ApexClass')
-      .find({ Name: { $in: names } }, ['Name', 'NamespacePrefix'])
+      .find({ Name: { $in: names } }, [
+        'Id',
+        'Name',
+        'NamespacePrefix',
+        'ManageableState',
+      ])
       .execute()) as unknown as ApexClassIdentity[]
   }
 

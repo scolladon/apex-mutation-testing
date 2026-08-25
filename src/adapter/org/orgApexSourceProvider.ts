@@ -1,13 +1,32 @@
+import {
+  ApexClassAmbiguousError,
+  ApexClassNotFoundError,
+  ApexClassNotMutableError,
+  ApexClassUnqualifiedError,
+} from '../../port/apexClassErrors.js'
 import type {
   ApexSourceProvider,
   ApexTestSuiteMember,
+  PerimeterAssessment,
+  TargetClassVerdict,
   TypeDependencies,
   TypeName,
 } from '../../port/apexSourceProvider.js'
 import type { EngineNotify } from '../../port/executionEngine.js'
 import type { ApexClass } from '../../type/ApexClass.js'
-import type { SkippedTestClass } from '../../type/SkippedTestClass.js'
+import type { ApexClassRef } from '../../type/ApexClassName.js'
+import { splitApexClassName } from '../../type/ApexClassName.js'
+import type { UnusableReason } from '../../type/SkippedTestClass.js'
+import type { TestClassResolution } from '../../type/TestClassResolution.js'
 import type { ApexClassIdentity } from './ApexClassIdentity.js'
+import type {
+  ApexClassCandidate,
+  TargetClassSelection,
+} from './apexClassMutability.js'
+import {
+  isMutableApexClass,
+  selectMutableClass,
+} from './apexClassMutability.js'
 import type { ApexClassRepository } from './apexClassRepository.js'
 import type { ApexTestSuiteRepository } from './apexTestSuiteRepository.js'
 import type {
@@ -18,15 +37,71 @@ import type { MetadataComponentDependency } from './MetadataComponentDependency.
 import {
   groupByJoinKey,
   identityTypeName,
+  isOwnNamespace,
   partitionByEntityRow,
+  qualifiedApexClassName,
   qualifiedDeveloperName,
   toApexClassTypeName,
 } from './orgTypeNames.js'
 
-// A namespace prefix of `null` or `''` both mean local: the org emits either
-// depending on projection, so both must read as usable.
-const isLocal = (identity: ApexClassIdentity): boolean =>
-  !identity.NamespacePrefix
+// Absent is a verdict, not an exception: the local `aer` backend may not
+// populate ManageableState at all, and the message must say so readably
+// rather than printing `null`.
+const NO_STATE_REPORTED = 'none reported'
+const observedState = (state: string | null): string =>
+  state ?? NO_STATE_REPORTED
+
+// Deduped: several non-mutable rows commonly share one ManageableState (e.g.
+// three managed rows all reporting 'installed'), and the message this feeds
+// is phrased in the singular — without deduping, a repeated state would
+// render as "manageable state: installed, installed, installed".
+const observedStates = (
+  candidates: readonly ApexClassCandidate[]
+): string[] => [
+  ...new Set(candidates.map(c => observedState(c.ManageableState))),
+]
+
+// Every row's qualified spelling is always a lookup key. Its bare spelling
+// joins only when the row's namespace is this org's own — a bare name is
+// legal source only inside the namespace that owns it, so a foreign row must
+// never mint one, even when it is the only row that answers to that bare
+// name: admitting it there is exactly the write-perimeter defect this rule
+// closes (selectMutableClass's own-namespace arm enforces the identical rule
+// on the write side). Case-folded throughout because ApexClass.Name matches
+// case-insensitively on the org and the perimeter entry is user-typed.
+const spellingsOf = (
+  identity: ApexClassIdentity,
+  orgNamespace: string | null
+): string[] => {
+  const bare = identity.Name.toLowerCase()
+  const qualified = qualifiedApexClassName(
+    identity.Name,
+    identity.NamespacePrefix
+  ).toLowerCase()
+  if (bare === qualified) {
+    // A row with no namespace has no separate qualified spelling to begin
+    // with — the bare name IS its only spelling — so withholding it is not
+    // an option: the row would be left with no lookup key at all.
+    return [bare]
+  }
+  return isOwnNamespace(identity.NamespacePrefix, orgNamespace)
+    ? [bare, qualified]
+    : [qualified]
+}
+
+// One resolution per row.
+const toResolutions = (
+  identities: ApexClassIdentity[],
+  orgNamespace: string | null
+): TestClassResolution[] =>
+  identities.map(identity => ({
+    classId: identity.Id,
+    displayName: qualifiedApexClassName(
+      identity.Name,
+      identity.NamespacePrefix
+    ),
+    lookupKeys: spellingsOf(identity, orgNamespace),
+  }))
 
 const toError = (value: unknown): Error =>
   value instanceof Error ? value : new Error(String(value))
@@ -40,17 +115,91 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
     private readonly orgNamespace: string | null
   ) {}
 
-  // Existence-only check: a minimal projection avoids the `*` field list
-  // jsforce resolves for an unprojected find (a describe$ round-trip
-  // pulling every ApexClass field, including Body and SymbolTable).
-  // readClass re-reads the same class in full when mutation actually
-  // starts, so that full read is deliberately left alone.
-  public async classExists(name: string): Promise<boolean> {
-    return Boolean(await this.repository.read(name, ['Id']))
+  // The qualifier narrows the candidate set BEFORE the tie-break runs; it
+  // never becomes a new verdict kind and never reaches a downstream join.
+  private select<T extends ApexClassCandidate>(
+    candidates: readonly T[],
+    ref: ApexClassRef
+  ): TargetClassSelection<T> {
+    const scoped =
+      ref.namespace === null
+        ? candidates
+        : candidates.filter(c =>
+            isOwnNamespace(c.NamespacePrefix, ref.namespace)
+          )
+    // A qualifier names the namespace that owns this lookup; absent one, the
+    // org's own does.
+    return selectMutableClass(scoped, ref.namespace ?? this.orgNamespace)
   }
 
+  public async assessTargetClass(name: string): Promise<TargetClassVerdict> {
+    const ref = splitApexClassName(name)
+    const selection = this.select(
+      await this.repository.readCandidates(ref.name),
+      ref
+    )
+    switch (selection.kind) {
+      case 'mutable':
+        return { kind: 'mutable' }
+      case 'not-mutable':
+        return {
+          kind: 'not-mutable',
+          states: observedStates(selection.candidates),
+        }
+      case 'ambiguous':
+        return {
+          kind: 'ambiguous',
+          spellings: selection.candidates.map(c =>
+            qualifiedApexClassName(ref.name, c.NamespacePrefix)
+          ),
+        }
+      case 'unqualified':
+        return {
+          kind: 'unqualified',
+          spelling: qualifiedApexClassName(
+            ref.name,
+            selection.candidate.NamespacePrefix
+          ),
+        }
+      case 'not-found':
+        return { kind: 'not-found' }
+    }
+  }
+
+  // Rejects with the same typed errors apexClassValidator.ts throws for the
+  // identical conditions, rather than a raw Error naming its internal
+  // verdict kind: assessTargetClass and readClass are two separate org
+  // round-trips classifying the same rows, so a check-then-use race between them
+  // must surface through the one curated, already-handled error vocabulary.
   public async readClass(name: string): Promise<ApexClass> {
-    return (await this.repository.read(name)) as unknown as ApexClass
+    const ref = splitApexClassName(name)
+    const selection = this.select(
+      await this.repository.readBodyCandidates(ref.name),
+      ref
+    )
+    switch (selection.kind) {
+      case 'mutable':
+        return selection.candidate
+      case 'not-found':
+        throw new ApexClassNotFoundError(name)
+      case 'not-mutable':
+        throw new ApexClassNotMutableError(
+          name,
+          observedStates(selection.candidates)
+        )
+      case 'ambiguous':
+        throw new ApexClassAmbiguousError(
+          name,
+          selection.candidates.map(c =>
+            qualifiedApexClassName(ref.name, c.NamespacePrefix)
+          )
+        )
+      case 'unqualified':
+        throw new ApexClassUnqualifiedError(
+          name,
+          qualifiedApexClassName(ref.name, selection.candidate.NamespacePrefix)
+        )
+    }
   }
 
   public async listDependencies(
@@ -167,26 +316,101 @@ export class OrgApexSourceProvider implements ApexSourceProvider {
     })
   }
 
+  // The rows whose bare spelling spellingsOf withheld because they are
+  // foreign — a bare perimeter entry naming one of them is not merely
+  // "not-accessible" (a dead end), it is missing only the namespace
+  // qualifier, which the caller can supply and re-run *and have it work*.
+  // That last part is the reason for the isMutableApexClass guard: a foreign
+  // row this org cannot modify (e.g. a closed managed package) would still
+  // fail under its qualified spelling, so it is not-accessible, not
+  // not-qualified — mirroring selectMutableClass, which filters mutable
+  // before ever reaching its `unqualified` arm. A row that mints its own
+  // bare key (own-namespace, or no namespace to withhold in the first place)
+  // is never a member, regardless of its ManageableState.
+  private static withheldBareNames(
+    rows: readonly {
+      identity: ApexClassIdentity
+      resolution: TestClassResolution
+    }[]
+  ): Set<string> {
+    return new Set(
+      rows
+        .filter(
+          ({ identity, resolution }) =>
+            isMutableApexClass(identity) &&
+            // Stryker disable next-line MethodExpression: structurally
+            // unreachable — any mutable row whose bare name is in its own
+            // lookupKeys is already in the unconditionally-built
+            // `accessible` set, so this path never runs for it regardless
+            // of case.
+            !resolution.lookupKeys.includes(identity.Name.toLowerCase())
+        )
+        .map(({ identity }) => identity.Name.toLowerCase())
+    )
+  }
+
+  private static classifyUnusable(
+    name: string,
+    known: ReadonlySet<string>,
+    withheldBareNames: ReadonlySet<string>
+  ): Extract<UnusableReason, 'not-found' | 'not-qualified' | 'not-accessible'> {
+    const key = name.toLowerCase()
+    if (!known.has(key)) {
+      return 'not-found'
+    }
+    return withheldBareNames.has(key) ? 'not-qualified' : 'not-accessible'
+  }
+
   /** A name can return two rows when a managed and a local class share it,
-   *  and any local row makes the entry usable. Every join is case-folded —
+   *  and any *mutable* row makes the entry usable — a qualified entry can
+   *  match at most one row, so "is at least one row for this entry usable"
+   *  reduces to "is *the* row usable". Every join is case-folded —
    *  `ApexClass.Name` matches case-insensitively on the org — while the
-   *  reported className keeps the perimeter entry's own spelling. */
+   *  reported className keeps the perimeter entry's own spelling. The same
+   *  query also yields every resolution: one per row the query returned,
+   *  not one per perimeter entry — a bare entry matching two rows
+   *  contributes two, so whichever class the org actually runs is present
+   *  under its own Id. */
   public async assessPerimeter(
     apexTestClassNames: string[]
-  ): Promise<SkippedTestClass[]> {
+  ): Promise<PerimeterAssessment> {
     const identities = await this.repository.readIdentities(apexTestClassNames)
-    const lowerNames = (rows: ApexClassIdentity[]) =>
-      new Set(rows.map(identity => identity.Name.toLowerCase()))
-    const known = lowerNames(identities)
-    const accessible = lowerNames(identities.filter(isLocal))
-    return apexTestClassNames
+    const resolutions = toResolutions(identities, this.orgNamespace)
+    const rows = identities.map((identity, index) => ({
+      identity,
+      resolution: resolutions[index],
+    }))
+    // Independent of lookupKeys on purpose: "does a class by this name exist
+    // at all" and "does it answer to this exact spelling" are different
+    // questions. Since spellingsOf withholds the bare key from a foreign row,
+    // driving `known` off lookupKeys would make a bare entry naming only a
+    // foreign row report not-found instead of not-qualified/not-accessible.
+    const known = new Set(
+      identities.flatMap(identity => [
+        identity.Name.toLowerCase(),
+        qualifiedApexClassName(
+          identity.Name,
+          identity.NamespacePrefix
+        ).toLowerCase(),
+      ])
+    )
+    const withheldBareNames = OrgApexSourceProvider.withheldBareNames(rows)
+    const accessible = new Set(
+      rows
+        .filter(({ identity }) => isMutableApexClass(identity))
+        .flatMap(({ resolution }) => resolution.lookupKeys)
+    )
+    const skipped = apexTestClassNames
       .filter(name => !accessible.has(name.toLowerCase()))
       .map(name => ({
-        className: name,
-        reason: known.has(name.toLowerCase())
-          ? ('not-accessible' as const)
-          : ('not-found' as const),
+        className: name, // the caller's own spelling — load-bearing, see below
+        reason: OrgApexSourceProvider.classifyUnusable(
+          name,
+          known,
+          withheldBareNames
+        ),
       }))
+    return { skipped, resolutions }
   }
 
   public async readTestSuiteMembers(

@@ -4,17 +4,30 @@ import {
 } from '../../../src/service/coverageStrategy.js'
 import type { ApexTestRunResult } from '../../../src/type/ApexTestRunResult.js'
 
-const declaringClass = {
-  name: 'ApexClassTest',
-  namespacePrefix: '',
-  fullName: 'ApexClassTest',
-}
+// 18-character org Ids, pinned equal in width on both namespaced and
+// non-namespaced orgs. TARGET_CLASS_ID and FOREIGN_CLASS_ID differ in more
+// than case so a fixture using both can tell a real join from a vacuous one.
+const TARGET_CLASS_ID = '01pjV000000EE9ZQAW'
+const FOREIGN_CLASS_ID = '01pjV000000EE9bQAG'
+// Same characters as TARGET_CLASS_ID, folded to lowercase — proves the Id
+// join performs no case folding, unlike the name join it replaces.
+const CASE_FOLDED_CLASS_ID = '01pjv000000ee9zqaw'
+
+// The declaring TEST class's own id — a different fact from the coverage
+// rows' classId above (that identifies the class UNDER mutation). Deliberately
+// not derivable from 'ApexClassTest'/'FooTest'/'BarTest', so a fixture
+// asserting on the qualified TestMethodId can tell a real id-based qualifier
+// from one that silently still reads the display name.
+const DECLARING_CLASS_ID = '01pjV000000EEw1QAG'
+const FOO_DECLARING_CLASS_ID = '01pjV000000EEw2QAG'
+const BAR_DECLARING_CLASS_ID = '01pjV000000EEw3QAG'
+const NS_FOO_DECLARING_CLASS_ID = '01pjV000000EEw4QAG'
 
 describe('PerTestCoverageStrategy', () => {
   let sut: PerTestCoverageStrategy
 
   beforeEach(() => {
-    sut = new PerTestCoverageStrategy('ApexClass')
+    sut = new PerTestCoverageStrategy(TARGET_CLASS_ID)
   })
 
   describe('when getting test methods per line', () => {
@@ -24,18 +37,18 @@ describe('PerTestCoverageStrategy', () => {
         const mockTestResult = {
           tests: [
             {
+              classId: DECLARING_CLASS_ID,
               methodName: 'testMethodA',
-              className: declaringClass.fullName,
               coverage: [
                 {
-                  className: 'ApexClass',
+                  classId: TARGET_CLASS_ID,
                   testMethodName: 'testMethodA',
                   detail: {
                     coveredLines: [1, 2, 3],
                   },
                 },
                 {
-                  className: 'ApexClass',
+                  classId: TARGET_CLASS_ID,
                   testMethodName: 'testMethodB',
                   detail: {
                     coveredLines: [4, 5],
@@ -52,11 +65,11 @@ describe('PerTestCoverageStrategy', () => {
         // Assert
         expect(result).toEqual(
           new Map([
-            [1, new Set(['ApexClassTest.testMethodA'])],
-            [2, new Set(['ApexClassTest.testMethodA'])],
-            [3, new Set(['ApexClassTest.testMethodA'])],
-            [4, new Set(['ApexClassTest.testMethodB'])],
-            [5, new Set(['ApexClassTest.testMethodB'])],
+            [1, new Set([`${DECLARING_CLASS_ID}.testMethodA`])],
+            [2, new Set([`${DECLARING_CLASS_ID}.testMethodA`])],
+            [3, new Set([`${DECLARING_CLASS_ID}.testMethodA`])],
+            [4, new Set([`${DECLARING_CLASS_ID}.testMethodB`])],
+            [5, new Set([`${DECLARING_CLASS_ID}.testMethodB`])],
           ])
         )
       })
@@ -81,8 +94,8 @@ describe('PerTestCoverageStrategy', () => {
         const mockTestResult = {
           tests: [
             {
+              classId: DECLARING_CLASS_ID,
               methodName: 'testMethod',
-              className: declaringClass.fullName,
               coverage: null,
             },
           ],
@@ -102,13 +115,78 @@ describe('PerTestCoverageStrategy', () => {
         const mockTestResult = {
           tests: [
             {
+              classId: DECLARING_CLASS_ID,
               methodName: 'testMethod',
-              className: declaringClass.fullName,
               coverage: [
                 {
-                  className: 'SomeOtherClass',
+                  classId: FOREIGN_CLASS_ID,
                   testMethodName: 'testMethod',
                   detail: { coveredLines: [1, 2] },
+                },
+              ],
+            },
+          ],
+        } as unknown as ApexTestRunResult
+
+        // Act
+        const result = sut.getTestMethodsPerLine(mockTestResult)
+
+        // Assert
+        expect(result).toEqual(new Map())
+      })
+    })
+
+    describe('given two coverage rows with different class ids, only one of which is the target', () => {
+      it('then should keep only the covered lines belonging to the target class id', () => {
+        // Arrange
+        const mockTestResult = {
+          tests: [
+            {
+              classId: DECLARING_CLASS_ID,
+              methodName: 'testRun',
+              coverage: [
+                {
+                  classId: TARGET_CLASS_ID,
+                  testMethodName: 'testRun',
+                  detail: { coveredLines: [1, 2] },
+                },
+                {
+                  classId: FOREIGN_CLASS_ID,
+                  testMethodName: 'testRun',
+                  detail: { coveredLines: [99] },
+                },
+              ],
+            },
+          ],
+        } as unknown as ApexTestRunResult
+
+        // Act
+        const result = sut.getTestMethodsPerLine(mockTestResult)
+
+        // Assert
+        expect(result.has(99)).toBe(false)
+        expect(result).toEqual(
+          new Map([
+            [1, new Set([`${DECLARING_CLASS_ID}.testRun`])],
+            [2, new Set([`${DECLARING_CLASS_ID}.testRun`])],
+          ])
+        )
+      })
+    })
+
+    describe('given a coverage row whose class id differs from the target only by case', () => {
+      it('then should exclude it', () => {
+        // Arrange
+        const mockTestResult = {
+          tests: [
+            {
+              classId: DECLARING_CLASS_ID,
+              methodName: 't',
+              coverage: [
+                {
+                  classId: CASE_FOLDED_CLASS_ID,
+                  testMethodName: 't',
+                  detail: { coveredLines: [1] },
                 },
               ],
             },
@@ -129,11 +207,11 @@ describe('PerTestCoverageStrategy', () => {
         const mockTestResult = {
           tests: [
             {
+              classId: DECLARING_CLASS_ID,
               methodName: 'testMethod',
-              className: declaringClass.fullName,
               coverage: [
                 {
-                  className: 'ApexClass',
+                  classId: TARGET_CLASS_ID,
                   testMethodName: 'testMethod',
                   detail: null,
                 },
@@ -156,11 +234,11 @@ describe('PerTestCoverageStrategy', () => {
         const mockTestResult = {
           tests: [
             {
+              classId: DECLARING_CLASS_ID,
               methodName: 'testMethod',
-              className: declaringClass.fullName,
               coverage: [
                 {
-                  className: 'ApexClass',
+                  classId: TARGET_CLASS_ID,
                   testMethodName: 'testMethod',
                   detail: { coveredLines: null },
                 },
@@ -183,22 +261,22 @@ describe('PerTestCoverageStrategy', () => {
         const mockTestResult = {
           tests: [
             {
+              classId: DECLARING_CLASS_ID,
               methodName: 'testMethodA',
-              className: declaringClass.fullName,
               coverage: [
                 {
-                  className: 'ApexClass',
+                  classId: TARGET_CLASS_ID,
                   testMethodName: 'testMethodA',
                   detail: { coveredLines: [1, 2] },
                 },
               ],
             },
             {
+              classId: DECLARING_CLASS_ID,
               methodName: 'testMethodB',
-              className: declaringClass.fullName,
               coverage: [
                 {
-                  className: 'ApexClass',
+                  classId: TARGET_CLASS_ID,
                   testMethodName: 'testMethodB',
                   detail: { coveredLines: [1, 3] },
                 },
@@ -212,7 +290,10 @@ describe('PerTestCoverageStrategy', () => {
 
         // Assert
         expect(result.get(1)).toEqual(
-          new Set(['ApexClassTest.testMethodA', 'ApexClassTest.testMethodB'])
+          new Set([
+            `${DECLARING_CLASS_ID}.testMethodA`,
+            `${DECLARING_CLASS_ID}.testMethodB`,
+          ])
         )
       })
     })
@@ -230,56 +311,28 @@ describe('PerTestCoverageStrategy', () => {
       })
     })
 
-    describe('given the class name differs only by case', () => {
-      it('then should still match the coverage entry', () => {
-        // Arrange
-        sut = new PerTestCoverageStrategy('accountService')
-        const mockTestResult = {
-          tests: [
-            {
-              methodName: 't',
-              className: declaringClass.fullName,
-              coverage: [
-                {
-                  className: 'AccountService',
-                  testMethodName: 't',
-                  detail: { coveredLines: [1] },
-                },
-              ],
-            },
-          ],
-        } as unknown as ApexTestRunResult
-
-        // Act
-        const result = sut.getTestMethodsPerLine(mockTestResult)
-
-        // Assert
-        expect(result).toEqual(new Map([[1, new Set(['ApexClassTest.t'])]]))
-      })
-    })
-
     describe('given two classes contribute coverage to the same line', () => {
       it('then should union their qualified test methods', () => {
         // Arrange
         const mockTestResult = {
           tests: [
             {
+              classId: FOO_DECLARING_CLASS_ID,
               methodName: 'testA',
-              className: 'FooTest',
               coverage: [
                 {
-                  className: 'ApexClass',
+                  classId: TARGET_CLASS_ID,
                   testMethodName: 'testA',
                   detail: { coveredLines: [1] },
                 },
               ],
             },
             {
+              classId: BAR_DECLARING_CLASS_ID,
               methodName: 'testB',
-              className: 'BarTest',
               coverage: [
                 {
-                  className: 'ApexClass',
+                  classId: TARGET_CLASS_ID,
                   testMethodName: 'testB',
                   detail: { coveredLines: [1] },
                 },
@@ -293,7 +346,15 @@ describe('PerTestCoverageStrategy', () => {
 
         // Assert
         expect(result).toEqual(
-          new Map([[1, new Set(['FooTest.testA', 'BarTest.testB'])]])
+          new Map([
+            [
+              1,
+              new Set([
+                `${FOO_DECLARING_CLASS_ID}.testA`,
+                `${BAR_DECLARING_CLASS_ID}.testB`,
+              ]),
+            ],
+          ])
         )
       })
     })
@@ -304,22 +365,22 @@ describe('PerTestCoverageStrategy', () => {
         const mockTestResult = {
           tests: [
             {
+              classId: FOO_DECLARING_CLASS_ID,
               methodName: 'testA',
-              className: 'FooTest',
               coverage: [
                 {
-                  className: 'ApexClass',
+                  classId: TARGET_CLASS_ID,
                   testMethodName: 'testA',
                   detail: { coveredLines: [1] },
                 },
               ],
             },
             {
+              classId: BAR_DECLARING_CLASS_ID,
               methodName: 'testA',
-              className: 'BarTest',
               coverage: [
                 {
-                  className: 'ApexClass',
+                  classId: TARGET_CLASS_ID,
                   testMethodName: 'testA',
                   detail: { coveredLines: [2] },
                 },
@@ -334,24 +395,25 @@ describe('PerTestCoverageStrategy', () => {
         // Assert
         expect(result).toEqual(
           new Map([
-            [1, new Set(['FooTest.testA'])],
-            [2, new Set(['BarTest.testA'])],
+            [1, new Set([`${FOO_DECLARING_CLASS_ID}.testA`])],
+            [2, new Set([`${BAR_DECLARING_CLASS_ID}.testA`])],
           ])
         )
       })
     })
 
     describe('given the declaring class is namespaced', () => {
-      it('then should qualify with the full namespace-qualified name', () => {
-        // Arrange
+      it('then should qualify with the class id, not the namespace-qualified display name', () => {
+        // Arrange — the qualifier must key off classId, which carries no
+        // namespace of its own, even for a namespaced declaring class.
         const mockTestResult = {
           tests: [
             {
+              classId: NS_FOO_DECLARING_CLASS_ID,
               methodName: 'testA',
-              className: 'ns.FooTest',
               coverage: [
                 {
-                  className: 'ApexClass',
+                  classId: TARGET_CLASS_ID,
                   testMethodName: 'testA',
                   detail: { coveredLines: [1] },
                 },
@@ -364,7 +426,9 @@ describe('PerTestCoverageStrategy', () => {
         const result = sut.getTestMethodsPerLine(mockTestResult)
 
         // Assert
-        expect(result).toEqual(new Map([[1, new Set(['ns.FooTest.testA'])]]))
+        expect(result).toEqual(
+          new Map([[1, new Set([`${NS_FOO_DECLARING_CLASS_ID}.testA`])]])
+        )
       })
     })
   })
@@ -381,7 +445,7 @@ describe('AggregateCoverageStrategy', () => {
   let sut: AggregateCoverageStrategy
 
   beforeEach(() => {
-    sut = new AggregateCoverageStrategy('ApexClass')
+    sut = new AggregateCoverageStrategy(TARGET_CLASS_ID)
   })
 
   describe('when getting test methods per line', () => {
@@ -390,10 +454,16 @@ describe('AggregateCoverageStrategy', () => {
         // Arrange
         const mockTestResult = {
           tests: [
-            { methodName: 'testMethodA', className: declaringClass.fullName },
-            { methodName: 'testMethodB', className: declaringClass.fullName },
+            {
+              classId: DECLARING_CLASS_ID,
+              methodName: 'testMethodA',
+            },
+            {
+              classId: DECLARING_CLASS_ID,
+              methodName: 'testMethodB',
+            },
           ],
-          classCoverage: [{ className: 'ApexClass', coveredLines: [10, 20] }],
+          classCoverage: [{ classId: TARGET_CLASS_ID, coveredLines: [10, 20] }],
         } as unknown as ApexTestRunResult
 
         // Act
@@ -405,15 +475,15 @@ describe('AggregateCoverageStrategy', () => {
             [
               10,
               new Set([
-                'ApexClassTest.testMethodA',
-                'ApexClassTest.testMethodB',
+                `${DECLARING_CLASS_ID}.testMethodA`,
+                `${DECLARING_CLASS_ID}.testMethodB`,
               ]),
             ],
             [
               20,
               new Set([
-                'ApexClassTest.testMethodA',
-                'ApexClassTest.testMethodB',
+                `${DECLARING_CLASS_ID}.testMethodA`,
+                `${DECLARING_CLASS_ID}.testMethodB`,
               ]),
             ],
           ])
@@ -426,11 +496,12 @@ describe('AggregateCoverageStrategy', () => {
         // Arrange
         const mockTestResult = {
           tests: [
-            { methodName: 'testMethodA', className: declaringClass.fullName },
+            {
+              classId: DECLARING_CLASS_ID,
+              methodName: 'testMethodA',
+            },
           ],
-          classCoverage: [
-            { className: 'SomeOtherClass', coveredLines: [7, 8] },
-          ],
+          classCoverage: [{ classId: FOREIGN_CLASS_ID, coveredLines: [7, 8] }],
         } as unknown as ApexTestRunResult
 
         // Act
@@ -441,16 +512,19 @@ describe('AggregateCoverageStrategy', () => {
       })
     })
 
-    describe('given codecoverage entries for several classes', () => {
-      it('then should use only the target class covered lines', () => {
+    describe('given codecoverage rows for two classes, only one of which is the target', () => {
+      it('then should use only the target class id covered lines', () => {
         // Arrange
         const mockTestResult = {
           tests: [
-            { methodName: 'testMethodA', className: declaringClass.fullName },
+            {
+              classId: DECLARING_CLASS_ID,
+              methodName: 'testMethodA',
+            },
           ],
           classCoverage: [
-            { className: 'SomeOtherClass', coveredLines: [7, 8] },
-            { className: 'ApexClass', coveredLines: [10] },
+            { classId: TARGET_CLASS_ID, coveredLines: [1] },
+            { classId: FOREIGN_CLASS_ID, coveredLines: [99] },
           ],
         } as unknown as ApexTestRunResult
 
@@ -458,8 +532,9 @@ describe('AggregateCoverageStrategy', () => {
         const result = sut.getTestMethodsPerLine(mockTestResult)
 
         // Assert
+        expect(result.has(99)).toBe(false)
         expect(result).toEqual(
-          new Map([[10, new Set(['ApexClassTest.testMethodA'])]])
+          new Map([[1, new Set([`${DECLARING_CLASS_ID}.testMethodA`])]])
         )
       })
     })
@@ -469,7 +544,7 @@ describe('AggregateCoverageStrategy', () => {
         // Arrange
         const mockTestResult = {
           tests: null,
-          classCoverage: [{ className: 'ApexClass', coveredLines: [10] }],
+          classCoverage: [{ classId: TARGET_CLASS_ID, coveredLines: [10] }],
         } as unknown as ApexTestRunResult
 
         // Act
@@ -485,9 +560,12 @@ describe('AggregateCoverageStrategy', () => {
         // Arrange
         const mockTestResult = {
           tests: [
-            { methodName: 'testMethodA', className: declaringClass.fullName },
+            {
+              classId: DECLARING_CLASS_ID,
+              methodName: 'testMethodA',
+            },
           ],
-          classCoverage: [{ className: 'ApexClass', coveredLines: null }],
+          classCoverage: [{ classId: TARGET_CLASS_ID, coveredLines: null }],
         } as unknown as ApexTestRunResult
 
         // Act
@@ -503,7 +581,10 @@ describe('AggregateCoverageStrategy', () => {
         // Arrange
         const mockTestResult = {
           tests: [
-            { methodName: 'testMethodA', className: declaringClass.fullName },
+            {
+              classId: DECLARING_CLASS_ID,
+              methodName: 'testMethodA',
+            },
           ],
         } as unknown as ApexTestRunResult
 
@@ -515,20 +596,26 @@ describe('AggregateCoverageStrategy', () => {
       })
     })
 
-    describe('given the class name differs only by case', () => {
-      it('then should still match the codecoverage entry', () => {
+    describe('given a codecoverage row whose class id differs from the target only by case', () => {
+      it('then should exclude it', () => {
         // Arrange
-        sut = new AggregateCoverageStrategy('accountService')
         const mockTestResult = {
-          tests: [{ methodName: 't', className: declaringClass.fullName }],
-          classCoverage: [{ className: 'AccountService', coveredLines: [10] }],
+          tests: [
+            {
+              classId: DECLARING_CLASS_ID,
+              methodName: 't',
+            },
+          ],
+          classCoverage: [
+            { classId: CASE_FOLDED_CLASS_ID, coveredLines: [10] },
+          ],
         } as unknown as ApexTestRunResult
 
         // Act
         const result = sut.getTestMethodsPerLine(mockTestResult)
 
         // Assert
-        expect(result).toEqual(new Map([[10, new Set(['ApexClassTest.t'])]]))
+        expect(result).toEqual(new Map())
       })
     })
 
@@ -538,15 +625,15 @@ describe('AggregateCoverageStrategy', () => {
         const mockTestResult = {
           tests: [
             {
+              classId: FOO_DECLARING_CLASS_ID,
               methodName: 'testA',
-              className: 'FooTest',
             },
             {
+              classId: BAR_DECLARING_CLASS_ID,
               methodName: 'testB',
-              className: 'BarTest',
             },
           ],
-          classCoverage: [{ className: 'ApexClass', coveredLines: [10] }],
+          classCoverage: [{ classId: TARGET_CLASS_ID, coveredLines: [10] }],
         } as unknown as ApexTestRunResult
 
         // Act
@@ -554,7 +641,15 @@ describe('AggregateCoverageStrategy', () => {
 
         // Assert
         expect(result).toEqual(
-          new Map([[10, new Set(['FooTest.testA', 'BarTest.testB'])]])
+          new Map([
+            [
+              10,
+              new Set([
+                `${FOO_DECLARING_CLASS_ID}.testA`,
+                `${BAR_DECLARING_CLASS_ID}.testB`,
+              ]),
+            ],
+          ])
         )
       })
     })

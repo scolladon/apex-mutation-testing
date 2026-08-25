@@ -4,10 +4,11 @@
 // src/service/ never needs to know which transport produced a result.
 // Field names and nesting intentionally track what src/service/ actually
 // reads (see groupExecutor.ts and coverageStrategy.ts) rather than the SDK's
-// own vocabulary.
+// own vocabulary. classId is an org Id and the join key across baseline and
+// mutant runs.
 
 export interface ApexTestMethodCoverage {
-  className: string
+  classId: string
   testMethodName: string
   detail?: {
     coveredLines: number[]
@@ -15,14 +16,14 @@ export interface ApexTestMethodCoverage {
 }
 
 export interface ApexTestMethodResult {
-  className: string
+  classId: string
   methodName: string
   outcome: string
   coverage?: ApexTestMethodCoverage[] | null
 }
 
 export interface ApexClassCoverage {
-  className: string
+  classId: string
   coveredLines: number[]
 }
 

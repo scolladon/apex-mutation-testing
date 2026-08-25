@@ -1,26 +1,58 @@
-import type { ApexSourceProvider } from '../port/apexSourceProvider.js'
+import {
+  ApexClassAmbiguousError,
+  ApexClassNotFoundError,
+  ApexClassNotMutableError,
+  ApexClassUnqualifiedError,
+} from '../port/apexClassErrors.js'
+import type {
+  ApexSourceProvider,
+  PerimeterAssessment,
+  TargetClassVerdict,
+} from '../port/apexSourceProvider.js'
 import { ApexMutationParameter } from '../type/ApexMutationParameter.js'
-import { SkippedTestClass } from '../type/SkippedTestClass.js'
-
-export class ApexClassNotFoundError extends Error {
-  constructor(public readonly className: string) {
-    super(`Apex class '${className}' not found`)
-    this.name = 'ApexClassNotFoundError'
-  }
-}
 
 export class ApexClassValidator {
   constructor(private readonly source: ApexSourceProvider) {}
 
-  public async validate({
-    apexClassName,
-  }: ApexMutationParameter): Promise<void> {
-    if (!(await this.source.classExists(apexClassName))) {
-      throw new ApexClassNotFoundError(apexClassName)
+  // A non-void return restores TS2366 exhaustiveness checking on the switch
+  // below: validate() itself returns Promise<void>, under which TypeScript
+  // does not flag a missing case — silently permitting the run to proceed
+  // and write to the org, the one dangerous default this dispatch must never
+  // fall into. Returning the rejection (rather than throwing from inside the
+  // switch) keeps that guarantee live.
+  private static toRejection(
+    verdict: TargetClassVerdict,
+    className: string
+  ): Error | null {
+    switch (verdict.kind) {
+      // Stryker disable next-line StringLiteral: an unmatched case falls
+      // through to an implicit undefined instead of null; the sole
+      // consumer (`if (rejection) throw`) treats both as falsy, and
+      // verdict.kind can never literally be '' by the type.
+      case 'mutable':
+        return null
+      case 'not-found':
+        return new ApexClassNotFoundError(className)
+      case 'not-mutable':
+        return new ApexClassNotMutableError(className, verdict.states)
+      case 'ambiguous':
+        return new ApexClassAmbiguousError(className, verdict.spellings)
+      case 'unqualified':
+        return new ApexClassUnqualifiedError(className, verdict.spelling)
     }
   }
 
-  public async assessPerimeter(names: string[]): Promise<SkippedTestClass[]> {
+  public async validate({
+    apexClassName,
+  }: ApexMutationParameter): Promise<void> {
+    const verdict = await this.source.assessTargetClass(apexClassName)
+    const rejection = ApexClassValidator.toRejection(verdict, apexClassName)
+    if (rejection) {
+      throw rejection
+    }
+  }
+
+  public async assessPerimeter(names: string[]): Promise<PerimeterAssessment> {
     return this.source.assessPerimeter(names)
   }
 }

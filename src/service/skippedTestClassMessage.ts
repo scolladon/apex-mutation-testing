@@ -4,6 +4,7 @@ import { SkippedTestClass, UnusableReason } from '../type/SkippedTestClass.js'
 const REASON_KEY: Record<UnusableReason, string> = {
   'not-found': 'info.reasonNotFound',
   'not-accessible': 'info.reasonNotAccessible',
+  'not-qualified': 'info.reasonNotQualified',
   'does-not-compile': 'info.reasonDoesNotCompile',
   'no-coverage': 'info.reasonNoCoverage',
 }

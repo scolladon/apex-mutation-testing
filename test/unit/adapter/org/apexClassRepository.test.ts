@@ -71,67 +71,101 @@ describe('ApexClassRepository', () => {
     vi.clearAllMocks()
   })
 
-  describe('when reading an ApexClass', () => {
-    describe('given the class exists', () => {
-      it('then should return the ApexClass', async () => {
-        // Arrange
-        const mockApexClass = {
+  describe('when reading ApexClass candidates', () => {
+    it('then issues one find call with only the Name filter and the NamespacePrefix/ManageableState projection', async () => {
+      // Arrange
+      const rows = [
+        { NamespacePrefix: 'namespaced', ManageableState: 'deprecated' },
+      ]
+      findMock.mockResolvedValueOnce(rows)
+
+      // Act
+      const result = await sut.readCandidates('Mutation')
+
+      // Assert
+      expect(result).toEqual(rows)
+      expect(sobjectMock).toHaveBeenCalledWith('ApexClass')
+      expect(findArgsMock).toHaveBeenCalledTimes(1)
+      const [conditions, fields] = findArgsMock.mock.calls[0]
+      // Namespace and manageable state are classified in memory, never
+      // filtered on here: either predicate would collapse a managed class
+      // and a genuinely absent class into the same zero-row result, which
+      // is the exact defect a discriminated verdict exists to fix.
+      expect(conditions).toEqual({ Name: 'Mutation' })
+      expect(conditions).not.toHaveProperty('NamespacePrefix')
+      expect(fields).toEqual(['NamespacePrefix', 'ManageableState'])
+    })
+
+    it.each([undefined, ''])(
+      'Given a falsy name (%j), When reading ApexClass candidates, Then it resolves empty without issuing an unfiltered find',
+      async falsyName => {
+        // Arrange — jsforce drops a predicate whose value is undefined,
+        // which would otherwise turn this into an unfiltered org-wide
+        // ApexClass read.
+
+        // Act
+        const result = await sut.readCandidates(falsyName as unknown as string)
+
+        // Assert
+        expect(result).toEqual([])
+        expect(findArgsMock).not.toHaveBeenCalled()
+      }
+    )
+  })
+
+  describe('when reading ApexClass body candidates', () => {
+    it('then issues one find call with only the Name filter and the Id/Body/NamespacePrefix/ManageableState projection', async () => {
+      // Arrange
+      const rows = [
+        {
           Id: '123',
-          Name: 'TestClass',
-          Body: 'public class TestClass {}',
-        }
-        findMock.mockResolvedValue([mockApexClass])
+          Body: 'class Mutation {}',
+          NamespacePrefix: 'namespaced',
+          ManageableState: 'deprecated',
+        },
+      ]
+      findMock.mockResolvedValueOnce(rows)
+
+      // Act
+      const result = await sut.readBodyCandidates('Mutation')
+
+      // Assert
+      expect(result).toEqual(rows)
+      expect(sobjectMock).toHaveBeenCalledWith('ApexClass')
+      expect(findArgsMock).toHaveBeenCalledTimes(1)
+      const [conditions, fields] = findArgsMock.mock.calls[0]
+      expect(conditions).toEqual({ Name: 'Mutation' })
+      expect(conditions).not.toHaveProperty('NamespacePrefix')
+      expect(fields).toEqual([
+        'Id',
+        'Body',
+        'NamespacePrefix',
+        'ManageableState',
+      ])
+    })
+
+    it.each([undefined, ''])(
+      'Given a falsy name (%j), When reading ApexClass body candidates, Then it resolves empty without issuing an unfiltered find',
+      async falsyName => {
+        // Arrange — jsforce drops a predicate whose value is undefined,
+        // which would otherwise turn this into an unfiltered org-wide
+        // ApexClass read that could hand back an arbitrary class body.
 
         // Act
-        const result = await sut.read('TestClass')
+        const result = await sut.readBodyCandidates(
+          falsyName as unknown as string
+        )
 
         // Assert
-        expect(result).toEqual(mockApexClass)
-        expect(sobjectMock).toHaveBeenCalledWith('ApexClass')
-        // The namespace filter must stay an explicit empty string — dropping it
-        // would widen the lookup to managed-package classes of the same name.
-        expect(findArgsMock).toHaveBeenCalledWith({
-          Name: 'TestClass',
-          NamespacePrefix: '',
-        })
-      })
-    })
-
-    describe('given the class does not exist', () => {
-      it('then should throw an error', async () => {
-        // Arrange
-        findMock.mockRejectedValue(
-          new Error('ApexClass NonExistentClass not found')
-        )
-
-        // Act & Assert
-        await expect(sut.read('NonExistentClass')).rejects.toThrow(
-          'ApexClass NonExistentClass not found'
-        )
-      })
-    })
-
-    describe('given a fields projection is requested', () => {
-      it('then issues the find call with the projection as a second argument', async () => {
-        // Arrange
-        findMock.mockResolvedValue([{ Id: '123' }])
-
-        // Act
-        const result = await sut.read('TestClass', ['Id'])
-
-        // Assert
-        expect(result).toEqual({ Id: '123' })
-        expect(findArgsMock).toHaveBeenCalledWith(
-          { Name: 'TestClass', NamespacePrefix: '' },
-          ['Id']
-        )
-      })
-    })
+        expect(result).toEqual([])
+        expect(findArgsMock).not.toHaveBeenCalled()
+      }
+    )
   })
 
   describe('when reading ApexClass identities', () => {
     describe('given a perimeter within the chunk limit', () => {
-      it('then issues one find call with an $in filter, no namespace pin, and the Name/NamespacePrefix projection', async () => {
+      it('then issues one find call with an $in filter, no namespace pin, and the Id/Name/NamespacePrefix/ManageableState projection', async () => {
         // Arrange
         const rows = [
           { Name: 'A', NamespacePrefix: null },
@@ -151,7 +185,33 @@ describe('ApexClassRepository', () => {
         // an indistinguishable empty result, the same trap `read` avoids by
         // pinning it deliberately.
         expect(conditions).not.toHaveProperty('NamespacePrefix')
-        expect(fields).toEqual(['Name', 'NamespacePrefix'])
+        // ManageableState is projected, never filtered on: a server-side
+        // predicate would make a managed class and a nonexistent class both
+        // come back as zero rows, destroying the not-found/not-accessible
+        // distinction this query exists to preserve.
+        expect(fields).toEqual([
+          'Id',
+          'Name',
+          'NamespacePrefix',
+          'ManageableState',
+        ])
+      })
+    })
+
+    describe('given a perimeter mixing qualified and duplicate bare spellings', () => {
+      it('then bare-ifies each spelling and dedupes before building the $in filter', async () => {
+        // Arrange
+        findMock.mockResolvedValueOnce([])
+
+        // Act
+        await sut.readIdentities(['Foo', 'mockery.Foo', 'foo'])
+
+        // Assert — 'mockery.Foo' bare-ifies to 'Foo', already present, so it
+        // dedupes away; 'foo' stays distinct under case-sensitive Set
+        // semantics.
+        expect(findArgsMock).toHaveBeenCalledTimes(1)
+        const [conditions] = findArgsMock.mock.calls[0]
+        expect(conditions).toEqual({ Name: { $in: ['Foo', 'foo'] } })
       })
     })
 

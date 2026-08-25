@@ -13,10 +13,18 @@ import {
 } from '../../../../src/service/coverageStrategy.js'
 import { timeExecution } from '../../../../src/service/timeUtils.js'
 import type { ApexClass } from '../../../../src/type/ApexClass.js'
+import type { ApexTestRunResult } from '../../../../src/type/ApexTestRunResult.js'
 
 vi.mock('../../../../src/service/timeUtils.js')
 
 const mockOriginal: ApexClass = { Id: '123', Body: 'class Foo {}' }
+// 18-character org Id, deliberately shaped nothing like the class name so a
+// mutant passing the name instead of the Id is caught.
+const TARGET_CLASS_ID = '01pjV000000EE9ZQAW'
+// A second, differently-shaped org Id — proves the assertion below is a real
+// join on the resolved class's Id rather than one that would pass no matter
+// which classId a coverage row carries.
+const FOREIGN_CLASS_ID = '01pjV000000EE9bQAG'
 
 const baselineTestResult = {
   outcome: 'Passed',
@@ -61,8 +69,7 @@ describe('OrgMutationTestBed', () => {
     sut = new OrgMutationTestBed(
       repository as unknown as ApexClassRepository,
       runner as unknown as ApexTestRunner,
-      settings as unknown as ApexSettingsRepository,
-      'TestClass'
+      settings as unknown as ApexSettingsRepository
     )
 
     let call = 0
@@ -94,6 +101,60 @@ describe('OrgMutationTestBed', () => {
         fidelity: 'per-test',
         cost: { applyMs: 11, runMs: 22 },
       })
+    })
+
+    it('Given a resolved class Id, When prepare runs, Then the coverage strategy is built from that Id and not from any name', async () => {
+      // Arrange — Body and the perimeter entry are name-shaped so a mutant
+      // that threads a name into the strategy instead of the Id is caught.
+      const { hooks } = recordingHooks()
+      const resolvedClass: ApexClass = {
+        Id: TARGET_CLASS_ID,
+        Body: 'class MutationTest {}',
+      }
+
+      // Act
+      await sut.prepare(resolvedClass, ['MutationTestTest'], hooks)
+
+      // Assert — pinned through the public surface rather than reaching
+      // into the private targetClassId field: a coverage row carrying the
+      // resolved class's Id joins, one carrying the name-shaped foreign Id
+      // ('MutationTestTest' itself, the perimeter entry) does not.
+      const strategyArg = runner.getTestMethodsPerLines.mock.calls[0][1]
+      expect(strategyArg).toBeInstanceOf(PerTestCoverageStrategy)
+      const strategy = strategyArg as PerTestCoverageStrategy
+      const matchingResult = {
+        tests: [
+          {
+            classId: FOREIGN_CLASS_ID,
+            methodName: 'testMethodA',
+            coverage: [
+              {
+                classId: TARGET_CLASS_ID,
+                testMethodName: 'testMethodA',
+                detail: { coveredLines: [1] },
+              },
+            ],
+          },
+        ],
+      } as unknown as ApexTestRunResult
+      expect(strategy.getTestMethodsPerLine(matchingResult).size).toBe(1)
+
+      const nonMatchingResult = {
+        tests: [
+          {
+            classId: FOREIGN_CLASS_ID,
+            methodName: 'testMethodA',
+            coverage: [
+              {
+                classId: 'MutationTestTest',
+                testMethodName: 'testMethodA',
+                detail: { coveredLines: [1] },
+              },
+            ],
+          },
+        ],
+      } as unknown as ApexTestRunResult
+      expect(strategy.getTestMethodsPerLine(nonMatchingResult).size).toBe(0)
     })
 
     it('Given the org settings enable aggregate coverage only, When prepare runs, Then the baseline carries aggregate fidelity', async () => {

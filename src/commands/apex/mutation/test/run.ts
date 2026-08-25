@@ -1,17 +1,23 @@
 import { Messages } from '@salesforce/core'
 import { Flags, SfCommand } from '@salesforce/sf-plugins-core'
 import { createOrgEngine } from '../../../../adapter/org/orgEngine.js'
+import {
+  ApexClassAmbiguousError,
+  ApexClassNotFoundError,
+  ApexClassNotMutableError,
+  ApexClassUnqualifiedError,
+} from '../../../../port/apexClassErrors.js'
 import type { ApexSourceProvider } from '../../../../port/apexSourceProvider.js'
 import type { EngineBundle } from '../../../../port/executionEngine.js'
 import { ApexMutationHTMLReporter } from '../../../../reporter/HTMLReporter.js'
-import {
-  ApexClassNotFoundError,
-  ApexClassValidator,
-} from '../../../../service/apexClassValidator.js'
+import { ApexClassValidator } from '../../../../service/apexClassValidator.js'
 import { ConfigReader } from '../../../../service/configReader.js'
 import { reportEngineNotice } from '../../../../service/engineNotice.js'
 import { MutationTestingService } from '../../../../service/mutationTestingService.js'
-import { formatSkippedTestClasses } from '../../../../service/skippedTestClassMessage.js'
+import {
+  formatSkippedTestClasses,
+  sanitizeForDisplay,
+} from '../../../../service/skippedTestClassMessage.js'
 import { TestSuiteResolver } from '../../../../service/testSuiteResolver.js'
 import { ApexMutationParameter } from '../../../../type/ApexMutationParameter.js'
 import type { ApexMutationTestResult as MutationProcessResult } from '../../../../type/ApexMutationTestResult.js'
@@ -19,6 +25,7 @@ import {
   attachSuiteProvenance,
   reducePerimeter,
 } from '../../../../type/SkippedTestClass.js'
+import type { TestClassResolutions } from '../../../../type/TestClassResolution.js'
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url)
 const messages = Messages.loadMessages(
@@ -32,10 +39,33 @@ export type ApexMutationTestResult = {
 
 // Every rejection from validate/assessPerimeter passes through here.
 // ApexClassNotFoundError renders as the command's own error; anything else
-// is rethrown untouched — no rejection reason is swallowed.
+// is rethrown untouched — no rejection reason is swallowed. className is
+// user-typed and pinned to the identifier grammar before any org call, so it
+// needs no sanitizing; states and spellings embed org-supplied
+// ManageableState/NamespacePrefix values, unconstrained by any grammar on
+// the aer local backend, so each is sanitized the same way
+// skippedTestClassMessage.ts sanitizes org-supplied text.
 function renderTargetClassError(error: unknown): never {
   if (error instanceof ApexClassNotFoundError) {
     throw messages.createError('error.apexClassNotFound', [error.className])
+  }
+  if (error instanceof ApexClassNotMutableError) {
+    throw messages.createError('error.apexClassNotMutable', [
+      error.className,
+      error.states.map(sanitizeForDisplay).join(', '),
+    ])
+  }
+  if (error instanceof ApexClassAmbiguousError) {
+    throw messages.createError('error.apexClassAmbiguous', [
+      error.className,
+      error.spellings.map(sanitizeForDisplay).join(', '),
+    ])
+  }
+  if (error instanceof ApexClassUnqualifiedError) {
+    throw messages.createError('error.apexClassUnqualified', [
+      error.className,
+      sanitizeForDisplay(error.spelling),
+    ])
   }
   throw error
 }
@@ -128,7 +158,6 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
 
     const engine = await createOrgEngine({
       connection,
-      apexClassName: flags['apex-class'],
       notify: notice => reportEngineNotice(notice, this.spinner, messages),
     })
 
@@ -162,7 +191,7 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
     )
     this.logRunningLine(resolvedParameters)
 
-    const usableTestClassNames = await this.reduceToUsablePerimeter(
+    const { usable, resolutions } = await this.reduceToUsablePerimeter(
       resolvedParameters,
       engine.source
     )
@@ -171,7 +200,11 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
       this.progress,
       this.spinner,
       engine,
-      { ...resolvedParameters, apexTestClassNames: usableTestClassNames },
+      {
+        ...resolvedParameters,
+        apexTestClassNames: usable,
+        testClassResolutions: resolutions,
+      },
       messages
     )
     const mutationResult = await mutationTestingService.process()
@@ -216,13 +249,14 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
   private async reduceToUsablePerimeter(
     parameters: ApexMutationParameter,
     source: ApexSourceProvider
-  ): Promise<string[]> {
+  ): Promise<{ usable: string[]; resolutions: TestClassResolutions }> {
     const apexClassValidator = new ApexClassValidator(source)
-    const [, verdicts] = await Promise.all([
+    const [, perimeterAssessment] = await Promise.all([
       apexClassValidator.validate(parameters),
       apexClassValidator.assessPerimeter(parameters.apexTestClassNames),
     ]).catch(renderTargetClassError)
 
+    const { skipped: verdicts, resolutions } = perimeterAssessment
     const skipped = attachSuiteProvenance(verdicts, parameters.testClassOrigins)
     const sentences = formatSkippedTestClasses(skipped, messages)
     sentences.forEach(sentence => this.warn(sentence))
@@ -234,7 +268,10 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
         sentences.join('\n'),
       ])
     }
-    return usable
+    return {
+      usable,
+      resolutions: new Map(resolutions.map(r => [r.classId, r])),
+    }
   }
 
   private async publishReport(

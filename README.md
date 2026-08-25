@@ -129,16 +129,37 @@ sf apex mutation test run --apex-class MyClass --test-class MyClassTest --test-s
 
 `--test-class` and `--test-suite` union into one perimeter, and at least one of them is required — passing neither is an error naming both flags. Unlike class names, suite names are case-sensitive: the org matches them exactly, so a wrong-case name fails as "not found". An empty suite (no member classes) and an unknown suite are told apart, and both fail before any deploy or test run. Perimeter order is the `--test-class` entries first, then the suites in the order you named them, each suite's members ordered by class name. A suite member that can't be used goes through the same reduction as a `--test-class` entry — see [Unusable Test Classes](#unusable-test-classes) — and its warning additionally names the contributing suite(s).
 
+### Namespaced Orgs
+
+`--apex-class` and `--test-class` each accept a bare class name (`MyClass`) or one
+namespace-qualified with a dot (`ns.MyClass`). A bare name reaches only the namespace that
+owns it — no namespace, in a non-namespaced org; that org's own namespace, in a namespaced
+one — so a class in a foreign namespace must be named explicitly with its qualified
+spelling. The object-record convention `ns__MyClass` is rejected with a message pointing at
+the dotted form instead.
+
+Whether a class can be mutated depends on its manageability, not its namespace: a
+namespaced class in an editable or unlocked-package state is still mutable, while a
+bare-named class in a closed managed package is not. See [Unusable Test
+Classes](#unusable-test-classes) below for how the plugin reports a test class it can't use
+for either reason.
+
 ### Unusable Test Classes
 
-A perimeter test class that can't be used doesn't abort the run: it's named in a warning and dropped from the perimeter, and the run proceeds with whatever remains. Four reasons are told apart:
+A perimeter test class that can't be used doesn't abort the run: it's named in a warning and dropped from the perimeter, and the run proceeds with whatever remains. Five reasons are told apart:
 
-| Reason                          | Discovered by                                        |
-| -------------------------------- | ----------------------------------------------------- |
-| it could not be found on this org | one batched pre-run query                             |
-| it is not accessible on this org (e.g. it lives in a managed package) | the same pre-run query |
-| it does not compile               | the baseline test run                                 |
-| it contributed no covered lines   | the baseline test run (per-test coverage only)        |
+| Reason                             | Discovered by                                   |
+| ----------------------------------- | ------------------------------------------------ |
+| it could not be found on this org   | one batched pre-run query                        |
+| it is accessible on this org only under a qualified spelling — re-run naming the qualified spelling | the same pre-run query |
+| it is not accessible on this org    | the same pre-run query                           |
+| it does not compile                 | the baseline test run                            |
+| it contributed no covered lines     | the baseline test run (per-test coverage only)   |
+
+The middle two are easy to conflate but mean opposite things: "only under a qualified
+spelling" means the class exists and is usable — you just have to rerun naming it
+`ns.ClassName`. "Not accessible" means the class exists but isn't modifiable at all (e.g. a
+managed package this org doesn't own) — no rerun fixes it.
 
 Each warning names the class, the reason, and — when the class was contributed by `--test-suite` rather than typed directly via `--test-class` — the suite(s) it came from.
 
@@ -285,7 +306,7 @@ sf apex mutation test run --apex-class MyClass --test-class MyClassTest \
 
 #### Test Method Filtering
 
-Restrict which test methods are used to evaluate mutations using include or exclude lists. A bare method name applies to that method in every test class in the perimeter; qualify it as `ClassName.methodName` to target one class only.
+Restrict which test methods are used to evaluate mutations using include or exclude lists. A bare method name applies to that method in every test class in the perimeter; qualify it as `ClassName.methodName` to target one class only, or `ns.ClassName.methodName` when that class is namespaced. Matching is case-insensitive.
 
 ```sh
 # Only run those test methods
@@ -495,7 +516,8 @@ USAGE
     [--mutation-grouping] [--api-version <value>]
 
 FLAGS
-  -c, --apex-class=<value>               (required) Apex class name to mutate
+  -c, --apex-class=<value>               (required) Apex class name to mutate. A bare name reaches only the namespace
+                                         that owns it; name a class from another namespace as `namespace.ClassName`.
   -d, --dry-run                          Preview mutations without deploying or running tests
   -l, --lines=<value>...                 Line ranges to mutate (e.g., 1-10, 42). Only these lines are eligible for
                                          mutation.
@@ -505,17 +527,21 @@ FLAGS
                                          generated
   -s, --skip-patterns=<value>...         RE2 regex patterns to skip lines from mutation (e.g., System\.debug)
   -t, --test-class=<value>...            Apex test class name(s) to validate mutations. Repeat the flag or pass a
-                                         comma-delimited list to cover a class with multiple test classes.
+                                         comma-delimited list to cover a class with multiple test classes. A bare name
+                                         reaches only the namespace that owns it; name a class from another namespace as
+                                         `namespace.ClassName`.
       --api-version=<value>              Override the api version used for api requests made by this command
       --config-file=<value>              Path to mutation testing configuration file
       --exclude-mutators=<value>...      Mutator names to exclude
       --exclude-test-methods=<value>...  Test method names to exclude. Bare `methodName` applies to that method in every
                                          test class in the perimeter; qualified `ClassName.methodName` applies to that
-                                         one class only.
+                                         one class only; `namespace.ClassName.methodName` names a class from another
+                                         namespace. Matching ignores case.
       --include-mutators=<value>...      Mutator names to include (e.g. ArithmeticOperator, BoundaryCondition)
       --include-test-methods=<value>...  Test method names to include. Bare `methodName` applies to that method in every
                                          test class in the perimeter; qualified `ClassName.methodName` applies to that
-                                         one class only.
+                                         one class only; `namespace.ClassName.methodName` names a class from another
+                                         namespace. Matching ignores case.
       --mutation-grouping                Group mutations whose covering tests are disjoint into a single deploy + test
                                          run. Reduces deployments and async test-run kickoffs at the cost of larger
                                          blast radius on compile errors. Runs the full pipeline: test-induced clique

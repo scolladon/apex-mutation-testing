@@ -246,8 +246,11 @@ export class GroupExecutor {
     testResult: ApexTestRunResult
   ): ApexMutationTestResult['mutants'] {
     const outcomeByMethod = new Map<TestMethodId, string>(
+      // `tests` is typed non-nullable, so this fallback never executes; forced
+      // anyway, the resulting "undefined.undefined" entry is never looked up
+      // — only real ids are queried.
       (testResult.tests ?? []).map(t => [
-        qualifyTestMethod(t.className, t.methodName),
+        qualifyTestMethod(t.classId, t.methodName),
         t.outcome,
       ])
     )
@@ -302,7 +305,7 @@ export class GroupExecutor {
     expectedMethods: ReadonlySet<TestMethodId>
   ): boolean {
     const reported = new Set(
-      testResult.tests.map(t => qualifyTestMethod(t.className, t.methodName))
+      testResult.tests.map(t => qualifyTestMethod(t.classId, t.methodName))
     )
     for (const name of expectedMethods) {
       if (!reported.has(name)) return true

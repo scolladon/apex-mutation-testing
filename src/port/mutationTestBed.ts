@@ -20,7 +20,7 @@ export type MutantVerdict =
   | { kind: 'executed'; result: ApexTestRunResult }
 
 export interface BaselineCompileFailure {
-  className: string
+  classId: string
   message: string
 }
 

@@ -6,12 +6,32 @@ import { compileSkipPattern, type SkipPattern } from './skipPattern.js'
 
 const DEFAULT_CONFIG_FILE = '.mutation-testing.json'
 
-// An Apex class name is a letter followed by letters, digits or underscores.
-// Enforcing that shape keeps every other character out of the Tooling API
-// query text: its string-literal builder escapes quotes but leaves
-// backslashes raw, so a name ending in a backslash escapes the closing quote
-// and the literal runs on into the rest of the WHERE clause.
-const APEX_CLASS_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
+// An Apex class name is a letter followed by letters, digits or
+// underscores, optionally preceded by one namespace qualifier and a dot
+// (e.g. 'MyClass' or 'MyNamespace.MyClass'). Enforcing that shape keeps
+// every other character out of the Tooling API query text: its
+// string-literal builder escapes quotes but leaves backslashes raw, so a
+// name carrying a backslash escapes the closing quote and the literal runs
+// on into the rest of the WHERE clause. The added segment admits exactly
+// one '.' between two identifier segments, so no quote, backslash or
+// whitespace becomes representable — the injection guard is intact.
+//
+// A second downstream SOQL sink this grammar also guards against:
+// @salesforce/apex-node's testService.js builds
+// `... WHERE Name = '${shortName}' ...` with zero escaping, in the helper
+// reached only through getApexClassIds / buildSuite. This plugin never
+// calls that path — it only calls runTestSynchronous / runTestAsynchronous
+// — so there is no live exposure today, but a future widening of this
+// grammar must be evaluated against both sinks, not just jsforce's
+// quote-only escaping.
+const APEX_CLASS_NAME_PATTERN =
+  /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)?$/
+
+// `ns__Class` passes the grammar above but is uncompilable as an Apex
+// class name (the Apex compiler rejects a double underscore in an
+// identifier), so it can only ever be the object-field/object-record
+// convention typed by mistake for the dotted class convention.
+const OBJECT_CONVENTION_SEPARATOR = '__'
 
 interface MutationTestingConfig {
   mutators?: {
@@ -175,7 +195,10 @@ export class ConfigReader {
       // digits, underscore): the characters where lower- and upper-
       // casing diverge (e.g. 'ß', the Kelvin sign U+212A) cannot occur
       // in a real class name, so no reachable input can expose a
-      // difference in de-dup grouping between the two directions.
+      // difference in de-dup grouping between the two directions. A
+      // qualified spelling ('mockery.Foo') folds to a different key than
+      // its bare counterpart ('foo') on purpose — they are distinct
+      // classes and must not collapse into one dedup entry.
       // Stryker disable next-line MethodExpression: see the note above — no
       // reachable class name distinguishes lower- from upper-casing here.
       name => name.toLowerCase(),
@@ -194,6 +217,11 @@ export class ConfigReader {
   ): void {
     if (!APEX_CLASS_NAME_PATTERN.test(name)) {
       throw new Error(messages.getMessage('error.invalidClassName', [name]))
+    }
+    if (name.includes(OBJECT_CONVENTION_SEPARATOR)) {
+      throw new Error(
+        messages.getMessage('error.objectConventionClassName', [name])
+      )
     }
   }
 

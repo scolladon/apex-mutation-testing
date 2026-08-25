@@ -48,6 +48,22 @@ describe('apex.mutation.test.run message bundle', () => {
     )
   })
 
+  it('Given a not-qualified skip, When formatted against the real bundle, Then the exact shipped sentence is produced', () => {
+    // Arrange
+    const skipped: SkippedTestClass = {
+      className: 'ArgumentTest',
+      reason: 'not-qualified',
+    }
+
+    // Act
+    const sut = formatSkippedTestClass(skipped, messages)
+
+    // Assert
+    expect(sut).toBe(
+      "Skipping test class 'ArgumentTest': it is accessible on this org only under a qualified spelling — re-run naming the qualified spelling."
+    )
+  })
+
   it('Given a does-not-compile skip carrying a detail, When formatted against the real bundle, Then the detail renders as a parenthetical after the reason', () => {
     // Arrange
     const skipped: SkippedTestClass = {
@@ -154,5 +170,84 @@ describe('apex.mutation.test.run message bundle', () => {
 
     // Assert
     expect(sut).toBe("Apex class 'MyClass' not found.")
+  })
+
+  it('Given a class name and a joined state list, When error.apexClassNotMutable is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
+    // Arrange
+    const className = 'MyClass'
+    const states = 'installed'
+
+    // Act
+    const sut = messages.getMessage('error.apexClassNotMutable', [
+      className,
+      states,
+    ])
+
+    // Assert
+    expect(sut).toBe(
+      "Apex class 'MyClass' cannot be modified on this org (manageable state: installed). Only classes this org owns — unmanaged, unlocked-package or packaging-org source — can be mutated."
+    )
+  })
+
+  it('Given a class name and a joined spelling list, When error.apexClassAmbiguous is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
+    // Arrange
+    const className = 'Argument'
+    const spellings = 'mockery.Argument, acme.Argument'
+
+    // Act
+    const sut = messages.getMessage('error.apexClassAmbiguous', [
+      className,
+      spellings,
+    ])
+
+    // Assert
+    expect(sut).toBe(
+      "Apex class 'Argument' matches more than one modifiable Apex class on this org: mockery.Argument, acme.Argument. Re-run naming one of them."
+    )
+  })
+
+  it('Given a class name and its qualified spelling, When error.apexClassUnqualified is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
+    // Arrange
+    const className = 'Argument'
+    const spelling = 'mockery.Argument'
+
+    // Act
+    const sut = messages.getMessage('error.apexClassUnqualified', [
+      className,
+      spelling,
+    ])
+
+    // Assert
+    expect(sut).toBe(
+      "Apex class 'Argument' is modifiable on this org only as 'mockery.Argument'. A bare name reaches only the namespace that owns it — re-run naming the qualified spelling."
+    )
+  })
+
+  it('Given a malformed class name, When error.invalidClassName is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
+    // Arrange
+    const className = 'ns.sub.Foo'
+
+    // Act
+    const sut = messages.getMessage('error.invalidClassName', [className])
+
+    // Assert
+    expect(sut).toBe(
+      "Invalid Apex class name: 'ns.sub.Foo'. An Apex class name starts with a letter and contains only letters, digits and underscores, optionally prefixed by a namespace and a dot (for example 'MyClass' or 'MyNamespace.MyClass')."
+    )
+  })
+
+  it('Given a class name using the object convention, When error.objectConventionClassName is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
+    // Arrange
+    const className = 'namespaced__Mutation'
+
+    // Act
+    const sut = messages.getMessage('error.objectConventionClassName', [
+      className,
+    ])
+
+    // Assert
+    expect(sut).toBe(
+      "Apex class name 'namespaced__Mutation' uses the object convention 'Namespace__Name'. Apex classes use the dotted convention instead: write 'Namespace.Name'."
+    )
   })
 })

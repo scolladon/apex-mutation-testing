@@ -23,6 +23,7 @@ import {
 import { TypeDiscoverer } from '../../../src/service/typeDiscoverer.js'
 import { ApexMutation } from '../../../src/type/ApexMutation.js'
 import { ApexMutationParameter } from '../../../src/type/ApexMutationParameter.js'
+import type { TestClassResolutions } from '../../../src/type/TestClassResolution.js'
 import { recordUiCalls, type UiRecorder } from '../../utils/testUtil.js'
 
 // This file characterises the behaviour of MutationTestingService.process()
@@ -74,6 +75,18 @@ const baselineResult = (overrides: Record<string, unknown> = {}) => ({
   testMethodsPerLine: new Map(),
   ...overrides,
 })
+
+// Self-mapping resolution: the bare class name plays the classId, and its own
+// lowercase spelling is the only lookup key — reproduces the pre-Id
+// behaviour for these golden-sequence fixtures, none of which are about the
+// classId/displayName split.
+const resolutionsFor = (classNames: string[]): TestClassResolutions =>
+  new Map(
+    classNames.map(name => [
+      name,
+      { classId: name, displayName: name, lookupKeys: [name.toLowerCase()] },
+    ])
+  )
 
 const mockApexClass = {
   Id: '123',
@@ -189,15 +202,24 @@ const compileFailsForEveryMutantDeploy = (): UpdateImpl => {
   }
 }
 
+// A single own-namespace, mutable candidate — the engine bundle in this
+// suite is built with `orgNamespace: null`, so a `null` NamespacePrefix is
+// the org's own and the selection resolves 'mutable' without ambiguity.
+const candidateFor = (apexClass: { Id: string; Body: string }) => ({
+  ...apexClass,
+  NamespacePrefix: null,
+  ManageableState: 'unmanaged',
+})
+
 const arrangeApexClassRepository = (update: UpdateImpl): void => {
   vi.mocked(ApexClassRepository).mockImplementation(
     class {
-      read = vi
+      readBodyCandidates = vi
         .fn()
         .mockImplementation((name: string) =>
-          name === 'TestClass'
-            ? Promise.resolve(mockApexClass)
-            : Promise.resolve(mockTestClass)
+          Promise.resolve([
+            candidateFor(name === 'TestClass' ? mockApexClass : mockTestClass),
+          ])
         )
       update = vi.fn().mockImplementation(update)
       getApexClassDependencies = vi
@@ -254,7 +276,7 @@ describe('MutationTestingService — golden UI-call sequence', () => {
   // ctx.notify with reportEngineNotice exactly as run.ts wires it, and the
   // real OrgApexSourceProvider/OrgMutationTestBed driving the mocked
   // low-level adapters configured by each test's arrange helpers below.
-  const buildEngine = (ui: UiRecorder, apexClassName: string): EngineBundle => {
+  const buildEngine = (ui: UiRecorder): EngineBundle => {
     const repository = new ApexClassRepository(connection)
     const runner = new ApexTestRunner(connection, {
       onSyncFallback: error =>
@@ -275,12 +297,7 @@ describe('MutationTestingService — golden UI-call sequence', () => {
         null
       ),
       schema: new OrgSObjectSchemaProvider(connection, vi.fn(), null),
-      testBed: new OrgMutationTestBed(
-        repository,
-        runner,
-        settings,
-        apexClassName
-      ),
+      testBed: new OrgMutationTestBed(repository, runner, settings),
     }
   }
 
@@ -289,13 +306,15 @@ describe('MutationTestingService — golden UI-call sequence', () => {
     overrides: Partial<ApexMutationParameter> = {}
   ): MutationTestingService => {
     const apexClassName = overrides.apexClassName ?? 'TestClass'
+    const apexTestClassNames = overrides.apexTestClassNames ?? ['TestClassTest']
     return new MutationTestingService(
       ui.progress,
       ui.spinner,
-      buildEngine(ui, apexClassName),
+      buildEngine(ui),
       {
         apexClassName,
-        apexTestClassNames: ['TestClassTest'],
+        apexTestClassNames,
+        testClassResolutions: resolutionsFor(apexTestClassNames),
         ...overrides,
       } as ApexMutationParameter,
       messagesMock,
@@ -377,7 +396,7 @@ describe('MutationTestingService — golden UI-call sequence', () => {
           outcome: 'Failed',
           tests: [
             {
-              className: 'TestClassTest',
+              classId: 'TestClassTest',
               methodName: 'testMethodA',
               outcome: 'Fail',
             },
@@ -430,7 +449,7 @@ describe('MutationTestingService — golden UI-call sequence', () => {
           outcome: 'Failed',
           tests: [
             {
-              className: 'TestClassTest',
+              classId: 'TestClassTest',
               methodName: 'testMethodA',
               outcome: 'Fail',
             },
@@ -483,12 +502,12 @@ describe('MutationTestingService — golden UI-call sequence', () => {
           outcome: 'Failed',
           tests: [
             {
-              className: 'TestClassTest',
+              classId: 'TestClassTest',
               methodName: 'testMethodA',
               outcome: 'Fail',
             },
             {
-              className: 'TestClassTest',
+              classId: 'TestClassTest',
               methodName: 'testMethodB',
               outcome: 'Pass',
             },
@@ -631,7 +650,12 @@ describe('MutationTestingService — golden UI-call sequence', () => {
     arrangeApexTestRunner(
       baselineResult({
         testsRan: 2,
-        compileFailures: [{ className: 'TestClassTest', message: 'boom' }],
+        compileFailures: [
+          {
+            classId: 'TestClassTest',
+            message: 'boom',
+          },
+        ],
         testMethodsPerLine: new Map([[1, new Set(['GoodTest.testMethodA'])]]),
       })
     )
@@ -674,7 +698,12 @@ describe('MutationTestingService — golden UI-call sequence', () => {
     arrangeApexClassRepository(alwaysResolves)
     arrangeApexTestRunner(
       baselineResult({
-        compileFailures: [{ className: 'TestClassTest', message: 'boom' }],
+        compileFailures: [
+          {
+            classId: 'TestClassTest',
+            message: 'boom',
+          },
+        ],
         testMethodsPerLine: new Map(),
       })
     )

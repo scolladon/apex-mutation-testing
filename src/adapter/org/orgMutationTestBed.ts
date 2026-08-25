@@ -26,8 +26,7 @@ export class OrgMutationTestBed implements MutationTestBed {
   constructor(
     private readonly repository: ApexClassRepository,
     private readonly runner: ApexTestRunner,
-    private readonly settings: ApexSettingsRepository,
-    private readonly apexClassName: string
+    private readonly settings: ApexSettingsRepository
   ) {}
 
   public async prepare(
@@ -49,8 +48,8 @@ export class OrgMutationTestBed implements MutationTestBed {
     hooks.onVerified()
 
     const strategy = (await this.settings.isAggregateCoverageOnly())
-      ? new AggregateCoverageStrategy(this.apexClassName)
-      : new PerTestCoverageStrategy(this.apexClassName)
+      ? new AggregateCoverageStrategy(original.Id)
+      : new PerTestCoverageStrategy(original.Id)
 
     hooks.onBaselineStarting()
     const { result, durationMs: runMs } = await timeExecution(() =>

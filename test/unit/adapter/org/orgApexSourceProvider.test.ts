@@ -4,6 +4,12 @@ import type { EntityDefinitionRepository } from '../../../../src/adapter/org/ent
 import type { MetadataComponentDependency } from '../../../../src/adapter/org/MetadataComponentDependency.js'
 import { OrgApexSourceProvider } from '../../../../src/adapter/org/orgApexSourceProvider.js'
 import type { EngineNotify } from '../../../../src/port/executionEngine.js'
+import {
+  ApexClassAmbiguousError,
+  ApexClassNotFoundError,
+  ApexClassNotMutableError,
+  ApexClassUnqualifiedError,
+} from '../../../../src/service/apexClassValidator.js'
 import type { ApexClass } from '../../../../src/type/ApexClass.js'
 
 // The org's own namespace, pinned to a single value throughout this suite so
@@ -13,7 +19,8 @@ const ORG_NAMESPACE = 'namespaced'
 
 describe('OrgApexSourceProvider', () => {
   let sut: OrgApexSourceProvider
-  let readMock: ReturnType<typeof vi.fn>
+  let readCandidatesMock: ReturnType<typeof vi.fn>
+  let readBodyCandidatesMock: ReturnType<typeof vi.fn>
   let readIdentitiesMock: ReturnType<typeof vi.fn>
   let getApexClassDependenciesMock: ReturnType<typeof vi.fn>
   let readMembersMock: ReturnType<typeof vi.fn>
@@ -23,7 +30,8 @@ describe('OrgApexSourceProvider', () => {
 
   beforeEach(() => {
     // Arrange
-    readMock = vi.fn()
+    readCandidatesMock = vi.fn()
+    readBodyCandidatesMock = vi.fn()
     readIdentitiesMock = vi.fn()
     getApexClassDependenciesMock = vi.fn()
     readMembersMock = vi.fn()
@@ -32,7 +40,8 @@ describe('OrgApexSourceProvider', () => {
     notifyMock = vi.fn()
 
     const repository = {
-      read: readMock,
+      readCandidates: readCandidatesMock,
+      readBodyCandidates: readBodyCandidatesMock,
       readIdentities: readIdentitiesMock,
       getApexClassDependencies: getApexClassDependenciesMock,
     } as unknown as ApexClassRepository
@@ -53,55 +62,309 @@ describe('OrgApexSourceProvider', () => {
     )
   })
 
-  describe('classExists', () => {
-    it('should resolve false when the repository finds no matching row', async () => {
+  describe('assessTargetClass', () => {
+    it('Given a mutable own-source candidate, When assessTargetClass, Then resolves mutable', async () => {
       // Arrange
-      readMock.mockResolvedValueOnce(null)
+      readCandidatesMock.mockResolvedValueOnce([
+        { NamespacePrefix: 'namespaced', ManageableState: 'deprecated' },
+      ])
 
       // Act
-      const result = await sut.classExists('TestClass')
+      const result = await sut.assessTargetClass('Mutation')
 
       // Assert
-      expect(result).toBe(false)
+      expect(result).toEqual({ kind: 'mutable' })
     })
 
-    it('should resolve true when the repository finds a matching row', async () => {
+    it('Given no candidate rows, When assessTargetClass, Then resolves not-found', async () => {
       // Arrange
-      readMock.mockResolvedValueOnce({ Id: '123' })
+      readCandidatesMock.mockResolvedValueOnce([])
 
       // Act
-      const result = await sut.classExists('TestClass')
+      const result = await sut.assessTargetClass('Argument')
 
       // Assert
-      expect(result).toBe(true)
+      expect(result).toEqual({ kind: 'not-found' })
     })
 
-    it('should read only a minimal projection rather than every ApexClass field', async () => {
-      // Arrange — the existence check only needs `!apexClass`; a wildcard
-      // read would drag Body and SymbolTable for no reason, and readClass
-      // re-reads the class in full when mutation actually starts.
-      readMock.mockResolvedValueOnce({ Id: '123' })
+    it('Given two non-mutable candidates, one with no reported state, When assessTargetClass, Then resolves not-mutable carrying every observed state', async () => {
+      // Arrange
+      readCandidatesMock.mockResolvedValueOnce([
+        { NamespacePrefix: 'devedapp', ManageableState: 'installed' },
+        { NamespacePrefix: 'acme', ManageableState: null },
+      ])
 
       // Act
-      await sut.classExists('TestClass')
+      const result = await sut.assessTargetClass('Argument')
 
       // Assert
-      expect(readMock).toHaveBeenCalledWith('TestClass', ['Id'])
+      expect(result).toEqual({
+        kind: 'not-mutable',
+        states: ['installed', 'none reported'],
+      })
+    })
+
+    it('Given three non-mutable candidates all reporting the same state, When assessTargetClass, Then resolves not-mutable with the state deduped to a single entry', async () => {
+      // Arrange
+      readCandidatesMock.mockResolvedValueOnce([
+        { NamespacePrefix: 'devedapp', ManageableState: 'installed' },
+        { NamespacePrefix: 'acme', ManageableState: 'installed' },
+        { NamespacePrefix: 'mockery', ManageableState: 'installed' },
+      ])
+
+      // Act
+      const result = await sut.assessTargetClass('Argument')
+
+      // Assert — one entry, not one per row
+      expect(result).toEqual({
+        kind: 'not-mutable',
+        states: ['installed'],
+      })
+    })
+
+    it('Given two mutable candidates in two foreign namespaces, When assessTargetClass, Then resolves ambiguous carrying both qualified spellings', async () => {
+      // Arrange
+      readCandidatesMock.mockResolvedValueOnce([
+        { NamespacePrefix: 'mockery', ManageableState: 'installedEditable' },
+        { NamespacePrefix: 'acme', ManageableState: 'installedEditable' },
+      ])
+
+      // Act
+      const result = await sut.assessTargetClass('Argument')
+
+      // Assert
+      expect(result).toEqual({
+        kind: 'ambiguous',
+        spellings: ['mockery.Argument', 'acme.Argument'],
+      })
+    })
+
+    it('Given a single own-namespace mutable candidate, When assessTargetClass, Then resolves mutable', async () => {
+      // Arrange
+      readCandidatesMock.mockResolvedValueOnce([
+        { NamespacePrefix: 'namespaced', ManageableState: 'unmanaged' },
+      ])
+
+      // Act
+      const result = await sut.assessTargetClass('Argument')
+
+      // Assert
+      expect(result).toEqual({ kind: 'mutable' })
+    })
+
+    it('Given a mutable own-namespace row and a not-mutable foreign row, When assessTargetClass is qualified with the foreign namespace, Then the qualifier excludes the own-namespace row and resolves not-mutable', async () => {
+      // Arrange — the own-namespace row carries the org's OWN namespace
+      // explicitly (rather than null), so the pairing with the bare-query
+      // test below genuinely turns on the own-namespace check.
+      readCandidatesMock.mockResolvedValueOnce([
+        {
+          NamespacePrefix: ORG_NAMESPACE,
+          ManageableState: 'installedEditable',
+        },
+        { NamespacePrefix: 'mockery', ManageableState: 'installed' },
+      ])
+
+      // Act
+      const result = await sut.assessTargetClass('mockery.Argument')
+
+      // Assert
+      expect(result).toEqual({ kind: 'not-mutable', states: ['installed'] })
+      // Regression guard: querying by the full qualified spelling
+      // ('mockery.Argument') would match zero org rows, since ApexClass.Name
+      // never carries the namespace segment.
+      expect(readCandidatesMock).toHaveBeenCalledWith('Argument')
+    })
+
+    it('Given the same rows queried bare, When assessTargetClass, Then the unique mutable own-namespace row resolves mutable', async () => {
+      // Arrange
+      readCandidatesMock.mockResolvedValueOnce([
+        {
+          NamespacePrefix: ORG_NAMESPACE,
+          ManageableState: 'installedEditable',
+        },
+        { NamespacePrefix: 'mockery', ManageableState: 'installed' },
+      ])
+
+      // Act
+      const result = await sut.assessTargetClass('Argument')
+
+      // Assert
+      expect(result).toEqual({ kind: 'mutable' })
+    })
+
+    it('Given a qualified request for a foreign namespace with no candidate, When assessTargetClass, Then resolves not-found rather than redirecting to a local class sharing the bare name', async () => {
+      // Arrange
+      readCandidatesMock.mockResolvedValueOnce([
+        { NamespacePrefix: null, ManageableState: 'unmanaged' },
+      ])
+
+      // Act
+      const result = await sut.assessTargetClass('mockery.Nope')
+
+      // Assert
+      expect(result).toEqual({ kind: 'not-found' })
+      expect(readCandidatesMock).toHaveBeenCalledWith('Nope')
+    })
+
+    // The write-perimeter defect this pins closed: in a plain org with an
+    // unlocked package installed, a bare `-c Argument` must not silently
+    // resolve into that package just because it is the only mutable row.
+    it('Given a single mutable candidate in a foreign namespace, When assessTargetClass is queried bare, Then resolves unqualified naming the qualified spelling', async () => {
+      // Arrange
+      readCandidatesMock.mockResolvedValueOnce([
+        { NamespacePrefix: 'mockery', ManageableState: 'installedEditable' },
+      ])
+
+      // Act
+      const result = await sut.assessTargetClass('Argument')
+
+      // Assert
+      expect(result).toEqual({
+        kind: 'unqualified',
+        spelling: 'mockery.Argument',
+      })
+    })
+
+    it('Given the same single foreign mutable candidate, When assessTargetClass is queried already qualified with that namespace, Then resolves mutable through the own-namespace arm', async () => {
+      // Arrange — the qualifier itself becomes the namespace the write
+      // perimeter checks against, so the same row now matches the own arm.
+      readCandidatesMock.mockResolvedValueOnce([
+        { NamespacePrefix: 'mockery', ManageableState: 'installedEditable' },
+      ])
+
+      // Act
+      const result = await sut.assessTargetClass('mockery.Argument')
+
+      // Assert
+      expect(result).toEqual({ kind: 'mutable' })
     })
   })
 
   describe('readClass', () => {
-    it('should resolve with the full class row returned by the repository', async () => {
+    it('Given a mutable candidate, When readClass, Then resolves the selected candidate', async () => {
       // Arrange
-      const mockApexClass = { Id: '123', Body: 'class TestClass {}' }
-      readMock.mockResolvedValueOnce(mockApexClass)
+      const candidate = {
+        Id: '01p000000TargetId',
+        Body: 'class Mutation {}',
+        NamespacePrefix: 'namespaced',
+        ManageableState: 'deprecated',
+      }
+      readBodyCandidatesMock.mockResolvedValueOnce([candidate])
 
       // Act
-      const result = await sut.readClass('TestClass')
+      const result = await sut.readClass('Mutation')
 
       // Assert
-      expect(result).toEqual(mockApexClass)
-      expect(readMock).toHaveBeenCalledWith('TestClass')
+      expect(result).toEqual(candidate)
+    })
+
+    it('Given a qualified name, When readClass, Then the repository is queried by the bare name only', async () => {
+      // Arrange — the CRITICAL regression this guards: querying by the full
+      // qualified spelling ('mockery.Argument') would match zero org rows,
+      // since ApexClass.Name never carries the namespace segment.
+      const candidate = {
+        Id: '01p000000TargetId',
+        Body: 'class Argument {}',
+        NamespacePrefix: 'mockery',
+        ManageableState: 'installedEditable',
+      }
+      readBodyCandidatesMock.mockResolvedValueOnce([candidate])
+
+      // Act
+      await sut.readClass('mockery.Argument')
+
+      // Assert
+      expect(readBodyCandidatesMock).toHaveBeenCalledWith('Argument')
+    })
+
+    it('Given no candidate rows, When readClass, Then rejects with ApexClassNotFoundError', async () => {
+      // Arrange
+      readBodyCandidatesMock.mockResolvedValue([])
+
+      // Act
+      const rejection = sut.readClass('Argument')
+
+      // Assert — the same typed error apexClassValidator.ts throws for the
+      // identical condition, not a raw Error naming the verdict kind
+      await expect(rejection).rejects.toThrow(ApexClassNotFoundError)
+      await expect(rejection).rejects.toThrow("Apex class 'Argument' not found")
+    })
+
+    it('Given only non-mutable candidates, When readClass, Then rejects with ApexClassNotMutableError carrying the deduped states', async () => {
+      // Arrange — two rows share one ManageableState, pinning the same
+      // dedup readClass shares with assessTargetClass
+      readBodyCandidatesMock.mockResolvedValueOnce([
+        {
+          Id: '1',
+          Body: '(hidden)',
+          NamespacePrefix: 'devedapp',
+          ManageableState: 'installed',
+        },
+        {
+          Id: '2',
+          Body: '(hidden)',
+          NamespacePrefix: 'acme',
+          ManageableState: 'installed',
+        },
+      ])
+
+      // Act
+      const rejection = sut.readClass('Argument')
+
+      // Assert
+      await expect(rejection).rejects.toThrow(ApexClassNotMutableError)
+      await expect(rejection).rejects.toThrow(
+        "Apex class 'Argument' is not modifiable on this org"
+      )
+      await expect(rejection).rejects.toMatchObject({ states: ['installed'] })
+    })
+
+    it('Given two competing mutable candidates in foreign namespaces, When readClass, Then rejects with ApexClassAmbiguousError carrying both qualified spellings', async () => {
+      // Arrange
+      readBodyCandidatesMock.mockResolvedValueOnce([
+        {
+          Id: '1',
+          Body: 'class Argument {}',
+          NamespacePrefix: 'mockery',
+          ManageableState: 'installedEditable',
+        },
+        {
+          Id: '2',
+          Body: 'class Argument {}',
+          NamespacePrefix: 'acme',
+          ManageableState: 'installedEditable',
+        },
+      ])
+
+      // Act
+      const rejection = sut.readClass('Argument')
+
+      // Assert
+      await expect(rejection).rejects.toThrow(ApexClassAmbiguousError)
+      await expect(rejection).rejects.toMatchObject({
+        spellings: ['mockery.Argument', 'acme.Argument'],
+      })
+    })
+
+    it('Given a single mutable candidate in a foreign namespace, When readClass is queried bare, Then rejects with ApexClassUnqualifiedError naming the qualified spelling', async () => {
+      // Arrange
+      readBodyCandidatesMock.mockResolvedValueOnce([
+        {
+          Id: '1',
+          Body: 'class Argument {}',
+          NamespacePrefix: 'mockery',
+          ManageableState: 'installedEditable',
+        },
+      ])
+
+      // Act
+      const rejection = sut.readClass('Argument')
+
+      // Assert
+      await expect(rejection).rejects.toThrow(ApexClassUnqualifiedError)
+      await expect(rejection).rejects.toMatchObject({
+        spelling: 'mockery.Argument',
+      })
     })
   })
 
@@ -810,79 +1073,243 @@ describe('OrgApexSourceProvider', () => {
       const result = await sut.assessPerimeter(['TestClassTest'])
 
       // Assert
-      expect(result).toEqual([
-        { className: 'TestClassTest', reason: 'not-found' },
-      ])
+      expect(result).toEqual({
+        skipped: [{ className: 'TestClassTest', reason: 'not-found' }],
+        resolutions: [],
+      })
     })
 
-    it('should resolve with a not-accessible verdict when the only identity row carries a namespace prefix', async () => {
-      // Arrange
+    it('should resolve with a not-accessible verdict when the only identity row is a closed managed package', async () => {
+      // Arrange — installed: a closed managed package, not mutable.
       readIdentitiesMock.mockResolvedValueOnce([
-        { Name: 'TestClassTest', NamespacePrefix: 'et4ae5' },
+        {
+          Id: 'ID1',
+          Name: 'TestClassTest',
+          NamespacePrefix: 'et4ae5',
+          ManageableState: 'installed',
+        },
       ])
 
       // Act
       const result = await sut.assessPerimeter(['TestClassTest'])
 
+      // Assert — a foreign row never mints a bare key, even as the only row
+      // answering to that name; the bare perimeter entry is still reported
+      // (not-found would be wrong, because `known` is derived from the
+      // identity rows directly, independent of lookupKeys) — but
+      // not-accessible rather than not-qualified, because the row this bare
+      // name matches is not mutable: re-running under the qualified spelling
+      // would not help.
+      expect(result).toEqual({
+        skipped: [{ className: 'TestClassTest', reason: 'not-accessible' }],
+        resolutions: [
+          {
+            classId: 'ID1',
+            displayName: 'et4ae5.TestClassTest',
+            lookupKeys: ['et4ae5.testclasstest'],
+          },
+        ],
+      })
+    })
+
+    it('should resolve with a not-qualified verdict when a bare entry matches only a mutable foreign row', async () => {
+      // Arrange — installedEditable: the row IS mutable, so it genuinely
+      // would be accessible under its qualified spelling
+      // (mockery.ArgumentTest) — only the bare spelling is unusable here.
+      readIdentitiesMock.mockResolvedValueOnce([
+        {
+          Id: 'ID1',
+          Name: 'ArgumentTest',
+          NamespacePrefix: 'mockery',
+          ManageableState: 'installedEditable',
+        },
+      ])
+
+      // Act
+      const result = await sut.assessPerimeter(['ArgumentTest'])
+
       // Assert
-      expect(result).toEqual([
-        { className: 'TestClassTest', reason: 'not-accessible' },
+      expect(result.skipped).toEqual([
+        { className: 'ArgumentTest', reason: 'not-qualified' },
       ])
     })
 
     it('should resolve with an empty list when the identity row carries a null namespace prefix', async () => {
-      // Arrange
+      // Arrange — unmanaged: source this org owns, mutable.
       readIdentitiesMock.mockResolvedValueOnce([
-        { Name: 'TestClassTest', NamespacePrefix: null },
+        {
+          Id: 'ID1',
+          Name: 'TestClassTest',
+          NamespacePrefix: null,
+          ManageableState: 'unmanaged',
+        },
       ])
 
       // Act
       const result = await sut.assessPerimeter(['TestClassTest'])
 
+      // Assert — a row with no namespace has no separate qualified spelling,
+      // so its bare name is its only lookup key, not a duplicated pair.
+      expect(result).toEqual({
+        skipped: [],
+        resolutions: [
+          {
+            classId: 'ID1',
+            displayName: 'TestClassTest',
+            lookupKeys: ['testclasstest'],
+          },
+        ],
+      })
+    })
+
+    it('should resolve with the bare name only once when both the identity row and the org itself carry no namespace', async () => {
+      // Arrange — a non-namespaced org (unlike every other test in this
+      // suite, which pins ORG_NAMESPACE) is the one case where bare and
+      // qualified fold to the same value AND isOwnNamespace agrees with
+      // itself: skipping spellingsOf's early return would fall through into
+      // the own-namespace branch and duplicate the bare name instead of
+      // returning it once.
+      const repository = {
+        readCandidates: readCandidatesMock,
+        readBodyCandidates: readBodyCandidatesMock,
+        readIdentities: readIdentitiesMock,
+        getApexClassDependencies: getApexClassDependenciesMock,
+      } as unknown as ApexClassRepository
+      const suiteRepository = {
+        readMembers: readMembersMock,
+        readExistingSuiteNames: readExistingSuiteNamesMock,
+      } as unknown as ApexTestSuiteRepository
+      const entityDefinitionRepository = {
+        readByDeveloperNames: readByDeveloperNamesMock,
+      } as unknown as EntityDefinitionRepository
+      const nonNamespacedOrgSut = new OrgApexSourceProvider(
+        repository,
+        suiteRepository,
+        entityDefinitionRepository,
+        notifyMock,
+        null
+      )
+      readIdentitiesMock.mockResolvedValueOnce([
+        {
+          Id: 'ID1',
+          Name: 'TestClassTest',
+          NamespacePrefix: null,
+          ManageableState: 'unmanaged',
+        },
+      ])
+
+      // Act
+      const result = await nonNamespacedOrgSut.assessPerimeter([
+        'TestClassTest',
+      ])
+
       // Assert
-      expect(result).toEqual([])
+      expect(result).toEqual({
+        skipped: [],
+        resolutions: [
+          {
+            classId: 'ID1',
+            displayName: 'TestClassTest',
+            lookupKeys: ['testclasstest'],
+          },
+        ],
+      })
     })
 
     it('should resolve with an empty list when the identity row carries an empty-string namespace prefix', async () => {
-      // Arrange
+      // Arrange — unmanaged: source this org owns, mutable.
       readIdentitiesMock.mockResolvedValueOnce([
-        { Name: 'TestClassTest', NamespacePrefix: '' },
+        {
+          Id: 'ID1',
+          Name: 'TestClassTest',
+          NamespacePrefix: '',
+          ManageableState: 'unmanaged',
+        },
       ])
 
       // Act
       const result = await sut.assessPerimeter(['TestClassTest'])
 
       // Assert
-      expect(result).toEqual([])
+      expect(result).toEqual({
+        skipped: [],
+        resolutions: [
+          {
+            classId: 'ID1',
+            displayName: 'TestClassTest',
+            lookupKeys: ['testclasstest'],
+          },
+        ],
+      })
     })
 
     it('should resolve with an empty list when one of two rows sharing a name is local', async () => {
       // Arrange — a managed and a local class can share a name; any local
       // row makes the perimeter entry usable.
       readIdentitiesMock.mockResolvedValueOnce([
-        { Name: 'TestClassTest', NamespacePrefix: 'et4ae5' },
-        { Name: 'TestClassTest', NamespacePrefix: null },
+        {
+          Id: 'ID1',
+          Name: 'TestClassTest',
+          NamespacePrefix: 'et4ae5',
+          ManageableState: 'installed',
+        },
+        {
+          Id: 'ID2',
+          Name: 'TestClassTest',
+          NamespacePrefix: null,
+          ManageableState: 'unmanaged',
+        },
       ])
 
       // Act
       const result = await sut.assessPerimeter(['TestClassTest'])
 
-      // Assert
-      expect(result).toEqual([])
+      // Assert — the bare name is shared, so the managed row does not mint
+      // it; the local row answers to it regardless, since it has no other
+      // spelling to begin with.
+      expect(result).toEqual({
+        skipped: [],
+        resolutions: [
+          {
+            classId: 'ID1',
+            displayName: 'et4ae5.TestClassTest',
+            lookupKeys: ['et4ae5.testclasstest'],
+          },
+          {
+            classId: 'ID2',
+            displayName: 'TestClassTest',
+            lookupKeys: ['testclasstest'],
+          },
+        ],
+      })
     })
 
     it('should resolve with an empty list when the org-reported name differs only in case', async () => {
       // Arrange — the join is case-folded both ways so a differently-cased
       // org row still matches the perimeter entry.
       readIdentitiesMock.mockResolvedValueOnce([
-        { Name: 'FooTest', NamespacePrefix: null },
+        {
+          Id: 'ID1',
+          Name: 'FooTest',
+          NamespacePrefix: null,
+          ManageableState: 'unmanaged',
+        },
       ])
 
       // Act
       const result = await sut.assessPerimeter(['footest'])
 
       // Assert
-      expect(result).toEqual([])
+      expect(result).toEqual({
+        skipped: [],
+        resolutions: [
+          {
+            classId: 'ID1',
+            displayName: 'FooTest',
+            lookupKeys: ['footest'],
+          },
+        ],
+      })
     })
 
     // A three-class perimeter with the first AND last entries unusable is what
@@ -890,8 +1317,18 @@ describe('OrgApexSourceProvider', () => {
     it('should name exactly the unusable entries, in perimeter order, when the first and last of a three-class perimeter are unusable', async () => {
       // Arrange
       readIdentitiesMock.mockResolvedValueOnce([
-        { Name: 'Usable', NamespacePrefix: null },
-        { Name: 'NotATest', NamespacePrefix: 'et4ae5' },
+        {
+          Id: 'ID1',
+          Name: 'Usable',
+          NamespacePrefix: null,
+          ManageableState: 'unmanaged',
+        },
+        {
+          Id: 'ID2',
+          Name: 'NotATest',
+          NamespacePrefix: 'et4ae5',
+          ManageableState: 'installed',
+        },
       ])
 
       // Act
@@ -902,10 +1339,24 @@ describe('OrgApexSourceProvider', () => {
       ])
 
       // Assert
-      expect(result).toEqual([
-        { className: 'Missing', reason: 'not-found' },
-        { className: 'NotATest', reason: 'not-accessible' },
-      ])
+      expect(result).toEqual({
+        skipped: [
+          { className: 'Missing', reason: 'not-found' },
+          { className: 'NotATest', reason: 'not-accessible' },
+        ],
+        resolutions: [
+          {
+            classId: 'ID1',
+            displayName: 'Usable',
+            lookupKeys: ['usable'],
+          },
+          {
+            classId: 'ID2',
+            displayName: 'et4ae5.NotATest',
+            lookupKeys: ['et4ae5.notatest'],
+          },
+        ],
+      })
     })
 
     it('should return verdicts carrying no suiteNames', async () => {
@@ -913,7 +1364,9 @@ describe('OrgApexSourceProvider', () => {
       readIdentitiesMock.mockResolvedValueOnce([])
 
       // Act
-      const [verdict] = await sut.assessPerimeter(['TestClassTest'])
+      const {
+        skipped: [verdict],
+      } = await sut.assessPerimeter(['TestClassTest'])
 
       // Assert
       expect(verdict.suiteNames).toBeUndefined()
@@ -934,9 +1387,24 @@ describe('OrgApexSourceProvider', () => {
       // Arrange
       const perimeter = ['A', 'B', 'C']
       readIdentitiesMock.mockResolvedValueOnce([
-        { Name: 'A', NamespacePrefix: null },
-        { Name: 'B', NamespacePrefix: null },
-        { Name: 'C', NamespacePrefix: null },
+        {
+          Id: 'ID_A',
+          Name: 'A',
+          NamespacePrefix: null,
+          ManageableState: 'unmanaged',
+        },
+        {
+          Id: 'ID_B',
+          Name: 'B',
+          NamespacePrefix: null,
+          ManageableState: 'unmanaged',
+        },
+        {
+          Id: 'ID_C',
+          Name: 'C',
+          NamespacePrefix: null,
+          ManageableState: 'unmanaged',
+        },
       ])
 
       // Act
@@ -946,6 +1414,271 @@ describe('OrgApexSourceProvider', () => {
       // per-class reads.
       expect(readIdentitiesMock).toHaveBeenCalledTimes(1)
       expect(readIdentitiesMock).toHaveBeenCalledWith(perimeter)
+    })
+
+    // Two ids, one bare name: both rows must be present, or the merge that Id
+    // identity prevents is never demonstrated to be prevented.
+    const CLASS_ID_LOCAL = '01p000000000001'
+    const CLASS_ID_FOREIGN = '01p000000000002'
+    const CLASS_ID_OTHER = '01p000000000003'
+
+    it("should mint the bare spelling for the org's own row and withhold it from the contesting foreign row", async () => {
+      // Arrange — the local row carries the org's OWN namespace explicitly
+      // (rather than null), so the outcome genuinely turns on the
+      // own-namespace check rather than on having no namespace to qualify.
+      readIdentitiesMock.mockResolvedValueOnce([
+        {
+          Id: CLASS_ID_LOCAL,
+          Name: 'Argument',
+          NamespacePrefix: ORG_NAMESPACE,
+          ManageableState: 'unmanaged',
+        },
+        {
+          Id: CLASS_ID_FOREIGN,
+          Name: 'Argument',
+          NamespacePrefix: 'mockery',
+          ManageableState: 'installed',
+        },
+      ])
+
+      // Act
+      const result = await sut.assessPerimeter(['Argument'])
+
+      // Assert — both rows share the bare name 'Argument', so only the
+      // org's own row answers to it; the foreign row answers to its
+      // qualified spelling alone.
+      expect(result.resolutions).toEqual([
+        {
+          classId: CLASS_ID_LOCAL,
+          displayName: `${ORG_NAMESPACE}.Argument`,
+          lookupKeys: ['argument', `${ORG_NAMESPACE}.argument`],
+        },
+        {
+          classId: CLASS_ID_FOREIGN,
+          displayName: 'mockery.Argument',
+          lookupKeys: ['mockery.argument'],
+        },
+      ])
+    })
+
+    it('should resolve one resolution per org row, not per perimeter entry', async () => {
+      // Arrange — one perimeter entry, two matching org rows
+      readIdentitiesMock.mockResolvedValueOnce([
+        {
+          Id: CLASS_ID_LOCAL,
+          Name: 'Argument',
+          NamespacePrefix: null,
+          ManageableState: 'unmanaged',
+        },
+        {
+          Id: CLASS_ID_FOREIGN,
+          Name: 'Argument',
+          NamespacePrefix: 'mockery',
+          ManageableState: 'installed',
+        },
+      ])
+
+      // Act
+      const result = await sut.assessPerimeter(['Argument'])
+
+      // Assert
+      expect(result.resolutions.length).toBe(2)
+    })
+
+    it('should mint only the qualified spelling for a foreign row even when it is the sole claimant of its bare name', async () => {
+      // Arrange — no other row in the set answers to 'ArgumentTest' either,
+      // but being the sole claimant is no longer what decides this: a bare
+      // spelling is legal source only inside the namespace that owns it, and
+      // this row is foreign, so it never mints one — the exact write-
+      // perimeter defect this pins closed.
+      readIdentitiesMock.mockResolvedValueOnce([
+        {
+          Id: CLASS_ID_FOREIGN,
+          Name: 'ArgumentTest',
+          NamespacePrefix: 'mockery',
+          ManageableState: 'installed',
+        },
+      ])
+
+      // Act
+      const result = await sut.assessPerimeter(['mockery.ArgumentTest'])
+
+      // Assert
+      expect(result.resolutions).toEqual([
+        {
+          classId: CLASS_ID_FOREIGN,
+          displayName: 'mockery.ArgumentTest',
+          lookupKeys: ['mockery.argumenttest'],
+        },
+      ])
+    })
+
+    it('should mint no bare key for either row when two foreign rows share a bare name', async () => {
+      // Arrange — neither row is the org's own namespace, so a bare
+      // perimeter entry must resolve to neither rather than to an
+      // arbitrary one of them.
+      readIdentitiesMock.mockResolvedValueOnce([
+        {
+          Id: CLASS_ID_FOREIGN,
+          Name: 'Argument',
+          NamespacePrefix: 'mockery',
+          ManageableState: 'installed',
+        },
+        {
+          Id: CLASS_ID_OTHER,
+          Name: 'Argument',
+          NamespacePrefix: 'other',
+          ManageableState: 'installed',
+        },
+      ])
+
+      // Act
+      const result = await sut.assessPerimeter([
+        'mockery.Argument',
+        'other.Argument',
+      ])
+
+      // Assert
+      expect(result.resolutions).toEqual([
+        {
+          classId: CLASS_ID_FOREIGN,
+          displayName: 'mockery.Argument',
+          lookupKeys: ['mockery.argument'],
+        },
+        {
+          classId: CLASS_ID_OTHER,
+          displayName: 'other.Argument',
+          lookupKeys: ['other.argument'],
+        },
+      ])
+    })
+
+    describe('mutability', () => {
+      it('should resolve with an empty skipped list when an own-namespace released row is mutable', async () => {
+        // Arrange — MutationTest as reported by dev-namespaced: released and
+        // carrying the org's own namespace, the acceptance command's own case.
+        readIdentitiesMock.mockResolvedValueOnce([
+          {
+            Id: '01p000000000004',
+            Name: 'MutationTest',
+            NamespacePrefix: ORG_NAMESPACE,
+            ManageableState: 'released',
+          },
+        ])
+
+        // Act
+        const result = await sut.assessPerimeter(['MutationTest'])
+
+        // Assert
+        expect(result.skipped).toEqual([])
+      })
+
+      it('should resolve with a not-accessible verdict when a null-namespace row is installed', async () => {
+        // Arrange — separates the mutability rule from the namespace rule:
+        // no namespace, yet still a closed managed-package state.
+        readIdentitiesMock.mockResolvedValueOnce([
+          {
+            Id: '01p000000000005',
+            Name: 'LegacyInstalled',
+            NamespacePrefix: null,
+            ManageableState: 'installed',
+          },
+        ])
+
+        // Act
+        const result = await sut.assessPerimeter(['LegacyInstalled'])
+
+        // Assert
+        expect(result.skipped).toEqual([
+          { className: 'LegacyInstalled', reason: 'not-accessible' },
+        ])
+      })
+
+      it('should resolve with a not-accessible verdict when a row carries a null ManageableState', async () => {
+        // Arrange — an unrecognised/absent state fails closed; this is also
+        // the shape a local `aer` backend produces, since it omits the field.
+        readIdentitiesMock.mockResolvedValueOnce([
+          {
+            Id: '01p000000000006',
+            Name: 'MutationTest',
+            NamespacePrefix: null,
+            ManageableState: null,
+          },
+        ])
+
+        // Act
+        const result = await sut.assessPerimeter(['MutationTest'])
+
+        // Assert
+        expect(result.skipped).toEqual([
+          { className: 'MutationTest', reason: 'not-accessible' },
+        ])
+      })
+
+      it('should resolve a qualified entry as not-accessible when only the local row is mutable', async () => {
+        // Arrange — a mutable LOCAL row must not make a foreign qualified
+        // entry usable.
+        readIdentitiesMock.mockResolvedValueOnce([
+          {
+            Id: CLASS_ID_LOCAL,
+            Name: 'Argument',
+            NamespacePrefix: null,
+            ManageableState: 'installedEditable',
+          },
+          {
+            Id: CLASS_ID_FOREIGN,
+            Name: 'Argument',
+            NamespacePrefix: 'mockery',
+            ManageableState: 'installed',
+          },
+        ])
+
+        // Act
+        const result = await sut.assessPerimeter(['mockery.Argument'])
+
+        // Assert
+        expect(result.skipped).toEqual([
+          { className: 'mockery.Argument', reason: 'not-accessible' },
+        ])
+      })
+
+      it('should resolve a qualified entry as accessible when only the foreign row is mutable', async () => {
+        // Arrange — states inverted from the previous case: now the FOREIGN
+        // row is the mutable one.
+        readIdentitiesMock.mockResolvedValueOnce([
+          {
+            Id: CLASS_ID_LOCAL,
+            Name: 'Argument',
+            NamespacePrefix: null,
+            ManageableState: 'installed',
+          },
+          {
+            Id: CLASS_ID_FOREIGN,
+            Name: 'Argument',
+            NamespacePrefix: 'mockery',
+            ManageableState: 'installedEditable',
+          },
+        ])
+
+        // Act
+        const result = await sut.assessPerimeter(['mockery.Argument'])
+
+        // Assert
+        expect(result.skipped).toEqual([])
+      })
+
+      it("should echo the caller's exact-case spelling when the entry is unusable", async () => {
+        // Arrange
+        readIdentitiesMock.mockResolvedValueOnce([])
+
+        // Act
+        const result = await sut.assessPerimeter(['MOCKERY.ARGUMENT'])
+
+        // Assert
+        expect(result.skipped).toEqual([
+          { className: 'MOCKERY.ARGUMENT', reason: 'not-found' },
+        ])
+      })
     })
   })
 

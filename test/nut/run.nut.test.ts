@@ -81,15 +81,9 @@ vi.mock('@salesforce/sf-plugins-core', () => {
   }
 })
 
-vi.mock('../../src/service/apexClassValidator.js', async () => {
-  const actual = await vi.importActual<
-    typeof import('../../src/service/apexClassValidator.js')
-  >('../../src/service/apexClassValidator.js')
-  return {
-    ApexClassValidator: vi.fn(),
-    ApexClassNotFoundError: actual.ApexClassNotFoundError,
-  }
-})
+vi.mock('../../src/service/apexClassValidator.js', () => ({
+  ApexClassValidator: vi.fn(),
+}))
 
 vi.mock('../../src/service/mutationTestingService.js', () => ({
   MutationTestingService: vi.fn(),
@@ -122,11 +116,14 @@ vi.mock('../../src/adapter/org/orgEngine.js', () => ({
 
 import { createOrgEngine } from '../../src/adapter/org/orgEngine.js'
 import { default as ApexMutationTest } from '../../src/commands/apex/mutation/test/run.js'
-import { ApexMutationHTMLReporter } from '../../src/reporter/HTMLReporter.js'
 import {
+  ApexClassAmbiguousError,
   ApexClassNotFoundError,
-  ApexClassValidator,
-} from '../../src/service/apexClassValidator.js'
+  ApexClassNotMutableError,
+  ApexClassUnqualifiedError,
+} from '../../src/port/apexClassErrors.js'
+import { ApexMutationHTMLReporter } from '../../src/reporter/HTMLReporter.js'
+import { ApexClassValidator } from '../../src/service/apexClassValidator.js'
 import { ConfigReader } from '../../src/service/configReader.js'
 import { MutationTestingService } from '../../src/service/mutationTestingService.js'
 import { TestSuiteResolver } from '../../src/service/testSuiteResolver.js'
@@ -162,7 +159,9 @@ describe('apex mutation test run NUT', () => {
     vi.mocked(ApexClassValidator).mockImplementation(
       class {
         validate = vi.fn().mockResolvedValue(undefined as never)
-        assessPerimeter = vi.fn().mockResolvedValue([] as never)
+        assessPerimeter = vi
+          .fn()
+          .mockResolvedValue({ skipped: [], resolutions: [] } as never)
       }
     )
     vi.mocked(MutationTestingService).mockImplementation(
@@ -280,14 +279,11 @@ describe('apex mutation test run NUT', () => {
       )
     })
 
-    it('Then constructs exactly one org engine from the flag-derived context', () => {
+    it('Then constructs exactly one org engine from a context carrying only the connection and notify, never a raw pre-validation class name', () => {
       expect(createOrgEngine).toHaveBeenCalledTimes(1)
-      expect(createOrgEngine).toHaveBeenCalledWith(
-        expect.objectContaining({
-          connection: mockConnection,
-          apexClassName: 'MyClass',
-        })
-      )
+      const ctx = vi.mocked(createOrgEngine).mock.calls[0][0]
+      expect(ctx.connection).toBe(mockConnection)
+      expect(Object.keys(ctx).sort()).toEqual(['connection', 'notify'])
     })
 
     it('Then the same source instance reaches the validator, the suite resolver context and the service bundle', () => {
@@ -583,7 +579,9 @@ describe('apex mutation test run NUT', () => {
             .mockRejectedValue(
               new ApexClassNotFoundError('InvalidClass') as never
             )
-          assessPerimeter = vi.fn().mockResolvedValue([] as never)
+          assessPerimeter = vi
+            .fn()
+            .mockResolvedValue({ skipped: [], resolutions: [] } as never)
         }
       )
       const sut = buildCommand(['-c', 'InvalidClass', '-t', 'MyClassTest'])
@@ -600,6 +598,183 @@ describe('apex mutation test run NUT', () => {
       expect(MutationTestingService).not.toHaveBeenCalled()
     })
 
+    it('When the class under mutation is not mutable, Then it rejects with error.apexClassNotMutable and never warns or constructs the mutation service', async () => {
+      // Arrange
+      vi.mocked(ApexClassValidator).mockImplementation(
+        class {
+          validate = vi
+            .fn()
+            .mockRejectedValue(
+              new ApexClassNotMutableError('InvalidClass', [
+                'installed',
+              ]) as never
+            )
+          assessPerimeter = vi
+            .fn()
+            .mockResolvedValue({ skipped: [], resolutions: [] } as never)
+        } as unknown as typeof ApexClassValidator
+      )
+      const sut = buildCommand(['-c', 'InvalidClass', '-t', 'MyClassTest'])
+
+      // Act & Assert
+      await expect(sut.run()).rejects.toThrow(
+        'error.apexClassNotMutable: InvalidClass, installed'
+      )
+      expect(mockMessages.createError).toHaveBeenCalledWith(
+        'error.apexClassNotMutable',
+        ['InvalidClass', 'installed']
+      )
+      expect(sut.warn).not.toHaveBeenCalled()
+      expect(MutationTestingService).not.toHaveBeenCalled()
+    })
+
+    it('When the class under mutation matches more than one modifiable class, Then it rejects with error.apexClassAmbiguous and never warns or constructs the mutation service', async () => {
+      // Arrange
+      vi.mocked(ApexClassValidator).mockImplementation(
+        class {
+          validate = vi
+            .fn()
+            .mockRejectedValue(
+              new ApexClassAmbiguousError('Argument', [
+                'mockery.Argument',
+                'acme.Argument',
+              ]) as never
+            )
+          assessPerimeter = vi
+            .fn()
+            .mockResolvedValue({ skipped: [], resolutions: [] } as never)
+        } as unknown as typeof ApexClassValidator
+      )
+      const sut = buildCommand(['-c', 'Argument', '-t', 'MyClassTest'])
+
+      // Act & Assert
+      await expect(sut.run()).rejects.toThrow(
+        'error.apexClassAmbiguous: Argument, mockery.Argument, acme.Argument'
+      )
+      expect(mockMessages.createError).toHaveBeenCalledWith(
+        'error.apexClassAmbiguous',
+        ['Argument', 'mockery.Argument, acme.Argument']
+      )
+      expect(sut.warn).not.toHaveBeenCalled()
+      expect(MutationTestingService).not.toHaveBeenCalled()
+    })
+
+    it('When the class under mutation matches a modifiable class only under a foreign namespace, Then it rejects with error.apexClassUnqualified and never warns or constructs the mutation service', async () => {
+      // Arrange
+      vi.mocked(ApexClassValidator).mockImplementation(
+        class {
+          validate = vi
+            .fn()
+            .mockRejectedValue(
+              new ApexClassUnqualifiedError(
+                'Argument',
+                'mockery.Argument'
+              ) as never
+            )
+          assessPerimeter = vi
+            .fn()
+            .mockResolvedValue({ skipped: [], resolutions: [] } as never)
+        } as unknown as typeof ApexClassValidator
+      )
+      const sut = buildCommand(['-c', 'Argument', '-t', 'MyClassTest'])
+
+      // Act & Assert
+      await expect(sut.run()).rejects.toThrow(
+        'error.apexClassUnqualified: Argument, mockery.Argument'
+      )
+      expect(mockMessages.createError).toHaveBeenCalledWith(
+        'error.apexClassUnqualified',
+        ['Argument', 'mockery.Argument']
+      )
+      expect(sut.warn).not.toHaveBeenCalled()
+      expect(MutationTestingService).not.toHaveBeenCalled()
+    })
+
+    it('When the not-mutable state carries control characters, Then error.apexClassNotMutable is created with the state sanitized', async () => {
+      // Arrange — a leading unit separator (0x1F) and a trailing DEL (0x7F):
+      // ManageableState is org-supplied and reaches the aer local backend
+      // unconstrained by any grammar, unlike the class name.
+      vi.mocked(ApexClassValidator).mockImplementation(
+        class {
+          validate = vi
+            .fn()
+            .mockRejectedValue(
+              new ApexClassNotMutableError('InvalidClass', [
+                'installed',
+              ]) as never
+            )
+          assessPerimeter = vi
+            .fn()
+            .mockResolvedValue({ skipped: [], resolutions: [] } as never)
+        } as unknown as typeof ApexClassValidator
+      )
+      const sut = buildCommand(['-c', 'InvalidClass', '-t', 'MyClassTest'])
+
+      // Act & Assert
+      await expect(sut.run()).rejects.toThrow()
+      expect(mockMessages.createError).toHaveBeenCalledWith(
+        'error.apexClassNotMutable',
+        ['InvalidClass', 'installed']
+      )
+    })
+
+    it('When an ambiguous spelling carries control characters, Then error.apexClassAmbiguous is created with the spelling sanitized', async () => {
+      // Arrange — a leading DEL (0x7F): NamespacePrefix is org-supplied and
+      // reaches the aer local backend unconstrained by any grammar.
+      vi.mocked(ApexClassValidator).mockImplementation(
+        class {
+          validate = vi
+            .fn()
+            .mockRejectedValue(
+              new ApexClassAmbiguousError('Argument', [
+                'mockery.Argument',
+                'acme.Argument',
+              ]) as never
+            )
+          assessPerimeter = vi
+            .fn()
+            .mockResolvedValue({ skipped: [], resolutions: [] } as never)
+        } as unknown as typeof ApexClassValidator
+      )
+      const sut = buildCommand(['-c', 'Argument', '-t', 'MyClassTest'])
+
+      // Act & Assert
+      await expect(sut.run()).rejects.toThrow()
+      expect(mockMessages.createError).toHaveBeenCalledWith(
+        'error.apexClassAmbiguous',
+        ['Argument', 'mockery.Argument, acme.Argument']
+      )
+    })
+
+    it('When the unqualified spelling carries control characters, Then error.apexClassUnqualified is created with the spelling sanitized', async () => {
+      // Arrange — a leading right-to-left override (U+202E): NamespacePrefix
+      // is org-supplied and reaches the aer local backend unconstrained by
+      // any grammar.
+      vi.mocked(ApexClassValidator).mockImplementation(
+        class {
+          validate = vi
+            .fn()
+            .mockRejectedValue(
+              new ApexClassUnqualifiedError(
+                'Argument',
+                '‮mockery.Argument'
+              ) as never
+            )
+          assessPerimeter = vi
+            .fn()
+            .mockResolvedValue({ skipped: [], resolutions: [] } as never)
+        } as unknown as typeof ApexClassValidator
+      )
+      const sut = buildCommand(['-c', 'Argument', '-t', 'MyClassTest'])
+
+      // Act & Assert
+      await expect(sut.run()).rejects.toThrow()
+      expect(mockMessages.createError).toHaveBeenCalledWith(
+        'error.apexClassUnqualified',
+        ['Argument', 'mockery.Argument']
+      )
+    })
+
     it('When validate rejects with a non-ApexClassNotFoundError, Then it is rethrown untouched', async () => {
       // Arrange
       vi.mocked(ApexClassValidator).mockImplementation(
@@ -607,7 +782,9 @@ describe('apex mutation test run NUT', () => {
           validate = vi
             .fn()
             .mockRejectedValue(new Error('org unavailable') as never)
-          assessPerimeter = vi.fn().mockResolvedValue([] as never)
+          assessPerimeter = vi
+            .fn()
+            .mockResolvedValue({ skipped: [], resolutions: [] } as never)
         }
       )
 
@@ -628,6 +805,45 @@ describe('apex mutation test run NUT', () => {
         .value as { assessPerimeter: ReturnType<typeof vi.fn> }
       expect(validatorInstance.assessPerimeter).toHaveBeenCalledWith(['A', 'B'])
     })
+
+    it('When the port resolves a classId resolution, Then MutationTestingService is constructed with a map keyed by classId', async () => {
+      // Arrange
+      const TEST_CLASS_ID = '01p000000000123'
+      vi.mocked(ApexClassValidator).mockImplementation(
+        class {
+          validate = vi.fn().mockResolvedValue(undefined as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [],
+            resolutions: [
+              {
+                classId: TEST_CLASS_ID,
+                displayName: 'MutationTest',
+                lookupKeys: ['mutationtest'],
+              },
+            ],
+          } as never)
+        } as unknown as typeof ApexClassValidator
+      )
+
+      // Act
+      await runCommand(['-c', 'MyClass', '-t', 'MutationTest'])
+
+      // Assert
+      const constructorParameter = vi.mocked(MutationTestingService).mock
+        .calls[0][3]
+      expect(constructorParameter.testClassResolutions).toEqual(
+        new Map([
+          [
+            TEST_CLASS_ID,
+            {
+              classId: TEST_CLASS_ID,
+              displayName: 'MutationTest',
+              lookupKeys: ['mutationtest'],
+            },
+          ],
+        ])
+      )
+    })
   })
 
   describe('Given a two-class perimeter where the validator reports one class unusable', () => {
@@ -635,11 +851,10 @@ describe('apex mutation test run NUT', () => {
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
           validate = vi.fn().mockResolvedValue(undefined as never)
-          assessPerimeter = vi
-            .fn()
-            .mockResolvedValue([
-              { className: 'BadTest', reason: 'not-found' },
-            ] as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [{ className: 'BadTest', reason: 'not-found' }],
+            resolutions: [],
+          } as never)
         }
       )
     })
@@ -705,10 +920,13 @@ describe('apex mutation test run NUT', () => {
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
           validate = vi.fn().mockResolvedValue(undefined as never)
-          assessPerimeter = vi.fn().mockResolvedValue([
-            { className: 'AaaTest', reason: 'not-found' },
-            { className: 'BbbTest', reason: 'not-accessible' },
-          ] as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [
+              { className: 'AaaTest', reason: 'not-found' },
+              { className: 'BbbTest', reason: 'not-accessible' },
+            ],
+            resolutions: [],
+          } as never)
         }
       )
     })
@@ -782,11 +1000,10 @@ describe('apex mutation test run NUT', () => {
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
           validate = vi.fn().mockResolvedValue(undefined as never)
-          assessPerimeter = vi
-            .fn()
-            .mockResolvedValue([
-              { className: 'BadTest', reason: 'not-found' },
-            ] as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [{ className: 'BadTest', reason: 'not-found' }],
+            resolutions: [],
+          } as never)
         }
       )
       const sut = buildCommand(['-c', 'MyClass', '--test-suite', 'SmokeSuite'])
@@ -814,11 +1031,10 @@ describe('apex mutation test run NUT', () => {
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
           validate = vi.fn().mockResolvedValue(undefined as never)
-          assessPerimeter = vi
-            .fn()
-            .mockResolvedValue([
-              { className: 'BadTest', reason: 'not-found' },
-            ] as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [{ className: 'BadTest', reason: 'not-found' }],
+            resolutions: [],
+          } as never)
         }
       )
       const sut = buildCommand([
@@ -850,11 +1066,10 @@ describe('apex mutation test run NUT', () => {
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
           validate = vi.fn().mockResolvedValue(undefined as never)
-          assessPerimeter = vi
-            .fn()
-            .mockResolvedValue([
-              { className: 'BadTest', reason: 'not-found' },
-            ] as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [{ className: 'BadTest', reason: 'not-found' }],
+            resolutions: [],
+          } as never)
         }
       )
       const sut = buildCommand(['-c', 'MyClass', '-t', 'GoodTest,BadTest'])
@@ -875,11 +1090,10 @@ describe('apex mutation test run NUT', () => {
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
           validate = vi.fn().mockResolvedValue(undefined as never)
-          assessPerimeter = vi
-            .fn()
-            .mockResolvedValue([
-              { className: 'MyClasTest', reason: 'not-found' },
-            ] as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [{ className: 'MyClasTest', reason: 'not-found' }],
+            resolutions: [],
+          } as never)
         }
       )
 
@@ -907,11 +1121,10 @@ describe('apex mutation test run NUT', () => {
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
           validate = vi.fn().mockResolvedValue(undefined as never)
-          assessPerimeter = vi
-            .fn()
-            .mockResolvedValue([
-              { className: 'SuiteTest', reason: 'not-found' },
-            ] as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [{ className: 'SuiteTest', reason: 'not-found' }],
+            resolutions: [],
+          } as never)
         }
       )
 
@@ -926,11 +1139,10 @@ describe('apex mutation test run NUT', () => {
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
           validate = vi.fn().mockResolvedValue(undefined as never)
-          assessPerimeter = vi
-            .fn()
-            .mockResolvedValue([
-              { className: 'MyClasTest', reason: 'not-found' },
-            ] as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [{ className: 'MyClasTest', reason: 'not-found' }],
+            resolutions: [],
+          } as never)
         }
       )
 
@@ -948,11 +1160,10 @@ describe('apex mutation test run NUT', () => {
       vi.mocked(ApexClassValidator).mockImplementation(
         class {
           validate = vi.fn().mockResolvedValue(undefined as never)
-          assessPerimeter = vi
-            .fn()
-            .mockResolvedValue([
-              { className: 'MyClasTest', reason: 'not-found' },
-            ] as never)
+          assessPerimeter = vi.fn().mockResolvedValue({
+            skipped: [{ className: 'MyClasTest', reason: 'not-found' }],
+            resolutions: [],
+          } as never)
         }
       )
       const sut = buildCommand(['-c', 'MyClass', '-t', 'MyClasTest'])

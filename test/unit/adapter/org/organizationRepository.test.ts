@@ -55,5 +55,19 @@ describe('OrganizationRepository', () => {
       // Assert
       expect(result).toBeNull()
     })
+
+    // isOwnNamespace's folding treats '' and null as the same "no namespace"
+    // value, so the read must normalise '' to null at the source rather than
+    // preserving a distinction nothing downstream honours.
+    it('Given the org reports an empty-string namespace prefix, When reading the namespace prefix, Then it resolves null', async () => {
+      // Arrange
+      queryMock.mockResolvedValue({ records: [{ NamespacePrefix: '' }] })
+
+      // Act
+      const result = await sut.readNamespacePrefix()
+
+      // Assert
+      expect(result).toBeNull()
+    })
   })
 })

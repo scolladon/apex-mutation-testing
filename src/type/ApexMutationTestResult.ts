@@ -1,9 +1,11 @@
+import type { TestClassResolution } from './TestClassResolution.js'
 import type { TestMethodId } from './TestMethodId.js'
 
 export interface ApexMutationTestResult {
   sourceFile: string
   sourceFileContent: string
   testFiles: string[]
+  testClassResolutions: TestClassResolution[]
   mutants: {
     id: string
     mutatorName: string

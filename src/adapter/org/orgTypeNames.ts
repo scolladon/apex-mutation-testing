@@ -2,9 +2,16 @@ import type { TypeName } from '../../port/apexSourceProvider.js'
 import type { EntityDefinitionRow } from './entityDefinitionRepository.js'
 import type { MetadataComponentDependency } from './MetadataComponentDependency.js'
 
-// Same falsy test as isLocal in orgApexSourceProvider.ts, applied to a
-// dependency row's raw namespace field instead of an ApexClassIdentity.
+// Same falsy test qualifiedApexClassName applies to an ApexClassIdentity's
+// namespace, applied here to a dependency row's raw namespace field instead.
 const hasNoNamespace = (namespace: string | null): boolean => !namespace
+
+// The dotted Apex spelling (`ns.Name`) for a namespaced class, the bare name
+// otherwise. `null` and `''` both mean "no namespace" — see hasNoNamespace.
+export const qualifiedApexClassName = (
+  name: string,
+  namespace: string | null
+): string => (hasNoNamespace(namespace) ? name : `${namespace}.${name}`)
 
 export const identityTypeName = (name: string): TypeName => ({
   apiName: name,
@@ -23,11 +30,16 @@ export const identityTypeName = (name: string): TypeName => ({
 const foldedNamespace = (namespace: string | null): string | null =>
   // isOwnNamespace folds BOTH sides through this function, so the direction
   // of the fold cannot be observed — upper and lower agree on every input
-  // pair. Only folding-versus-not is behavioural, and that is pinned.
+  // pair. Only folding-versus-not is behavioural, and that is pinned. A
+  // falsy check (not a null check) is what makes '' fold to the same null
+  // as an absent namespace — required because an ApexClass row's
+  // NamespacePrefix arrives unnormalised straight from the org and can
+  // report either spelling for "no namespace", with nothing upstream
+  // guaranteeing which.
   // Stryker disable next-line MethodExpression: both sides fold in lockstep.
-  namespace === null ? null : namespace.toLowerCase()
+  namespace ? namespace.toLowerCase() : null
 
-const isOwnNamespace = (
+export const isOwnNamespace = (
   namespace: string | null,
   orgNamespace: string | null
 ): boolean => foldedNamespace(namespace) === foldedNamespace(orgNamespace)
@@ -48,7 +60,7 @@ export const toApexClassTypeName = (
   if (hasNoNamespace(namespace)) {
     return identityTypeName(name)
   }
-  const apiName = `${namespace}.${name}`
+  const apiName = qualifiedApexClassName(name, namespace)
   const aliases = isOwnNamespace(namespace, orgNamespace)
     ? [apiName, name]
     : [apiName]

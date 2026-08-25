@@ -6,30 +6,42 @@ import type { TestMethodId } from '../../../../src/type/TestMethodId.js'
 const runTestAsynchronousMock = vi.fn()
 const runTestSynchronousMock = vi.fn()
 
+// Pinned live on a namespaced org: the covered class under mutation and the
+// test class exercising it, each an 18-character org Id.
+const TARGET_CLASS_ID = '01pjV000000EE9ZQAW'
+const TEST_CLASS_ID = '01pjV000000EE9bQAG'
+// Pinned live on a namespaced org: `apexClass.fullName` reported
+// `namespaced.ProbeFailTest` on a Pass row and `namespaced__ProbeFailTest`
+// on a Fail row for the same class, while `apexClass.id` and `apexClass.name`
+// stayed identical on both.
+const PROBE_CLASS_ID = '01pjV000000GlEHQA0'
+
 // Mirrors ApexTestRunner's own SDK-DTO-to-domain mapping, so an assertion on
 // what the adapter hands the injected coverage strategy stays in lockstep
 // with a raw SDK row fixture without duplicating the mapping by hand.
 const mappedCoverage = (row: {
+  apexClassOrTriggerId: string
   apexClassOrTriggerName: string
   apexTestMethodName: string
   coverage?: { coveredLines: number[] }
 }) => ({
-  className: row.apexClassOrTriggerName,
+  classId: row.apexClassOrTriggerId,
   testMethodName: row.apexTestMethodName,
   detail: row.coverage && { coveredLines: row.coverage.coveredLines },
 })
 
 const mappedTest = (row: {
-  apexClass: { fullName: string }
+  apexClass: { id: string; name: string }
   methodName: string | null
   outcome: string
   perClassCoverage?: Array<{
+    apexClassOrTriggerId: string
     apexClassOrTriggerName: string
     apexTestMethodName: string
     coverage?: { coveredLines: number[] }
   }>
 }) => ({
-  className: row.apexClass.fullName,
+  classId: row.apexClass.id,
   methodName: row.methodName,
   outcome: row.outcome,
   coverage: row.perClassCoverage?.map(mappedCoverage),
@@ -61,17 +73,260 @@ describe('ApexTestRunner', () => {
     vi.clearAllMocks()
   })
 
-  describe('when getting covered lines', () => {
-    describe('given the test execution is successful', () => {
-      it('then should delegate coverage shaping to the injected strategy and return the trimmed result', async () => {
-        // Arrange
+  describe('class identity vs display name', () => {
+    describe('given a Fail row whose fullName spelling differs from its Pass-row sibling', () => {
+      it('then should read classId from the id, never from fullName', async () => {
+        // Arrange — the id, the bare name and fullName all differ from one
+        // another, so this fixture can tell the new mechanism apart from
+        // the one it replaces
+        const failRow = {
+          apexClass: {
+            id: PROBE_CLASS_ID,
+            name: 'ProbeFailTest',
+            namespacePrefix: 'namespaced',
+            fullName: 'namespaced__ProbeFailTest',
+          },
+          methodName: 'failsOnPurpose',
+          outcome: ApexTestResultOutcome.Fail,
+          message: null,
+        }
+        const mockTestResult = {
+          summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 1 },
+          tests: [failRow],
+        }
+        runTestSynchronousMock.mockResolvedValue(mockTestResult)
+        const strategyStub = {
+          fidelity: 'per-test' as const,
+          getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
+        }
+
+        // Act
+        await sut.getTestMethodsPerLines(['ProbeFailTest'], strategyStub)
+
+        // Assert
+        expect(strategyStub.getTestMethodsPerLine).toHaveBeenCalledWith(
+          expect.objectContaining({ tests: [mappedTest(failRow)] })
+        )
+      })
+    })
+
+    describe('given the same class reported across a Pass row and a Fail row with different fullName spellings', () => {
+      it('then should map both rows to the identical classId', async () => {
+        // Arrange — apex-node's synchronous transport picks its namespace
+        // separator by outcome, so fullName varies per row for one class;
+        // classId must not
         const passRow = {
-          apexClass: { fullName: 'TestClass' },
+          apexClass: {
+            id: PROBE_CLASS_ID,
+            name: 'ProbeFailTest',
+            namespacePrefix: 'namespaced',
+            fullName: 'namespaced.ProbeFailTest',
+          },
+          methodName: 'passes',
+          outcome: ApexTestResultOutcome.Pass,
+          message: null,
+        }
+        const failRow = {
+          apexClass: {
+            id: PROBE_CLASS_ID,
+            name: 'ProbeFailTest',
+            namespacePrefix: 'namespaced',
+            fullName: 'namespaced__ProbeFailTest',
+          },
+          methodName: 'fails',
+          outcome: ApexTestResultOutcome.Fail,
+          message: null,
+        }
+        const mockTestResult = {
+          summary: { outcome: 'Failed', passing: 1, failing: 1, testsRan: 2 },
+          tests: [passRow, failRow],
+        }
+        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
+        const strategyStub = {
+          fidelity: 'aggregate' as const,
+          getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
+        }
+
+        // Act
+        await sut.getTestMethodsPerLines(
+          ['ProbeFailTest', 'Other'],
+          strategyStub
+        )
+
+        // Assert
+        expect(strategyStub.getTestMethodsPerLine).toHaveBeenCalledWith(
+          expect.objectContaining({
+            tests: [mappedTest(passRow), mappedTest(failRow)],
+          })
+        )
+      })
+    })
+
+    describe('given two CompileFail rows for one class whose fullName spelling differs by outcome but whose apexClass.id agrees', () => {
+      it('then should dedupe into one BaselineCompileFailure carrying the classId', async () => {
+        // Arrange — a two-class perimeter stays on the asynchronous
+        // transport
+        const firstCompileRow = {
+          apexClass: {
+            id: PROBE_CLASS_ID,
+            name: 'ProbeFailTest',
+            namespacePrefix: 'namespaced',
+            fullName: 'namespaced.ProbeFailTest',
+          },
+          methodName: '<compile>',
+          outcome: ApexTestResultOutcome.CompileFail,
+          message: 'first diagnosis',
+        }
+        const secondCompileRow = {
+          apexClass: {
+            id: PROBE_CLASS_ID,
+            name: 'ProbeFailTest',
+            namespacePrefix: 'namespaced',
+            fullName: 'namespaced__ProbeFailTest',
+          },
+          methodName: '<compile>',
+          outcome: ApexTestResultOutcome.CompileFail,
+          message: 'second diagnosis',
+        }
+        const mockTestResult = {
+          summary: { outcome: 'Failed', passing: 0, failing: 0, testsRan: 2 },
+          tests: [firstCompileRow, secondCompileRow],
+        }
+        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
+        const strategyStub = {
+          fidelity: 'aggregate' as const,
+          getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
+        }
+
+        // Act
+        const result = await sut.getTestMethodsPerLines(
+          ['ProbeFailTest', 'Other'],
+          strategyStub
+        )
+
+        // Assert
+        expect(result.compileFailures).toEqual([
+          {
+            classId: PROBE_CLASS_ID,
+            message: 'first diagnosis',
+          },
+        ])
+      })
+    })
+
+    describe('given a TestSetup row and a tests row for the same class reported with a differently spelled fullName', () => {
+      it('then should exclude the setup row by matching classId', async () => {
+        // Arrange — a two-class perimeter stays on the asynchronous
+        // transport
+        const setupRow = {
+          apexClass: {
+            id: TEST_CLASS_ID,
+            name: 'MutationTest',
+            namespacePrefix: 'namespaced',
+            fullName: 'namespaced.MutationTest',
+          },
+          methodName: 'setup',
+          outcome: ApexTestResultOutcome.Pass,
+          message: null,
+        }
+        const setupEntry = {
+          apexClass: {
+            id: TEST_CLASS_ID,
+            name: 'MutationTest',
+            namespacePrefix: 'namespaced',
+            fullName: 'namespaced__MutationTest',
+          },
+          methodName: 'setup',
+          testSetupTime: 12,
+        }
+        const otherRow = {
+          apexClass: { id: 'OtherId', name: 'Other' },
+          methodName: 'itWorks',
+          outcome: ApexTestResultOutcome.Pass,
+          message: null,
+        }
+        const mockTestResult = {
+          summary: { outcome: 'Passed', passing: 2, failing: 0, testsRan: 2 },
+          tests: [setupRow, otherRow],
+          setup: [setupEntry],
+        }
+        runTestAsynchronousMock.mockResolvedValue(mockTestResult)
+        const strategyStub = {
+          fidelity: 'aggregate' as const,
+          getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
+        }
+
+        // Act
+        const result = await sut.getTestMethodsPerLines(
+          ['MutationTest', 'Other'],
+          strategyStub
+        )
+
+        // Assert
+        expect(result.testsRan).toBe(1)
+      })
+    })
+
+    describe('given PerClassCoverage and CodeCoverageResult rows for the covered class', () => {
+      it('then should map both to carry classId', async () => {
+        // Arrange — a single class routes through the synchronous transport
+        const passRow = {
+          apexClass: { id: TEST_CLASS_ID, name: 'MutationTest' },
           methodName: 'testMethodA',
           outcome: ApexTestResultOutcome.Pass,
           message: null,
           perClassCoverage: [
             {
+              apexClassOrTriggerId: TARGET_CLASS_ID,
+              apexClassOrTriggerName: 'Mutation',
+              apexTestMethodName: 'testMethodA',
+              coverage: { coveredLines: [1] },
+            },
+          ],
+        }
+        const mockTestResult = {
+          summary: { outcome: 'Passed', passing: 1, failing: 0, testsRan: 1 },
+          tests: [passRow],
+          codecoverage: [
+            { apexId: TARGET_CLASS_ID, name: 'Mutation', coveredLines: [1] },
+          ],
+        }
+        runTestSynchronousMock.mockResolvedValue(mockTestResult)
+        const strategyStub = {
+          fidelity: 'per-test' as const,
+          getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
+        }
+
+        // Act
+        await sut.getTestMethodsPerLines(['MutationTest'], strategyStub)
+
+        // Assert
+        expect(strategyStub.getTestMethodsPerLine).toHaveBeenCalledWith({
+          outcome: mockTestResult.summary.outcome,
+          tests: [mappedTest(passRow)],
+          classCoverage: [
+            {
+              classId: TARGET_CLASS_ID,
+              coveredLines: [1],
+            },
+          ],
+        })
+      })
+    })
+  })
+
+  describe('when getting covered lines', () => {
+    describe('given the test execution is successful', () => {
+      it('then should delegate coverage shaping to the injected strategy and return the trimmed result', async () => {
+        // Arrange
+        const passRow = {
+          apexClass: { id: 'TestClassId', name: 'TestClass' },
+          methodName: 'testMethodA',
+          outcome: ApexTestResultOutcome.Pass,
+          message: null,
+          perClassCoverage: [
+            {
+              apexClassOrTriggerId: 'TestClassId',
               apexClassOrTriggerName: 'TestClass',
               apexTestMethodName: 'testMethodA',
               // uncoveredLines is real SDK shape the adapter must trim away —
@@ -89,7 +344,9 @@ describe('ApexTestRunner', () => {
             testsRan: 1,
           },
           tests: [passRow],
-          codecoverage: [{ name: 'TestClass', coveredLines: [1] }],
+          codecoverage: [
+            { apexId: 'TestClassId', name: 'TestClass', coveredLines: [1] },
+          ],
         }
         runTestSynchronousMock.mockResolvedValue(mockTestResult)
         const strategyStub = {
@@ -117,7 +374,12 @@ describe('ApexTestRunner', () => {
         expect(strategyStub.getTestMethodsPerLine).toHaveBeenCalledWith({
           outcome: mockTestResult.summary.outcome,
           tests: [mappedTest(passRow)],
-          classCoverage: [{ className: 'TestClass', coveredLines: [1] }],
+          classCoverage: [
+            {
+              classId: 'TestClassId',
+              coveredLines: [1],
+            },
+          ],
         })
         expect(runTestSynchronousMock).toHaveBeenCalledWith(
           {
@@ -135,7 +397,7 @@ describe('ApexTestRunner', () => {
       // A setup method cannot be re-run alone, so it must never surface as
       // an executable test — not a TestMethodId, not covering-test
       // attribution, not a counted execution.
-      const setupTestClass = { fullName: 'AmtSetupTest' }
+      const setupTestClass = { id: 'AmtSetupTestId', name: 'AmtSetupTest' }
       const firstRealRow = {
         apexClass: setupTestClass,
         methodName: 'itDoesSomething',
@@ -143,7 +405,7 @@ describe('ApexTestRunner', () => {
         message: null,
       }
       const secondRealRow = {
-        apexClass: { fullName: 'OtherTest' },
+        apexClass: { id: 'OtherTestId', name: 'OtherTest' },
         methodName: 'itDoesSomethingElse',
         outcome: ApexTestResultOutcome.Pass,
         message: null,
@@ -184,15 +446,17 @@ describe('ApexTestRunner', () => {
         })
       })
 
-      it('then should exclude a row appearing in both tests and setup, matching identity case-insensitively', async () => {
+      it('then should exclude a row appearing in both tests and setup, matching identity by class id even when the reported display name differs', async () => {
         // Arrange — defends against a row surfacing in both places: cross-
         // referencing TestResult.setup rather than trusting a row's mere
         // absence from `tests` keeps the exclusion correct regardless of the
         // org's API version or any SDK quirk that leaves a setup row mixed
-        // into `tests`
+        // into `tests`. The duplicate carries the same class id as
+        // setupEntry but a differently-cased display name, proving the join
+        // ignores the name entirely.
         const duplicatedSetupRow = {
-          apexClass: { fullName: 'amtsetuptest' },
-          methodName: 'SETUPDATA',
+          apexClass: { id: 'AmtSetupTestId', name: 'amtsetuptest' },
+          methodName: 'setUpData',
           outcome: ApexTestResultOutcome.Pass,
           message: null,
         }
@@ -253,13 +517,13 @@ describe('ApexTestRunner', () => {
 
     describe('given the baseline includes a CompileFail row', () => {
       const compileRow = {
-        apexClass: { fullName: 'BrokenTest' },
+        apexClass: { id: 'BrokenTestId', name: 'BrokenTest' },
         methodName: '<compile>',
         outcome: ApexTestResultOutcome.CompileFail,
         message: 'Invalid type: AmtProbeDep at line 3 column 5',
       }
       const passRow = {
-        apexClass: { fullName: 'GoodTest' },
+        apexClass: { id: 'GoodTestId', name: 'GoodTest' },
         methodName: 'addOneIncrements',
         outcome: ApexTestResultOutcome.Pass,
         message: null,
@@ -291,7 +555,7 @@ describe('ApexTestRunner', () => {
         // Assert — the injected strategy never sees the non-compiling row
         expect(result.compileFailures).toEqual([
           {
-            className: 'BrokenTest',
+            classId: 'BrokenTestId',
             message: 'Invalid type: AmtProbeDep at line 3 column 5',
           },
         ])
@@ -306,7 +570,7 @@ describe('ApexTestRunner', () => {
       it('then should count a Fail row toward otherFailureCount', async () => {
         // Arrange — a single class routes through the synchronous transport
         const failRow = {
-          apexClass: { fullName: 'FlakyTest' },
+          apexClass: { id: 'FlakyTestId', name: 'FlakyTest' },
           methodName: 'itFails',
           outcome: ApexTestResultOutcome.Fail,
           message: 'System.AssertException: Assertion Failed',
@@ -335,7 +599,7 @@ describe('ApexTestRunner', () => {
       it('then should count a Skip row toward otherFailureCount', async () => {
         // Arrange — a single class routes through the synchronous transport
         const skipRow = {
-          apexClass: { fullName: 'SkippedTest' },
+          apexClass: { id: 'SkippedTestId', name: 'SkippedTest' },
           methodName: 'itIsSkipped',
           outcome: ApexTestResultOutcome.Skip,
           message: null,
@@ -361,16 +625,18 @@ describe('ApexTestRunner', () => {
         expect(runTestAsynchronousMock).not.toHaveBeenCalled()
       })
 
-      it('then should dedupe CompileFail rows by folded class name and keep the first message', async () => {
-        // Arrange — a single class routes through the synchronous transport
+      it('then should dedupe CompileFail rows by class id and keep the first message', async () => {
+        // Arrange — a single class routes through the synchronous transport;
+        // both rows report the identical class id, as a retried compile
+        // attempt for the same class would
         const firstCompileRow = {
-          apexClass: { fullName: 'BrokenTest' },
+          apexClass: { id: 'BrokenTestId', name: 'BrokenTest' },
           methodName: '<compile>',
           outcome: ApexTestResultOutcome.CompileFail,
           message: 'Invalid type: AmtProbeDep at line 3 column 5',
         }
         const secondCompileRow = {
-          apexClass: { fullName: 'brokentest' },
+          apexClass: { id: 'BrokenTestId', name: 'BrokenTest' },
           methodName: '<compile>',
           outcome: ApexTestResultOutcome.CompileFail,
           message: 'Unrelated second diagnosis',
@@ -394,8 +660,57 @@ describe('ApexTestRunner', () => {
         // Assert
         expect(result.compileFailures).toEqual([
           {
-            className: 'BrokenTest',
+            classId: 'BrokenTestId',
             message: 'Invalid type: AmtProbeDep at line 3 column 5',
+          },
+        ])
+        expect(runTestAsynchronousMock).not.toHaveBeenCalled()
+      })
+
+      it('then should keep both CompileFail rows when they share a name but carry different class ids', async () => {
+        // Arrange — a local class and a mockery.-prefixed class can share
+        // the same bare name while remaining two distinct classes; only the
+        // class id may fold them together, never the name. A fixture where
+        // both rows shared the same id (as the dedupe test above does) could
+        // not tell a name-keyed dedupe apart from an id-keyed one — this one
+        // can, since dedupe-by-name would wrongly collapse it to one entry.
+        const localCompileRow = {
+          apexClass: { id: 'LocalArgumentId', name: 'Argument' },
+          methodName: '<compile>',
+          outcome: ApexTestResultOutcome.CompileFail,
+          message: 'Invalid type: LocalDep at line 3 column 5',
+        }
+        const packagedCompileRow = {
+          apexClass: { id: 'PackagedArgumentId', name: 'Argument' },
+          methodName: '<compile>',
+          outcome: ApexTestResultOutcome.CompileFail,
+          message: 'Invalid type: PackagedDep at line 7 column 1',
+        }
+        const mockTestResult = {
+          summary: { outcome: 'Failed', passing: 0, failing: 0, testsRan: 2 },
+          tests: [localCompileRow, packagedCompileRow],
+        }
+        runTestSynchronousMock.mockResolvedValue(mockTestResult)
+        const strategyStub = {
+          fidelity: 'aggregate' as const,
+          getTestMethodsPerLine: vi.fn().mockReturnValue(new Map()),
+        }
+
+        // Act
+        const result = await sut.getTestMethodsPerLines(
+          ['Argument'],
+          strategyStub
+        )
+
+        // Assert — two distinct diagnoses survive, one per class id
+        expect(result.compileFailures).toEqual([
+          {
+            classId: 'LocalArgumentId',
+            message: 'Invalid type: LocalDep at line 3 column 5',
+          },
+          {
+            classId: 'PackagedArgumentId',
+            message: 'Invalid type: PackagedDep at line 7 column 1',
           },
         ])
         expect(runTestAsynchronousMock).not.toHaveBeenCalled()
@@ -404,7 +719,7 @@ describe('ApexTestRunner', () => {
       it('then should normalise a null compile message to an empty string', async () => {
         // Arrange — a single class routes through the synchronous transport
         const compileRowWithoutMessage = {
-          apexClass: { fullName: 'BrokenTest' },
+          apexClass: { id: 'BrokenTestId', name: 'BrokenTest' },
           methodName: '<compile>',
           outcome: ApexTestResultOutcome.CompileFail,
           message: null,
@@ -427,7 +742,7 @@ describe('ApexTestRunner', () => {
 
         // Assert
         expect(result.compileFailures).toEqual([
-          { className: 'BrokenTest', message: '' },
+          { classId: 'BrokenTestId', message: '' },
         ])
         expect(runTestAsynchronousMock).not.toHaveBeenCalled()
       })
@@ -440,10 +755,11 @@ describe('ApexTestRunner', () => {
       // the SDK's `ApexTestResultData.methodName: string` type — this is
       // the actual runtime shape, not a typo; there is no automated drift
       // detector, so re-verify against a live org if this ever needs to
-      // change.
+      // change. `apexClass.id` is a fabricated 18-character org Id, since
+      // it was not the field under test when this row was captured.
       const syncCompileFailureRow = {
         id: '01pdL00000Z2WSfQAN',
-        apexClass: { fullName: 'AmtSyncDepTest' },
+        apexClass: { id: '01pdL00000Z2WqmQAF', name: 'AmtSyncDepTest' },
         methodName: null,
         outcome: ApexTestResultOutcome.Fail,
         message: 'line 5, column 37: Variable does not exist: AmtSyncDep',
@@ -472,7 +788,7 @@ describe('ApexTestRunner', () => {
         // failure, and the strategy never sees the non-executed row
         expect(result.compileFailures).toEqual([
           {
-            className: 'AmtSyncDepTest',
+            classId: '01pdL00000Z2WqmQAF',
             message: 'line 5, column 37: Variable does not exist: AmtSyncDep',
           },
         ])
@@ -509,7 +825,7 @@ describe('ApexTestRunner', () => {
     describe('given a synchronous result missing one compile-failure marker', () => {
       const markedRow = {
         id: '01pdL00000Z2WSfQAN',
-        apexClass: { fullName: 'AmtSyncDepTest' },
+        apexClass: { id: '01pdL00000Z2WqmQAF', name: 'AmtSyncDepTest' },
         methodName: null,
         outcome: ApexTestResultOutcome.Fail,
         message: 'line 5, column 37: Variable does not exist: AmtSyncDep',
@@ -586,7 +902,7 @@ describe('ApexTestRunner', () => {
         // Arrange — the fingerprint requires exactly one row
         const secondMarkedRow = {
           ...markedRow,
-          apexClass: { fullName: 'AnotherSyncDepTest' },
+          apexClass: { id: '01pdL00000Z2WrAQAV', name: 'AnotherSyncDepTest' },
         }
 
         // Act
@@ -609,7 +925,7 @@ describe('ApexTestRunner', () => {
         // this fingerprint match, collapsing both rows into a single
         // CompileFail and silently discarding the second one.
         const secondRow = {
-          apexClass: { fullName: 'OtherSyncDepTest' },
+          apexClass: { id: '01pdL00000Z2WsBQAV', name: 'OtherSyncDepTest' },
           methodName: 'itFails',
           outcome: ApexTestResultOutcome.Fail,
           message: 'System.AssertException: Assertion Failed',
@@ -633,7 +949,7 @@ describe('ApexTestRunner', () => {
         // Arrange — two classes in the perimeter stay on the asynchronous
         // transport, even though this row happens to match every marker
         const asyncMatchingRow = {
-          apexClass: { fullName: 'AmtSyncDepTest' },
+          apexClass: { id: '01pdL00000Z2WqmQAF', name: 'AmtSyncDepTest' },
           methodName: null,
           outcome: ApexTestResultOutcome.Fail,
           message: 'line 5, column 37: Variable does not exist: AmtSyncDep',
@@ -767,13 +1083,45 @@ describe('ApexTestRunner', () => {
         expect(result).toEqual({ outcome: 'Passed', tests: [] })
         expect(runTestSynchronousMock).toHaveBeenCalledWith(
           {
-            tests: [{ className: 'TestClass', testMethods: ['testMethod'] }],
+            tests: [{ classId: 'TestClass', testMethods: ['testMethod'] }],
             skipCodeCoverage: true,
             maxFailedTests: 0,
           },
           false
         )
         expect(runTestAsynchronousMock).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('given a synchronous single-class result matching the compile-failure fingerprint', () => {
+      it('then should surface the normalised row carrying the async transport token as its method name', async () => {
+        // Arrange
+        const syncCompileFailureRow = {
+          apexClass: { id: PROBE_CLASS_ID, name: 'AmtSyncDepTest' },
+          methodName: null,
+          outcome: ApexTestResultOutcome.Fail,
+          message: 'line 5, column 37: Variable does not exist: AmtSyncDep',
+          runTime: -1,
+        }
+        runTestSynchronousMock.mockResolvedValue({
+          summary: { outcome: 'Failed', passing: 0, failing: 1, testsRan: 0 },
+          tests: [syncCompileFailureRow],
+        })
+
+        // Act
+        const result = await sut.runTestMethods(
+          new Set<TestMethodId>(['AmtSyncDepTest.someMethod'])
+        )
+
+        // Assert — the sync transport's methodName: null marker is rewritten
+        // to the same token the async transport emits for a compile failure.
+        expect(result.tests).toEqual([
+          mappedTest({
+            ...syncCompileFailureRow,
+            methodName: '<compile>',
+            outcome: ApexTestResultOutcome.CompileFail,
+          }),
+        ])
       })
     })
 
@@ -790,7 +1138,7 @@ describe('ApexTestRunner', () => {
         // Assert
         expect(runTestSynchronousMock).toHaveBeenCalledWith(
           {
-            tests: [{ className: 'A', testMethods: ['m1', 'm2'] }],
+            tests: [{ classId: 'A', testMethods: ['m1', 'm2'] }],
             skipCodeCoverage: true,
             maxFailedTests: 0,
           },
@@ -815,8 +1163,8 @@ describe('ApexTestRunner', () => {
         expect(runTestAsynchronousMock).toHaveBeenCalledWith(
           {
             tests: [
-              { className: 'A', testMethods: ['testOne', 'testTwo'] },
-              { className: 'B', testMethods: ['testThree'] },
+              { classId: 'A', testMethods: ['testOne', 'testTwo'] },
+              { classId: 'B', testMethods: ['testThree'] },
             ],
             testLevel: TestLevel.RunSpecifiedTests,
             skipCodeCoverage: true,
@@ -871,7 +1219,7 @@ describe('ApexTestRunner', () => {
         expect(result).toEqual({ outcome: 'Passed', tests: [] })
         expect(runTestAsynchronousMock).toHaveBeenCalledWith(
           {
-            tests: [{ className: 'TestClass', testMethods: ['testMethod'] }],
+            tests: [{ classId: 'TestClass', testMethods: ['testMethod'] }],
             testLevel: TestLevel.RunSpecifiedTests,
             skipCodeCoverage: true,
             maxFailedTests: 0,

@@ -30,10 +30,11 @@ export interface BaselineTestResult {
 // Maps each transport's own SDK DTO into the domain shape src/service/
 // consumes, so neither transport's coverage/outcome layout leaks past this
 // adapter. Field-for-field translation only — no behavioural decision here.
+// classId (an org Id) is the identity field.
 const toApexTestMethodCoverage = (
   coverage: PerClassCoverage
 ): ApexTestMethodCoverage => ({
-  className: coverage.apexClassOrTriggerName,
+  classId: coverage.apexClassOrTriggerId,
   testMethodName: coverage.apexTestMethodName,
   detail: coverage.coverage && { coveredLines: coverage.coverage.coveredLines },
 })
@@ -41,7 +42,7 @@ const toApexTestMethodCoverage = (
 const toApexTestMethodResult = (
   test: ApexTestResultData
 ): ApexTestMethodResult => ({
-  className: test.apexClass.fullName,
+  classId: test.apexClass.id,
   methodName: test.methodName,
   outcome: test.outcome,
   coverage: test.perClassCoverage?.map(toApexTestMethodCoverage),
@@ -50,7 +51,7 @@ const toApexTestMethodResult = (
 const toApexClassCoverage = (
   coverage: CodeCoverageResult
 ): ApexClassCoverage => ({
-  className: coverage.name,
+  classId: coverage.apexId,
   coveredLines: coverage.coveredLines,
 })
 
@@ -64,18 +65,19 @@ const recordCompileFailure = (
   compileFailuresByClass: Map<string, BaselineCompileFailure>,
   test: ApexTestResultData
 ): void => {
-  const key = test.apexClass.fullName.toLowerCase()
+  const key = test.apexClass.id
   if (compileFailuresByClass.has(key)) return
   compileFailuresByClass.set(key, {
-    className: test.apexClass.fullName,
+    classId: test.apexClass.id,
     message: test.message ?? '',
   })
 }
 
-// Apex identifiers are case-insensitive, matching the class-name folding
-// `recordCompileFailure` already uses for its own dedup key.
-const testMethodIdentity = (className: string, methodName: string): string =>
-  `${className}.${methodName}`.toLowerCase()
+// The join key is the class Id, not the class name: org Ids are stable
+// identifiers that never vary in case, unlike the Apex class names this
+// key used to fold before identity moved to the Id.
+const testMethodIdentity = (classId: string, methodName: string): string =>
+  `${classId}.${methodName}`
 
 // A @TestSetup method cannot be re-run on its own, so it must never surface
 // as an executable test. The synchronous transport never reports one as a
@@ -86,7 +88,7 @@ const testMethodIdentity = (className: string, methodName: string): string =>
 // ever ended up in both places.
 const setupIdentities = (setup: ApexTestSetupData[]): Set<string> =>
   new Set(
-    setup.map(row => testMethodIdentity(row.apexClass.fullName, row.methodName))
+    setup.map(row => testMethodIdentity(row.apexClass.id, row.methodName))
   )
 
 // One pass, one place: this is the only thing in the codebase that classifies
@@ -97,7 +99,10 @@ const setupIdentities = (setup: ApexTestSetupData[]): Set<string> =>
 // method, so it is excluded from executedTests rather than counted as a
 // failure. A @TestSetup row is excluded before that classification even
 // runs: it never becomes a TestMethodId, never contributes coverage, and
-// never adds to testsRan.
+// never adds to testsRan. Both the CompileFail dedup key above and the
+// @TestSetup cross-reference below key on the class Id, so neither is
+// thrown off by a transport that spells the same class's qualified name
+// differently per outcome.
 const partitionOutcomes = (
   tests: ApexTestResultData[],
   setup: ApexTestSetupData[] = []
@@ -114,9 +119,7 @@ const partitionOutcomes = (
   let testsRan = 0
 
   for (const test of tests) {
-    if (
-      setupIds.has(testMethodIdentity(test.apexClass.fullName, test.methodName))
-    ) {
+    if (setupIds.has(testMethodIdentity(test.apexClass.id, test.methodName))) {
       continue
     }
     testsRan++
@@ -153,6 +156,11 @@ const ASYNC_COMPILE_METHOD_NAME = '<compile>' // the token the async path emits
 // match: getting this wrong in the permissive direction would silently
 // reclassify a real test failure as a compile skip.
 const isSyncCompileFailureFingerprint = (testResult: TestResult): boolean => {
+  // The real [] fails the length check below and returns false. A forced
+  // non-empty fallback would pass that check but then fail
+  // methodName === null once destructured — both routes return false.
+  // Stryker disable next-line ArrayDeclaration: any fallback array still
+  // fails methodName === null below.
   const tests = testResult.tests ?? []
   if (tests.length !== SYNC_COMPILE_FAILURE_ROW_COUNT) return false
   const [row] = tests
@@ -194,8 +202,14 @@ const normalizeSyncCompileFailure = (testResult: TestResult): TestResult => {
   }
 }
 
-// module-local, not exported — keeps the class's public surface unchanged
-type TestItems = { className: string; testMethods?: string[] }[]
+// module-local, not exported — keeps the class's public surface unchanged.
+// The baseline enqueue passes the user's own spelling (which the vendor
+// accepts: TestItem.className is documented as "Should include namespace if
+// needed"); the per-mutant re-run passes the org Id the run already
+// resolved.
+type TestItems =
+  | { className: string; testMethods?: string[] }[]
+  | { classId: string; testMethods: string[] }[]
 
 // Named for the caller's intent rather than the vendor payload's inverted
 // `skipCodeCoverage` field, so a call site reads as what it asks for, not as
@@ -243,11 +257,16 @@ const PERMANENT_SYNC_ERROR_CODES: ReadonlySet<string> = new Set([
 
 const readErrorCode = (error: Error): string | undefined => {
   const code = (error as { errorCode?: unknown }).errorCode
+  // The only consumer feeds this into a Set<string>.has(...), which answers
+  // false for a non-string exactly as this short-circuit does.
   return typeof code === 'string' ? code : undefined
 }
 
 const isPermanentSyncFailure = (error: Error): boolean => {
   const code = readErrorCode(error)
+  // The only caller is this function, and
+  // PERMANENT_SYNC_ERROR_CODES.has(...) — a Set<string> — answers false for
+  // a non-string exactly as this short-circuit does.
   return code !== undefined && PERMANENT_SYNC_ERROR_CODES.has(code)
 }
 
@@ -303,6 +322,8 @@ export class ApexTestRunner {
   ): Promise<ApexTestRunResult> {
     const testResult = await this.runTests(
       toTestItems(testMethods),
+      // Stryker disable next-line StringLiteral: this value is only ever
+      // compared via === 'with-coverage'; no other reader exists.
       'without-coverage'
     )
     return toApexTestRunResult(testResult)

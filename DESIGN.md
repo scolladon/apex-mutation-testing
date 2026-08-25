@@ -149,13 +149,34 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │
 ├─ 3. VALIDATE + REDUCE THE PERIMETER
 │     ApexClassValidator.validate(MyClass)
-│       → exists? (fatal: error.apexClassNotFound)
+│       → engine.source.assessTargetClass(MyClass), a discriminated
+│         verdict over every row the bare name returns across every
+│         namespace — mutability (ManageableState), not namespace,
+│         is what it decides on:
+│         ├─ mutable                           → proceed
+│         ├─ not-mutable (every row is a closed
+│         │    managed package, or reports an
+│         │    absent/unrecognized state — fail
+│         │    closed, never inferred mutable)  → fatal, names the
+│         │                                        observed states
+│         ├─ ambiguous (two+ mutable rows, none
+│         │    this org's own namespace)        → fatal, names every
+│         │                                        qualified spelling
+│         ├─ unqualified (the one mutable row is
+│         │    a foreign namespace's)           → fatal, names the
+│         │                                        qualified spelling
+│         │                                        to re-run with
+│         └─ not-found                          → fatal
 │     ApexClassValidator.assessPerimeter(-t perimeter)
-│       → ONE batched Tooling query, Name IN (…), projecting only
-│         Name + NamespacePrefix — no perimeter class body is ever
-│         fetched
-│       ├─ name absent from the query result    → "not found"      · drop
-│       └─ every row for the name is namespaced → "not accessible" · drop
+│       → ONE batched Tooling query, Name IN (…), projecting
+│         Id + Name + NamespacePrefix + ManageableState — no
+│         perimeter class body is ever fetched
+│       ├─ name absent from the query result             → "not-found"     · drop
+│       ├─ name resolves only to a mutable row this org
+│       │    doesn't own — reachable, just not under its
+│       │    bare spelling                                → "not-qualified" · drop
+│       └─ name resolves to a row that exists but isn't
+│            mutable (e.g. a closed managed package)      → "not-accessible" · drop
 │     Each drop renders as a warning naming the class, the reason, and
 │       the contributing test suite when the class arrived via
 │       --test-suite
@@ -165,7 +186,10 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │
 ├─ 4. FETCH SOURCE
 │     engine.source.readClass(MyClass) → { Id, Body }
-│       (OrgApexSourceProvider → ApexClassRepository.read)
+│       (OrgApexSourceProvider → ApexClassRepository.readBodyCandidates,
+│        re-run through the same mutable-candidate selection as step 3 —
+│        a check-then-use race between the two org round-trips surfaces through
+│        the same typed error vocabulary, not a raw internal-verdict Error)
 │
 ├─ 5. DISCOVER DEPENDENCIES
 │     engine.source.listDependencies(apexClass)
@@ -259,12 +283,17 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │           the run exactly as before ("Original tests failed! Cannot
 │           proceed with mutation testing.")
 │         → testMethodsPerLine: Map<line, Set<TestMethodId>>
-│           (TestMethodId = "ClassName.methodName", minted here via
-│            qualifyTestMethod so identically-named methods in
-│            different perimeter classes never collide; shaped by
-│            the selected coverageStrategy; union across the
-│            perimeter under PerTestCoverageStrategy; CompileFail rows
-│            never reach it)
+│           (TestMethodId = "classId.methodName" — the declaring
+│            class's org Id, not its name — minted here via
+│            qualifyTestMethod; shaped by the selected
+│            coverageStrategy; union across the perimeter under
+│            PerTestCoverageStrategy; CompileFail rows never reach
+│            it. Id-qualified, not name-qualified, so two perimeter
+│            classes that share a bare name across namespaces —
+│            e.g. `-t Foo -t pkg.Foo` — never merge; the report
+│            translates each Id back to its resolved display
+│            spelling via TestClassResolutions, see HTML Report
+│            Generation)
 │         ✓ Every executed test must pass (green baseline) — a class
 │           that never executed a test contributes nothing to that
 │           evidence
@@ -290,8 +319,12 @@ sf apex mutation test run -c MyClass -t MyClassTest -o myOrg
 │     filterTestMethods(testMethodsPerLine, predicate)
 │       → filter testMethodsPerLine in-place
 │       → a filter entry matches a bare methodName (applies to
-│         that method in every perimeter class) or a qualified
-│         ClassName.methodName (applies to exactly one class)
+│         that method in every perimeter class) or, resolving the
+│         TestMethodId's classId outward through
+│         TestClassResolutions.lookupKeys, a qualified
+│         ClassName.methodName (one own-namespace/local class) or
+│         ns.ClassName.methodName (one foreign-namespace class) —
+│         matching is case-insensitive throughout
 │       → lines with zero remaining methods are deleted
 │       → coveredLines derived after filtering
 │     Rationale: filtering early reduces both the number
@@ -651,11 +684,11 @@ class PerTestCoverageStrategy implements CoverageStrategy   // fidelity: 'per-te
 class AggregateCoverageStrategy implements CoverageStrategy // fidelity: 'aggregate'
 ```
 
-`TestMethodId` (`src/type/TestMethodId.ts`) is a `ClassName.methodName` string, minted by `qualifyTestMethod(test.className, methodName)`. Both strategies qualify at this boundary — the one place a test method's declaring class is known — so a method name that exists in more than one perimeter class never collides downstream.
+`TestMethodId` (`src/type/TestMethodId.ts`) is a `classId.methodName` string, minted by `qualifyTestMethod(test.classId, methodName)` — `classId` is the declaring class's org Id, not its name. Both strategies qualify at this boundary — the one place a test method's declaring class is known — so a method name that exists in more than one perimeter class never collides downstream, and neither does a bare class name shared by two classes in different namespaces (a name-based id could not tell those apart; an org Id always can).
 
 - `PerTestCoverageStrategy` filters each test's `coverage` entries down to the target class and maps each covered line to the set of qualified test-method ids that actually covered it, combining the contributions of every class in the perimeter.
 - `AggregateCoverageStrategy` reads the target class's entry from `testResult.classCoverage` and assigns **every** covered line the full set of qualified ids of every executed test method across the perimeter — an over-approximation, since the aggregate rollup does not distinguish which test covered which line. This is the accepted "every test method runs per mutant" degradation.
-- Both strategies lower-case the target class name once in their constructor for case-insensitive matching.
+- Both strategies join coverage rows to the class under mutation on `ApexClass.Id`, constructed with the target class's Id rather than its name: the org's coverage rows report a bare class name regardless of namespace, so a name join could not disambiguate two same-named classes from different namespaces. The Id comparison is a plain `===` — no case folding needed.
 
 **Selection is knowledge, not inference — made where the baseline is computed.**
 `OrgMutationTestBed.prepare` (`src/adapter/org/orgMutationTestBed.ts`) queries
@@ -665,8 +698,8 @@ baseline test:
 
 ```typescript
 const strategy = (await this.settings.isAggregateCoverageOnly())
-  ? new AggregateCoverageStrategy(this.apexClassName)
-  : new PerTestCoverageStrategy(this.apexClassName)
+  ? new AggregateCoverageStrategy(original.Id)
+  : new PerTestCoverageStrategy(original.Id)
 ```
 
 The two strategy classes are unmoved — they still live in `src/service/coverageStrategy.ts`
@@ -1194,8 +1227,8 @@ A key performance optimization: only the test methods that **cover the mutated l
 Baseline Test Run (synchronous for a single-class perimeter, asynchronous otherwise — see Transport Selection)
     │
     ▼
-testMethodsPerLine: Map<line, Set<TestMethodId>>   TestMethodId = "ClassName.methodName"
-    │
+testMethodsPerLine: Map<line, Set<TestMethodId>>   TestMethodId = "classId.methodName"
+    │                                               (shown below as "ClassName.methodName" for readability)
     │  Line 10 → { FooTest.testA, BarTest.testB }
     │  Line 15 → { FooTest.testA }
     │  Line 20 → { FooTest.testB, BarTest.testB }
@@ -1208,7 +1241,7 @@ Mutation on Line 20:
     → only run FooTest.testB, BarTest.testB
 ```
 
-Qualifying the token by its declaring class — minted once at the org boundary by both `CoverageStrategy` implementations and reused by `GroupExecutor` for outcome attribution — is what keeps kill/survive verdicts exact when two perimeter classes declare a method with the same name; a bare `methodName` map would silently collapse `FooTest.testA` and `BarTest.testA` into one entry.
+Qualifying the token by its declaring class's org **Id** — minted once at the org boundary by both `CoverageStrategy` implementations and reused by `GroupExecutor` for outcome attribution — is what keeps kill/survive verdicts exact when two perimeter classes declare a method with the same name; a bare `methodName` map would silently collapse `FooTest.testA` and `BarTest.testA` into one entry. Qualifying by Id rather than by name additionally keeps two perimeter classes that share a bare *class* name across namespaces (`-t Foo -t pkg.Foo`) from merging, which a name-based id could not have told apart. The report translates each Id back to its resolved display spelling — see HTML Report Generation.
 
 This dramatically reduces the number of test executions per mutation cycle.
 
@@ -1236,7 +1269,10 @@ ApexMutationTestResult
     │   ├─ testFiles?: keyed by every class in the perimeter, in
     │   │   user-supplied order. Each entry lists that class's
     │   │   observed test methods as { id, name } — id and name are
-    │   │   both the qualified "ClassName.methodName" — sorted; a
+    │   │   both the qualified "ClassName.methodName", the class's
+    │   │   *resolved display spelling* (its TestClassResolution
+    │   │   entry, namespace-qualified when foreign) translated from
+    │   │   the internal classId-qualified TestMethodId — sorted; a
     │   │   perimeter class that covered no tested mutant still gets
     │   │   an entry with tests: []. Built from the union of every
     │   │   mutant's coveredBy; the whole key is OMITTED (not an
@@ -1248,9 +1284,9 @@ ApexMutationTestResult
     │   └─ mutants[]:
     │       ├─ id, mutatorName, replacement
     │       ├─ status: Killed|Survived|NoCoverage|CompileError|RuntimeError|Pending
-    │       ├─ coveredBy? / killedBy?: qualified TestMethodIds
-    │       │   ("ClassName.methodName") read off the mutant's
-    │       │   attribution. Both absent when the mutant carries no
+    │       ├─ coveredBy? / killedBy?: the same resolved-display-
+    │       │   spelling "ClassName.methodName" strings, read off the
+    │       │   mutant's attribution. Both absent when the mutant carries no
     │       │   attribution (CompileError, RuntimeError, Pending —
     │       │   no test outcomes were observed); killedBy is also
     │       │   omitted, not emitted empty, when nothing killed it.
@@ -1533,8 +1569,8 @@ Optional JSON file at `.mutation-testing.json` (or custom path via `--config-fil
 | --- | --- | --- |
 | `--include-mutators` | string[] | Mutator names to include (exclusive with exclude) |
 | `--exclude-mutators` | string[] | Mutator names to exclude (exclusive with include) |
-| `--include-test-methods` | string[] | Test method names to include — bare `methodName` or qualified `ClassName.methodName` (exclusive with exclude) |
-| `--exclude-test-methods` | string[] | Test method names to exclude — bare `methodName` or qualified `ClassName.methodName` (exclusive with include) |
+| `--include-test-methods` | string[] | Test method names to include — bare `methodName`, qualified `ClassName.methodName`, or namespace-qualified `ns.ClassName.methodName` (exclusive with exclude) |
+| `--exclude-test-methods` | string[] | Test method names to exclude — bare `methodName`, qualified `ClassName.methodName`, or namespace-qualified `ns.ClassName.methodName` (exclusive with include) |
 | `--threshold` | integer | Minimum mutation score (0-100) for success |
 | `--skip-patterns` | string[] | RE2 regex patterns — lines matching any pattern are excluded from mutation |
 | `--lines` | string[] | Line ranges (e.g., `10-50`, `100`) — only mutate lines within these ranges |
@@ -1551,13 +1587,18 @@ CLI flags > config file > defaults (all mutators, all tests, no threshold)
 ### Class Name Validation
 
 Every Apex class name — the `-c` class under mutation and every `-t` perimeter class — must
-match `/^[A-Za-z][A-Za-z0-9_]*$/` before any file or org I/O. `ApexClassRepository.read()`
-reaches the Tooling API through jsforce's `.find()`, whose string-literal builder escapes
-single quotes but leaves backslashes raw: a name ending in a backslash escapes its own
-closing quote, so the literal runs on into the rest of the `WHERE` clause and the org
-answers `MALFORMED_QUERY`. Constraining the name to the Apex identifier grammar keeps every
-such character out of the query text, and covers every `read()` call site at once
-rather than one.
+match `/^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)?$/` before any file or org I/O: an
+Apex identifier, optionally preceded by one namespace qualifier and a dot (`MyClass` or
+`MyNamespace.MyClass`). `ApexClassRepository.readCandidates` / `readBodyCandidates` /
+`readIdentities` reach the Tooling API through jsforce's `.find()`, whose string-literal
+builder escapes single quotes but leaves backslashes raw: a name ending in a backslash
+escapes its own closing quote, so the literal runs on into the rest of the `WHERE` clause
+and the org answers `MALFORMED_QUERY`. Constraining the name to this grammar keeps every
+such character out of the query text, and covers every one of those call sites at once
+rather than one. A name that fits the grammar but contains the object-record separator
+`__` (e.g. `ns__MyClass`) is rejected separately: it cannot compile as an Apex identifier,
+so it can only be the object/field convention typed by mistake for the dotted class
+convention — the error names the dotted spelling to use instead.
 
 Suite names are deliberately excluded from this rule: they name a different field
 (`ApexTestSuite.TestSuiteName`), reach the org through `ApexTestSuiteRepository`, which

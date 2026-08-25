@@ -10,11 +10,11 @@ The plugin provides insights into how trustworthy your test suite is by measurin
 
 # flags.apex-class.summary
 
-Apex class name to mutate
+Apex class name to mutate. A bare name reaches only the namespace that owns it; name a class from another namespace as `namespace.ClassName`.
 
 # flags.test-class.summary
 
-Apex test class name(s) to validate mutations. Repeat the flag or pass a comma-delimited list to cover a class with multiple test classes.
+Apex test class name(s) to validate mutations. Repeat the flag or pass a comma-delimited list to cover a class with multiple test classes. A bare name reaches only the namespace that owns it; name a class from another namespace as `namespace.ClassName`.
 
 # flags.test-suite.summary
 
@@ -90,7 +90,11 @@ Blank apex test class name found: '%s'. Remove empty entries from the -t/--test-
 
 # error.invalidClassName
 
-Invalid Apex class name: '%s'. An Apex class name starts with a letter and contains only letters, digits and underscores.
+Invalid Apex class name: '%s'. An Apex class name starts with a letter and contains only letters, digits and underscores, optionally prefixed by a namespace and a dot (for example 'MyClass' or 'MyNamespace.MyClass').
+
+# error.objectConventionClassName
+
+Apex class name '%s' uses the object convention 'Namespace__Name'. Apex classes use the dotted convention instead: write 'Namespace.Name'.
 
 # error.blankTestSuite
 
@@ -134,11 +138,11 @@ Mutator names to exclude
 
 # flags.include-test-methods.summary
 
-Test method names to include. Bare `methodName` applies to that method in every test class in the perimeter; qualified `ClassName.methodName` applies to that one class only.
+Test method names to include. Bare `methodName` applies to that method in every test class in the perimeter; qualified `ClassName.methodName` applies to that one class only; `namespace.ClassName.methodName` names a class from another namespace. Matching ignores case.
 
 # flags.exclude-test-methods.summary
 
-Test method names to exclude. Bare `methodName` applies to that method in every test class in the perimeter; qualified `ClassName.methodName` applies to that one class only.
+Test method names to exclude. Bare `methodName` applies to that method in every test class in the perimeter; qualified `ClassName.methodName` applies to that one class only; `namespace.ClassName.methodName` names a class from another namespace. Matching ignores case.
 
 # flags.threshold.summary
 
@@ -188,6 +192,10 @@ it could not be found on this org
 
 it is not accessible on this org
 
+# info.reasonNotQualified
+
+it is accessible on this org only under a qualified spelling — re-run naming the qualified spelling
+
 # info.reasonNoCoverage
 
 it contributed no covered lines
@@ -199,6 +207,18 @@ it does not compile%s
 # error.apexClassNotFound
 
 Apex class '%s' not found.
+
+# error.apexClassNotMutable
+
+Apex class '%s' cannot be modified on this org (manageable state: %s). Only classes this org owns — unmanaged, unlocked-package or packaging-org source — can be mutated.
+
+# error.apexClassAmbiguous
+
+Apex class '%s' matches more than one modifiable Apex class on this org: %s. Re-run naming one of them.
+
+# error.apexClassUnqualified
+
+Apex class '%s' is modifiable on this org only as '%s'. A bare name reaches only the namespace that owns it — re-run naming the qualified spelling.
 
 # error.noUsableTestClass
 
