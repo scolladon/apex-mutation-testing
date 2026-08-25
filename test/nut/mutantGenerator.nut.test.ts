@@ -1,5 +1,6 @@
 import { MutantGenerator } from '../../src/service/mutantGenerator.js'
 import { TypeDiscoverer } from '../../src/service/typeDiscoverer.js'
+import { keyEchoingMessages } from '../utils/testUtil.js'
 
 describe('MutantGenerator NUT - non-numeric type filtering', () => {
   describe('Given an Apex class with a catch clause variable (issue #108)', () => {
@@ -20,7 +21,7 @@ public class AuraExceptionExample {
       const coveredLines = new Set([7]) // throw new AuraHandledException(e.getMessage())
 
       // Act
-      const sut = new MutantGenerator()
+      const sut = new MutantGenerator(keyEchoingMessages())
       const { mutations } = sut.compute(code, coveredLines, typeRegistry)
 
       // Assert

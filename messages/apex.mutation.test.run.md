@@ -273,6 +273,10 @@ Invalid skip pattern '%s': %s
 
 Cannot specify both includeMutators and excludeMutators
 
+# error.allMutatorsExcluded
+
+All mutators have been excluded by configuration
+
 # error.mutuallyExclusiveTestMethods
 
 Cannot specify both includeTestMethods and excludeTestMethods
@@ -280,3 +284,11 @@ Cannot specify both includeTestMethods and excludeTestMethods
 # error.thresholdOutOfRange
 
 Threshold must be between 0 and 100
+
+# error.reportDirOutsideCwd
+
+Report directory '%s' resolves outside the current working directory (%s). Refusing to write reports outside the project root.
+
+# error.reportDirSymlinkOutsideCwd
+
+Report directory '%s' dereferences to '%s', outside the current working directory (%s). Refusing to follow symlinks out of the project root.

@@ -1,3 +1,4 @@
+import type { Messages } from '@salesforce/core'
 import {
   ApexLexer,
   ApexParser,
@@ -10,8 +11,19 @@ import { compileSkipPattern } from '../../../src/service/skipPattern.js'
 describe('MutantGenerator', () => {
   let sut: MutantGenerator
 
+  // Mirrors the shipped template so the assertions below read as the sentence
+  // the user sees; an emptied or renamed key falls through to the key name and
+  // stops matching.
+  const messagesStub = {
+    getMessage: vi.fn((key: string) =>
+      key === 'error.allMutatorsExcluded'
+        ? 'All mutators have been excluded by configuration'
+        : key
+    ),
+  } as unknown as Messages<string>
+
   beforeEach(() => {
-    sut = new MutantGenerator()
+    sut = new MutantGenerator(messagesStub)
   })
 
   describe('when computing mutations', () => {
@@ -201,6 +213,9 @@ describe('MutantGenerator', () => {
           include: ['NonExistentMutator'],
         })
       ).toThrow('All mutators have been excluded by configuration')
+      expect(messagesStub.getMessage).toHaveBeenCalledWith(
+        'error.allMutatorsExcluded'
+      )
     })
 
     it('Given case-insensitive mutator name, When computing mutations, Then matches correctly', () => {
@@ -239,10 +254,9 @@ describe('MutantGenerator', () => {
         undefined,
         {}
       )
-      const { mutations: withoutFilter } = new MutantGenerator().compute(
-        classContent,
-        coveredLines
-      )
+      const { mutations: withoutFilter } = new MutantGenerator(
+        messagesStub
+      ).compute(classContent, coveredLines)
 
       // Assert
       expect(withFilter.length).toBe(withoutFilter.length)
@@ -263,10 +277,9 @@ describe('MutantGenerator', () => {
           include: [],
         }
       )
-      const { mutations: withoutFilter } = new MutantGenerator().compute(
-        classContent,
-        coveredLines
-      )
+      const { mutations: withoutFilter } = new MutantGenerator(
+        messagesStub
+      ).compute(classContent, coveredLines)
 
       // Assert — empty include should behave like no filter
       expect(withEmptyInclude.length).toBe(withoutFilter.length)
@@ -287,10 +300,9 @@ describe('MutantGenerator', () => {
           exclude: [],
         }
       )
-      const { mutations: withoutFilter } = new MutantGenerator().compute(
-        classContent,
-        coveredLines
-      )
+      const { mutations: withoutFilter } = new MutantGenerator(
+        messagesStub
+      ).compute(classContent, coveredLines)
 
       // Assert — empty exclude should behave like no filter
       expect(withEmptyExclude.length).toBe(withoutFilter.length)
@@ -337,6 +349,9 @@ describe('MutantGenerator', () => {
           exclude: allMutatorNames,
         })
       ).toThrow('All mutators have been excluded by configuration')
+      expect(messagesStub.getMessage).toHaveBeenCalledWith(
+        'error.allMutatorsExcluded'
+      )
     })
 
     it('Given excludeMutators with a single mutator, When computing mutations, Then excluded mutator is absent and others are present', () => {
@@ -353,10 +368,9 @@ describe('MutantGenerator', () => {
         undefined,
         { exclude: ['ArithmeticOperator'] }
       )
-      const { mutations: resultWithAll } = new MutantGenerator().compute(
-        classContent,
-        coveredLines
-      )
+      const { mutations: resultWithAll } = new MutantGenerator(
+        messagesStub
+      ).compute(classContent, coveredLines)
 
       // Assert — excluding ArithmeticOperator gives fewer mutations than including all
       expect(resultWithExclude.length).toBeLessThan(resultWithAll.length)
@@ -380,13 +394,9 @@ describe('MutantGenerator', () => {
         coveredLines
       )
       // explicit undefined is the same code path
-      const { mutations: resultUndefinedFilter } =
-        new MutantGenerator().compute(
-          classContent,
-          coveredLines,
-          undefined,
-          undefined
-        )
+      const { mutations: resultUndefinedFilter } = new MutantGenerator(
+        messagesStub
+      ).compute(classContent, coveredLines, undefined, undefined)
 
       // Assert — both must return same result (all mutators)
       expect(resultNoFilter.length).toBe(resultUndefinedFilter.length)
@@ -498,7 +508,7 @@ describe('MutantGenerator', () => {
           exclude: ['Increment'],
         }
       )
-      const { mutations: withAll } = new MutantGenerator().compute(
+      const { mutations: withAll } = new MutantGenerator(messagesStub).compute(
         classContent,
         coveredLines
       )

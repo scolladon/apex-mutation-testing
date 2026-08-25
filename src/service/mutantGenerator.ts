@@ -1,3 +1,4 @@
+import type { Messages } from '@salesforce/core'
 import { ParserRuleContext, TokenStreamRewriter } from 'antlr4ts'
 import {
   ApexLexer,
@@ -235,6 +236,8 @@ interface PreParsedInput {
 const INPUT_STREAM_NAME = 'other'
 
 export class MutantGenerator {
+  constructor(private readonly messages: Messages<string>) {}
+
   public compute(
     classContent: string,
     coveredLines: Set<number>,
@@ -337,7 +340,7 @@ export class MutantGenerator {
 
     const filtered = selectMutators(mutatorFilter)
     if (filtered.length === 0) {
-      throw new Error('All mutators have been excluded by configuration')
+      throw new Error(this.messages.getMessage('error.allMutatorsExcluded'))
     }
 
     return filtered

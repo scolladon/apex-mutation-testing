@@ -1,5 +1,6 @@
 import { MutantGenerator } from '../../src/service/mutantGenerator.js'
 import { compileSkipPattern } from '../../src/service/skipPattern.js'
+import { keyEchoingMessages } from '../utils/testUtil.js'
 
 describe('MutantGenerator filtering integration', () => {
   const apexCode = `public class MultiMutatorClass {
@@ -17,7 +18,7 @@ describe('MutantGenerator filtering integration', () => {
 
   it('Given no filter, When computing, Then mutations from multiple mutator types returned', () => {
     // Arrange
-    const sut = new MutantGenerator()
+    const sut = new MutantGenerator(keyEchoingMessages())
 
     // Act
     const { mutations: result } = sut.compute(apexCode, allLines)
@@ -31,7 +32,7 @@ describe('MutantGenerator filtering integration', () => {
 
   it('Given include filter with only BoundaryCondition, When computing on code with arithmetic and boundary, Then only BoundaryCondition mutations returned', () => {
     // Arrange
-    const sut = new MutantGenerator()
+    const sut = new MutantGenerator(keyEchoingMessages())
 
     // Act
     const { mutations: result } = sut.compute(apexCode, allLines, undefined, {
@@ -47,7 +48,7 @@ describe('MutantGenerator filtering integration', () => {
 
   it('Given exclude filter with Increment, When computing on code with increments, Then no Increment mutations returned but other mutations present', () => {
     // Arrange
-    const sut = new MutantGenerator()
+    const sut = new MutantGenerator(keyEchoingMessages())
 
     // Act
     const { mutations: result } = sut.compute(apexCode, allLines, undefined, {
@@ -63,7 +64,7 @@ describe('MutantGenerator filtering integration', () => {
 
   it('Given a line range excluding every covered line, When computing, Then no mutations returned', () => {
     // Arrange
-    const sut = new MutantGenerator()
+    const sut = new MutantGenerator(keyEchoingMessages())
 
     // Act
     const { mutations: result } = sut.compute(
@@ -81,7 +82,7 @@ describe('MutantGenerator filtering integration', () => {
 
   it('Given a line range covering the comparison, When computing, Then only mutations on that line returned', () => {
     // Arrange
-    const sut = new MutantGenerator()
+    const sut = new MutantGenerator(keyEchoingMessages())
 
     // Act
     const { mutations: result } = sut.compute(
@@ -100,7 +101,7 @@ describe('MutantGenerator filtering integration', () => {
 
   it('Given a skip pattern matching every covered line, When computing, Then no mutations returned', () => {
     // Arrange
-    const sut = new MutantGenerator()
+    const sut = new MutantGenerator(keyEchoingMessages())
 
     // Act
     const { mutations: result } = sut.compute(

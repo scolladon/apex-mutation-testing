@@ -1426,6 +1426,16 @@ unreachable by construction and so must be driven directly from a test; and the 
 covers the command's wiring of `createOrgEngine` end to end (see
 [Execution Ports](#execution-ports)).
 
+**`rejects.toThrow('message')` passes on an `undefined` rejection.** Vitest coerces the
+rejection reason before matching, so a promise that rejects with `undefined` satisfies a
+string matcher. The hazard is only reachable where the thrown value is *computed* rather
+than constructed inline — `throw someFactory(...)` — because a mutant can gut the factory
+into returning `undefined` and the assertion still passes, leaving the mutant alive. At
+such a site, also assert `await expect(p).rejects.toBeInstanceOf(Error)`, sharing **one**
+promise variable across both assertions so the subject is not executed twice.
+`throw new Error('literal')` is not exposed. Exactly one computed-throw site exists today
+(`mutationTestingService.ts`), so the pairing is applied there rather than behind a helper.
+
 **Test fixtures** (`test/classes/Mutation.cls`, `MutationTest.cls` and `MutationBulkTest.cls`)
 are shared across NUT and E2E tiers. `Mutation.cls` contains constructs triggering all 25
 mutators. `MutationTest.cls` provides 100% line coverage. `MutationBulkTest.cls` is the second

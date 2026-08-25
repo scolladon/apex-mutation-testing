@@ -1,3 +1,4 @@
+import type { Messages } from '@salesforce/core'
 import type { Progress, Spinner } from '@salesforce/sf-plugins-core'
 import { ParserRuleContext, Token } from 'antlr4ts'
 import { TerminalNode } from 'antlr4ts/tree/index.js'
@@ -510,3 +511,10 @@ export const TestUtil = {
     })
   },
 }
+
+// MutantGenerator resolves exactly one key, on the all-mutators-excluded
+// path. Suites that never trip that filter take this bundle so the
+// constructor is satisfied without a per-file template map; echoing the key
+// keeps an accidental hit legible instead of rendering an empty message.
+export const keyEchoingMessages = (): Messages<string> =>
+  ({ getMessage: (key: string) => key }) as unknown as Messages<string>
