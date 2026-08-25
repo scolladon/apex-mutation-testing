@@ -1,5 +1,6 @@
 import { readFile, realpath, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import type { Messages } from '@salesforce/core'
 import { ApexMutationHTMLReporter } from '../../../src/reporter/HTMLReporter.js'
 import { ApexMutationTestResult } from '../../../src/type/ApexMutationTestResult.js'
 import type { TestClassResolution } from '../../../src/type/TestClassResolution.js'
@@ -142,8 +143,21 @@ describe('HTMLReporter', () => {
     ],
   }
 
+  // Renders each key from its own template so an assertion on the thrown
+  // sentence pins the key AND the token order: a swapped or emptied key
+  // falls through to the key name and the sentence no longer matches.
+  const messagesStub = {
+    getMessage: vi.fn((key: string, args?: string[]) => {
+      const templates: Record<string, string> = {
+        'error.reportDirOutsideCwd': `Report directory '${args?.[0]}' resolves outside the current working directory (${args?.[1]}). Refusing to write reports outside the project root.`,
+        'error.reportDirSymlinkOutsideCwd': `Report directory '${args?.[0]}' dereferences to '${args?.[1]}', outside the current working directory (${args?.[2]}). Refusing to follow symlinks out of the project root.`,
+      }
+      return templates[key] ?? key
+    }),
+  } as unknown as Messages<string>
+
   beforeEach(() => {
-    sut = new ApexMutationHTMLReporter()
+    sut = new ApexMutationHTMLReporter(messagesStub)
   })
 
   describe('Given valid mutation test results, When generating report', () => {
@@ -477,12 +491,20 @@ describe('HTMLReporter', () => {
     })
 
     it('Then rejects outputDir outside the current working directory', async () => {
-      // Arrange & Act & Assert — Sec-F2: defence against arbitrary file write.
-      // Match the string-resolve stage specifically: the later realpath stage
+      // Arrange — Sec-F2: defence against arbitrary file write. Assert the
+      // whole rendered sentence, not a fragment: the later realpath stage
       // rejects '/tmp' too, so a looser pattern would pass even with the
-      // string-level guard removed entirely.
+      // string-level guard removed entirely, and the interpolated cwd pins
+      // the token order the bundle template expects.
+      const cwd = path.resolve(process.cwd())
+
+      // Act & Assert
       await expect(sut.generateReport(testResults, '/tmp')).rejects.toThrow(
-        /resolves outside the current working directory/
+        `Report directory '/tmp' resolves outside the current working directory (${cwd}). Refusing to write reports outside the project root.`
+      )
+      expect(messagesStub.getMessage).toHaveBeenCalledWith(
+        'error.reportDirOutsideCwd',
+        ['/tmp', cwd]
       )
     })
 
@@ -579,7 +601,11 @@ describe('HTMLReporter', () => {
 
       // Act & Assert
       await expect(sut.generateReport(testResults, 'reports')).rejects.toThrow(
-        /dereferences to '\/etc\/elsewhere', outside/
+        `Report directory 'reports' dereferences to '/etc/elsewhere', outside the current working directory (${cwd}). Refusing to follow symlinks out of the project root.`
+      )
+      expect(messagesStub.getMessage).toHaveBeenCalledWith(
+        'error.reportDirSymlinkOutsideCwd',
+        ['reports', '/etc/elsewhere', cwd]
       )
     })
 

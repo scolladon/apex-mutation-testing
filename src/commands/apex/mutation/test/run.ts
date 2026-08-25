@@ -278,7 +278,7 @@ export default class ApexMutationTest extends SfCommand<ApexMutationTestResult> 
     mutationResult: MutationProcessResult,
     reportDir: string
   ): Promise<void> {
-    const htmlReporter = new ApexMutationHTMLReporter()
+    const htmlReporter = new ApexMutationHTMLReporter(messages)
     await htmlReporter.generateReport(mutationResult, reportDir)
     this.log(messages.getMessage('info.reportGenerated', [reportDir]))
   }

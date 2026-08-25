@@ -321,6 +321,40 @@ describe('apex.mutation.test.run message bundle', () => {
     }
   )
 
+  // Same table treatment, same reason: these three moved out of hardcoded
+  // `throw new Error('…')` sites in ApexMutationHTMLReporter and
+  // MutantGenerator. Each is reached only by a flag the user typed wrong, so
+  // no happy-path run resolves the key — a rename would otherwise surface as
+  // MissingMessageError in front of the user.
+  const FLAG_ERROR_MESSAGES: ReadonlyArray<[string, string[], string]> = [
+    [
+      'error.reportDirOutsideCwd',
+      ['/tmp', '/home/dev/project'],
+      "Report directory '/tmp' resolves outside the current working directory (/home/dev/project). Refusing to write reports outside the project root.",
+    ],
+    [
+      'error.reportDirSymlinkOutsideCwd',
+      ['reports', '/etc/elsewhere', '/home/dev/project'],
+      "Report directory 'reports' dereferences to '/etc/elsewhere', outside the current working directory (/home/dev/project). Refusing to follow symlinks out of the project root.",
+    ],
+    [
+      'error.allMutatorsExcluded',
+      [],
+      'All mutators have been excluded by configuration',
+    ],
+  ]
+
+  it.each(FLAG_ERROR_MESSAGES)(
+    'Given flag error %s, When rendered against the real bundle, Then the exact shipped sentence is produced',
+    (key, args, expected) => {
+      // Act
+      const sut = messages.getMessage(key, args)
+
+      // Assert
+      expect(sut).toBe(expected)
+    }
+  )
+
   it('Given eligible lines with nothing mutable on them, When error.noMutations is rendered against the real bundle, Then the exact shipped sentence is produced', () => {
     // Act
     const sut = messages.getMessage('error.noMutations', [

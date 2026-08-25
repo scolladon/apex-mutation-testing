@@ -328,7 +328,9 @@ describe('apex mutation test run NUT', () => {
     })
 
     it('Then generates HTML report', () => {
-      expect(ApexMutationHTMLReporter).toHaveBeenCalled()
+      // The bundle is handed to the reporter so its --report-dir sandbox
+      // errors render from messages/ rather than from inline literals.
+      expect(ApexMutationHTMLReporter).toHaveBeenCalledWith(mockMessages)
       const reporterInstance = vi.mocked(ApexMutationHTMLReporter).mock
         .results[0].value as { generateReport: ReturnType<typeof vi.fn> }
       expect(reporterInstance.generateReport).toHaveBeenCalled()

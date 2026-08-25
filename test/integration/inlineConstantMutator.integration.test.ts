@@ -12,12 +12,13 @@ import { MutationListener } from '../../src/mutator/mutationListener.js'
 import { MutantGenerator } from '../../src/service/mutantGenerator.js'
 import { APEX_TYPE } from '../../src/type/ApexMethod.js'
 import { TypeRegistry } from '../../src/type/TypeRegistry.js'
+import { keyEchoingMessages } from '../utils/testUtil.js'
 
 describe('InlineConstantMutator Integration', () => {
   let mutantGenerator: MutantGenerator
 
   beforeEach(() => {
-    mutantGenerator = new MutantGenerator()
+    mutantGenerator = new MutantGenerator(keyEchoingMessages())
   })
 
   describe('when mutating integer literals', () => {

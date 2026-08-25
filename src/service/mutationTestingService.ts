@@ -615,7 +615,7 @@ export class MutationTestingService {
       undefined,
       { stdout: true }
     )
-    const mutantGenerator = new MutantGenerator()
+    const mutantGenerator = new MutantGenerator(this.messages)
     const mutatorFilter = this.buildMutatorFilter()
     const { mutations, tokenStream } = mutantGenerator.compute(
       apexClass.Body,

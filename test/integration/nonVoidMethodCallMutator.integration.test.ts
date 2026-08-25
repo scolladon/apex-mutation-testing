@@ -13,6 +13,7 @@ import { MutantGenerator } from '../../src/service/mutantGenerator.js'
 import { TypeDiscoverer } from '../../src/service/typeDiscoverer.js'
 import { AliasTypeMatcher } from '../../src/service/typeMatcher.js'
 import { APEX_TYPE } from '../../src/type/ApexMethod.js'
+import { keyEchoingMessages } from '../utils/testUtil.js'
 
 describe('NonVoidMethodCallMutator Integration', () => {
   const parseAndMutate = async (
@@ -375,7 +376,7 @@ describe('NonVoidMethodCallMutator Integration', () => {
 
       const lexer = new ApexLexer(new CaseInsensitiveInputStream('test', code))
       const tokenStream = new CommonTokenStream(lexer)
-      const mutantGenerator = new MutantGenerator()
+      const mutantGenerator = new MutantGenerator(keyEchoingMessages())
       // tokenStream passed directly to mutate below
 
       const parser = new ApexParser(tokenStream)

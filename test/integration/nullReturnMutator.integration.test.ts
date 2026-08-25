@@ -12,12 +12,13 @@ import { NullReturnMutator } from '../../src/mutator/nullReturnMutator.js'
 import { MutantGenerator } from '../../src/service/mutantGenerator.js'
 import { TypeDiscoverer } from '../../src/service/typeDiscoverer.js'
 import { AliasTypeMatcher } from '../../src/service/typeMatcher.js'
+import { keyEchoingMessages } from '../utils/testUtil.js'
 
 describe('NullReturnMutator Integration', () => {
   let mutantGenerator: MutantGenerator
 
   beforeEach(() => {
-    mutantGenerator = new MutantGenerator()
+    mutantGenerator = new MutantGenerator(keyEchoingMessages())
   })
 
   const buildTypeRegistry = async (

@@ -1,6 +1,7 @@
 import { bench, describe } from 'vitest'
 import { MutantGenerator } from '../../src/service/mutantGenerator.js'
 import { TypeDiscoverer } from '../../src/service/typeDiscoverer.js'
+import { keyEchoingMessages } from '../utils/testUtil.js'
 import {
   generateApexClass,
   generateCoveredLines,
@@ -11,7 +12,7 @@ const sizes = ['small', 'medium', 'large'] as const
 for (const size of sizes) {
   const classContent = generateApexClass(size)
   const coveredLines = generateCoveredLines(size)
-  const generator = new MutantGenerator()
+  const generator = new MutantGenerator(keyEchoingMessages())
 
   describe(`pipeline-${size}`, () => {
     bench(`pipeline-${size}-compute-mutations`, () => {
@@ -28,7 +29,7 @@ for (const size of sizes) {
 describe('pipeline-mutation-apply', () => {
   const classContent = generateApexClass('medium')
   const coveredLines = generateCoveredLines('medium')
-  const generator = new MutantGenerator()
+  const generator = new MutantGenerator(keyEchoingMessages())
   const { mutations, tokenStream } = generator.compute(
     classContent,
     coveredLines

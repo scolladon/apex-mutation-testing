@@ -1,5 +1,6 @@
 import { readFile, realpath, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
+import type { Messages } from '@salesforce/core'
 import * as path from 'path'
 import { ApexMutationTestResult } from '../type/ApexMutationTestResult.js'
 import type { TestClassResolution } from '../type/TestClassResolution.js'
@@ -52,6 +53,8 @@ async function loadMutationTestElements(): Promise<string> {
 }
 
 export class ApexMutationHTMLReporter {
+  constructor(private readonly messages: Messages<string>) {}
+
   async generateReport(
     apexMutationTestResult: ApexMutationTestResult,
     outputDir: string = 'reports'
@@ -66,8 +69,8 @@ export class ApexMutationHTMLReporter {
     // Two-stage path check:
     //   1. string-level resolve rejects `../` traversal;
     //   2. realpath rejects an existing symlink whose target is outside cwd.
-    const resolvedDir = resolveSafeOutputDir(outputDir)
-    await assertRealPathWithinCwd(resolvedDir, outputDir)
+    const resolvedDir = resolveSafeOutputDir(outputDir, this.messages)
+    await assertRealPathWithinCwd(resolvedDir, outputDir, this.messages)
     const reportData = this.transformApexResults(apexMutationTestResult)
     const bundle = await loadMutationTestElements()
     const htmlContent = createReportHtml(reportData, bundle)
@@ -212,12 +215,15 @@ function mapMutant(
   }
 }
 
-function resolveSafeOutputDir(outputDir: string): string {
+function resolveSafeOutputDir(
+  outputDir: string,
+  messages: Messages<string>
+): string {
   const resolved = path.resolve(outputDir)
   const cwd = path.resolve(process.cwd())
   if (resolved !== cwd && !resolved.startsWith(cwd + path.sep)) {
     throw new Error(
-      `Report directory '${outputDir}' resolves outside the current working directory (${cwd}). Refusing to write reports outside the project root.`
+      messages.getMessage('error.reportDirOutsideCwd', [outputDir, cwd])
     )
   }
   return resolved
@@ -230,13 +236,18 @@ function resolveSafeOutputDir(outputDir: string): string {
  */
 async function assertRealPathWithinCwd(
   resolvedDir: string,
-  originalInput: string
+  originalInput: string,
+  messages: Messages<string>
 ): Promise<void> {
   const realDir = await realpath(resolvedDir)
   const realCwd = await realpath(process.cwd())
   if (realDir !== realCwd && !realDir.startsWith(realCwd + path.sep)) {
     throw new Error(
-      `Report directory '${originalInput}' dereferences to '${realDir}', outside the current working directory (${realCwd}). Refusing to follow symlinks out of the project root.`
+      messages.getMessage('error.reportDirSymlinkOutsideCwd', [
+        originalInput,
+        realDir,
+        realCwd,
+      ])
     )
   }
 }
