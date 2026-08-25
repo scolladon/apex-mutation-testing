@@ -2,6 +2,13 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [1.9.1](https://github.com/scolladon/apex-mutation-testing/compare/v1.9.0...v1.9.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* enforce SOQL literal safety at the query sink ([#165](https://github.com/scolladon/apex-mutation-testing/issues/165)) ([e362be6](https://github.com/scolladon/apex-mutation-testing/commit/e362be643b91f387413ba55854c54c56701c9d7f))
+
 ## [1.9.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.8.0...v1.9.0) (2026-08-25)
 
 
