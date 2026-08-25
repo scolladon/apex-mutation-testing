@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787662605525,
+  "lastUpdate": 1787664966691,
   "repoUrl": "https://github.com/scolladon/apex-mutation-testing",
   "entries": {
     "Memory Benchmark": [
@@ -2449,6 +2449,108 @@ window.BENCHMARK_DATA = {
             "name": "pipeline-apply-all-mutations",
             "value": 314.6478,
             "range": "±0.70%",
+            "unit": "ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "colladonsebastien@gmail.com",
+            "name": "Sebastien",
+            "username": "scolladon"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e362be643b91f387413ba55854c54c56701c9d7f",
+          "message": "fix: enforce SOQL literal safety at the query sink (#165)",
+          "timestamp": "2026-08-25T15:34:03+02:00",
+          "tree_id": "fda585e5d3900593113729dc04199c716d597602",
+          "url": "https://github.com/scolladon/apex-mutation-testing/commit/e362be643b91f387413ba55854c54c56701c9d7f"
+        },
+        "date": 1787664966656,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "antlr-lex-small",
+            "value": 0.121,
+            "range": "±0.50%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-parse-small",
+            "value": 7.7394,
+            "range": "±4.14%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-lex-medium",
+            "value": 0.5633,
+            "range": "±0.54%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-parse-medium",
+            "value": 39.5835,
+            "range": "±8.12%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-lex-large",
+            "value": 1.8047,
+            "range": "±2.07%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-parse-large",
+            "value": 108.3583,
+            "range": "±7.67%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-small-compute-mutations",
+            "value": 7.9477,
+            "range": "±4.27%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-small-type-discovery",
+            "value": 6.2688,
+            "range": "±6.42%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-medium-compute-mutations",
+            "value": 32.4962,
+            "range": "±2.48%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-medium-type-discovery",
+            "value": 26.1119,
+            "range": "±4.17%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-large-compute-mutations",
+            "value": 96.5382,
+            "range": "±2.09%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-large-type-discovery",
+            "value": 76.3356,
+            "range": "±3.12%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-apply-all-mutations",
+            "value": 309.38,
+            "range": "±0.95%",
             "unit": "ms"
           }
         ]
