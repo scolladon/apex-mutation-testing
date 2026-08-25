@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787307177765,
+  "lastUpdate": 1787658854649,
   "repoUrl": "https://github.com/scolladon/apex-mutation-testing",
   "entries": {
     "Memory Benchmark": [
@@ -2143,6 +2143,108 @@ window.BENCHMARK_DATA = {
             "name": "pipeline-apply-all-mutations",
             "value": 239.1488,
             "range": "±0.62%",
+            "unit": "ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "colladonsebastien@gmail.com",
+            "name": "Sebastien",
+            "username": "scolladon"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e7aae5e76918e1deef94b785dd60ea6312b98603",
+          "message": "fix: support namespaced orgs by deciding mutability from ManageableState (#160)",
+          "timestamp": "2026-08-25T13:52:11+02:00",
+          "tree_id": "03e3e6a8d686e7b287a374553606624d74098a42",
+          "url": "https://github.com/scolladon/apex-mutation-testing/commit/e7aae5e76918e1deef94b785dd60ea6312b98603"
+        },
+        "date": 1787658854620,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "antlr-lex-small",
+            "value": 0.1197,
+            "range": "±0.39%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-parse-small",
+            "value": 7.8539,
+            "range": "±4.57%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-lex-medium",
+            "value": 0.5574,
+            "range": "±0.43%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-parse-medium",
+            "value": 39.3603,
+            "range": "±6.76%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-lex-large",
+            "value": 1.8328,
+            "range": "±2.08%",
+            "unit": "ms"
+          },
+          {
+            "name": "antlr-parse-large",
+            "value": 100.4434,
+            "range": "±0.97%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-small-compute-mutations",
+            "value": 9.9196,
+            "range": "±5.80%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-small-type-discovery",
+            "value": 6.2007,
+            "range": "±5.33%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-medium-compute-mutations",
+            "value": 34.0879,
+            "range": "±3.57%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-medium-type-discovery",
+            "value": 27.0486,
+            "range": "±4.46%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-large-compute-mutations",
+            "value": 100.1066,
+            "range": "±2.90%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-large-type-discovery",
+            "value": 80.0787,
+            "range": "±2.69%",
+            "unit": "ms"
+          },
+          {
+            "name": "pipeline-apply-all-mutations",
+            "value": 321.0909,
+            "range": "±0.11%",
             "unit": "ms"
           }
         ]
