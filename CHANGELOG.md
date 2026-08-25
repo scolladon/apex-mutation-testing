@@ -2,6 +2,20 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [1.9.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.8.0...v1.9.0) (2026-08-25)
+
+
+### Features
+
+* run mutation testing against a local aer server ([#155](https://github.com/scolladon/apex-mutation-testing/issues/155)) ([d9be712](https://github.com/scolladon/apex-mutation-testing/commit/d9be7128752cbe31f3132754cb134b4d07c8a3fc))
+
+
+### Bug Fixes
+
+* name the filter that emptied the mutation set ([#162](https://github.com/scolladon/apex-mutation-testing/issues/162)) ([dd69ee2](https://github.com/scolladon/apex-mutation-testing/commit/dd69ee20b47882c45b58845a56c39451ed6c3abd))
+* resolve dependency type names to the org api name ([#158](https://github.com/scolladon/apex-mutation-testing/issues/158)) ([88fc496](https://github.com/scolladon/apex-mutation-testing/commit/88fc4969d942b0d7fa77e9367ba6f54ae2ff4f93))
+* support namespaced orgs by deciding mutability from ManageableState ([#160](https://github.com/scolladon/apex-mutation-testing/issues/160)) ([e7aae5e](https://github.com/scolladon/apex-mutation-testing/commit/e7aae5e76918e1deef94b785dd60ea6312b98603))
+
 ## [1.8.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.7.4...v1.8.0) (2026-08-09)
 
 
