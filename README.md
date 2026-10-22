@@ -502,7 +502,67 @@ A higher score means your tests are better at catching real bugs. Aim to reduce 
 
 <!-- markdownlint-disable MD040 -->
 <!-- commands -->
+* [`sf apex mutation flow run`](#sf-apex-mutation-flow-run)
 * [`sf apex mutation test run`](#sf-apex-mutation-test-run)
+
+## `sf apex mutation flow run`
+
+Run mutation testing on Salesforce Flow XML definitions using FlowTests
+
+```
+USAGE
+  $ sf apex mutation flow run -f <value> [--json] [--flags-dir <value>] [-n <value>] [-t <value>...] [--test-apex
+    <value>...] [-d] [-l <value>...] [--threshold <value>] [-r <value>] [-o <value>] [--api-version <value>]
+
+FLAGS
+  -d, --dry-run                Preview generated Flow mutants without deploying to an org or running tests.
+  -f, --flow=<value>           (required) Developer name of the Flow (e.g. Account_After) or path to its XML file
+                               (*.flow-meta.xml).
+  -l, --lines=<value>...       Line numbers or ranges in the Flow XML to mutate (e.g. '10-25', '40'). Repeat the flag or
+                               pass multiple values.
+  -n, --flow-name=<value>      Developer name of the Flow. If omitted, it is inferred from the flow flag.
+  -o, --target-org=<value>     Username or alias of the target org.
+  -r, --report-dir=<value>     [default: mutations] Path to the directory where mutation test reports will be generated.
+  -t, --flow-tests=<value>...  Specific flow test names to run (e.g., Flow1.Test1). Repeat the flag or pass a
+                               comma-separated list.
+      --api-version=<value>    Override the api version used for api requests made by this command
+      --test-apex=<value>...   Specific Apex test classes to run against the Flow (e.g., DiscountCalculatorTest). Repeat
+                               the flag or pass a comma-separated list. Can also be specified as -ta.
+      --threshold=<value>      Minimum mutation score threshold (0-100). The command fails if the score is below this
+                               threshold.
+
+GLOBAL FLAGS
+  --flags-dir=<value>  Import flag values from a directory.
+  --json               Format output as json.
+
+DESCRIPTION
+  Run mutation testing on Salesforce Flow XML definitions using FlowTests
+
+  Evaluate Flow test coverage and test suite quality by injecting mutations into a target Flow XML definition and
+  executing FlowTests to determine whether intentional bugs are detected (killed) or go undetected (survived).
+
+  Only Record-Triggered Flows and Autolaunched Flows without Pause elements can be tested.
+
+EXAMPLES
+  Preview generated mutations for a Flow by name without running tests:
+
+    $ sf apex mutation flow run -f Account_Before --dry-run
+
+  Run mutation testing for a Flow by name against an org:
+
+    $ sf apex mutation flow run -f Account_After --target-org Winter27
+
+  Run mutation testing specifying specific FlowTests and line range:
+
+    $ sf apex mutation flow run -f Account_Before -t Account_Before.Should_set_Rating_from_Parent --lines 45-65 ^
+      --target-org FlowTestPresentation
+
+  Run mutation testing using an Apex test class:
+
+    $ sf apex mutation flow run -f Account_After -ta DiscountCalculatorTest --target-org Winter27
+```
+
+_See code: [src/commands/apex/mutation/flow/run.ts](https://github.com/scolladon/apex-mutation-testing/blob/v1.9.1/src/commands/apex/mutation/flow/run.ts)_
 
 ## `sf apex mutation test run`
 
@@ -581,7 +641,7 @@ EXAMPLES
     $ sf apex mutation test run --apex-class MyClass --test-suite MyTestSuite
 ```
 
-_See code: [src/commands/apex/mutation/test/run.ts](https://github.com/scolladon/apex-mutation-testing/blob/main/src/commands/apex/mutation/test/run.ts)_
+_See code: [src/commands/apex/mutation/test/run.ts](https://github.com/scolladon/apex-mutation-testing/blob/v1.9.1/src/commands/apex/mutation/test/run.ts)_
 <!-- commandsstop -->
 <!-- markdownlint-enable MD040 -->
 

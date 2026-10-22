@@ -7,12 +7,15 @@
     "@salesforce/apex-node": "9.0.6",
     "@salesforce/core": "9.1.6",
     "@salesforce/sf-plugins-core": "13.0.3",
+    "@salesforce/source-deploy-retrieve": "13.0.0",
     "@stryker-mutator/core": "10.0.0",
+    "@xmldom/xmldom": "0.9.12",
     "antlr4ts": "0.5.0-alpha.4",
     "apex-parser": "2.17.0",
     "async": "3.2.6",
     "mutation-testing-elements": "3.9.0",
     "re2js": "2.8.6",
+    "xpath": "0.0.35",
     "zod": "4.4.3"
   },
   "devDependencies": {
@@ -198,7 +201,9 @@
       "command": "oclif manifest && oclif readme",
       "files": [
         "src/commands/apex/mutation/test/run.ts",
+        "src/commands/apex/mutation/flow/run.ts",
         "messages/apex.mutation.test.run.md",
+        "messages/apex.mutation.flow.run.md",
         "README.md"
       ],
       "dependencies": [
