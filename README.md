@@ -562,7 +562,7 @@ EXAMPLES
     $ sf apex mutation flow run -f Account_After -ta DiscountCalculatorTest --target-org Winter27
 ```
 
-_See code: [src/commands/apex/mutation/flow/run.ts](https://github.com/scolladon/apex-mutation-testing/blob/v1.9.1/src/commands/apex/mutation/flow/run.ts)_
+_See code: [src/commands/apex/mutation/flow/run.ts](https://github.com/scolladon/apex-mutation-testing/blob/main/src/commands/apex/mutation/flow/run.ts)_
 
 ## `sf apex mutation test run`
 
@@ -641,7 +641,7 @@ EXAMPLES
     $ sf apex mutation test run --apex-class MyClass --test-suite MyTestSuite
 ```
 
-_See code: [src/commands/apex/mutation/test/run.ts](https://github.com/scolladon/apex-mutation-testing/blob/v1.9.1/src/commands/apex/mutation/test/run.ts)_
+_See code: [src/commands/apex/mutation/test/run.ts](https://github.com/scolladon/apex-mutation-testing/blob/main/src/commands/apex/mutation/test/run.ts)_
 <!-- commandsstop -->
 <!-- markdownlint-enable MD040 -->
 
