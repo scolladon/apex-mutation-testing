@@ -1517,4 +1517,58 @@ describe('ApexTestRunner', () => {
       })
     })
   })
+
+  describe('when running FlowTests', () => {
+    it('Given a flow and its tests, When run, Then one FlowTesting class carries the tests on the synchronous transport, without coverage', async () => {
+      // Arrange
+      runTestSynchronousMock.mockResolvedValue({
+        summary: { outcome: 'Failed' },
+        tests: [
+          { methodName: 'Sets_Rating', outcome: ApexTestResultOutcome.Fail },
+          { methodName: 'Keeps_Name', outcome: ApexTestResultOutcome.Pass },
+        ],
+      })
+
+      // Act
+      const result = await sut.runFlowTests('Account_After', [
+        'Sets_Rating',
+        'Keeps_Name',
+      ])
+
+      // Assert
+      expect(runTestSynchronousMock).toHaveBeenCalledWith(
+        {
+          tests: [
+            {
+              className: 'FlowTesting.Account_After',
+              testMethods: ['Sets_Rating', 'Keeps_Name'],
+            },
+          ],
+          skipCodeCoverage: true,
+          maxFailedTests: 0,
+        },
+        false
+      )
+      expect(result).toEqual({
+        outcome: 'Failed',
+        tests: [
+          { methodName: 'Sets_Rating', outcome: 'Fail' },
+          { methodName: 'Keeps_Name', outcome: 'Pass' },
+        ],
+      })
+    })
+
+    it('Given a result without rows, When run, Then no test is reported', async () => {
+      // Arrange
+      runTestSynchronousMock.mockResolvedValue({
+        summary: { outcome: 'Failed' },
+      })
+
+      // Act & Assert
+      await expect(sut.runFlowTests('F', ['T'])).resolves.toEqual({
+        outcome: 'Failed',
+        tests: [],
+      })
+    })
+  })
 })

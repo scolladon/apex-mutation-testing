@@ -17,6 +17,7 @@ import type {
   ApexTestMethodResult,
   ApexTestRunResult,
 } from '../../type/ApexTestRunResult.js'
+import type { FlowTestRunResult } from '../../type/FlowTestRunResult.js'
 import { type TestMethodId, toTestItems } from '../../type/TestMethodId.js'
 
 export interface BaselineTestResult {
@@ -59,6 +60,16 @@ const toApexTestRunResult = (testResult: TestResult): ApexTestRunResult => ({
   outcome: testResult.summary.outcome,
   tests: (testResult.tests ?? []).map(toApexTestMethodResult),
   classCoverage: testResult.codecoverage?.map(toApexClassCoverage),
+})
+
+const FLOW_TEST_CLASS_PREFIX = 'FlowTesting.'
+
+const toFlowTestRunResult = (testResult: TestResult): FlowTestRunResult => ({
+  outcome: testResult.summary.outcome,
+  tests: (testResult.tests ?? []).map(test => ({
+    methodName: test.methodName,
+    outcome: test.outcome,
+  })),
 })
 
 const recordCompileFailure = (
@@ -327,6 +338,28 @@ export class ApexTestRunner {
       'without-coverage'
     )
     return toApexTestRunResult(testResult)
+  }
+
+  // FlowTests run through the same two transports as Apex tests: the test
+  // runner addresses a flow's tests as the methods of one class,
+  // FlowTesting.<flow API name>, so a FlowTest run is always single-class
+  // and therefore synchronous whenever the org allows it.
+  public async runFlowTests(
+    flowApiName: string,
+    testNames: string[]
+  ): Promise<FlowTestRunResult> {
+    const testResult = await this.runTests(
+      [
+        {
+          className: `${FLOW_TEST_CLASS_PREFIX}${flowApiName}`,
+          testMethods: testNames,
+        },
+      ],
+      // Stryker disable next-line StringLiteral: this value is only ever
+      // compared via === 'with-coverage'; no other reader exists.
+      'without-coverage'
+    )
+    return toFlowTestRunResult(testResult)
   }
 
   private async runTests(

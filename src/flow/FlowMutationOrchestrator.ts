@@ -1,519 +1,310 @@
-import * as fs from 'node:fs/promises'
-import * as path from 'node:path'
-import { formatRemainingTime } from '../service/timeUtils.js'
+import type { Messages } from '@salesforce/core'
+import type { Progress, Spinner } from '@salesforce/sf-plugins-core'
+import type { FlowEngineBundle } from '../port/executionEngine.js'
+import { FlowOrgSafetyError } from '../port/flowErrors.js'
+import type { FlowSource } from '../port/flowSourceProvider.js'
+import type { FlowBaseline } from '../port/flowTestBed.js'
+import { ConfigReader } from '../service/configReader.js'
+import {
+  type OutputSink,
+  renderOrgDetail,
+  writeToStdout,
+} from '../service/engineNotice.js'
+import { sanitizeForDisplay } from '../service/skippedTestClassMessage.js'
+import { formatDuration, formatRemainingTime } from '../service/timeUtils.js'
+import { FlowMutantGenerator } from './FlowMutantGenerator.js'
 import { FlowValidator } from './FlowValidator.js'
-import { getDefaultFlowMutators } from './mutators/index.js'
-import type {
-  FlowMutant,
-  FlowMutantStatus,
-  FlowMutationReport,
-  FlowMutator,
-  FlowOrchestratorCallbacks,
-  FlowSalesforcePort,
-  FlowTestRunResult,
-} from './types.js'
+import type { FlowMutant, FlowMutationResult } from './types.js'
+import { applyEdits, type FlowXmlDom } from './xml/FlowXmlDom.js'
 
-export interface OrchestratorOptions {
-  flowFilePath: string
-  flowDeveloperName: string
-  flowTests?: string[]
-  apexTests?: string[]
+export interface FlowMutationParameters {
+  flowApiName: string
+  flowTestNames?: string[]
   lines?: string[]
-  dryRun?: boolean
-  callbacks?: FlowOrchestratorCallbacks
+  dryRun: boolean
 }
 
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error)
+
+// Lifecycle: read the flow from the org → validate → generate → (dry run
+// stops here) → prepare a baseline → evaluate each mutant → restore. The
+// restore runs on every exit once prepare has started, because prepare is
+// already the first write to the org.
 export class FlowMutationOrchestrator {
-  private readonly mutators: FlowMutator[]
+  constructor(
+    private readonly progress: Progress,
+    private readonly spinner: Spinner,
+    private readonly engine: FlowEngineBundle,
+    private readonly messages: Messages<string>,
+    private readonly validator: FlowValidator = new FlowValidator(),
+    private readonly generator: FlowMutantGenerator = new FlowMutantGenerator(),
+    private readonly outputSink: OutputSink = writeToStdout
+  ) {}
 
-  public constructor(
-    private readonly sfPort: FlowSalesforcePort,
-    customMutators?: FlowMutator[]
-  ) {
-    this.mutators = customMutators ?? getDefaultFlowMutators()
-  }
-
-  public async run(options: OrchestratorOptions): Promise<FlowMutationReport> {
-    const originalXml = await this.readAndValidateFlow(options)
-    const mutants = this.generateMutants(originalXml, options)
-
-    if (options.dryRun || mutants.length === 0) {
-      return this.buildReport(options.flowFilePath, mutants, originalXml)
-    }
-
-    const isOriginallyActive = /<status>\s*Active\s*<\/status>/i.test(
-      originalXml
+  public async run(
+    parameters: FlowMutationParameters
+  ): Promise<FlowMutationResult> {
+    ConfigReader.validateLineRanges(parameters.lines, this.messages)
+    const allowedLines = ConfigReader.parseLineRanges(
+      parameters.lines,
+      this.messages
     )
-    const originalFlowTestContents = new Map<string, string>()
-    let tempDraftFlowId: string | undefined
-    let deployDurationMs = 0
-
-    try {
-      if (isOriginallyActive) {
-        const activeRes = await this.prepareActiveFlowVersion(
-          options,
-          originalXml,
-          originalFlowTestContents
-        )
-        tempDraftFlowId = activeRes.flowId
-        deployDurationMs = activeRes.deployDurationMs
-      } else {
-        const deployRes = await this.deployBaselineDraftFlow(
-          options,
-          originalXml
-        )
-        deployDurationMs = deployRes.deployDurationMs
-      }
-
-      const baselineRes = await this.verifyBaselineTests(options)
-      options.callbacks?.onTimeEstimate?.(
-        deployDurationMs,
-        baselineRes.testDurationMs,
-        mutants.length,
-        mutants.length
-      )
-
-      await this.evaluateMutants(
-        options,
-        mutants,
-        isOriginallyActive,
-        baselineRes.testsRan
-      )
-    } finally {
-      await this.rollbackToOriginalState(
-        options,
-        originalXml,
-        originalFlowTestContents,
-        tempDraftFlowId
-      )
+    const source = await this.readFlow(parameters)
+    const dom = this.validate(source)
+    const mutants = this.generateMutants(parameters, dom, allowedLines)
+    if (!parameters.dryRun) {
+      await this.executeWithRestore(source, mutants)
     }
-
-    return this.buildReport(options.flowFilePath, mutants, originalXml)
+    return { flowApiName: source.apiName, sourceXml: source.xml, mutants }
   }
 
-  private async readAndValidateFlow(
-    options: OrchestratorOptions
-  ): Promise<string> {
-    const originalXml = await fs.readFile(options.flowFilePath, 'utf-8')
-    options.callbacks?.onValidating?.()
-    const validation = FlowValidator.validate(originalXml)
-    if (!validation.isValid) {
-      throw new Error(
-        `Flow validation failed for ${options.flowDeveloperName}: ${validation.errorMessage}`
-      )
+  private async readFlow(
+    parameters: FlowMutationParameters
+  ): Promise<FlowSource> {
+    this.spinner.start(
+      this.messages.getMessage('info.readingFlow', [parameters.flowApiName]),
+      undefined,
+      { stdout: true }
+    )
+    const source = await this.engine.source.readFlow(
+      parameters.flowApiName,
+      parameters.flowTestNames
+    )
+    this.spinner.stop(
+      this.messages.getMessage('info.flowRead', [
+        source.tests.map(test => test.fullName).join(', '),
+      ])
+    )
+    return source
+  }
+
+  private validate(source: FlowSource): FlowXmlDom {
+    const validation = this.validator.validate(source.xml)
+    if (validation.isValid) {
+      return validation.dom
     }
-    options.callbacks?.onValidated?.()
-    return originalXml
+    const tokens =
+      validation.reason === 'invalidXml'
+        ? [source.apiName, validation.detail]
+        : validation.reason === 'unsupportedProcessType'
+          ? [source.apiName, validation.processType]
+          : [source.apiName]
+    throw new Error(
+      this.messages.getMessage(`error.flowInvalid.${validation.reason}`, tokens)
+    )
   }
 
   private generateMutants(
-    originalXml: string,
-    options: OrchestratorOptions
+    parameters: FlowMutationParameters,
+    dom: FlowXmlDom,
+    allowedLines: Set<number> | undefined
   ): FlowMutant[] {
-    options.callbacks?.onMutantsGenerating?.()
-    let rawMutants = this.mutators.flatMap(m => m.mutate(originalXml))
-    const allowedLines = this.parseLineRanges(options.lines)
-    if (allowedLines) {
-      rawMutants = rawMutants.filter(
-        m => m.lineNumber === undefined || allowedLines.has(m.lineNumber)
+    this.spinner.start(
+      this.messages.getMessage('info.generatingMutants', [
+        parameters.flowApiName,
+      ]),
+      undefined,
+      { stdout: true }
+    )
+    const mutants = this.generator.generate(dom, allowedLines)
+    this.spinner.stop(
+      this.messages.getMessage('info.mutantsGenerated', [
+        String(mutants.length),
+      ])
+    )
+    if (mutants.length === 0) {
+      throw new Error(
+        allowedLines
+          ? this.messages.getMessage('error.noMutationsInLineRange', [
+              parameters.flowApiName,
+              // allowedLines is only ever parsed from lines
+              (parameters.lines as string[]).join(', '),
+            ])
+          : this.messages.getMessage('error.noMutations', [
+              parameters.flowApiName,
+            ])
       )
     }
-    const mutants: FlowMutant[] = rawMutants.map((m, idx) => ({
-      ...m,
-      id: `FLOW-MUT-${idx + 1}`,
-      status: 'Pending' as FlowMutantStatus,
-    }))
-    options.callbacks?.onMutantsGenerated?.(mutants.length)
     return mutants
   }
 
-  private async prepareActiveFlowVersion(
-    options: OrchestratorOptions,
-    originalXml: string,
-    originalFlowTestContents: Map<string, string>
-  ): Promise<{ flowId?: string; deployDurationMs: number }> {
-    const deactivatedXml = await this.deactivateActiveFlow(options, originalXml)
-    const deployStart = performance.now()
-    await this.triggerDraftVersionCreation(options, deactivatedXml)
-    const deployDurationMs = performance.now() - deployStart
-
-    const latest = await this.sfPort.getLatestFlowVersion(
-      options.flowDeveloperName
-    )
-    await this.synchronizeFlowTests(
-      options,
-      latest.versionNumber,
-      originalFlowTestContents
-    )
-    return { flowId: latest.flowId, deployDurationMs }
-  }
-
-  private async deactivateActiveFlow(
-    options: OrchestratorOptions,
-    originalXml: string
-  ): Promise<string> {
-    const deactivatedXml = originalXml.replace(
-      /<status>\s*Active\s*<\/status>/i,
-      '<status>Draft</status>'
-    )
-    const deactDeploy = await this.sfPort.deployFlowXml(
-      options.flowFilePath,
-      deactivatedXml
-    )
-    if (!deactDeploy.success) {
-      throw new Error(
-        `Failed to deactivate active Flow "${options.flowDeveloperName}": ${deactDeploy.errorMessage}`
-      )
-    }
-    return deactivatedXml
-  }
-
-  private async triggerDraftVersionCreation(
-    options: OrchestratorOptions,
-    deactivatedXml: string
+  private async executeWithRestore(
+    source: FlowSource,
+    mutants: FlowMutant[]
   ): Promise<void> {
-    let triggerNewVersionXml: string
-    if (/<description>[\s\S]*?<\/description>/i.test(deactivatedXml)) {
-      triggerNewVersionXml = deactivatedXml.replace(
-        /<description>([\s\S]*?)<\/description>/i,
-        (_, desc) => `<description>${desc} Mutating</description>`
-      )
-    } else {
-      triggerNewVersionXml = deactivatedXml.replace(
-        /<status>/i,
-        '<description>Mutating</description>\n    <status>'
-      )
+    try {
+      const baseline = await this.prepareBaseline(source)
+      this.displayTimeEstimate(baseline, mutants.length)
+      await this.evaluateMutants(source, mutants)
+    } catch (runError: unknown) {
+      this.stopProgress()
+      throw await this.restoreAfterFailure(source, runError)
     }
-    const triggerDeploy = await this.sfPort.deployFlowXml(
-      options.flowFilePath,
-      triggerNewVersionXml
-    )
-    if (!triggerDeploy.success) {
-      throw new Error(
-        `Failed to create draft Flow version for "${options.flowDeveloperName}": ${triggerDeploy.errorMessage}`
-      )
-    }
+    await this.restore(source)
   }
 
-  private async synchronizeFlowTests(
-    options: OrchestratorOptions,
-    newVersionNumber: number,
-    originalFlowTestContents: Map<string, string>
-  ): Promise<void> {
-    const flowTestFiles = await this.findFlowTestFiles(
-      options.flowFilePath,
-      options.flowDeveloperName
-    )
-    const updatedFlowTestFiles: string[] = []
-    for (const ftPath of flowTestFiles) {
-      const ftContent = await fs.readFile(ftPath, 'utf-8')
-      originalFlowTestContents.set(ftPath, ftContent)
-      const updatedContent = ftContent.replace(
-        /<flowVersionNumber>\s*\d+\s*<\/flowVersionNumber>/g,
-        `<flowVersionNumber>${newVersionNumber}</flowVersionNumber>`
+  private async prepareBaseline(source: FlowSource): Promise<FlowBaseline> {
+    const baseline = await this.engine.testBed.prepare(source, {
+      onPreparing: () =>
+        this.spinner.start(
+          this.messages.getMessage('info.preparingFlowVersion', [
+            source.apiName,
+          ]),
+          undefined,
+          { stdout: true }
+        ),
+      onPrepared: () =>
+        this.spinner.stop(this.messages.getMessage('info.done')),
+      onBaselineStarting: () =>
+        this.spinner.start(
+          this.messages.getMessage('info.runningBaseline', [
+            String(source.tests.length),
+          ]),
+          undefined,
+          { stdout: true }
+        ),
+    })
+    if (baseline.failingTests.length > 0) {
+      this.spinner.stop(this.messages.getMessage('info.baselineFailed'))
+      throw new Error(
+        this.messages.getMessage('error.baselineTestsFailed', [
+          source.apiName,
+          baseline.failingTests.join(', '),
+        ])
       )
-      await fs.writeFile(ftPath, updatedContent, 'utf-8')
-      updatedFlowTestFiles.push(ftPath)
     }
-
-    if (updatedFlowTestFiles.length > 0) {
-      const ftDeploy = await this.sfPort.deployFiles(updatedFlowTestFiles)
-      if (!ftDeploy.success) {
-        throw new Error(
-          `Failed to deploy updated FlowTests: ${ftDeploy.errorMessage}`
-        )
-      }
-    }
+    this.spinner.stop(this.messages.getMessage('info.baselinePassed'))
+    return baseline
   }
 
-  private async deployBaselineDraftFlow(
-    options: OrchestratorOptions,
-    originalXml: string
-  ): Promise<{ deployDurationMs: number }> {
-    options.callbacks?.onBaselineDeploying?.()
-    const deployStart = performance.now()
-    const baselineDeploy = await this.sfPort.deployFlowXml(
-      options.flowFilePath,
-      originalXml
+  private displayTimeEstimate(baseline: FlowBaseline, count: number): void {
+    const { applyMs, runMs } = baseline.cost
+    this.spinner.start(
+      this.messages.getMessage('info.timeEstimate', [
+        formatDuration((applyMs + runMs) * count),
+      ]),
+      undefined,
+      { stdout: true }
     )
-    const deployDurationMs = performance.now() - deployStart
-    if (!baselineDeploy.success) {
-      throw new Error(
-        `Baseline Flow deployment failed: ${baselineDeploy.errorMessage}`
-      )
-    }
-    options.callbacks?.onBaselineDeployed?.()
-    return { deployDurationMs }
-  }
-
-  private async verifyBaselineTests(
-    options: OrchestratorOptions
-  ): Promise<{ testDurationMs: number; testsRan: number }> {
-    options.callbacks?.onBaselineTesting?.()
-    const testStart = performance.now()
-    const baselineTests = await this.executeTests(options)
-    const testDurationMs = performance.now() - testStart
-    if (!baselineTests.allPassed) {
-      throw new Error(
-        `Baseline tests failed before mutation started: ${baselineTests.failingMethods.join(', ')}`
-      )
-    }
-    options.callbacks?.onBaselineTested?.('Original tests passed')
-    return {
-      testDurationMs,
-      testsRan: baselineTests.testsRan ?? 0,
-    }
+    this.spinner.stop(
+      this.messages.getMessage('info.timeEstimateBreakdown', [
+        formatDuration(applyMs),
+        formatDuration(runMs),
+        String(count),
+      ])
+    )
   }
 
   private async evaluateMutants(
-    options: OrchestratorOptions,
-    mutants: FlowMutant[],
-    isOriginallyActive: boolean,
-    baselineTestsRan: number
+    source: FlowSource,
+    mutants: FlowMutant[]
   ): Promise<void> {
-    options.callbacks?.onProgressStart?.(mutants.length)
-    const loopStartTime = performance.now()
-    const testCount =
-      options.flowTests?.length ||
-      options.apexTests?.length ||
-      baselineTestsRan ||
-      1
-
-    for (let i = 0; i < mutants.length; i++) {
-      const mutant = mutants[i]
-      const remainingText = formatRemainingTime(
-        loopStartTime,
-        i,
-        mutants.length
-      )
-      const mutantLabel = this.formatMutantLabel(mutant)
-      const lineText = mutant.lineNumber ? ` at line ${mutant.lineNumber}` : ''
-
-      options.callbacks?.onProgressUpdate?.(
-        i,
-        `${remainingText}Deploying "${mutantLabel}" mutation${lineText}`
-      )
-
-      let mutantXml = mutant.mutatedXml
-      if (isOriginallyActive) {
-        mutantXml = mutantXml.replace(
-          /<status>\s*Active\s*<\/status>/i,
-          '<status>Draft</status>'
-        )
+    this.progress.start(
+      mutants.length,
+      { info: this.messages.getMessage('info.progressStarting') },
+      {
+        title: 'MUTATION TESTING PROGRESS',
+        format: '%s | {bar} | {value}/{total} {info}',
       }
+    )
+    const loopStart = performance.now()
+    for (const [index, mutant] of mutants.entries()) {
+      this.progress.update(index, {
+        info: `${formatRemainingTime(loopStart, index, mutants.length)}${this.messages.getMessage('info.evaluatingMutant', [mutant.description])}`,
+      })
+      await this.evaluateMutant(source, mutant)
+      this.progress.update(index + 1, {
+        info: `${formatRemainingTime(loopStart, index + 1, mutants.length)}${this.messages.getMessage(`info.mutantResult.${mutant.status}`)}`,
+      })
+    }
+    this.progress.finish({
+      info: this.messages.getMessage('info.progressFinished'),
+    })
+  }
 
-      const deployResult = await this.sfPort.deployFlowXml(
-        options.flowFilePath,
-        mutantXml
+  // A transport failure on one mutant scores it RuntimeError and the run goes
+  // on; a failed safety check on the org's own state is never a verdict about
+  // a mutant — it aborts the run, and the restore follows.
+  private async evaluateMutant(
+    source: FlowSource,
+    mutant: FlowMutant
+  ): Promise<void> {
+    try {
+      const verdict = await this.engine.testBed.evaluate(
+        applyEdits(source.xml, mutant.edits)
       )
-
-      let progressResultMsg: string
-
-      if (!deployResult.success) {
+      if (verdict.kind === 'not-compilable') {
         mutant.status = 'CompileError'
-        progressResultMsg = `Mutation result: compile error${lineText}`
+        mutant.statusReason = verdict.detail
+      } else if (verdict.failingTests.length > 0) {
+        mutant.status = 'Killed'
+        mutant.killedBy = verdict.failingTests
       } else {
-        options.callbacks?.onProgressUpdate?.(
-          i,
-          `${remainingText}Running ${testCount} tests methods for "${mutantLabel}" mutation${lineText}`
-        )
-        const testResult = await this.executeTests(options)
-        if (!testResult.allPassed) {
-          mutant.status = 'Killed'
-          mutant.killedBy = testResult.failingMethods
-          progressResultMsg = 'Mutation result: mutant killed'
-        } else {
-          mutant.status = 'Survived'
-          progressResultMsg = 'Mutation result: zombie'
-        }
+        mutant.status = 'Survived'
       }
-
-      const updatedRemainingText = formatRemainingTime(
-        loopStartTime,
-        i + 1,
-        mutants.length
-      )
-      options.callbacks?.onProgressUpdate?.(
-        i + 1,
-        `${updatedRemainingText}${progressResultMsg}`
-      )
+    } catch (error: unknown) {
+      if (error instanceof FlowOrgSafetyError) {
+        throw error
+      }
+      mutant.status = 'RuntimeError'
+      mutant.statusReason = errorMessage(error)
     }
-
-    options.callbacks?.onProgressFinish?.('All mutations evaluated')
   }
 
-  private formatMutantLabel(mutant: FlowMutant): string {
-    const rawSnippet = (
-      mutant.mutatedSnippet ||
-      mutant.description ||
-      mutant.elementName
-    )
-      .trim()
-      .replace(/\s+/g, ' ')
-    return rawSnippet.length > 40 ? `${rawSnippet.slice(0, 37)}...` : rawSnippet
-  }
-
-  private async rollbackToOriginalState(
-    options: OrchestratorOptions,
-    originalXml: string,
-    originalFlowTestContents: Map<string, string>,
-    tempDraftFlowId?: string
-  ): Promise<void> {
-    options.callbacks?.onRollbackStarting?.()
-    let rollbackFailed = false
+  // Reaching the restore is the whole point of the caller, so a renderer
+  // teardown failure must not preempt it: it is reported, not propagated —
+  // on stdout, apart from the bar's own stream, as the Apex service does.
+  private stopProgress(): void {
     try {
-      await fs.writeFile(options.flowFilePath, originalXml, 'utf-8')
-      const flowRollback = await this.sfPort.deployFlowXml(
-        options.flowFilePath,
-        originalXml
+      this.progress.stop()
+    } catch (error: unknown) {
+      this.outputSink(
+        `${this.messages.getMessage('info.progressTeardownFailed', [
+          sanitizeForDisplay(errorMessage(error)),
+        ])}\n`
       )
-      if (!flowRollback.success) {
-        rollbackFailed = true
-      }
-
-      if (originalFlowTestContents.size > 0) {
-        const ftPaths: string[] = []
-        for (const [ftPath, ftContent] of originalFlowTestContents.entries()) {
-          await fs.writeFile(ftPath, ftContent, 'utf-8')
-          ftPaths.push(ftPath)
-        }
-        const ftRollback = await this.sfPort.deployFiles(ftPaths)
-        if (!ftRollback.success) {
-          rollbackFailed = true
-        }
-      }
-
-      if (tempDraftFlowId && this.sfPort.deleteFlowVersion) {
-        try {
-          await this.sfPort.deleteFlowVersion(tempDraftFlowId)
-        } catch {
-          // Best-effort cleanup
-        }
-      }
-    } catch {
-      rollbackFailed = true
-    } finally {
-      options.callbacks?.onRollbackFinished?.(rollbackFailed)
     }
   }
 
-  private async findFlowTestFiles(
-    flowFilePath: string,
-    flowApiName: string
-  ): Promise<string[]> {
-    const matchingFiles: string[] = []
-    const candidateDirs: string[] = []
-
-    const flowDir = path.dirname(flowFilePath)
-    const siblingFlowTestsDir = path.resolve(flowDir, '..', 'flowtests')
+  // Returns the error for the caller to throw. The run failure is the root
+  // cause and leads the message; a restore failure is appended, so "the org
+  // was not restored" is never lost behind it.
+  private async restoreAfterFailure(
+    source: FlowSource,
+    runError: unknown
+  ): Promise<unknown> {
     try {
-      const stat = await fs.stat(siblingFlowTestsDir)
-      if (stat.isDirectory()) {
-        candidateDirs.push(siblingFlowTestsDir)
-      }
-    } catch {
-      // Sibling flowtests folder doesn't exist
+      await this.restore(source)
+      return runError
+    } catch (restoreError: unknown) {
+      return new Error(
+        `${errorMessage(runError)}\n${errorMessage(restoreError)}`,
+        {
+          cause: runError,
+        }
+      )
     }
+  }
 
-    const projectRoot = path.resolve(flowDir, '..', '..', '..', '..')
-    const defaultFlowTestsDir = path.resolve(
-      projectRoot,
-      'force-app',
-      'main',
-      'default',
-      'flowtests'
+  private async restore(source: FlowSource): Promise<void> {
+    this.spinner.start(
+      this.messages.getMessage('info.restoringFlow', [source.apiName]),
+      undefined,
+      { stdout: true }
     )
-    if (!candidateDirs.includes(defaultFlowTestsDir)) {
-      try {
-        const stat = await fs.stat(defaultFlowTestsDir)
-        if (stat.isDirectory()) {
-          candidateDirs.push(defaultFlowTestsDir)
-        }
-      } catch {
-        // Root flowtests folder doesn't exist
-      }
-    }
-
-    for (const dir of candidateDirs) {
-      try {
-        const files = await fs.readdir(dir)
-        for (const file of files) {
-          if (file.endsWith('.flowtest-meta.xml')) {
-            const fullPath = path.join(dir, file)
-            const content = await fs.readFile(fullPath, 'utf-8')
-            if (content.includes(`<flowApiName>${flowApiName}</flowApiName>`)) {
-              matchingFiles.push(fullPath)
-            }
-          }
-        }
-      } catch {
-        // Folder cannot be read
-      }
-    }
-
-    return matchingFiles
-  }
-
-  private parseLineRanges(lines?: string[]): Set<number> | undefined {
-    if (!lines || lines.length === 0) return undefined
-    const allowed = new Set<number>()
-    for (const lineEntry of lines) {
-      if (lineEntry.includes('-')) {
-        const [startStr, endStr] = lineEntry.split('-')
-        const start = Number.parseInt(startStr, 10)
-        const end = Number.parseInt(endStr, 10)
-        if (Number.isNaN(start) || Number.isNaN(end) || start > end) {
-          throw new Error(`Invalid line range: '${lineEntry}'`)
-        }
-        for (let l = start; l <= end; l++) {
-          allowed.add(l)
-        }
-      } else {
-        const lineNum = Number.parseInt(lineEntry, 10)
-        if (Number.isNaN(lineNum)) {
-          throw new Error(`Invalid line number: '${lineEntry}'`)
-        }
-        allowed.add(lineNum)
-      }
-    }
-    return allowed
-  }
-
-  private async executeTests(
-    options: OrchestratorOptions
-  ): Promise<FlowTestRunResult> {
-    if (options.apexTests && options.apexTests.length > 0) {
-      return this.sfPort.runApexTests(options.apexTests)
-    }
-    return this.sfPort.runFlowTests(
-      options.flowDeveloperName,
-      options.flowTests
-    )
-  }
-
-  private buildReport(
-    flowFilePath: string,
-    mutants: FlowMutant[],
-    originalXml: string
-  ): FlowMutationReport {
-    const killed = mutants.filter(m => m.status === 'Killed').length
-    const survived = mutants.filter(m => m.status === 'Survived').length
-    const compileErrors = mutants.filter(
-      m => m.status === 'CompileError'
-    ).length
-    const totalCovered = killed + survived
-    const mutationScore =
-      totalCovered > 0 ? Math.round((killed / totalCovered) * 100) : 0
-
-    return {
-      flowFilePath,
-      totalMutants: mutants.length,
-      killed,
-      survived,
-      compileErrors,
-      mutationScore,
-      mutants,
-      originalXml,
+    try {
+      await this.engine.testBed.restore()
+      this.spinner.stop(this.messages.getMessage('info.done'))
+    } catch (error: unknown) {
+      this.spinner.stop(this.messages.getMessage('info.restoreFailed'))
+      throw new Error(
+        this.messages.getMessage('error.flowRestoreFailed', [
+          source.apiName,
+          renderOrgDetail(errorMessage(error)),
+        ]),
+        { cause: error }
+      )
     }
   }
 }

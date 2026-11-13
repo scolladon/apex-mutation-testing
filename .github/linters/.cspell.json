@@ -77,6 +77,20 @@
     "worktrees",
     "zizmor",
     "startswith",
-    "unreviewed"
+    "unreviewed",
+    "autolaunched",
+    "bypassable",
+    "flowtest",
+    "flowtesting",
+    "flowtests",
+    "misbehaviour",
+    "modstamp",
+    "nodebuffer",
+    "normalised",
+    "serialise",
+    "serialised",
+    "serialising",
+    "subflows",
+    "trailhead"
   ]
 }

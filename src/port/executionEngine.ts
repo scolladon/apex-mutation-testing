@@ -1,5 +1,7 @@
 import type { Connection } from '@salesforce/core'
 import type { ApexSourceProvider } from './apexSourceProvider.js'
+import type { FlowSourceProvider } from './flowSourceProvider.js'
+import type { FlowTestBed } from './flowTestBed.js'
 import type { MutationTestBed } from './mutationTestBed.js'
 import type { SObjectSchemaProvider } from './sObjectSchemaProvider.js'
 
@@ -18,4 +20,9 @@ export interface EngineBundle {
   source: ApexSourceProvider
   schema: SObjectSchemaProvider
   testBed: MutationTestBed
+}
+
+export interface FlowEngineBundle {
+  source: FlowSourceProvider
+  testBed: FlowTestBed
 }

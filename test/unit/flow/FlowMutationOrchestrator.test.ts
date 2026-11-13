@@ -1,968 +1,564 @@
-import * as fs from 'node:fs/promises'
-import * as os from 'node:os'
-import * as path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Messages } from '@salesforce/core'
+import type { Progress, Spinner } from '@salesforce/sf-plugins-core'
+import { FlowMutantGenerator } from '../../../src/flow/FlowMutantGenerator.js'
 import { FlowMutationOrchestrator } from '../../../src/flow/FlowMutationOrchestrator.js'
+import type { FlowMutation, FlowMutator } from '../../../src/flow/types.js'
+import type { FlowEngineBundle } from '../../../src/port/executionEngine.js'
+import {
+  FlowTestPinError,
+  FlowVersionGuardError,
+} from '../../../src/port/flowErrors.js'
+import type { FlowSource } from '../../../src/port/flowSourceProvider.js'
 import type {
-  FlowDeployResult,
-  FlowSalesforcePort,
-  FlowTestRunResult,
-} from '../../../src/flow/types.js'
-import { SF_NAMESPACE } from '../../../src/flow/xml/FlowXmlDom.js'
+  FlowBaseline,
+  FlowMutantVerdict,
+  FlowTestBed,
+} from '../../../src/port/flowTestBed.js'
+import {
+  calculateMutationScore,
+  FLOW_SCORE_POLICY,
+} from '../../../src/service/mutationScore.js'
+import {
+  flowTestXml,
+  flowXml,
+  recordTriggeredFlowXml,
+} from '../../utils/flowFixtures.js'
 
-const VALID_FLOW_XML = `<?xml version="1.0" encoding="UTF-8"?>
-<Flow xmlns="${SF_NAMESPACE}">
-    <apiVersion>67.0</apiVersion>
-    <processType>AutoLaunchedFlow</processType>
-    <start>
-        <object>Account</object>
-        <recordTriggerType>Create</recordTriggerType>
-        <triggerType>RecordAfterSave</triggerType>
-    </start>
-    <status>Draft</status>
-</Flow>`
+Messages.importMessagesDirectoryFromMetaUrl(import.meta.url)
+const messages = Messages.loadMessages(
+  'apex-mutation-testing',
+  'apex.mutation.flow.run'
+)
 
-const ACTIVE_FLOW_XML = `<?xml version="1.0" encoding="UTF-8"?>
-<Flow xmlns="${SF_NAMESPACE}">
-    <apiVersion>67.0</apiVersion>
-    <description>Original Description</description>
-    <processType>AutoLaunchedFlow</processType>
-    <start>
-        <object>Account</object>
-        <recordTriggerType>Create</recordTriggerType>
-        <triggerType>RecordAfterSave</triggerType>
-    </start>
-    <status>Active</status>
-</Flow>`
+const source = (xml = recordTriggeredFlowXml()): FlowSource => ({
+  apiName: 'Account_After',
+  xml,
+  tests: [{ fullName: 'Sets_Rating', xml: flowTestXml('Account_After') }],
+})
+
+const baseline = (overrides: Partial<FlowBaseline> = {}): FlowBaseline => ({
+  testsRan: 1,
+  failingTests: [],
+  cost: { applyMs: 1000, runMs: 2000 },
+  ...overrides,
+})
+
+// A mutator producing `count` mutants on the trigger type, each distinct.
+const fixedMutator = (count: number): FlowMutator => ({
+  name: 'Fixed',
+  mutate: dom => {
+    const trigger = dom.elements('recordTriggerType')[0]
+    return Array.from(
+      { length: count },
+      (_, i): FlowMutation => ({
+        mutatorName: 'Fixed',
+        elementName: `E${i}`,
+        description: `m${i}`,
+        edits: [dom.replaceTextEdit(trigger, `Update${i}`)],
+      })
+    )
+  },
+})
 
 describe('FlowMutationOrchestrator', () => {
-  let tempDir: string
-  let tempFlowFile: string
+  let spinner: Spinner
+  let progress: Progress
+  let testBed: { [K in keyof FlowTestBed]: ReturnType<typeof vi.fn> }
+  let engine: FlowEngineBundle
+  let readFlow: ReturnType<typeof vi.fn>
 
-  beforeEach(async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'flow-orch-test-'))
-    tempFlowFile = path.join(tempDir, 'Account_Before.flow-meta.xml')
-    await fs.writeFile(tempFlowFile, VALID_FLOW_XML, 'utf-8')
-  })
-
-  afterEach(async () => {
-    await fs.rm(tempDir, { recursive: true, force: true })
-  })
-
-  it('filters mutants by line numbers and ranges', async () => {
-    const mockPort: FlowSalesforcePort = {
-      deployFlowXml: vi.fn(),
-      runFlowTests: vi.fn(),
-    }
-
-    const orchestrator = new FlowMutationOrchestrator(mockPort)
-    // VALID_FLOW_XML has start/recordTriggerType around line 6
-    const reportMatch = await orchestrator.run({
-      flowFilePath: tempFlowFile,
-      flowDeveloperName: 'Account_Before',
-      lines: ['5-8'],
-      dryRun: true,
-    })
-    expect(reportMatch.totalMutants).toBe(1)
-
-    const reportSingleMatch = await orchestrator.run({
-      flowFilePath: tempFlowFile,
-      flowDeveloperName: 'Account_Before',
-      lines: ['7'],
-      dryRun: true,
-    })
-    expect(reportSingleMatch.totalMutants).toBe(1)
-
-    const reportEmptyLines = await orchestrator.run({
-      flowFilePath: tempFlowFile,
-      flowDeveloperName: 'Account_Before',
-      lines: [],
-      dryRun: true,
-    })
-    expect(reportEmptyLines.totalMutants).toBe(1)
-
-    const reportNoMatch = await orchestrator.run({
-      flowFilePath: tempFlowFile,
-      flowDeveloperName: 'Account_Before',
-      lines: ['1-2'],
-      dryRun: true,
-    })
-    expect(reportNoMatch.totalMutants).toBe(0)
-  })
-
-  it('throws error on invalid line ranges or numbers', async () => {
-    const mockPort: FlowSalesforcePort = {
-      deployFlowXml: vi.fn(),
-      runFlowTests: vi.fn(),
-    }
-
-    const orchestrator = new FlowMutationOrchestrator(mockPort)
-    await expect(
-      orchestrator.run({
-        flowFilePath: tempFlowFile,
-        flowDeveloperName: 'Account_Before',
-        lines: ['10-5'],
-        dryRun: true,
-      })
-    ).rejects.toThrow("Invalid line range: '10-5'")
-
-    await expect(
-      orchestrator.run({
-        flowFilePath: tempFlowFile,
-        flowDeveloperName: 'Account_Before',
-        lines: ['abc'],
-        dryRun: true,
-      })
-    ).rejects.toThrow("Invalid line number: 'abc'")
-  })
-
-  it('runs in dry-run mode without calling deploy or test', async () => {
-    const mockPort: FlowSalesforcePort = {
-      deployFlowXml: vi.fn(),
-      runFlowTests: vi.fn(),
-    }
-
-    const orchestrator = new FlowMutationOrchestrator(mockPort)
-    const report = await orchestrator.run({
-      flowFilePath: tempFlowFile,
-      flowDeveloperName: 'Account_Before',
-      dryRun: true,
-    })
-
-    expect(mockPort.deployFlowXml).not.toHaveBeenCalled()
-    expect(mockPort.runFlowTests).not.toHaveBeenCalled()
-    expect(report.totalMutants).toBeGreaterThan(0)
-    expect(report.mutants.every(m => m.status === 'Pending')).toBe(true)
-  })
-
-  it('throws error when Flow validation fails (e.g., Screen Flow)', async () => {
-    const screenFlowXml = `<Flow xmlns="${SF_NAMESPACE}"><processType>Flow</processType></Flow>`
-    await fs.writeFile(tempFlowFile, screenFlowXml, 'utf-8')
-
-    const mockPort: FlowSalesforcePort = {
-      deployFlowXml: vi.fn(),
-      runFlowTests: vi.fn(),
-    }
-
-    const orchestrator = new FlowMutationOrchestrator(mockPort)
-    await expect(
-      orchestrator.run({
-        flowFilePath: tempFlowFile,
-        flowDeveloperName: 'ScreenFlow',
-      })
-    ).rejects.toThrow('Flow validation failed for ScreenFlow')
-  })
-
-  it('throws error when baseline deploy fails', async () => {
-    const mockPort: FlowSalesforcePort = {
-      deployFlowXml: vi.fn().mockResolvedValue({
-        success: false,
-        errorMessage: 'Syntax Error in Flow',
-      }),
-      runFlowTests: vi.fn(),
-    }
-
-    const orchestrator = new FlowMutationOrchestrator(mockPort)
-    await expect(
-      orchestrator.run({
-        flowFilePath: tempFlowFile,
-        flowDeveloperName: 'Account_Before',
-      })
-    ).rejects.toThrow('Baseline Flow deployment failed: Syntax Error in Flow')
-  })
-
-  it('throws error when baseline tests fail', async () => {
-    const mockPort: FlowSalesforcePort = {
-      deployFlowXml: vi.fn().mockResolvedValue({ success: true }),
-      runFlowTests: vi.fn().mockResolvedValue({
-        allPassed: false,
-        failingMethods: ['Test_ShouldSetRating'],
-      }),
-    }
-
-    const orchestrator = new FlowMutationOrchestrator(mockPort)
-    await expect(
-      orchestrator.run({
-        flowFilePath: tempFlowFile,
-        flowDeveloperName: 'Account_Before',
-      })
-    ).rejects.toThrow(
-      'Baseline tests failed before mutation started: Test_ShouldSetRating'
+  const sut = (mutators: FlowMutator[] = [fixedMutator(1)]) =>
+    new FlowMutationOrchestrator(
+      progress,
+      spinner,
+      engine,
+      messages,
+      undefined,
+      new FlowMutantGenerator(mutators)
     )
-  })
 
-  it('marks mutants as Survived when tests pass on mutated flow', async () => {
-    const mockPort: FlowSalesforcePort = {
-      deployFlowXml: vi.fn().mockResolvedValue({ success: true }),
-      runFlowTests: vi
-        .fn()
-        .mockResolvedValue({ allPassed: true, failingMethods: [] }),
-    }
-
-    const orchestrator = new FlowMutationOrchestrator(mockPort)
-    const report = await orchestrator.run({
-      flowFilePath: tempFlowFile,
-      flowDeveloperName: 'Account_Before',
+  const run = (mutators?: FlowMutator[], overrides = {}) =>
+    sut(mutators).run({
+      flowApiName: 'Account_After',
+      dryRun: false,
+      ...overrides,
     })
 
-    expect(report.totalMutants).toBe(1)
-    expect(report.killed).toBe(0)
-    expect(report.survived).toBe(1)
-    expect(report.mutationScore).toBe(0)
-    expect(report.mutants[0].status).toBe('Survived')
+  beforeEach(() => {
+    spinner = { start: vi.fn(), stop: vi.fn() } as unknown as Spinner
+    progress = {
+      start: vi.fn(),
+      update: vi.fn(),
+      finish: vi.fn(),
+      stop: vi.fn(),
+    } as unknown as Progress
+    readFlow = vi.fn().mockResolvedValue(source())
+    testBed = {
+      prepare: vi.fn().mockImplementation(async (_source, hooks) => {
+        hooks.onPreparing()
+        hooks.onPrepared()
+        hooks.onBaselineStarting()
+        return baseline()
+      }),
+      evaluate: vi
+        .fn()
+        .mockResolvedValue({ kind: 'executed', failingTests: ['Sets_Rating'] }),
+      restore: vi.fn().mockResolvedValue(undefined),
+    }
+    engine = {
+      source: { readFlow },
+      testBed: testBed as unknown as FlowTestBed,
+    }
   })
 
-  it('runs full mutation lifecycle and calculates score correctly', async () => {
-    let callCount = 0
-    const mockPort: FlowSalesforcePort = {
-      deployFlowXml: vi.fn().mockImplementation(async () => {
-        callCount++
-        // Simulate: mutant deploy succeeds
-        return { success: true }
-      }),
-      runFlowTests: vi.fn().mockImplementation(async () => {
-        // First run is baseline (passes)
-        // Second run is mutant (fails -> Killed)
-        if (callCount === 1) {
-          return { allPassed: true, failingMethods: [] }
-        }
-        return { allPassed: false, failingMethods: ['FlowTest_Failed'] }
-      }),
-    }
+  describe('reading and validating', () => {
+    it('Given test names, When run, Then the flow is read with them', async () => {
+      // Act
+      await run(undefined, { flowTestNames: ['Sets_Rating'] })
 
-    const orchestrator = new FlowMutationOrchestrator(mockPort)
-    const report = await orchestrator.run({
-      flowFilePath: tempFlowFile,
-      flowDeveloperName: 'Account_Before',
+      // Assert
+      expect(readFlow).toHaveBeenCalledWith('Account_After', ['Sets_Rating'])
+      expect(spinner.stop).toHaveBeenCalledWith('FlowTests: Sets_Rating')
     })
 
-    expect(report.totalMutants).toBe(1)
-    expect(report.killed).toBe(1)
-    expect(report.survived).toBe(0)
-    expect(report.mutationScore).toBe(100)
-    expect(report.mutants[0].status).toBe('Killed')
-    expect(report.mutants[0].killedBy).toEqual(['FlowTest_Failed'])
+    it.each([
+      [
+        '<Flow><a></Flow>',
+        /^Flow 'Account_After' is not valid XML: XML parsing failed/,
+      ],
+      [
+        '<FlowTest xmlns="http://soap.sforce.com/2006/04/metadata"/>',
+        /does not have a <Flow> root element/,
+      ],
+      [
+        flowXml('    <processType>Flow</processType>'),
+        /has process type 'Flow'\. Only record-triggered/,
+      ],
+      [
+        flowXml(
+          '    <processType>AutoLaunchedFlow</processType>\n    <waits><name>W</name></waits>'
+        ),
+        /contains Pause elements/,
+      ],
+    ])(
+      'Given an unusable flow, When run, Then it is rejected with the bundle message and the org is never written',
+      async (xml, message) => {
+        // Arrange
+        readFlow.mockResolvedValue(source(xml))
 
-    // Verify rollback restored original file on disk
-    const restoredDiskContent = await fs.readFile(tempFlowFile, 'utf-8')
-    expect(restoredDiskContent).toBe(VALID_FLOW_XML)
-  })
-
-  it('ALWAYS restores original XML even when test execution throws an unexpected error', async () => {
-    const mockPort: FlowSalesforcePort = {
-      deployFlowXml: vi.fn().mockResolvedValue({ success: true }),
-      runFlowTests: vi
-        .fn()
-        .mockResolvedValueOnce({ allPassed: true, failingMethods: [] }) // baseline
-        .mockRejectedValueOnce(new Error('Unexpected network disconnection')),
-    }
-
-    const orchestrator = new FlowMutationOrchestrator(mockPort)
-
-    await expect(
-      orchestrator.run({
-        flowFilePath: tempFlowFile,
-        flowDeveloperName: 'Account_Before',
-      })
-    ).rejects.toThrow('Unexpected network disconnection')
-
-    // Verify file on disk is restored to original content
-    const restoredDiskContent = await fs.readFile(tempFlowFile, 'utf-8')
-    expect(restoredDiskContent).toBe(VALID_FLOW_XML)
-
-    // Verify deployFlowXml was called to restore the original XML in the finally block
-    expect(mockPort.deployFlowXml).toHaveBeenLastCalledWith(
-      tempFlowFile,
-      VALID_FLOW_XML
+        // Act & Assert
+        await expect(run()).rejects.toThrow(message)
+        expect(testBed.prepare).not.toHaveBeenCalled()
+        expect(testBed.restore).not.toHaveBeenCalled()
+      }
     )
-  })
 
-  it('handles flow with zero mutants gracefully', async () => {
-    const noMutantXml = `<Flow xmlns="${SF_NAMESPACE}"><apiVersion>67.0</apiVersion><processType>AutoLaunchedFlow</processType><status>Draft</status></Flow>`
-    await fs.writeFile(tempFlowFile, noMutantXml, 'utf-8')
-
-    const mockPort: FlowSalesforcePort = {
-      deployFlowXml: vi.fn(),
-      runFlowTests: vi.fn(),
-    }
-
-    const orchestrator = new FlowMutationOrchestrator(mockPort)
-    const report = await orchestrator.run({
-      flowFilePath: tempFlowFile,
-      flowDeveloperName: 'NoMutantsFlow',
-    })
-
-    expect(report.totalMutants).toBe(0)
-    expect(report.mutationScore).toBe(0)
-    expect(mockPort.deployFlowXml).not.toHaveBeenCalled()
-  })
-
-  it('marks mutants as CompileError when deployment fails', async () => {
-    let deployCalls = 0
-    const mockPort: FlowSalesforcePort = {
-      deployFlowXml: vi.fn().mockImplementation(async () => {
-        deployCalls++
-        // 1st call is baseline deploy (success)
-        // 2nd call is mutant deploy (failure)
-        // 3rd call is finally restore deploy (success)
-        if (deployCalls === 2) {
-          return { success: false, errorMessage: 'Illegal metadata tag' }
-        }
-        return { success: true }
-      }),
-      runFlowTests: vi
-        .fn()
-        .mockResolvedValue({ allPassed: true, failingMethods: [] }),
-    }
-
-    const orchestrator = new FlowMutationOrchestrator(mockPort)
-    const report = await orchestrator.run({
-      flowFilePath: tempFlowFile,
-      flowDeveloperName: 'Account_Before',
-    })
-
-    expect(report.compileErrors).toBe(1)
-    expect(report.killed).toBe(0)
-    expect(report.survived).toBe(0)
-    expect(report.mutants[0].status).toBe('CompileError')
-  })
-
-  describe('Active Flow Version Management', () => {
-    it('deactivates active flow, triggers new version, updates flowtests, and cleans up on rollback', async () => {
-      // Setup active flow
-      await fs.writeFile(tempFlowFile, ACTIVE_FLOW_XML, 'utf-8')
-
-      // Create a sibling flowtests directory and a dummy flowtest file
-      const flowTestsDir = path.join(tempDir, '../flowtests')
-      await fs.mkdir(flowTestsDir, { recursive: true })
-      const flowTestPath = path.join(
-        flowTestsDir,
-        'Account_Before_Test.flowtest-meta.xml'
+    it('Given an invalid line range, When run, Then it is rejected before the org is read', async () => {
+      // Act & Assert
+      await expect(run(undefined, { lines: ['x'] })).rejects.toThrow(
+        "Invalid line range 'x'"
       )
-      const flowTestContent = `<?xml version="1.0" encoding="UTF-8"?>
-<FlowTest xmlns="${SF_NAMESPACE}">
-    <flowApiName>Account_Before</flowApiName>
-    <flowTestFlowVersions>
-        <flowVersionNumber>1</flowVersionNumber>
-    </flowTestFlowVersions>
-</FlowTest>`
-      await fs.writeFile(flowTestPath, flowTestContent, 'utf-8')
+      expect(readFlow).not.toHaveBeenCalled()
+    })
+  })
 
-      const deployedXmls: string[] = []
-      const deployedFilesList: string[][] = []
+  describe('generating', () => {
+    it('Given no mutation, When run, Then it fails naming the flow', async () => {
+      // Act & Assert
+      await expect(run([fixedMutator(0)])).rejects.toThrow(
+        "No mutations could be generated for Flow 'Account_After'."
+      )
+      expect(testBed.prepare).not.toHaveBeenCalled()
+    })
 
-      const mockPort: FlowSalesforcePort = {
-        deployFlowXml: vi.fn().mockImplementation(async (_, xml: string) => {
-          deployedXmls.push(xml)
-          return { success: true }
-        }),
-        deployFiles: vi.fn().mockImplementation(async (files: string[]) => {
-          deployedFilesList.push(files)
-          return { success: true }
-        }),
-        getLatestFlowVersion: vi.fn().mockResolvedValue({
-          versionNumber: 7,
-          flowId: '301d000000TEMP',
-        }),
-        deleteFlowVersion: vi.fn().mockResolvedValue(true),
-        runFlowTests: vi
-          .fn()
-          .mockResolvedValue({ allPassed: true, failingMethods: [] }),
-        runApexTests: vi.fn(),
-      }
+    it('Given a line range excluding every mutant, When run, Then it fails naming the range', async () => {
+      // Act & Assert
+      await expect(run(undefined, { lines: ['1-2', '40'] })).rejects.toThrow(
+        "No mutations could be generated for Flow 'Account_After' within the requested --lines range (1-2, 40)."
+      )
+    })
 
-      const orchestrator = new FlowMutationOrchestrator(mockPort)
-      const report = await orchestrator.run({
-        flowFilePath: tempFlowFile,
-        flowDeveloperName: 'Account_Before',
+    it('Given a line range including the mutant, When run, Then it is evaluated', async () => {
+      // Act
+      const result = await run(undefined, { lines: ['7'] })
+
+      // Assert
+      expect(result.mutants).toHaveLength(1)
+    })
+  })
+
+  describe('dry run', () => {
+    it('Given a dry run, When run, Then mutants stay Pending and the org is never written', async () => {
+      // Act
+      const result = await run([fixedMutator(2)], { dryRun: true })
+
+      // Assert
+      expect(result).toMatchObject({
+        flowApiName: 'Account_After',
+        sourceXml: recordTriggeredFlowXml(),
       })
+      expect(result.mutants.map(m => m.status)).toEqual(['Pending', 'Pending'])
+      expect(testBed.prepare).not.toHaveBeenCalled()
+      expect(testBed.restore).not.toHaveBeenCalled()
+    })
+  })
 
-      expect(report.totalMutants).toBe(1)
-      expect(mockPort.getLatestFlowVersion).toHaveBeenCalledWith(
-        'Account_Before'
+  describe('evaluating', () => {
+    it('Given the mutated XML, When evaluated, Then the test bed receives the original with only the edit applied', async () => {
+      // Act
+      await run()
+
+      // Assert
+      expect(testBed.evaluate).toHaveBeenCalledWith(
+        recordTriggeredFlowXml().replace(
+          '<recordTriggerType>Create</recordTriggerType>',
+          '<recordTriggerType>Update0</recordTriggerType>'
+        )
       )
-      expect(mockPort.deleteFlowVersion).toHaveBeenCalledWith('301d000000TEMP')
-
-      // Verify the flow was first deactivated to Draft
-      expect(deployedXmls[0]).toContain('<status>Draft</status>')
-      // Verify description was changed to trigger new version
-      expect(deployedXmls[1]).toContain('Original Description Mutating')
-
-      // Verify flowtest file was updated to version 7 during run, but rolled back to 1 at the end
-      const finalFlowTestContent = await fs.readFile(flowTestPath, 'utf-8')
-      expect(finalFlowTestContent).toContain(
-        '<flowVersionNumber>1</flowVersionNumber>'
-      )
-
-      // Verify original active flow XML was restored on disk
-      const finalFlowContent = await fs.readFile(tempFlowFile, 'utf-8')
-      expect(finalFlowContent).toContain('<status>Active</status>')
-
-      // Clean up flowtest dir
-      await fs.rm(flowTestsDir, { recursive: true, force: true })
     })
 
-    it('throws error when deactivation fails', async () => {
-      await fs.writeFile(tempFlowFile, ACTIVE_FLOW_XML, 'utf-8')
+    it.each<[FlowMutantVerdict, string, object]>([
+      [
+        { kind: 'executed', failingTests: ['Sets_Rating'] },
+        'Killed',
+        { killedBy: ['Sets_Rating'] },
+      ],
+      [{ kind: 'executed', failingTests: [] }, 'Survived', {}],
+      [
+        { kind: 'not-compilable', detail: 'bad' },
+        'CompileError',
+        { statusReason: 'bad' },
+      ],
+    ])(
+      'Given the verdict %j, When evaluated, Then the mutant is %s',
+      async (verdict, status, extra) => {
+        // Arrange
+        testBed.evaluate.mockResolvedValue(verdict)
 
-      const mockPort: FlowSalesforcePort = {
-        deployFlowXml: vi.fn().mockResolvedValue({
-          success: false,
-          errorMessage: 'Cannot deactivate locked flow',
-        }),
-        deployFiles: vi.fn(),
-        getLatestFlowVersion: vi.fn(),
-        runFlowTests: vi.fn(),
-        runApexTests: vi.fn(),
-      }
+        // Act
+        const result = await run()
 
-      const orchestrator = new FlowMutationOrchestrator(mockPort)
-      await expect(
-        orchestrator.run({
-          flowFilePath: tempFlowFile,
-          flowDeveloperName: 'Account_Before',
+        // Assert
+        expect(result.mutants[0]).toMatchObject({ status, ...extra })
+        expect(progress.update).toHaveBeenLastCalledWith(1, {
+          info: expect.stringContaining(
+            messages.getMessage(`info.mutantResult.${status}`)
+          ),
         })
-      ).rejects.toThrow(
-        'Failed to deactivate active Flow "Account_Before": Cannot deactivate locked flow'
-      )
-    })
-
-    it('handles active flow without description and throws if draft deployment fails', async () => {
-      const activeXmlNoDesc = ACTIVE_FLOW_XML.replace(
-        '<description>Original Description</description>',
-        ''
-      )
-      await fs.writeFile(tempFlowFile, activeXmlNoDesc, 'utf-8')
-
-      let deployCount = 0
-      const mockPort: FlowSalesforcePort = {
-        deployFlowXml: vi.fn().mockImplementation(async () => {
-          deployCount++
-          if (deployCount === 1) return { success: true }
-          return { success: false, errorMessage: 'Failed draft create' }
-        }),
-        deployFiles: vi.fn(),
-        getLatestFlowVersion: vi.fn(),
-        runFlowTests: vi.fn(),
-        runApexTests: vi.fn(),
       }
+    )
 
-      const orchestrator = new FlowMutationOrchestrator(mockPort)
-      await expect(
-        orchestrator.run({
-          flowFilePath: tempFlowFile,
-          flowDeveloperName: 'Account_Before',
-        })
-      ).rejects.toThrow(
-        'Failed to create draft Flow version for "Account_Before": Failed draft create'
-      )
-    })
+    it('Given the test transport fails on a mutant run, When evaluated, Then the mutant is not counted as Killed', async () => {
+      // Arrange — review proof
+      testBed.evaluate.mockRejectedValue(new Error('socket hang up'))
 
-    it('throws when deploying updated FlowTests fails', async () => {
-      await fs.writeFile(tempFlowFile, ACTIVE_FLOW_XML, 'utf-8')
+      // Act
+      const result = await run()
 
-      const flowTestsDir = path.resolve(
-        path.dirname(tempFlowFile),
-        '../flowtests'
-      )
-      await fs.mkdir(flowTestsDir, { recursive: true })
-      const flowTestPath = path.join(
-        flowTestsDir,
-        'Account_Before_Test.flowtest-meta.xml'
-      )
-      await fs.writeFile(
-        flowTestPath,
-        '<FlowTest><flowApiName>Account_Before</flowApiName><flowVersionNumber>1</flowVersionNumber></FlowTest>',
-        'utf-8'
-      )
-
-      const mockPort: FlowSalesforcePort = {
-        deployFlowXml: vi.fn().mockResolvedValue({ success: true }),
-        getLatestFlowVersion: vi
-          .fn()
-          .mockResolvedValue({ versionNumber: 2, flowId: '123' }),
-        deployFiles: vi.fn().mockResolvedValue({
-          success: false,
-          errorMessage: 'Cannot deploy test',
-        }),
-        runFlowTests: vi.fn(),
-        runApexTests: vi.fn(),
-      }
-
-      const orchestrator = new FlowMutationOrchestrator(mockPort)
-      await expect(
-        orchestrator.run({
-          flowFilePath: tempFlowFile,
-          flowDeveloperName: 'Account_Before',
-        })
-      ).rejects.toThrow(
-        'Failed to deploy updated FlowTests: Cannot deploy test'
-      )
-
-      await fs.rm(flowTestsDir, { recursive: true, force: true })
-    })
-
-    it('handles rollback errors when deployFiles fails or deleteFlowVersion throws', async () => {
-      await fs.writeFile(tempFlowFile, ACTIVE_FLOW_XML, 'utf-8')
-
-      const flowTestsDir = path.resolve(
-        path.dirname(tempFlowFile),
-        '../flowtests'
-      )
-      await fs.mkdir(flowTestsDir, { recursive: true })
-      const flowTestPath = path.join(
-        flowTestsDir,
-        'Account_Before_Test.flowtest-meta.xml'
-      )
-      await fs.writeFile(
-        flowTestPath,
-        '<FlowTest><flowApiName>Account_Before</flowApiName><flowVersionNumber>1</flowVersionNumber></FlowTest>',
-        'utf-8'
-      )
-
-      let deployFilesCount = 0
-      let rollbackFinishedFailed: boolean | undefined
-      const mockPort: FlowSalesforcePort = {
-        deployFlowXml: vi.fn().mockResolvedValue({ success: true }),
-        getLatestFlowVersion: vi
-          .fn()
-          .mockResolvedValue({ versionNumber: 2, flowId: '123' }),
-        deployFiles: vi.fn().mockImplementation(async () => {
-          deployFilesCount++
-          if (deployFilesCount === 1) return { success: true }
-          // Rollback deployFiles fails
-          return { success: false, errorMessage: 'Rollback deployFiles failed' }
-        }),
-        deleteFlowVersion: vi
-          .fn()
-          .mockRejectedValue(new Error('Delete flow failed')),
-        runFlowTests: vi
-          .fn()
-          .mockResolvedValue({ allPassed: true, failingMethods: [] }),
-      }
-
-      const orchestrator = new FlowMutationOrchestrator(mockPort)
-      const report = await orchestrator.run({
-        flowFilePath: tempFlowFile,
-        flowDeveloperName: 'Account_Before',
-        callbacks: {
-          onRollbackFinished: failed => {
-            rollbackFinishedFailed = failed
-          },
-        },
+      // Assert
+      expect(result.mutants[0]).toMatchObject({
+        status: 'RuntimeError',
+        statusReason: 'socket hang up',
       })
-
-      expect(report).toBeDefined()
-      expect(rollbackFinishedFailed).toBe(true)
-      await fs.rm(flowTestsDir, { recursive: true, force: true })
+      const score = calculateMutationScore(
+        result.mutants.map(m => m.status),
+        FLOW_SCORE_POLICY
+      )
+      expect(score).not.toBe(100)
+      expect(testBed.restore).toHaveBeenCalledTimes(1)
     })
 
-    it('handles unexpected error thrown in rollback catch block', async () => {
-      let rollbackThrowFailed: boolean | undefined
-      let callCount = 0
-      const mockPortThrow: FlowSalesforcePort = {
-        deployFlowXml: vi.fn().mockImplementation(async () => {
-          callCount++
-          if (callCount <= 2) return { success: true }
-          // Throw in rollback
-          throw new Error('Unexpected deploy error in rollback')
-        }),
-        runFlowTests: vi
-          .fn()
-          .mockResolvedValue({ allPassed: true, failingMethods: [] }),
-      }
+    it('Given a non-Error rejection on a mutant, When evaluated, Then its text becomes the reason', async () => {
+      // Arrange
+      testBed.evaluate.mockRejectedValue('down')
 
-      const orchestrator = new FlowMutationOrchestrator(mockPortThrow)
-      const reportThrow = await orchestrator.run({
-        flowFilePath: tempFlowFile,
-        flowDeveloperName: 'Account_Before',
-        callbacks: {
-          onRollbackFinished: failed => {
-            rollbackThrowFailed = failed
-          },
-        },
-      })
-      expect(reportThrow).toBeDefined()
-      expect(rollbackThrowFailed).toBe(true)
+      // Act
+      const result = await run()
+
+      // Assert
+      expect(result.mutants[0].statusReason).toBe('down')
     })
 
-    it('handles active flow in standard force-app structure with non-matching flowtest files and no matching tests', async () => {
-      const projDir = path.join(tempDir, 'standard-proj')
-      const flowsDir = path.join(
-        projDir,
-        'force-app',
-        'main',
-        'default',
-        'flows'
-      )
-      const flowtestsDir = path.join(
-        projDir,
-        'force-app',
-        'main',
-        'default',
-        'flowtests'
-      )
-      await fs.mkdir(flowsDir, { recursive: true })
-      await fs.mkdir(flowtestsDir, { recursive: true })
+    it('Given 2 killed and 1 survived, When scored, Then the score matches the Apex command (66.67, unrounded)', async () => {
+      // Arrange — review proof
+      testBed.evaluate
+        .mockResolvedValueOnce({ kind: 'executed', failingTests: ['t1'] })
+        .mockResolvedValueOnce({ kind: 'executed', failingTests: ['t1'] })
+        .mockResolvedValueOnce({ kind: 'executed', failingTests: [] })
 
-      const standardFlow = path.join(flowsDir, 'Account_Before.flow-meta.xml')
-      await fs.writeFile(standardFlow, ACTIVE_FLOW_XML, 'utf-8')
+      // Act
+      const result = await run([fixedMutator(3)])
 
-      // 1. Non-flowtest file
-      await fs.writeFile(
-        path.join(flowtestsDir, 'readme.txt'),
-        'ignore me',
-        'utf-8'
-      )
-      // 2. Flowtest pointing to different flow
-      await fs.writeFile(
-        path.join(flowtestsDir, 'Other_Flow.flowtest-meta.xml'),
-        '<FlowTest><flowApiName>Other_Flow</flowApiName><flowVersionNumber>1</flowVersionNumber></FlowTest>',
-        'utf-8'
-      )
-
-      const mockPort: FlowSalesforcePort = {
-        deployFlowXml: vi.fn().mockResolvedValue({ success: true }),
-        getLatestFlowVersion: vi
-          .fn()
-          .mockResolvedValue({ versionNumber: 2, flowId: '123' }),
-        runFlowTests: vi
-          .fn()
-          .mockResolvedValue({ allPassed: true, failingMethods: [] }),
-      }
-
-      const orchestrator = new FlowMutationOrchestrator(mockPort)
-      const report = await orchestrator.run({
-        flowFilePath: standardFlow,
-        flowDeveloperName: 'Account_Before',
-      })
-      expect(report).toBeDefined()
+      // Assert
+      expect(
+        calculateMutationScore(
+          result.mutants.map(m => m.status),
+          FLOW_SCORE_POLICY
+        )
+      ).toBeCloseTo(66.67, 1)
     })
 
-    it('handles when sibling flowtests path is a file and handles readdir error', async () => {
-      const projDir = path.join(tempDir, 'file-sibling-proj')
-      const flowsDir = path.join(projDir, 'pkg/flows')
-      await fs.mkdir(flowsDir, { recursive: true })
+    it.each([
+      new FlowVersionGuardError(
+        'Account_After',
+        { numbers: [1], active: 1 },
+        { numbers: [1, 2], active: 1 }
+      ),
+      new FlowTestPinError('Sets_Rating', [2]),
+    ])(
+      'Given a failed org safety check, When evaluating, Then the run aborts and the org is restored',
+      async error => {
+        // Arrange
+        testBed.evaluate.mockRejectedValue(error)
 
-      const standardFlow = path.join(flowsDir, 'Account_Before.flow-meta.xml')
-      await fs.writeFile(standardFlow, ACTIVE_FLOW_XML, 'utf-8')
-
-      // Sibling is a file, not a directory
-      const siblingFile = path.join(projDir, 'pkg/flowtests')
-      await fs.writeFile(siblingFile, 'just a file', 'utf-8')
-
-      const mockPort: FlowSalesforcePort = {
-        deployFlowXml: vi.fn().mockResolvedValue({ success: true }),
-        getLatestFlowVersion: vi
-          .fn()
-          .mockResolvedValue({ versionNumber: 2, flowId: '123' }),
-        runFlowTests: vi
-          .fn()
-          .mockResolvedValue({ allPassed: true, failingMethods: [] }),
+        // Act & Assert
+        await expect(run([fixedMutator(2)])).rejects.toBe(error)
+        expect(testBed.evaluate).toHaveBeenCalledTimes(1)
+        expect(testBed.restore).toHaveBeenCalledTimes(1)
+        expect(progress.stop).toHaveBeenCalled()
       }
+    )
 
-      const orchestrator = new FlowMutationOrchestrator(mockPort)
-      const report = await orchestrator.run({
-        flowFilePath: standardFlow,
-        flowDeveloperName: 'Account_Before',
+    it('Given a progress bar that cannot be torn down, When the run fails, Then the failure is reported and the restore still runs', async () => {
+      // Arrange
+      const outputSink = vi.fn()
+      testBed.evaluate.mockRejectedValue(new FlowTestPinError('t', [2]))
+      vi.mocked(progress.stop).mockImplementation(() => {
+        throw new Error('tty\u001bgone')
       })
-      expect(report).toBeDefined()
+      const sut = new FlowMutationOrchestrator(
+        progress,
+        spinner,
+        engine,
+        messages,
+        undefined,
+        new FlowMutantGenerator([fixedMutator(1)]),
+        outputSink
+      )
+
+      // Act
+      const result = sut.run({ flowApiName: 'Account_After', dryRun: false })
+
+      // Assert
+      await expect(result).rejects.toBeInstanceOf(FlowTestPinError)
+      expect(testBed.restore).toHaveBeenCalledTimes(1)
+      expect(outputSink).toHaveBeenCalledTimes(1)
+      expect(outputSink).toHaveBeenCalledWith(
+        'Warning: could not tear down the progress display. Cause: tty gone\n'
+      )
     })
 
-    it('handles when default flowtests path is a file', async () => {
-      const fileDefaultProj = path.join(tempDir, 'file-default-proj')
-      const deepFlows = path.join(fileDefaultProj, 'sub1', 'sub2', 'sub3')
-      await fs.mkdir(deepFlows, { recursive: true })
-      const deepFlowFile = path.join(deepFlows, 'Account_Before.flow-meta.xml')
-      await fs.writeFile(deepFlowFile, ACTIVE_FLOW_XML, 'utf-8')
-      const pRoot = path.resolve(deepFlows, '..', '..', '..')
-      const defDir = path.resolve(
-        pRoot,
-        'force-app',
-        'main',
-        'default',
-        'flowtests'
+    it('Given several mutants, When evaluated, Then progress reports each and the time estimate uses the baseline cost', async () => {
+      // Act
+      await run([fixedMutator(2)])
+
+      // Assert
+      expect(progress.start).toHaveBeenCalledWith(
+        2,
+        { info: 'Starting mutation testing' },
+        expect.anything()
       )
-      await fs.mkdir(path.dirname(defDir), { recursive: true })
-      await fs.writeFile(defDir, 'not a dir', 'utf-8')
-
-      const mockPort: FlowSalesforcePort = {
-        deployFlowXml: vi.fn().mockResolvedValue({ success: true }),
-        getLatestFlowVersion: vi
-          .fn()
-          .mockResolvedValue({ versionNumber: 2, flowId: '123' }),
-        runFlowTests: vi
-          .fn()
-          .mockResolvedValue({ allPassed: true, failingMethods: [] }),
-      }
-
-      const orchestrator = new FlowMutationOrchestrator(mockPort)
-      const rep = await orchestrator.run({
-        flowFilePath: deepFlowFile,
-        flowDeveloperName: 'Account_Before',
+      expect(spinner.start).toHaveBeenCalledWith(
+        'Estimated time: ~6s',
+        undefined,
+        { stdout: true }
+      )
+      expect(spinner.stop).toHaveBeenCalledWith(
+        'Deploy: ~1s/mutant | Test: ~2s/mutant | Mutants: 2'
+      )
+      expect(progress.finish).toHaveBeenCalledWith({
+        info: 'All mutations evaluated',
       })
-      expect(rep).toBeDefined()
-    })
-
-    it('finds FlowTests in default project flowtests dir when sibling dir does not exist', async () => {
-      const deepDir = path.join(tempDir, 'sub1', 'sub2', 'sub3', 'sub4')
-      await fs.mkdir(deepDir, { recursive: true })
-      const flowInDeep = path.join(deepDir, 'Account_Before.flow-meta.xml')
-      await fs.writeFile(flowInDeep, ACTIVE_FLOW_XML, 'utf-8')
-
-      // Create default project flowtests dir
-      const projectRoot = path.resolve(deepDir, '../../../..')
-      const defaultFlowTestsDir = path.resolve(
-        projectRoot,
-        'force-app/main/default/flowtests'
-      )
-      await fs.mkdir(defaultFlowTestsDir, { recursive: true })
-      const ftPath = path.join(
-        defaultFlowTestsDir,
-        'Account_Before_Default.flowtest-meta.xml'
-      )
-      await fs.writeFile(
-        ftPath,
-        '<FlowTest><flowApiName>Account_Before</flowApiName><flowVersionNumber>1</flowVersionNumber></FlowTest>',
-        'utf-8'
-      )
-
-      const mockPort: FlowSalesforcePort = {
-        deployFlowXml: vi.fn().mockResolvedValue({ success: true }),
-        getLatestFlowVersion: vi
-          .fn()
-          .mockResolvedValue({ versionNumber: 2, flowId: '123' }),
-        deployFiles: vi.fn().mockResolvedValue({ success: true }),
-        runFlowTests: vi
-          .fn()
-          .mockResolvedValue({ allPassed: true, failingMethods: [] }),
-      }
-
-      const orchestrator = new FlowMutationOrchestrator(mockPort)
-      const report = await orchestrator.run({
-        flowFilePath: flowInDeep,
-        flowDeveloperName: 'Account_Before',
-      })
-      expect(report).toBeDefined()
-
-      await fs.rm(path.resolve(projectRoot, 'force-app'), {
-        recursive: true,
-        force: true,
-      })
-    })
-
-    it('skips adding default flowtests dir if it is already in candidate dirs', async () => {
-      const forceAppDir = path.join(tempDir, 'force-app', 'main', 'default')
-      const flowsDir = path.join(forceAppDir, 'flows')
-      const flowtestsDir = path.join(forceAppDir, 'flowtests')
-      await fs.mkdir(flowsDir, { recursive: true })
-      await fs.mkdir(flowtestsDir, { recursive: true })
-
-      const flowPath = path.join(flowsDir, 'Account_Before.flow-meta.xml')
-      await fs.writeFile(flowPath, ACTIVE_FLOW_XML, 'utf-8')
-
-      const ftPath = path.join(
-        flowtestsDir,
-        'Account_Before_Test.flowtest-meta.xml'
-      )
-      await fs.writeFile(
-        ftPath,
-        '<FlowTest><flowApiName>Account_Before</flowApiName><flowVersionNumber>1</flowVersionNumber></FlowTest>',
-        'utf-8'
-      )
-
-      const mockPort: FlowSalesforcePort = {
-        deployFlowXml: vi.fn().mockResolvedValue({ success: true }),
-        getLatestFlowVersion: vi
-          .fn()
-          .mockResolvedValue({ versionNumber: 2, flowId: '123' }),
-        deployFiles: vi.fn().mockResolvedValue({ success: true }),
-        runFlowTests: vi
-          .fn()
-          .mockResolvedValue({ allPassed: true, failingMethods: [] }),
-      }
-
-      const orchestrator = new FlowMutationOrchestrator(mockPort)
-      const report = await orchestrator.run({
-        flowFilePath: flowPath,
-        flowDeveloperName: 'Account_Before',
-      })
-      expect(report).toBeDefined()
-    })
-
-    it('ignores sibling or default flowtests paths if they are files rather than directories', async () => {
-      const deepDir = path.join(tempDir, 'file-tests', 'sub2', 'sub3', 'sub4')
-      await fs.mkdir(deepDir, { recursive: true })
-      const flowInDeep = path.join(deepDir, 'Account_Before.flow-meta.xml')
-      await fs.writeFile(flowInDeep, ACTIVE_FLOW_XML, 'utf-8')
-
-      // Create sibling flowtests as a file
-      const siblingFile = path.resolve(deepDir, '..', 'flowtests')
-      await fs.writeFile(siblingFile, 'not-a-directory', 'utf-8')
-
-      // Create default flowtests as a file
-      const projectRoot = path.resolve(deepDir, '../../../..')
-      const defaultFlowTestsParent = path.resolve(
-        projectRoot,
-        'force-app/main/default'
-      )
-      await fs.mkdir(defaultFlowTestsParent, { recursive: true })
-      const defaultFlowTestsFile = path.resolve(
-        defaultFlowTestsParent,
-        'flowtests'
-      )
-      await fs.writeFile(defaultFlowTestsFile, 'also-not-a-directory', 'utf-8')
-
-      const mockPort: FlowSalesforcePort = {
-        deployFlowXml: vi.fn().mockResolvedValue({ success: true }),
-        getLatestFlowVersion: vi
-          .fn()
-          .mockResolvedValue({ versionNumber: 2, flowId: '123' }),
-        deployFiles: vi.fn().mockResolvedValue({ success: true }),
-        runFlowTests: vi
-          .fn()
-          .mockResolvedValue({ allPassed: true, failingMethods: [] }),
-      }
-
-      const orchestrator = new FlowMutationOrchestrator(mockPort)
-      const report = await orchestrator.run({
-        flowFilePath: flowInDeep,
-        flowDeveloperName: 'Account_Before',
-      })
-      expect(report).toBeDefined()
     })
   })
 
-  describe('Apex Testing Mode', () => {
-    it('executes runApexTests when apexTests are provided and marks mutant as killed when test fails', async () => {
-      let runIndex = 0
-      const mockPort: FlowSalesforcePort = {
-        deployFlowXml: vi.fn().mockResolvedValue({ success: true }),
-        deployFiles: vi.fn(),
-        getLatestFlowVersion: vi.fn(),
-        runFlowTests: vi.fn(),
-        runApexTests: vi
-          .fn()
-          .mockImplementation(async (testClasses: string[]) => {
-            runIndex++
-            if (runIndex === 1) {
-              // Baseline test passes
-              return { allPassed: true, failingMethods: [] }
-            }
-            // Mutant test fails -> mutant killed!
-            return {
-              allPassed: false,
-              failingMethods: [`${testClasses[0]}.testAccountDiscount`],
-            }
-          }),
-      }
+  describe('baseline', () => {
+    it('Given failing tests on the original flow, When run, Then it fails naming them and the org is restored', async () => {
+      // Arrange
+      testBed.prepare.mockResolvedValue(
+        baseline({ failingTests: ['Sets_Rating'] })
+      )
 
-      const orchestrator = new FlowMutationOrchestrator(mockPort)
-      const report = await orchestrator.run({
-        flowFilePath: tempFlowFile,
-        flowDeveloperName: 'Account_Before',
-        apexTests: ['DiscountCalculatorTest'],
-      })
-
-      expect(report.totalMutants).toBe(1)
-      expect(report.killed).toBe(1)
-      expect(report.survived).toBe(0)
-      expect(report.mutationScore).toBe(100)
-      expect(mockPort.runApexTests).toHaveBeenCalledWith([
-        'DiscountCalculatorTest',
-      ])
-      expect(mockPort.runFlowTests).not.toHaveBeenCalled()
+      // Act & Assert
+      await expect(run()).rejects.toThrow(
+        "The FlowTests of Flow 'Account_After' fail against the original Flow: Sets_Rating."
+      )
+      expect(testBed.evaluate).not.toHaveBeenCalled()
+      expect(testBed.restore).toHaveBeenCalledTimes(1)
     })
 
-    it('handles mutant label formatting and compile error status in evaluateMutants', async () => {
-      const customMutator: FlowMutator = {
-        name: 'CustomTestMutator',
-        mutate: () => [
-          {
-            mutatorName: 'CustomTestMutator',
-            elementName: 'Element1',
-            description: '',
-            originalSnippet: 'orig1',
-            mutatedSnippet: '',
-            mutatedXml: '<Flow1/>',
-            // lineNumber is undefined to test lineText fallback
-          },
-          {
-            mutatorName: 'CustomTestMutator',
-            elementName: 'Element2',
-            description:
-              'A very long description that exceeds forty characters in total length',
-            originalSnippet: 'orig2',
-            mutatedSnippet: '',
-            mutatedXml: '<Flow2/>',
-            lineNumber: 10,
-          },
-          {
-            mutatorName: 'CustomTestMutator',
-            elementName: 'Element3',
-            description: 'Short desc',
-            originalSnippet: 'orig3',
-            mutatedSnippet: '<shortSnippet/>',
-            mutatedXml: '<Flow3/>',
-            lineNumber: 20,
-          },
+    it('Given prepare fails part-way, When run, Then the org is still restored and the prepare failure surfaces', async () => {
+      // Arrange
+      const failure = new Error('deploy refused')
+      testBed.prepare.mockRejectedValue(failure)
+
+      // Act & Assert
+      await expect(run()).rejects.toBe(failure)
+      expect(testBed.restore).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('restore', () => {
+    it('Given the rollback deploy fails, When run, Then the run rejects', async () => {
+      // Arrange — review proof
+      testBed.restore.mockRejectedValue(new Error('org down'))
+
+      // Act & Assert
+      await expect(run()).rejects.toThrow(
+        "Restoring Flow 'Account_After' failed: org down. Check the Flow's versions and FlowTests on the target org and restore them manually."
+      )
+      expect(spinner.stop).toHaveBeenCalledWith('Restore FAILED')
+    })
+
+    it('Given the run and the restore both fail, When run, Then the run failure leads and the restore failure is appended', async () => {
+      // Arrange
+      const runFailure = new FlowVersionGuardError(
+        'Account_After',
+        { numbers: [1], active: 1 },
+        { numbers: [1, 2], active: 1 }
+      )
+      testBed.evaluate.mockRejectedValue(runFailure)
+      testBed.restore.mockRejectedValue('still down')
+
+      // Act
+      const error = await run().catch((e: Error) => e)
+
+      // Assert
+      expect(error).toBeInstanceOf(Error)
+      expect((error as Error).message).toBe(
+        `${runFailure.message}\nRestoring Flow 'Account_After' failed: still down. Check the Flow's versions and FlowTests on the target org and restore them manually.`
+      )
+      expect((error as Error).cause).toBe(runFailure)
+    })
+
+    it('Given a non-Error run failure and a failed restore, When run, Then both texts are kept', async () => {
+      // Arrange
+      testBed.prepare.mockRejectedValue('boom')
+      testBed.restore.mockRejectedValue(new Error('down'))
+
+      // Act & Assert
+      await expect(run()).rejects.toThrow(/^boom\nRestoring Flow/)
+    })
+
+    it('Given a successful run, When it ends, Then the restore runs once after every mutant', async () => {
+      // Act
+      await run([fixedMutator(3)])
+
+      // Assert
+      expect(testBed.restore).toHaveBeenCalledTimes(1)
+      expect(testBed.restore.mock.invocationCallOrder[0]).toBeGreaterThan(
+        testBed.evaluate.mock.invocationCallOrder[2]
+      )
+      expect(spinner.start).toHaveBeenCalledWith(
+        'Restoring Flow "Account_After" and its FlowTests to their original state',
+        undefined,
+        { stdout: true }
+      )
+    })
+  })
+
+  describe('what the user sees', () => {
+    it('Given a full run, When it completes, Then every phase is announced on stdout with the flow name', async () => {
+      // Arrange
+      readFlow.mockResolvedValue({
+        ...source(),
+        tests: [
+          { fullName: 'A', xml: '' },
+          { fullName: 'B', xml: '' },
         ],
-      }
-
-      let deployCount = 0
-      const progressUpdates: string[] = []
-      let estimatedDeployTime: number | undefined
-      const mockPort: FlowSalesforcePort = {
-        deployFlowXml: vi.fn().mockImplementation(async () => {
-          deployCount++
-          if (deployCount === 1) {
-            // baseline deploy succeeds
-            return { success: true }
-          }
-          if (deployCount === 2) {
-            // first mutant fails to deploy -> CompileError
-            return { success: false, errorMessage: 'XML error' }
-          }
-          return { success: true }
-        }),
-        runFlowTests: vi
-          .fn()
-          .mockResolvedValueOnce({
-            allPassed: true,
-            failingMethods: [],
-            testsRan: 1,
-          })
-          .mockResolvedValueOnce({
-            allPassed: false,
-            failingMethods: ['FailTest'],
-          })
-          .mockResolvedValueOnce({ allPassed: true, failingMethods: [] }),
-      }
-
-      const orchestrator = new FlowMutationOrchestrator(mockPort, [
-        customMutator,
-      ])
-      const report = await orchestrator.run({
-        flowFilePath: tempFlowFile,
-        flowDeveloperName: 'Account_Before',
-        callbacks: {
-          onTimeEstimate: deployTime => {
-            estimatedDeployTime = deployTime
-          },
-          onProgressUpdate: (_curr, info) => {
-            progressUpdates.push(info)
-          },
-        },
       })
 
-      expect(report.totalMutants).toBe(3)
-      expect(report.compileErrors).toBe(1)
-      expect(report.killed).toBe(1)
-      expect(report.survived).toBe(1)
-      expect(estimatedDeployTime).toBeDefined()
-      expect(progressUpdates.some(p => p.includes('compile error'))).toBe(true)
-      expect(progressUpdates.some(p => p.includes('mutant killed'))).toBe(true)
-      expect(progressUpdates.some(p => p.includes('zombie'))).toBe(true)
+      // Act
+      await run()
+
+      // Assert
+      const started = vi.mocked(spinner.start).mock.calls
+      expect(started).toEqual(
+        expect.arrayContaining([
+          [
+            'Reading Flow "Account_After" and its FlowTests from the org',
+            undefined,
+            { stdout: true },
+          ],
+          [
+            'Generating mutants for Flow "Account_After"',
+            undefined,
+            { stdout: true },
+          ],
+          [
+            'Preparing Flow "Account_After" and its FlowTests for the run',
+            undefined,
+            { stdout: true },
+          ],
+          [
+            'Running 2 FlowTest(s) against the original Flow',
+            undefined,
+            { stdout: true },
+          ],
+        ])
+      )
+      expect(spinner.stop).toHaveBeenCalledWith('FlowTests: A, B')
+      expect(spinner.stop).toHaveBeenCalledWith('1 mutations generated')
+      expect(spinner.stop).toHaveBeenCalledWith('Done')
+      expect(spinner.stop).toHaveBeenCalledWith('Original tests passed')
+      expect(progress.start).toHaveBeenCalledWith(
+        1,
+        { info: 'Starting mutation testing' },
+        {
+          title: 'MUTATION TESTING PROGRESS',
+          format: '%s | {bar} | {value}/{total} {info}',
+        }
+      )
+      expect(progress.update).toHaveBeenNthCalledWith(1, 0, {
+        info: 'Evaluating mutant: m0',
+      })
+      expect(progress.update).toHaveBeenNthCalledWith(2, 1, {
+        info: 'Remaining: ~0s | Mutation result: mutant killed',
+      })
+    })
+
+    it('Given two failing baseline tests, When run, Then both are named', async () => {
+      // Arrange
+      testBed.prepare.mockResolvedValue(baseline({ failingTests: ['A', 'B'] }))
+
+      // Act & Assert
+      await expect(run()).rejects.toThrow('original Flow: A, B.')
+      expect(spinner.stop).toHaveBeenCalledWith('Original tests failed')
+    })
+
+    it('Given Pause elements, When run, Then the message names the flow', async () => {
+      // Arrange
+      readFlow.mockResolvedValue(
+        source(
+          flowXml(
+            '    <processType>AutoLaunchedFlow</processType>\n    <waits><name>W</name></waits>'
+          )
+        )
+      )
+
+      // Act & Assert
+      await expect(run()).rejects.toThrow(
+        "Flow 'Account_After' contains Pause elements. Flows with Pause elements cannot be tested with FlowTests."
+      )
+    })
+
+    it('Given a range that parses but is not a line range, When run, Then the shared validation rejects it', async () => {
+      // Act & Assert
+      await expect(run(undefined, { lines: ['7.5'] })).rejects.toThrow(
+        "Invalid line range '7.5'"
+      )
+    })
+
+    it('Given a failed restore, When run, Then the restore failure is kept as the cause', async () => {
+      // Arrange
+      const failure = new Error('org down')
+      testBed.restore.mockRejectedValue(failure)
+
+      // Act
+      const error = (await run().catch((e: unknown) => e)) as Error
+
+      // Assert
+      expect(error.cause).toBe(failure)
     })
   })
 })

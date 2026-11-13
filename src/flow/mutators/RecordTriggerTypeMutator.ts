@@ -1,52 +1,29 @@
-import type { FlowMutant, FlowMutator } from '../types.js'
-import { FlowXmlDom } from '../xml/FlowXmlDom.js'
+import type { FlowMutation, FlowMutator } from '../types.js'
+import type { FlowXmlDom } from '../xml/FlowXmlDom.js'
+import { textMutation } from './textMutation.js'
 
-const TRIGGER_REPLACEMENTS: Record<string, string[]> = {
-  Create: ['Update'],
-  Update: ['Create'],
-  CreateAndUpdate: ['Create', 'Update'],
-}
+const TRIGGER_REPLACEMENTS = new Map<string, string[]>([
+  ['Create', ['Update']],
+  ['Update', ['Create']],
+  ['CreateAndUpdate', ['Create', 'Update']],
+])
 
 export class RecordTriggerTypeMutator implements FlowMutator {
   public readonly name = 'RecordTriggerTypeMutator'
 
-  public mutate(xmlContent: string): Omit<FlowMutant, 'id' | 'status'>[] {
-    const results: Omit<FlowMutant, 'id' | 'status'>[] = []
-    const dom = FlowXmlDom.parse(xmlContent)
-    const triggerNodes = dom.queryNodes('//sf:start/sf:recordTriggerType')
-
-    if (triggerNodes.length === 0) {
-      return results
+  public mutate(dom: FlowXmlDom): FlowMutation[] {
+    const start = dom.child(dom.root, 'start')
+    const trigger = start && dom.child(start, 'recordTriggerType')
+    const original = dom.text(trigger)
+    if (!trigger || !original) {
+      return []
     }
-
-    const originalValue = triggerNodes[0].textContent?.trim()
-    if (!originalValue) {
-      return results
-    }
-    const replacements = TRIGGER_REPLACEMENTS[originalValue]
-    if (!replacements) {
-      return results
-    }
-
-    for (const replacement of replacements) {
-      const clonedDom = FlowXmlDom.parse(xmlContent)
-      const targetNode = clonedDom.queryNodes(
-        '//sf:start/sf:recordTriggerType'
-      )[0]
-      targetNode.textContent = replacement
-
-      const line = (targetNode as unknown as { lineNumber?: number }).lineNumber
-      results.push({
+    return (TRIGGER_REPLACEMENTS.get(original) ?? []).map(replacement =>
+      textMutation(dom, trigger, replacement, {
         mutatorName: this.name,
         elementName: '$Start',
-        lineNumber: line,
-        description: `Changed recordTriggerType from '${originalValue}' to '${replacement}'`,
-        originalSnippet: `<recordTriggerType>${originalValue}</recordTriggerType>`,
-        mutatedSnippet: `<recordTriggerType>${replacement}</recordTriggerType>`,
-        mutatedXml: clonedDom.serialize(),
+        description: `Changed recordTriggerType from '${original}' to '${replacement}'`,
       })
-    }
-
-    return results
+    )
   }
 }

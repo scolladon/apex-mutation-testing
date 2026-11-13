@@ -15,6 +15,7 @@ export default {
   // the NUT suite covers end to end rather than by mutant.
   mutate: [
     'src/adapter/**/*.ts',
+    'src/flow/**/*.ts',
     'src/mutator/**/*.ts',
     'src/port/**/*.ts',
     'src/reporter/**/*.ts',

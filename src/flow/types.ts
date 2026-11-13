@@ -1,85 +1,40 @@
-export type FlowMutantStatus =
+import type { FlowXmlDom, SourcePosition, XmlEdit } from './xml/FlowXmlDom.js'
+
+type FlowMutantStatus =
   | 'Pending'
   | 'Killed'
   | 'Survived'
   | 'CompileError'
+  | 'RuntimeError'
 
-export interface FlowMutant {
-  id: string
+// What a mutator produces: what it changes and why, as edits against the
+// original XML — never a copy of the mutated document, which is only built,
+// from these edits, when the mutant is deployed. edits is never empty; the
+// first edit is the one the report points at.
+export interface FlowMutation {
   mutatorName: string
   elementName: string
   description: string
-  originalSnippet: string
-  mutatedSnippet: string
-  mutatedXml: string
-  status: FlowMutantStatus
-  lineNumber?: number
-  killedBy?: string[]
+  edits: XmlEdit[]
 }
 
+// Mutators only read the document: one parse serves every mutator.
 export interface FlowMutator {
   readonly name: string
-  mutate(xmlContent: string): Omit<FlowMutant, 'id' | 'status'>[]
+  mutate(dom: FlowXmlDom): FlowMutation[]
 }
 
-export interface FlowDeployResult {
-  success: boolean
-  errorMessage?: string
+export interface FlowMutant extends FlowMutation {
+  id: string
+  status: FlowMutantStatus
+  statusReason?: string
+  killedBy?: string[]
+  location: { start: SourcePosition; end: SourcePosition }
+  replacement: string
 }
 
-export interface FlowTestRunResult {
-  allPassed: boolean
-  failingMethods: string[]
-  testsRan?: number
-}
-
-export interface FlowSalesforcePort {
-  deployFlowXml(
-    flowFilePath: string,
-    xmlContent: string
-  ): Promise<FlowDeployResult>
-  deployFiles(filePaths: string[]): Promise<FlowDeployResult>
-  runFlowTests(
-    flowName: string,
-    testNames?: string[]
-  ): Promise<FlowTestRunResult>
-  runApexTests(testClasses: string[]): Promise<FlowTestRunResult>
-  getLatestFlowVersion(
-    flowApiName: string
-  ): Promise<{ versionNumber: number; flowId?: string }>
-  deleteFlowVersion?(flowId: string): Promise<boolean>
-  retrieveFlow?(flowName: string, outputDir: string): Promise<string>
-}
-
-export interface FlowOrchestratorCallbacks {
-  onValidating?: () => void
-  onValidated?: () => void
-  onBaselineDeploying?: () => void
-  onBaselineDeployed?: () => void
-  onBaselineTesting?: () => void
-  onBaselineTested?: (resultMsg: string) => void
-  onMutantsGenerating?: () => void
-  onMutantsGenerated?: (count: number) => void
-  onTimeEstimate?: (
-    deployTime: number,
-    testTime: number,
-    mutationCount: number,
-    groupCount: number
-  ) => void
-  onProgressStart?: (total: number) => void
-  onProgressUpdate?: (current: number, info: string) => void
-  onProgressFinish?: (info: string) => void
-  onRollbackStarting?: () => void
-  onRollbackFinished?: (failed?: boolean) => void
-}
-
-export interface FlowMutationReport {
-  flowFilePath: string
-  totalMutants: number
-  killed: number
-  survived: number
-  compileErrors: number
-  mutationScore: number
+export interface FlowMutationResult {
+  flowApiName: string
+  sourceXml: string
   mutants: FlowMutant[]
-  originalXml?: string
 }

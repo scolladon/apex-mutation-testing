@@ -1,138 +1,136 @@
-import { describe, expect, it } from 'vitest'
 import { FlowValidator } from '../../../src/flow/FlowValidator.js'
+import { FlowXmlDom, SF_NAMESPACE } from '../../../src/flow/xml/FlowXmlDom.js'
+import { flowXml, recordTriggeredFlowXml } from '../../utils/flowFixtures.js'
 
 describe('FlowValidator', () => {
-  it('accepts a valid Record-Triggered Flow', () => {
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
-    <apiVersion>67.0</apiVersion>
-    <processType>AutoLaunchedFlow</processType>
-    <start>
-        <object>Account</object>
-        <recordTriggerType>Create</recordTriggerType>
-        <triggerType>RecordAfterSave</triggerType>
-    </start>
-    <status>Active</status>
-</Flow>`
+  const sut = new FlowValidator()
 
-    const result = FlowValidator.validate(xml)
+  it('Given a record-triggered flow, When validated, Then it is valid and exposes the parsed document', () => {
+    // Act
+    const result = sut.validate(recordTriggeredFlowXml())
+
+    // Assert
     expect(result.isValid).toBe(true)
-    expect(result.isRecordTrigger).toBe(true)
-    expect(result.isAutolaunched).toBe(true)
-    expect(result.errorMessage).toBeUndefined()
+    expect(result.isValid && result.dom.isRoot('Flow')).toBe(true)
   })
 
-  it('accepts a valid Autolaunched Flow without triggers', () => {
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
-    <apiVersion>67.0</apiVersion>
-    <processType>AutoLaunchedFlow</processType>
-    <status>Active</status>
-</Flow>`
+  it('Given an autolaunched flow without a record trigger, When validated, Then it is valid', () => {
+    // Act
+    const result = sut.validate(
+      flowXml('    <processType>AutoLaunchedFlow</processType>')
+    )
 
-    const result = FlowValidator.validate(xml)
+    // Assert
     expect(result.isValid).toBe(true)
-    expect(result.isAutolaunched).toBe(true)
-    expect(result.isRecordTrigger).toBe(false)
   })
 
-  it('rejects invalid XML', () => {
-    const xml = `<NotAClosedTag>`
-    const result = FlowValidator.validate(xml)
-    expect(result.isValid).toBe(false)
-    expect(result.errorMessage).toContain('Invalid XML format')
-  })
+  it('Given a record-triggered flow known only by its trigger type, When validated, Then it is valid', () => {
+    // Act
+    const result = sut.validate(
+      flowXml(
+        '    <processType>Workflow</processType>\n    <start>\n        <triggerType>RecordBeforeSave</triggerType>\n    </start>'
+      )
+    )
 
-  it('accepts a Record-Triggered Flow with triggerType starting with Record', () => {
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
-    <apiVersion>67.0</apiVersion>
-    <processType>AutoLaunchedFlow</processType>
-    <start>
-        <object>Account</object>
-        <triggerType>RecordBeforeSave</triggerType>
-    </start>
-    <status>Active</status>
-</Flow>`
-
-    const result = FlowValidator.validate(xml)
+    // Assert
     expect(result.isValid).toBe(true)
-    expect(result.isRecordTrigger).toBe(true)
   })
 
-  it('rejects XML without <Flow> root element', () => {
-    const xml = `<OtherElement xmlns="http://soap.sforce.com/2006/04/metadata"></OtherElement>`
-    const result = FlowValidator.validate(xml)
-    expect(result.isValid).toBe(false)
-    expect(result.errorMessage).toContain('Root element must be <Flow>')
+  it('Given a record-triggered flow known only by its record trigger type, When validated, Then it is valid', () => {
+    // Act
+    const result = sut.validate(
+      flowXml(
+        '    <processType>Workflow</processType>\n    <start>\n        <recordTriggerType>Create</recordTriggerType>\n    </start>'
+      )
+    )
+
+    // Assert
+    expect(result.isValid).toBe(true)
   })
 
-  it('rejects unsupported processType like Screen Flow', () => {
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
-    <apiVersion>67.0</apiVersion>
-    <processType>Flow</processType>
-    <status>Active</status>
-</Flow>`
+  it('Given malformed XML, When validated, Then it is rejected as invalid XML with the parser detail', () => {
+    // Act
+    const result = sut.validate('<Flow><a></Flow>')
 
-    const result = FlowValidator.validate(xml)
-    expect(result.isValid).toBe(false)
-    expect(result.errorMessage).toContain(
-      "Unsupported processType 'Flow'. Only Record-Triggered Flows and Autolaunched Flows can be tested"
+    // Assert
+    expect(result).toMatchObject({ isValid: false, reason: 'invalidXml' })
+    expect(!result.isValid && 'detail' in result && result.detail).toMatch(
+      /XML parsing failed/
     )
   })
 
-  it('rejects Flow containing Pause elements (<waits>)', () => {
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
-    <apiVersion>67.0</apiVersion>
-    <processType>AutoLaunchedFlow</processType>
-    <waits>
-        <name>Wait_For_Approval</name>
-        <label>Wait For Approval</label>
-    </waits>
-    <status>Active</status>
-</Flow>`
+  it('Given a parser failure that is not an Error, When validated, Then its text is kept as the detail', () => {
+    // Arrange
+    const throwing = new FlowValidator()
+    const parse = vi.spyOn(FlowXmlDom, 'parse').mockImplementation(() => {
+      throw 'boom'
+    })
 
-    const result = FlowValidator.validate(xml)
-    expect(result.isValid).toBe(false)
-    expect(result.errorMessage).toContain(
-      'Flow contains Pause elements (<waits>)'
-    )
+    // Act
+    const result = throwing.validate('<x/>')
+
+    // Assert
+    expect(result).toEqual({
+      isValid: false,
+      reason: 'invalidXml',
+      detail: 'boom',
+    })
+    parse.mockRestore()
   })
 
-  it('handles Flow without <processType> element', () => {
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
-    <apiVersion>67.0</apiVersion>
-    <start>
-        <object>Account</object>
-        <recordTriggerType>Create</recordTriggerType>
-    </start>
-    <status>Active</status>
-</Flow>`
+  it('Given another root element, When validated, Then it is rejected as not a Flow', () => {
+    // Act
+    const result = sut.validate(`<FlowTest xmlns="${SF_NAMESPACE}"/>`)
 
-    const result = FlowValidator.validate(xml)
-    expect(result.isValid).toBe(true)
-    expect(result.processType).toBe('')
-    expect(result.isRecordTrigger).toBe(true)
+    // Assert
+    expect(result).toEqual({ isValid: false, reason: 'notAFlow' })
   })
 
-  it('rejects Flow containing Screen elements (<screens>)', () => {
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
-    <apiVersion>67.0</apiVersion>
-    <processType>AutoLaunchedFlow</processType>
-    <screens>
-        <name>User_Input_Screen</name>
-    </screens>
-    <status>Active</status>
-</Flow>`
+  it('Given a screen flow process type with no record trigger, When validated, Then it is rejected with the process type', () => {
+    // Act
+    const result = sut.validate(flowXml('    <processType>Flow</processType>'))
 
-    const result = FlowValidator.validate(xml)
-    expect(result.isValid).toBe(false)
-    expect(result.errorMessage).toContain(
-      'Flow contains Screen elements (<screens>)'
+    // Assert
+    expect(result).toEqual({
+      isValid: false,
+      reason: 'unsupportedProcessType',
+      processType: 'Flow',
+    })
+  })
+
+  it('Given no process type and a start without trigger, When validated, Then it is rejected with an empty process type', () => {
+    // Act
+    const result = sut.validate(flowXml('    <start>\n    </start>'))
+
+    // Assert
+    expect(result).toEqual({
+      isValid: false,
+      reason: 'unsupportedProcessType',
+      processType: '',
+    })
+  })
+
+  it('Given Pause elements, When validated, Then it is rejected', () => {
+    // Act
+    const result = sut.validate(
+      flowXml(
+        '    <processType>AutoLaunchedFlow</processType>\n    <waits><name>W</name></waits>'
+      )
     )
+
+    // Assert
+    expect(result).toEqual({ isValid: false, reason: 'hasPauseElements' })
+  })
+
+  it('Given Screen elements, When validated, Then it is rejected', () => {
+    // Act
+    const result = sut.validate(
+      flowXml(
+        '    <processType>AutoLaunchedFlow</processType>\n    <screens><name>S</name></screens>'
+      )
+    )
+
+    // Assert
+    expect(result).toEqual({ isValid: false, reason: 'hasScreenElements' })
   })
 })

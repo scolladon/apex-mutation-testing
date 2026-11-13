@@ -1,101 +1,71 @@
-import type { FlowMutant, FlowMutator } from '../types.js'
-import { FlowXmlDom } from '../xml/FlowXmlDom.js'
+import type { FlowMutation, FlowMutator } from '../types.js'
+import type { FlowXmlDom } from '../xml/FlowXmlDom.js'
+import { textMutation } from './textMutation.js'
 
+const OPERATOR_SWAPS: ReadonlyArray<readonly [string, string]> = [
+  ['&&', '||'],
+  ['||', '&&'],
+  ['==', '!='],
+  ['!=', '=='],
+]
+
+// Each occurrence of every pattern becomes its own mutant: the expression is
+// rebuilt once per occurrence — a string the size of one formula, never a
+// copy of the whole document.
 export class FormulaExpressionMutator implements FlowMutator {
   public readonly name = 'FormulaExpressionMutator'
 
-  public mutate(xmlContent: string): Omit<FlowMutant, 'id' | 'status'>[] {
-    const results: Omit<FlowMutant, 'id' | 'status'>[] = []
-    const baseDom = FlowXmlDom.parse(xmlContent)
-    const formulaNodes = baseDom.queryNodes('//sf:formulas')
+  public mutate(dom: FlowXmlDom): FlowMutation[] {
+    return dom.elements('formulas').flatMap((formula, index) => {
+      const formulaName = dom.childText(formula, 'name') ?? `Formula_${index}`
+      const expression = dom.child(formula, 'expression')
+      const text = dom.text(expression)
+      if (!expression || !text) return []
 
-    formulaNodes.forEach((formulaNode, formulaIndex) => {
-      const formulaName =
-        baseDom.getText('sf:name', formulaNode) ?? `Formula_${formulaIndex}`
-      const exprText = baseDom.getText('sf:expression', formulaNode)
+      const replaceAt = (
+        at: number,
+        length: number,
+        replacement: string,
+        description: string
+      ): FlowMutation =>
+        textMutation(
+          dom,
+          expression,
+          text.slice(0, at) + replacement + text.slice(at + length),
+          { mutatorName: this.name, elementName: formulaName, description }
+        )
 
-      if (!exprText) return
-
-      // 1. Mutate non-empty string literals in single quotes: 'High' -> "''"
-      const literalRegex = /'([^']+)'/g
-      let match = literalRegex.exec(exprText)
-
-      while (match !== null) {
-        const fullMatch = match[0]
-        const matchIndex = match.index
-        const mutatedExpr =
-          exprText.slice(0, matchIndex) +
-          "''" +
-          exprText.slice(matchIndex + fullMatch.length)
-
-        const clonedDom = FlowXmlDom.parse(xmlContent)
-        const targetFormula =
-          clonedDom.queryNodes('//sf:formulas')[formulaIndex]
-        const targetExprNode = clonedDom.queryNodes(
-          'sf:expression',
-          targetFormula
-        )[0]
-        targetExprNode.textContent = mutatedExpr
-
-        const line = (targetExprNode as unknown as { lineNumber?: number })
-          .lineNumber
-
-        results.push({
-          mutatorName: this.name,
-          elementName: formulaName,
-          lineNumber: line,
-          description: `Replaced string literal ${fullMatch} with '' in formula '${formulaName}'`,
-          originalSnippet: fullMatch,
-          mutatedSnippet: "''",
-          mutatedXml: clonedDom.serialize(),
-        })
-
-        match = literalRegex.exec(exprText)
-      }
-
-      // 2. Mutate binary comparison/logical operators (&& <-> ||, == <-> !=)
-      const operatorPairs: Array<[string, string]> = [
-        ['&&', '||'],
-        ['||', '&&'],
-        ['==', '!='],
-        ['!=', '=='],
-      ]
-
-      for (const [opFrom, opTo] of operatorPairs) {
-        let opIndex = exprText.indexOf(opFrom)
-        while (opIndex !== -1) {
-          const mutatedExpr =
-            exprText.slice(0, opIndex) +
-            opTo +
-            exprText.slice(opIndex + opFrom.length)
-
-          const clonedDom = FlowXmlDom.parse(xmlContent)
-          const targetFormula =
-            clonedDom.queryNodes('//sf:formulas')[formulaIndex]
-          const targetExprNode = clonedDom.queryNodes(
-            'sf:expression',
-            targetFormula
-          )[0]
-          targetExprNode.textContent = mutatedExpr
-
-          const line = (targetExprNode as unknown as { lineNumber?: number })
-            .lineNumber
-
-          results.push({
-            mutatorName: this.name,
-            elementName: formulaName,
-            lineNumber: line,
-            description: `Replaced operator '${opFrom}' with '${opTo}' in formula '${formulaName}'`,
-            originalSnippet: opFrom,
-            mutatedSnippet: opTo,
-            mutatedXml: clonedDom.serialize(),
-          })
-
-          opIndex = exprText.indexOf(opFrom, opIndex + opFrom.length)
-        }
-      }
+      const literals = Array.from(text.matchAll(/'([^']+)'/g), match =>
+        replaceAt(
+          match.index,
+          match[0].length,
+          "''",
+          `Replaced string literal ${match[0]} with '' in formula '${formulaName}'`
+        )
+      )
+      const operators = OPERATOR_SWAPS.flatMap(([from, to]) =>
+        occurrencesOf(text, from).map(at =>
+          replaceAt(
+            at,
+            from.length,
+            to,
+            `Replaced operator '${from}' with '${to}' in formula '${formulaName}'`
+          )
+        )
+      )
+      return [...literals, ...operators]
     })
-
-    return results
   }
+}
+
+const occurrencesOf = (text: string, token: string): number[] => {
+  const found: number[] = []
+  for (
+    let at = text.indexOf(token);
+    at !== -1;
+    at = text.indexOf(token, at + token.length)
+  ) {
+    found.push(at)
+  }
+  return found
 }

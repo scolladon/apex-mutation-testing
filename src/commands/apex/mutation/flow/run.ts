@@ -1,16 +1,36 @@
-import * as fs from 'node:fs/promises'
-import { Messages, SfError } from '@salesforce/core'
+import { Messages } from '@salesforce/core'
 import { Flags, SfCommand } from '@salesforce/sf-plugins-core'
-import { FlowSalesforceAdapter } from '../../../../flow/adapters/FlowSalesforceAdapter.js'
+import { createOrgFlowEngine } from '../../../../adapter/org/orgEngine.js'
 import { FlowMutationOrchestrator } from '../../../../flow/FlowMutationOrchestrator.js'
-import { FlowResolver } from '../../../../flow/FlowResolver.js'
-import { FlowHTMLReporter } from '../../../../flow/reporter/FlowHTMLReporter.js'
-import type {
-  FlowMutationReport,
-  FlowOrchestratorCallbacks,
-  FlowSalesforcePort,
-} from '../../../../flow/types.js'
-import { formatDuration } from '../../../../service/timeUtils.js'
+import type { FlowMutationResult } from '../../../../flow/types.js'
+import {
+  FlowAmbiguousError,
+  FlowApiVersionTooLowError,
+  FlowDeployFailedError,
+  FlowDraftBesideActiveError,
+  FlowNotFoundError,
+  FlowRevertError,
+  FlowTestNotFoundError,
+  FlowTestPinError,
+  FlowTestRepinFailedError,
+  FlowTestVersionError,
+  FlowVersionGuardError,
+  FlowVersionLimitError,
+  type FlowVersionState,
+  NoFlowTestsError,
+  ProductionOrgError,
+  UnsupportedFlowVersionStateError,
+} from '../../../../port/flowErrors.js'
+import { FlowHTMLReporter } from '../../../../reporter/FlowHTMLReporter.js'
+import {
+  renderOrgDetail,
+  reportEngineNotice,
+} from '../../../../service/engineNotice.js'
+import {
+  calculateMutationScore,
+  FLOW_SCORE_POLICY,
+} from '../../../../service/mutationScore.js'
+import { sanitizeForDisplay } from '../../../../service/skippedTestClassMessage.js'
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url)
 const messages = Messages.loadMessages(
@@ -20,7 +40,104 @@ const messages = Messages.loadMessages(
 
 export type FlowMutationRunResult = {
   score: number | null
-  report: FlowMutationReport
+}
+
+const FLOW_API_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
+const FLOW_TEST_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_.]*$/
+
+// "1, 2, 5 (5 Active)" — the numbers and the Active one, as the guard saw
+// them.
+const describeVersions = ({ numbers, active }: FlowVersionState): string =>
+  `${numbers.join(', ') || '-'} (${
+    active === undefined
+      ? messages.getMessage('info.noActiveVersion')
+      : messages.getMessage('info.activeVersion', [String(active)])
+  })`
+
+// Every typed rejection of the Flow engine renders as the command's own
+// error; anything else is rethrown untouched. Names and versions travel on
+// the error's fields; the org-supplied ones are sanitized before display.
+function renderFlowError(error: unknown): never {
+  if (error instanceof ProductionOrgError) {
+    throw messages.createError('error.productionOrg')
+  }
+  if (error instanceof FlowApiVersionTooLowError) {
+    throw messages.createError('error.apiVersionTooLow', [
+      error.minimumApiVersion,
+      error.apiVersion,
+      error.minimumApiVersion,
+    ])
+  }
+  if (error instanceof FlowNotFoundError) {
+    throw messages.createError('error.flowNotFound', [error.apiName])
+  }
+  if (error instanceof FlowAmbiguousError) {
+    throw messages.createError('error.flowAmbiguous', [
+      error.apiName,
+      String(error.count),
+    ])
+  }
+  if (error instanceof NoFlowTestsError) {
+    throw messages.createError('error.noFlowTests', [error.apiName])
+  }
+  if (error instanceof FlowTestNotFoundError) {
+    throw messages.createError('error.flowTestNotFound', [
+      error.apiName,
+      error.testNames.map(sanitizeForDisplay).join(', '),
+    ])
+  }
+  if (error instanceof UnsupportedFlowVersionStateError) {
+    throw messages.createError('error.unsupportedFlowVersionState', [
+      error.apiName,
+      sanitizeForDisplay(error.status),
+    ])
+  }
+  if (error instanceof FlowDraftBesideActiveError) {
+    throw messages.createError('error.flowDraftBesideActive', [
+      error.apiName,
+      String(error.draftVersion),
+      String(error.activeVersion),
+    ])
+  }
+  if (error instanceof FlowVersionLimitError) {
+    throw messages.createError('error.flowVersionLimit', [
+      error.apiName,
+      String(error.versionCount),
+      String(error.versionLimit),
+    ])
+  }
+  if (error instanceof FlowVersionGuardError) {
+    throw messages.createError('error.flowVersionGuard', [
+      error.apiName,
+      describeVersions(error.expected),
+      describeVersions(error.observed),
+    ])
+  }
+  if (error instanceof FlowTestPinError) {
+    throw messages.createError('error.flowTestPin', [
+      sanitizeForDisplay(error.testName),
+    ])
+  }
+  if (error instanceof FlowTestVersionError) {
+    throw messages.createError('error.flowTestVersion', [
+      error.apiName,
+      String(error.expectedVersion),
+      error.executedVersions.join(', ') ||
+        messages.getMessage('info.noFlowTestResult'),
+    ])
+  }
+  if (error instanceof FlowRevertError) {
+    throw messages.createError('error.flowRevert', [
+      error.apiName,
+      renderOrgDetail(error.problems.join('; ')),
+    ])
+  }
+  if (error instanceof FlowTestRepinFailedError) {
+    throw messages.createError('error.flowTestRepinFailed', [
+      renderOrgDetail(error.problems.join('; ')),
+    ])
+  }
+  throw error
 }
 
 export default class FlowMutationRun extends SfCommand<FlowMutationRunResult> {
@@ -28,30 +145,27 @@ export default class FlowMutationRun extends SfCommand<FlowMutationRunResult> {
   public static override readonly description =
     messages.getMessage('description')
   public static override readonly examples = messages.getMessages('examples')
+  // Beta until an E2E run on sample flows backs it in CI: SfCommand then
+  // warns on every run that the command may still change.
+  public static override readonly state = 'beta'
 
   public static override readonly flags = {
     flow: Flags.string({
       char: 'f',
       summary: messages.getMessage('flags.flow.summary'),
-      aliases: ['flow-file'],
       required: true,
     }),
-    'flow-name': Flags.string({
-      char: 'n',
-      summary: messages.getMessage('flags.flow-name.summary'),
-    }),
-    'flow-tests': Flags.string({
+    'flow-test': Flags.string({
       char: 't',
-      summary: messages.getMessage('flags.flow-tests.summary'),
-      aliases: ['test-flow', 'flow-test'],
+      summary: messages.getMessage('flags.flow-test.summary'),
       multiple: true,
       delimiter: ',',
     }),
-    'test-apex': Flags.string({
-      summary: messages.getMessage('flags.test-apex.summary'),
-      aliases: ['ta', 'test-class'],
-      multiple: true,
-      delimiter: ',',
+    'report-dir': Flags.directory({
+      char: 'r',
+      summary: messages.getMessage('flags.report-dir.summary'),
+      exists: true,
+      default: 'mutations',
     }),
     'dry-run': Flags.boolean({
       char: 'd',
@@ -68,212 +182,112 @@ export default class FlowMutationRun extends SfCommand<FlowMutationRunResult> {
       min: 0,
       max: 100,
     }),
-    'report-dir': Flags.directory({
-      char: 'r',
-      summary: messages.getMessage('flags.report-dir.summary'),
-      default: 'mutations',
+    'allow-non-sandbox-org': Flags.boolean({
+      summary: messages.getMessage('flags.allow-non-sandbox-org.summary'),
+      default: false,
     }),
-    'target-org': Flags.optionalOrg(),
+    'target-org': Flags.requiredOrg(),
     'api-version': Flags.orgApiVersion(),
-  }
-
-  protected override async init(): Promise<void> {
-    const hasFlow = this.argv.some(
-      a =>
-        a === '-f' ||
-        a.startsWith('-f=') ||
-        a === '--flow' ||
-        a.startsWith('--flow=') ||
-        a === '--flow-file' ||
-        a.startsWith('--flow-file=')
-    )
-    this.argv = this.argv.map(arg => {
-      if (arg === '-ta') return '--test-apex'
-      if (arg.startsWith('-ta=')) return '--test-apex=' + arg.slice(4)
-      if (!hasFlow) {
-        if (arg === '-n') return '-f'
-        if (arg.startsWith('-n=')) return '-f=' + arg.slice(3)
-        if (arg === '--flow-name') return '--flow'
-        if (arg.startsWith('--flow-name=')) return '--flow=' + arg.slice(12)
-      }
-      return arg
-    })
-    await super.init()
   }
 
   public async run(): Promise<FlowMutationRunResult> {
     const { flags } = await this.parse(FlowMutationRun)
+    const flowApiName = flags.flow.trim()
+    const flowTestNames = flags['flow-test']?.map(name => name.trim())
+    this.assertNames(flowApiName, flowTestNames)
 
-    if (!flags['dry-run'] && !flags['target-org']) {
-      throw new SfError(
-        'Flag --target-org is required when not running with --dry-run.'
+    const engine = await createOrgFlowEngine(
+      {
+        connection: flags['target-org'].getConnection(flags['api-version']),
+        notify: notice => reportEngineNotice(notice, this.spinner, messages),
+      },
+      { allowNonSandbox: flags['allow-non-sandbox-org'] }
+    ).catch(renderFlowError)
+
+    this.log(
+      messages.getMessage(
+        flags['dry-run']
+          ? 'info.DryRunCommandIsRunning'
+          : 'info.CommandIsRunning',
+        [
+          flowApiName,
+          flowTestNames?.join(', ') ?? messages.getMessage('info.allFlowTests'),
+        ]
       )
-    }
-
-    const adapter = flags['target-org']
-      ? new FlowSalesforceAdapter(
-          flags['target-org'].getConnection(flags['api-version'])
-        )
-      : ({} as FlowSalesforcePort)
-
-    const resolved = await FlowResolver.resolve(
-      flags.flow,
-      flags['target-org'] ? adapter : undefined
     )
-    const flowFilePath = resolved.flowFilePath
-    const flowDeveloperName = flags['flow-name'] ?? resolved.flowDeveloperName
-    const tempDir = resolved.tempDir
-
-    try {
-      const orchestrator = new FlowMutationOrchestrator(adapter)
-
-      const isApexTesting = Boolean(
-        flags['test-apex'] && flags['test-apex'].length > 0
-      )
-      const testsDisplay = isApexTesting
-        ? flags['test-apex']!.join(', ')
-        : flags['flow-tests']?.join(', ') || flowDeveloperName
-
-      this.log(
-        messages.getMessage(
-          flags['dry-run']
-            ? 'info.DryRunCommandIsRunning'
-            : isApexTesting
-              ? 'info.ApexTestCommandIsRunning'
-              : 'info.CommandIsRunning',
-          flags['dry-run']
-            ? [flowDeveloperName]
-            : [flowDeveloperName, testsDisplay]
-        )
-      )
-
-      const callbacks: FlowOrchestratorCallbacks = {
-        onValidating: () => {
-          this.spinner.start(`Validating "${flowDeveloperName}" Flow XML`)
-        },
-        onValidated: () => {
-          this.spinner.stop('Done')
-        },
-        onBaselineDeploying: () => {
-          this.spinner.start(
-            `Verifying "${flowDeveloperName}" baseline Flow deployment`
-          )
-        },
-        onBaselineDeployed: () => {
-          this.spinner.stop('Done')
-        },
-        onBaselineTesting: () => {
-          this.spinner.start(
-            `Executing "${testsDisplay}" ${isApexTesting ? 'Apex' : 'Flow'} test(s) to verify baseline`
-          )
-        },
-        onBaselineTested: (resultMsg: string) => {
-          this.spinner.stop(resultMsg)
-        },
-        onMutantsGenerating: () => {
-          this.spinner.start(
-            `Generating mutants for "${flowDeveloperName}" Flow`
-          )
-        },
-        onMutantsGenerated: (count: number) => {
-          this.spinner.stop(`${count} mutations generated`)
-        },
-        onTimeEstimate: (
-          deployTime: number,
-          testTime: number,
-          mutationCount: number,
-          groupCount: number
-        ) => {
-          const totalEstimateMs = (deployTime + testTime) * groupCount
-          this.spinner.start(
-            messages.getMessage('info.timeEstimate', [
-              formatDuration(totalEstimateMs),
-            ]),
-            undefined,
-            { stdout: true }
-          )
-          this.spinner.stop(
-            messages.getMessage('info.timeEstimateBreakdown', [
-              formatDuration(deployTime),
-              formatDuration(testTime),
-              String(mutationCount),
-              String(groupCount),
-            ])
-          )
-        },
-        onProgressStart: (total: number) => {
-          this.progress.start(
-            total,
-            { info: 'Starting mutation testing' },
-            {
-              title: 'MUTATION TESTING PROGRESS',
-              format: '%s | {bar} | {value}/{total} {info}',
-            }
-          )
-        },
-        onProgressUpdate: (current: number, info: string) => {
-          this.progress.update(current, { info })
-        },
-        onProgressFinish: (info: string) => {
-          this.progress.finish({ info })
-        },
-        onRollbackStarting: () => {
-          this.spinner.start(
-            `Rolling back "${flowDeveloperName}" Flow to its original state`
-          )
-        },
-        onRollbackFinished: (failed?: boolean) => {
-          this.spinner.stop(failed ? 'Rollback FAILED' : 'Done')
-        },
-      }
-
-      const report = await orchestrator.run({
-        flowFilePath,
-        flowDeveloperName,
-        flowTests: flags['flow-tests'],
-        apexTests: flags['test-apex'],
+    const result = await new FlowMutationOrchestrator(
+      this.progress,
+      this.spinner,
+      engine,
+      messages
+    )
+      .run({
+        flowApiName,
+        flowTestNames,
         lines: flags.lines,
         dryRun: flags['dry-run'],
-        callbacks,
       })
-
-      const reporter = new FlowHTMLReporter()
-      const reportDir = await reporter.generateReport(
-        report,
-        flags['report-dir'] ?? 'mutations'
-      )
-      this.log(messages.getMessage('info.reportGenerated', [reportDir]))
-
-      const score = flags['dry-run'] ? null : report.mutationScore
-      if (score !== null) {
-        this.log(`Mutation score: ${score}%`)
-      }
-      this.info(
-        '🤩 Enjoying apex-mutation-testing?\nYour contribution helps us provide fast support 🚀 and high quality features 🔥\nBecome a sponsor: https://github.com/sponsors/scolladon 🧡'
+      .catch(error =>
+        renderFlowError(this.withDeployContext(error, flowApiName))
       )
 
-      if (
-        !flags['dry-run'] &&
-        flags.threshold !== undefined &&
-        report.mutationScore < flags.threshold
-      ) {
-        throw new SfError(
-          `Mutation score ${report.mutationScore}% is below threshold ${flags.threshold}%.`
+    await this.publishReport(result, flags['report-dir'])
+
+    const score = flags['dry-run']
+      ? null
+      : calculateMutationScore(
+          result.mutants.map(mutant => mutant.status),
+          FLOW_SCORE_POLICY
         )
-      }
+    if (score !== null) {
+      this.log(messages.getMessage('info.CommandSuccess', [score]))
+    }
+    this.enforceThreshold(score, flags.threshold)
 
-      return {
-        score,
-        report,
+    this.info(messages.getMessage('info.EncourageSponsorship'))
+    return { score }
+  }
+
+  private assertNames(flowApiName: string, flowTestNames?: string[]): void {
+    if (!FLOW_API_NAME_PATTERN.test(flowApiName)) {
+      throw messages.createError('error.invalidFlowName', [flowApiName])
+    }
+    for (const name of flowTestNames ?? []) {
+      if (!FLOW_TEST_NAME_PATTERN.test(name)) {
+        throw messages.createError('error.invalidFlowTestName', [name])
       }
-    } finally {
-      if (tempDir) {
-        try {
-          await fs.rm(tempDir, { recursive: true, force: true })
-        } catch {
-          // ignore cleanup errors
-        }
-      }
+    }
+  }
+
+  // The one deploy failure that can escape the run unclassified is the
+  // baseline's — a mutant's is a verdict — so it is the one rendered here.
+  private withDeployContext(error: unknown, flowApiName: string): unknown {
+    return error instanceof FlowDeployFailedError
+      ? messages.createError('error.flowDeployFailed', [
+          flowApiName,
+          renderOrgDetail(error.problems.join('; ')),
+        ])
+      : error
+  }
+
+  private async publishReport(
+    result: FlowMutationResult,
+    reportDir: string
+  ): Promise<void> {
+    await new FlowHTMLReporter(messages).generateReport(result, reportDir)
+    this.log(messages.getMessage('info.reportGenerated', [reportDir]))
+  }
+
+  private enforceThreshold(
+    score: number | null,
+    threshold: number | undefined
+  ): void {
+    if (score === null || threshold === undefined) return
+    if (score < threshold) {
+      throw messages.createError('error.thresholdNotMet', [
+        String(score),
+        String(threshold),
+      ])
     }
   }
 }

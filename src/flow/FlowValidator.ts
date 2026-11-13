@@ -1,90 +1,54 @@
 import { FlowXmlDom } from './xml/FlowXmlDom.js'
 
-export interface FlowValidationResult {
-  isValid: boolean
-  processType?: string
-  isRecordTrigger: boolean
-  isAutolaunched: boolean
-  errorMessage?: string
-}
+// Why a Flow cannot be mutation tested. Each reason maps to one message key
+// in the Flow command's bundle (error.flowInvalid.<reason>), so the wording
+// lives with every other user-facing string instead of in this module.
+type FlowRejection =
+  | { reason: 'invalidXml'; detail: string }
+  | { reason: 'notAFlow' }
+  | { reason: 'unsupportedProcessType'; processType: string }
+  | { reason: 'hasPauseElements' }
+  | { reason: 'hasScreenElements' }
 
+export type FlowValidationResult =
+  | { isValid: true; dom: FlowXmlDom }
+  | ({ isValid: false } & FlowRejection)
+
+const AUTOLAUNCHED_PROCESS_TYPE = 'AutoLaunchedFlow'
+
+// FlowTests only exercise record-triggered and autolaunched flows, and
+// neither kind may pause or show a screen while under test.
 export class FlowValidator {
-  public static validate(xmlContent: string): FlowValidationResult {
+  public validate(xml: string): FlowValidationResult {
     let dom: FlowXmlDom
     try {
-      dom = FlowXmlDom.parse(xmlContent)
-    } catch (e) {
+      dom = FlowXmlDom.parse(xml)
+    } catch (error: unknown) {
       return {
         isValid: false,
-        isRecordTrigger: false,
-        isAutolaunched: false,
-        errorMessage: `Invalid XML format: ${(e as Error).message}`,
+        reason: 'invalidXml',
+        detail: error instanceof Error ? error.message : String(error),
       }
     }
-
-    const flowNodes = dom.queryNodes('/sf:Flow')
-    if (flowNodes.length === 0) {
-      return {
-        isValid: false,
-        isRecordTrigger: false,
-        isAutolaunched: false,
-        errorMessage:
-          'Root element must be <Flow> with namespace http://soap.sforce.com/2006/04/metadata',
-      }
+    if (!dom.isRoot('Flow')) {
+      return { isValid: false, reason: 'notAFlow' }
     }
 
-    const processType = dom.getText('/sf:Flow/sf:processType') ?? ''
-    const recordTriggerType = dom.getText(
-      '/sf:Flow/sf:start/sf:recordTriggerType'
-    )
-    const triggerType = dom.getText('/sf:Flow/sf:start/sf:triggerType')
-    const isRecordTrigger = Boolean(
-      recordTriggerType || (triggerType && triggerType.startsWith('Record'))
-    )
-    const isAutolaunched = processType === 'AutoLaunchedFlow'
-
-    // Flow Tests in Salesforce only support Record-Triggered Flows and Autolaunched Flows
-    if (!isAutolaunched && !isRecordTrigger) {
-      return {
-        isValid: false,
-        processType,
-        isRecordTrigger,
-        isAutolaunched,
-        errorMessage: `Unsupported processType '${processType}'. Only Record-Triggered Flows and Autolaunched Flows can be tested with FlowTests.`,
-      }
+    const processType = dom.childText(dom.root, 'processType') ?? ''
+    const start = dom.child(dom.root, 'start')
+    const isRecordTriggered =
+      start !== undefined &&
+      (dom.childText(start, 'recordTriggerType') !== undefined ||
+        (dom.childText(start, 'triggerType') ?? '').startsWith('Record'))
+    if (processType !== AUTOLAUNCHED_PROCESS_TYPE && !isRecordTriggered) {
+      return { isValid: false, reason: 'unsupportedProcessType', processType }
     }
-
-    // Check for Pause/Wait elements: <waits>. These cannot be present when Flow is Tested.
-    const waitNodes = dom.queryNodes('//sf:waits')
-    if (waitNodes.length > 0) {
-      return {
-        isValid: false,
-        processType,
-        isRecordTrigger,
-        isAutolaunched,
-        errorMessage:
-          'Flow contains Pause elements (<waits>). Flows with Pause elements cannot be tested with FlowTests.',
-      }
+    if (dom.elements('waits').length > 0) {
+      return { isValid: false, reason: 'hasPauseElements' }
     }
-
-    // Check for Screen elements: <screens>. These cannot be present when Flow is Tested.
-    const screenNodes = dom.queryNodes('//sf:screens')
-    if (screenNodes.length > 0) {
-      return {
-        isValid: false,
-        processType,
-        isRecordTrigger,
-        isAutolaunched,
-        errorMessage:
-          'Flow contains Screen elements (<screens>). Screen Flows cannot be tested with FlowTests.',
-      }
+    if (dom.elements('screens').length > 0) {
+      return { isValid: false, reason: 'hasScreenElements' }
     }
-
-    return {
-      isValid: true,
-      processType,
-      isRecordTrigger,
-      isAutolaunched,
-    }
+    return { isValid: true, dom }
   }
 }

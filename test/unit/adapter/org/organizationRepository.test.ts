@@ -70,4 +70,28 @@ describe('OrganizationRepository', () => {
       expect(result).toBeNull()
     })
   })
+
+  describe('when reading whether the org is a sandbox', () => {
+    it.each([
+      [[{ IsSandbox: true }], true],
+      [[{ IsSandbox: false }], false],
+      [[{ IsSandbox: 'true' }], false],
+      [[], false],
+    ])(
+      'Given the rows %j, When read, Then only an explicit true counts as a sandbox (%s)',
+      async (records, expected) => {
+        // Arrange
+        queryMock.mockResolvedValue({ records })
+
+        // Act
+        const result = await sut.readIsSandbox()
+
+        // Assert
+        expect(result).toBe(expected)
+        expect(queryMock).toHaveBeenCalledWith(
+          'SELECT IsSandbox FROM Organization'
+        )
+      }
+    )
+  })
 })
