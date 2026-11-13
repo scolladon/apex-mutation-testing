@@ -1299,4 +1299,39 @@ describe('ConfigReader', () => {
       expect(sut[0].test('System.debug(x)')).toBe(true)
     })
   })
+
+  describe('validateLineRanges', () => {
+    it('Given no lines, When validated, Then it accepts', () => {
+      // Act & Assert
+      expect(() =>
+        ConfigReader.validateLineRanges(undefined, messagesMock)
+      ).not.toThrow()
+    })
+
+    it('Given well-formed ranges, When validated, Then it accepts', () => {
+      // Act & Assert
+      expect(() =>
+        ConfigReader.validateLineRanges(['42', '1-10', '5-5'], messagesMock)
+      ).not.toThrow()
+    })
+
+    it.each([['1.5'], ['-3'], ['a-b']])(
+      'Given %s, When validated, Then it is rejected as an invalid range',
+      range => {
+        // Act & Assert
+        expect(() =>
+          ConfigReader.validateLineRanges([range], messagesMock)
+        ).toThrow(`Invalid line range '${range}': must be a number or range`)
+      }
+    )
+
+    it('Given a descending range, When validated, Then it is rejected for its order', () => {
+      // Act & Assert
+      expect(() =>
+        ConfigReader.validateLineRanges(['10-5'], messagesMock)
+      ).toThrow(
+        "Invalid line range '10-5': start must be less than or equal to end"
+      )
+    })
+  })
 })

@@ -334,24 +334,30 @@ export class ConfigReader {
     if (threshold !== undefined && (threshold < 0 || threshold > 100)) {
       throw new Error(this.messages.getMessage('error.thresholdOutOfRange'))
     }
-    if (parameter.lines) {
-      for (const range of parameter.lines) {
-        if (!/^\d+(-\d+)?$/.test(range)) {
+    ConfigReader.validateLineRanges(parameter.lines, this.messages)
+  }
+
+  // Public and static so every command accepting --lines rejects the same
+  // inputs with the same messages: the bundle passed in must define
+  // error.invalidLineRange and error.invalidLineRangeOrder.
+  public static validateLineRanges(
+    lines: string[] | undefined,
+    messages: Messages<string>
+  ): void {
+    for (const range of lines ?? []) {
+      if (!/^\d+(-\d+)?$/.test(range)) {
+        throw new Error(messages.getMessage('error.invalidLineRange', [range]))
+      }
+      // Not observable: the regex above already accepted the range, and for a
+      // bare number `split('-')` yields a single element so `end` is
+      // undefined and `start > undefined` is false either way.
+      // Stryker disable next-line ConditionalExpression,StringLiteral: no-op for bare numbers.
+      if (range.includes('-')) {
+        const [start, end] = range.split('-').map(Number)
+        if (start > end) {
           throw new Error(
-            this.messages.getMessage('error.invalidLineRange', [range])
+            messages.getMessage('error.invalidLineRangeOrder', [range])
           )
-        }
-        // Not observable: the regex above already accepted the range, and for a
-        // bare number `split('-')` yields a single element so `end` is
-        // undefined and `start > undefined` is false either way.
-        // Stryker disable next-line ConditionalExpression,StringLiteral: no-op for bare numbers.
-        if (range.includes('-')) {
-          const [start, end] = range.split('-').map(Number)
-          if (start > end) {
-            throw new Error(
-              this.messages.getMessage('error.invalidLineRangeOrder', [range])
-            )
-          }
         }
       }
     }

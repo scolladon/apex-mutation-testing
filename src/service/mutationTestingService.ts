@@ -48,6 +48,7 @@ import {
   calculateMutationPosition,
   extractMutationOriginalText,
 } from './mutationLocation.js'
+import { APEX_SCORE_POLICY, calculateMutationScore } from './mutationScore.js'
 import { diagnoseNoMutations } from './noMutationsDiagnosis.js'
 import type { SkipPattern } from './skipPattern.js'
 import {
@@ -279,17 +280,9 @@ export class MutationTestingService {
   }
 
   public calculateScore(mutationResult: ApexMutationTestResult) {
-    const validMutants = mutationResult.mutants.filter(
-      mutant => mutant.status !== 'CompileError'
-    )
-    if (validMutants.length === 0) {
-      return 0
-    }
-    const killedStatuses = new Set(['Killed', 'RuntimeError'])
-    return (
-      (validMutants.filter(mutant => killedStatuses.has(mutant.status)).length /
-        validMutants.length) *
-      100
+    return calculateMutationScore(
+      mutationResult.mutants.map(mutant => mutant.status),
+      APEX_SCORE_POLICY
     )
   }
 
