@@ -13,6 +13,13 @@ sf apex mutation test run -c <ApexClass> -t <TestClass> -o <TargetOrg> --config-
 sf apex mutation test run -c <ApexClass> --test-suite <TestSuite> -o <TargetOrg>
 ```
 
+A second command applies the same idea to Flows, with FlowTests as the tests — see [Flow Engine](#flow-engine):
+
+```shell
+sf apex mutation flow run -f <FlowApiName> -o <Sandbox>
+sf apex mutation flow run -f <FlowApiName> -t <FlowTest> -o <Sandbox> --lines 40-60 --threshold 80
+```
+
 **Runtime:** requires Node 22, 24, or 26 (`engines.node` = `^22.22 || ^24.15 || >=26`).
 
 ---
@@ -537,6 +544,10 @@ removed before this work merged (ADRs 085, 089 and 091, superseded).
 The ports themselves stay, because their value was never engine-swapping — it is that
 `MutationTestingService` no longer imports `@salesforce/core` or `jsforce`, and can be tested
 against fakes instead of a mocked SDK.
+
+The Flow engine follows the same arrangement with two ports of its own,
+`FlowSourceProvider` and `FlowTestBed`, bundled as `FlowEngineBundle` and built by
+`createOrgFlowEngine` in the same `orgEngine.ts` — see [Flow Engine](#flow-engine).
 
 ### Mutation Grouping (opt-in)
 
@@ -1326,6 +1337,181 @@ ApexMutationTestResult
 ```
 
 This layout avoids the three classes of attack the old `app.report = { … }` inline assignment left open: script-data end tags inside mutant source, CDN tampering, and U+2028/2029 injection. It also keeps e2e snapshots small — the `tooling/normalize-e2e-snapshot.mjs` script strips the inlined bundle before committing.
+
+---
+
+## Flow Engine
+
+`sf apex mutation flow run` mutates a Flow's metadata XML and scores it with the Flow's
+FlowTests. It shares the Apex engine's report page, line-range parsing, score formula,
+test transport and port layout, and owns only what is Flow-specific. The command is marked
+`state = 'beta'` until an E2E run on sample flows backs it in CI.
+
+```text
+src/commands/apex/mutation/flow/run.ts   flags, typed-error rendering, threshold, { score }
+src/flow/FlowMutationOrchestrator.ts     lifecycle (ports only, no @salesforce/* import)
+src/flow/FlowValidator.ts                record-triggered / autolaunched, no Pause, no Screen
+src/flow/FlowMutantGenerator.ts          one parse, every mutator, line filter
+src/flow/mutators/*                      5 Flow mutators over a read-only FlowXmlDom
+src/flow/xml/FlowXmlDom.ts               namespace-aware DOM + source offsets + XmlEdit
+src/port/flowSourceProvider.ts           FlowSourceProvider: read the flow and its FlowTests
+src/port/flowTestBed.ts                  FlowTestBed: prepare / evaluate / restore
+src/port/flowErrors.ts                   typed rejections the command renders
+src/adapter/org/orgEngine.ts             createOrgFlowEngine: API ≥ 66.0, sandbox check
+src/adapter/org/orgFlowSourceProvider.ts Test Discovery + Metadata API retrieve
+src/adapter/org/orgFlowTestBed.ts        version modes, guards, FlowTest unpinning, revert, restore
+src/adapter/org/flowMetadataRepository.ts in-memory zip deploy / retrieve (jsforce + jszip)
+src/adapter/org/flowVersionRepository.ts Tooling FlowDefinition / Flow versions: list, activate, delete
+src/adapter/org/flowTestResultRepository.ts FlowTestResult rows: which version each FlowTest ran
+src/adapter/org/flowTestDiscovery.ts     GET /tooling/tests?category=flow
+src/reporter/FlowHTMLReporter.ts         maps results onto the shared report page
+```
+
+### Lifecycle
+
+```text
+sf apex mutation flow run -f Account_After -o MySandbox
+│
+├─ 1. ENGINE            createOrgFlowEngine(ctx)
+│                         API version < 66.0  → FlowApiVersionTooLowError
+│                         Organization.IsSandbox !== true → ProductionOrgError
+│                         (dry runs included; a failed check fails closed;
+│                          --allow-non-sandbox-org skips the check entirely)
+├─ 2. READ              FlowSourceProvider.readFlow(apiName, testNames?)
+│                         -t given: names normalised (FlowTesting.<flow>.<t>, <flow>.<t>, <t>)
+│                         else: Test Discovery lists this flow's FlowTests by name
+│                         one retrieve: Flow + only those FlowTests (singlePackage zip)
+│                         a FlowTest whose <flowApiName> is another flow counts as missing
+├─ 3. VALIDATE + GENERATE    no org write before this point
+├─    ── DRY RUN EXIT ──     mutants Pending, report written, { score: null }
+├─ 4. PREPARE           FlowTestBed.prepare — first org write; restore runs on every exit from here
+│                         snapshot versions, pick the mode, unpin the FlowTests
+├─ 5. BASELINE          the original goes through the per-mutant cycle; every FlowTest must pass
+├─ 6. EVALUATE          per mutant: applyEdits(original, edits) → evaluate → verdict
+│                         activate mode: deploy temp Draft → activate → run + version check
+│                         → original Active again → temp deleted (org at its snapshot)
+├─ 7. RESTORE           FlowTestBed.restore — throws when the org is not back to its snapshot
+└─ 8. REPORT + SCORE    FLOW_SCORE_POLICY; --threshold as in the Apex command
+```
+
+### The org is the source
+
+The run reads the Flow and its FlowTests from the org and never reads or writes the local
+project: every deploy is a zip built in memory (`FlowMetadataRepository`), so an interrupted
+run never leaves a mutant in the working tree. A Metadata API retrieve returns the latest
+version of a Flow, which is the version every deploy of the run overwrites or supersedes.
+
+### Which version a FlowTest runs
+
+Checked on a sandbox, through the synchronous and asynchronous test resources and
+`sf flow run test` alike: the test runner runs a FlowTest against **one** version of its
+Flow — the Active one, or the latest when none is Active. A FlowTest associated
+(`flowTestFlowVersions`) with versions that do not include that one is skipped silently: the
+synchronous resource counts it in `testsRan` but returns no row, the asynchronous one reports
+the run as Skipped. A FlowTest with no association always runs. Associating a FlowTest with a
+Draft that sits beside an Active version therefore never runs that Draft, so a mutant can only
+be tested by being, for the duration of its FlowTests, the version the runner picks.
+
+### Version modes
+
+The test bed snapshots the Flow's versions (`FlowVersionRepository.listVersions`) before its
+first write and picks a mode from them:
+
+| Versions | Mode | Per evaluation (baseline and every mutant) | Restore |
+| --- | --- | --- | --- |
+| latest is Active | `activate` | deploy the XML as a temporary Draft beside the Active version, activate it (`FlowDefinition.activeVersionNumber`), run the FlowTests, activate the original again, delete the temporary version | original Active again, every version outside the snapshot deleted |
+| latest is a Draft, none Active | `overwrite` | deploy the XML over that Draft, in place; run the FlowTests | the original content deployed back |
+| a Draft beside an Active version | — | refused: `FlowDraftBesideActiveError` — testing the Draft means activating it, after which it can never be a Draft again | — |
+| latest Obsolete, InvalidDraft, none | — | refused: `UnsupportedFlowVersionStateError` | — |
+
+Every deployed XML is a Draft; a version only becomes Active through the explicit activation
+the same evaluation undoes, so between two evaluations the org holds exactly its snapshot, and
+a mutant is live in the sandbox only while its own FlowTests run — the same exposure as the
+Apex engine, which replaces the class under test in the org. In `activate` mode the
+description carries `[apex-mutation-testing]`, because a Draft deployed with content
+identical to the Active version creates no version at all. A Flow is capped at 50 versions:
+`activate` needs one free slot and refuses to start otherwise (`FlowVersionLimitError`).
+Deleted version numbers are reused, so the temporary version keeps the same number throughout.
+
+For the run, every selected FlowTest loses its `flowTestFlowVersions` and so follows the
+version the runner picks; its original XML is deployed back by the restore.
+
+### Guards
+
+The run checks the org's own state rather than trusting the model above:
+
+- **Version guard.** After every deploy — a refused one included — and after every activation
+  and revert, the versions are re-listed and compared with what must hold at that point:
+  the snapshot (`overwrite` mode, a refused deploy, after a revert), the snapshot plus exactly
+  one new Draft with the original still Active (after an `activate` deploy), or that plus the
+  temporary version Active (after its activation). Anything else raises
+  `FlowVersionGuardError`. Version numbers, not record Ids, are compared: the platform re-keys a
+  version when it is overwritten.
+- **Unpin read-back.** The unpinned FlowTests are **retrieved again**: one that comes back still
+  associated with versions — or does not come back — raises `FlowTestPinError`.
+- **Executed version.** The runner never says which version it ran, but `FlowTestResult` does
+  (`FlowVersionNumber`). It is read before and after every FlowTest run
+  (`FlowTestResultRepository`); the rows that are new or rewritten must exist and all name the
+  version under test, or `FlowTestVersionError` is raised.
+- **No silent pass.** A test run in which no FlowTest ran throws instead of reading as
+  "nothing failed".
+- **Revert.** In `activate` mode the revert (original Active again, temporary version
+  deleted, snapshot checked) runs after every evaluation, whatever happened in it; when it
+  fails, `FlowRevertError` carries its failure and the evaluation's own.
+
+These errors extend `FlowOrgSafetyError`: unlike a transport failure on one mutant, they abort
+the run, and the restore follows. A deploy or activation the org refuses
+(`FlowDeployFailedError`) is, per mutant, the not-compilable verdict — reported once the org is
+known to be at rest.
+
+### Restore
+
+`restore()` attempts every step whatever the outcome of the one before, in this order:
+FlowTests back to their original XML, then the flow's original content (`overwrite` mode) or
+the original version Active again (`activate` mode), then every version absent from the
+snapshot deleted — never an Active one — and finally the versions compared with the snapshot.
+Any failure is kept, and the restore throws a `FlowRestoreError` carrying all of them. The
+orchestrator restores on every exit once `prepare` has started — `prepare` itself is already a
+write — and composes errors the way `executeMutationLoopWithRollback` does: the run failure
+leads, the restore failure is appended, and a failed restore on the success path fails the
+command.
+
+### Mutants are edits
+
+A mutator receives the parsed `FlowXmlDom` and returns `FlowMutation`s: a description plus
+`XmlEdit`s — `{ start, end, replacement }` offsets into the original XML. The mutated document
+is only built, by `applyEdits`, when the mutant is deployed. Generation is therefore one parse
+and linear in the size of the Flow (`ConnectorBypassMutator` indexes connectors once instead
+of searching the document per element), a mutant costs a few numbers rather than a copy of the
+document, every byte an edit does not touch reaches the org exactly as retrieved, and the
+report location is the edit's own source position — no snippet search. Element names are
+compared as text in JavaScript; nothing is ever interpolated into a query.
+
+| Mutator | Mutation |
+| --- | --- |
+| `RecordTriggerTypeMutator` | `recordTriggerType` Create ↔ Update, CreateAndUpdate → Create / Update |
+| `FormulaExpressionMutator` | each string literal → `''`; each `&&` ↔ `\|\|`, `==` ↔ `!=` |
+| `ConnectorBypassMutator` | rewire every connector into an element to its successor; a terminal element reached from a decision outcome loses that connector |
+| `DecisionOperatorMutator` | invert a condition's comparison operator; invert a boolean right value |
+| `AssignmentMutator` | empty / fill a string, invert a boolean, zero / one a number, swap Add ↔ Subtract |
+
+### Scoring
+
+`calculateMutationScore` (`src/service/mutationScore.ts`) is the one formula both commands
+use — unrounded, so a `--threshold` means the same on both. Only the policy differs: Apex
+counts `RuntimeError` as detected, because an exception thrown while its tests run is in the
+common case the mutant's own; a Flow fault during a FlowTest comes back as an ordinary failing
+row (`Killed`), so a Flow `RuntimeError` can only be a transport failure, and it leaves the
+denominator instead of inflating the score.
+
+### FlowTest execution
+
+FlowTests run through `ApexTestRunner.runFlowTests`, the same sync-first, async-fallback
+transport as Apex tests: the test runner addresses a Flow's tests as the methods of one class,
+`FlowTesting.<flow API name>`, so a FlowTest run is single-class and synchronous whenever the
+org allows it. On the sandbox the asynchronous resource occasionally reported a run Skipped
+right after a synchronous one; with no row returned, that mutant is a `RuntimeError` (left out
+of the score), never a verdict.
 
 ---
 

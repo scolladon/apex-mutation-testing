@@ -238,6 +238,23 @@ That parity is verified on one fixture, not guaranteed for every Apex construct.
 
 Note this is separate from `aer test`, whose free tier allows 100 test methods per iteration with an unlimited number of iterations.
 
+### Flows
+
+`sf apex mutation flow run` (beta) mutates a record-triggered or autolaunched Flow and scores it with the Flow's FlowTests:
+
+```sh
+sf apex mutation flow run -f Account_After -o MySandbox
+sf apex mutation flow run -f Account_After -t Sets_Rating --lines 40-60 --threshold 80 -o MySandbox
+```
+
+- **Sandboxes and scratch orgs only.** The command deploys and activates Flow versions, so it refuses any org whose `Organization.IsSandbox` is not `true` — production and Developer Edition orgs included, dry runs included.
+- **API 66.0 or later**, for Test Discovery and for the FlowTest version fields.
+- **The org is the source.** The Flow and its FlowTests are read from the org; nothing in the local project is read or written.
+- **Mutants are live while their FlowTests run.** FlowTests only ever run against the Active version of a Flow, or its latest version when none is Active. So when the latest version is Active, each mutant is deployed as a temporary version and **activated** for the duration of its FlowTests; then the original version is activated again and the temporary one deleted. Like the Apex command, which replaces the class under test, this means a mutant is the live automation in the sandbox for a few seconds at a time. It needs one free slot below the 50-version limit. When no version is Active and the latest is a Draft, the run overwrites that Draft and deploys its original content back. A Draft beside an Active version is refused: it could not be tested without activating it.
+- **Every verdict is checked against the org.** FlowTests are detached from their flow versions for the run (and restored after), and after each FlowTest run the version recorded in `FlowTestResult` must be the one under test; the versions themselves are re-checked after every deploy and activation. Any mismatch stops the run.
+- **The org is restored exactly.** Between two mutants the org is back at its snapshot; at the end, the FlowTests are restored too. If the restore fails, the command fails and says so.
+- A FlowTest run that fails on transport (a network error, a timeout) scores the mutant **RuntimeError**, which is left out of the Flow score rather than counted as a kill.
+
 ### Configuration
 
 The plugin supports configuration through a JSON file and CLI flags. CLI flags always take precedence over config file values.
@@ -507,62 +524,67 @@ A higher score means your tests are better at catching real bugs. Aim to reduce 
 
 ## `sf apex mutation flow run`
 
-Run mutation testing on Salesforce Flow XML definitions using FlowTests
+Evaluate FlowTest quality by injecting mutations into a Flow and checking whether its FlowTests detect them
 
 ```
 USAGE
-  $ sf apex mutation flow run -f <value> [--json] [--flags-dir <value>] [-n <value>] [-t <value>...] [--test-apex
-    <value>...] [-d] [-l <value>...] [--threshold <value>] [-r <value>] [-o <value>] [--api-version <value>]
+  $ sf apex mutation flow run -f <value> -o <value> [--json] [--flags-dir <value>] [-t <value>...] [-r <value>] [-d] [-l
+    <value>...] [--threshold <value>] [--allow-non-sandbox-org] [--api-version <value>]
 
 FLAGS
-  -d, --dry-run                Preview generated Flow mutants without deploying to an org or running tests.
-  -f, --flow=<value>           (required) Developer name of the Flow (e.g. Account_After) or path to its XML file
-                               (*.flow-meta.xml).
-  -l, --lines=<value>...       Line numbers or ranges in the Flow XML to mutate (e.g. '10-25', '40'). Repeat the flag or
-                               pass multiple values.
-  -n, --flow-name=<value>      Developer name of the Flow. If omitted, it is inferred from the flow flag.
-  -o, --target-org=<value>     Username or alias of the target org.
-  -r, --report-dir=<value>     [default: mutations] Path to the directory where mutation test reports will be generated.
-  -t, --flow-tests=<value>...  Specific flow test names to run (e.g., Flow1.Test1). Repeat the flag or pass a
-                               comma-separated list.
+  -d, --dry-run                Preview mutations without deploying or running tests
+  -f, --flow=<value>           (required) API name of the Flow to mutate (e.g. Account_After)
+  -l, --lines=<value>...       Line ranges of the Flow XML to mutate (e.g., 1-10, 42). Only these lines are eligible for
+                               mutation.
+  -o, --target-org=<value>     (required) Username or alias of the target org. Not required if the `target-org`
+                               configuration variable is already set.
+  -r, --report-dir=<value>     [default: mutations] Path to the directory where mutation test reports will be generated
+  -t, --flow-test=<value>...   FlowTests to run (e.g. Should_set_Rating). Defaults to every FlowTest of the Flow. Repeat
+                               the flag or pass a comma-separated list.
+      --allow-non-sandbox-org  Potentially unsafe. Allow running against an org that is not a sandbox or scratch org
+                               (e.g. Developer Edition or Trailhead). Skips the sandbox check entirely, production
+                               included: use only on orgs where deploying and activating Flow versions is safe.
       --api-version=<value>    Override the api version used for api requests made by this command
-      --test-apex=<value>...   Specific Apex test classes to run against the Flow (e.g., DiscountCalculatorTest). Repeat
-                               the flag or pass a comma-separated list. Can also be specified as -ta.
-      --threshold=<value>      Minimum mutation score threshold (0-100). The command fails if the score is below this
-                               threshold.
+      --threshold=<value>      Minimum mutation score (0-100) required for the command to succeed
 
 GLOBAL FLAGS
   --flags-dir=<value>  Import flag values from a directory.
   --json               Format output as json.
 
 DESCRIPTION
-  Run mutation testing on Salesforce Flow XML definitions using FlowTests
+  Evaluate FlowTest quality by injecting mutations into a Flow and checking whether its FlowTests detect them
 
-  Evaluate Flow test coverage and test suite quality by injecting mutations into a target Flow XML definition and
-  executing FlowTests to determine whether intentional bugs are detected (killed) or go undetected (survived).
+  Reads the Flow and its FlowTests from the org, deploys each mutant, runs the FlowTests against it, and restores the
+  org to exactly the state the run started from. Nothing in the local project is read or written.
 
-  Only Record-Triggered Flows and Autolaunched Flows without Pause elements can be tested.
+  Only record-triggered and autolaunched Flows without Pause or Screen elements can be tested, and the target org must
+  be a sandbox or a scratch org: the command refuses any other org, dry runs included, unless --allow-non-sandbox-org is
+  passed (e.g. Developer Edition or Trailhead orgs). Requires API version 66.0 or later.
+
+  FlowTests only run against the Flow's Active version, or its latest version when none is Active. When the latest
+  version is Active, each mutant is deployed as a temporary version that is activated for the duration of its FlowTests
+  — so the mutant is live in the sandbox meanwhile — after which the original version is activated again and the
+  temporary version deleted. A Flow has room for 50 versions; the run needs one free slot for its temporary version.
+  When no version is Active and the latest is a Draft, the run overwrites that Draft and restores its original content
+  at the end. A Draft beside an Active version is refused: it cannot be tested without activating it. FlowTests are
+  detached from their flow versions for the run and restored at the end, and the version every FlowTest ran against is
+  checked after each run.
 
 EXAMPLES
-  Preview generated mutations for a Flow by name without running tests:
+  Preview the mutations of a Flow:
 
-    $ sf apex mutation flow run -f Account_Before --dry-run
+    $ sf apex mutation flow run -f Account_Before -o MySandbox --dry-run
 
-  Run mutation testing for a Flow by name against an org:
+  Run mutation testing for a Flow with every one of its FlowTests:
 
-    $ sf apex mutation flow run -f Account_After --target-org Winter27
+    $ sf apex mutation flow run -f Account_After -o MySandbox
 
-  Run mutation testing specifying specific FlowTests and line range:
+  Run mutation testing with one FlowTest, on a line range:
 
-    $ sf apex mutation flow run -f Account_Before -t Account_Before.Should_set_Rating_from_Parent --lines 45-65 ^
-      --target-org FlowTestPresentation
-
-  Run mutation testing using an Apex test class:
-
-    $ sf apex mutation flow run -f Account_After -ta DiscountCalculatorTest --target-org Winter27
+    $ sf apex mutation flow run -f Account_Before -t Should_set_Rating_from_Parent --lines 45-65 -o MySandbox
 ```
 
-_See code: [src/commands/apex/mutation/flow/run.ts](https://github.com/scolladon/apex-mutation-testing/blob/main/src/commands/apex/mutation/flow/run.ts)_
+_See code: [src/commands/apex/mutation/flow/run.ts](https://github.com/scolladon/apex-mutation-testing/blob/v1.9.1/src/commands/apex/mutation/flow/run.ts)_
 
 ## `sf apex mutation test run`
 
@@ -641,7 +663,7 @@ EXAMPLES
     $ sf apex mutation test run --apex-class MyClass --test-suite MyTestSuite
 ```
 
-_See code: [src/commands/apex/mutation/test/run.ts](https://github.com/scolladon/apex-mutation-testing/blob/main/src/commands/apex/mutation/test/run.ts)_
+_See code: [src/commands/apex/mutation/test/run.ts](https://github.com/scolladon/apex-mutation-testing/blob/v1.9.1/src/commands/apex/mutation/test/run.ts)_
 <!-- commandsstop -->
 <!-- markdownlint-enable MD040 -->
 
