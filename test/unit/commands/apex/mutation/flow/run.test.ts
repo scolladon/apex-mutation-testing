@@ -5,8 +5,10 @@ import type { FlowMutant } from '../../../../../../src/flow/types.js'
 import {
   FlowAmbiguousError,
   FlowApiVersionTooLowError,
+  FlowChangedOutsideRunError,
   FlowDeployFailedError,
   FlowDraftBesideActiveError,
+  FlowLeftoverVersionError,
   FlowNotFoundError,
   FlowRevertError,
   FlowTestNotFoundError,
@@ -134,19 +136,6 @@ describe('apex mutation flow run', () => {
       expect(declared).not.toHaveProperty('flow-name')
     })
 
-    it('Given the declaration, When read, Then allow-non-sandbox-org is an opt-in boolean defaulting to false', () => {
-      // Act
-      const declared = FlowMutationRun.flags as unknown as Record<
-        string,
-        Record<string, unknown>
-      >
-
-      // Assert
-      expect(declared['allow-non-sandbox-org']).toMatchObject({
-        default: false,
-      })
-    })
-
     it('Given the declaration, When read, Then the command is marked beta', () => {
       // Assert
       expect(FlowMutationRun.state).toBe('beta')
@@ -154,34 +143,16 @@ describe('apex mutation flow run', () => {
   })
 
   describe('run', () => {
-    it('Given --allow-non-sandbox-org, When run, Then the engine is built with allowNonSandbox', async () => {
-      // Arrange
-      sut.parse.mockResolvedValue({
-        flags: flags({ 'allow-non-sandbox-org': true }),
-      })
-
-      // Act
-      await sut.run()
-
-      // Assert
-      expect(createOrgFlowEngine).toHaveBeenCalledWith(expect.anything(), {
-        allowNonSandbox: true,
-      })
-    })
-
     it('Given a run, When it completes, Then the engine is built on the requested API version and the score is returned unrounded as the only JSON field', async () => {
       // Act
       const result = await sut.run()
 
       // Assert
       expect(getConnection).toHaveBeenCalledWith('66.0')
-      expect(createOrgFlowEngine).toHaveBeenCalledWith(
-        {
-          connection: { conn: true },
-          notify: expect.any(Function),
-        },
-        { allowNonSandbox: undefined }
-      )
+      expect(createOrgFlowEngine).toHaveBeenCalledWith({
+        connection: { conn: true },
+        notify: expect.any(Function),
+      })
       expect(orchestratorRun).toHaveBeenCalledWith({
         flowApiName: 'Account_After',
         flowTestNames: undefined,
@@ -307,7 +278,7 @@ describe('apex mutation flow run', () => {
       [
         'production',
         new ProductionOrgError(),
-        'The target org is not a sandbox.',
+        'The target org is not a sandbox, a scratch org or a Developer Edition org.',
       ],
       [
         'API version',
@@ -344,6 +315,14 @@ describe('apex mutation flow run', () => {
       [
         new FlowDraftBesideActiveError('F', 3, 2),
         "The latest version of Flow 'F' (version 3) is a Draft beside the Active version 2.",
+      ],
+      [
+        new FlowLeftoverVersionError('F', [2, 3]),
+        "Flow 'F' has versions marked [apex-mutation-testing] (2, 3): an interrupted run of this command left them",
+      ],
+      [
+        new FlowChangedOutsideRunError('F', [1, 2]),
+        "Flow 'F' was changed outside this run (versions 1, 2)",
       ],
       [
         new FlowVersionLimitError('F', 50, 50),

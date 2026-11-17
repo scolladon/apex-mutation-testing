@@ -164,7 +164,7 @@ describe('apex mutation flow run (NUT)', () => {
 
     // Act & Assert
     await expect(command({ 'dry-run': true }).run()).rejects.toThrow(
-      'The target org is not a sandbox.'
+      'The target org is not a sandbox, a scratch org or a Developer Edition org.'
     )
   })
 

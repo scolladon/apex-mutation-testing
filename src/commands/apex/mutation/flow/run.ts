@@ -6,8 +6,10 @@ import type { FlowMutationResult } from '../../../../flow/types.js'
 import {
   FlowAmbiguousError,
   FlowApiVersionTooLowError,
+  FlowChangedOutsideRunError,
   FlowDeployFailedError,
   FlowDraftBesideActiveError,
+  FlowLeftoverVersionError,
   FlowNotFoundError,
   FlowRevertError,
   FlowTestNotFoundError,
@@ -99,6 +101,18 @@ function renderFlowError(error: unknown): never {
       String(error.activeVersion),
     ])
   }
+  if (error instanceof FlowLeftoverVersionError) {
+    throw messages.createError('error.flowLeftoverVersion', [
+      error.apiName,
+      error.versionNumbers.join(', '),
+    ])
+  }
+  if (error instanceof FlowChangedOutsideRunError) {
+    throw messages.createError('error.flowChangedOutsideRun', [
+      error.apiName,
+      error.changedVersions.join(', '),
+    ])
+  }
   if (error instanceof FlowVersionLimitError) {
     throw messages.createError('error.flowVersionLimit', [
       error.apiName,
@@ -182,10 +196,6 @@ export default class FlowMutationRun extends SfCommand<FlowMutationRunResult> {
       min: 0,
       max: 100,
     }),
-    'allow-non-sandbox-org': Flags.boolean({
-      summary: messages.getMessage('flags.allow-non-sandbox-org.summary'),
-      default: false,
-    }),
     'target-org': Flags.requiredOrg(),
     'api-version': Flags.orgApiVersion(),
   }
@@ -196,13 +206,10 @@ export default class FlowMutationRun extends SfCommand<FlowMutationRunResult> {
     const flowTestNames = flags['flow-test']?.map(name => name.trim())
     this.assertNames(flowApiName, flowTestNames)
 
-    const engine = await createOrgFlowEngine(
-      {
-        connection: flags['target-org'].getConnection(flags['api-version']),
-        notify: notice => reportEngineNotice(notice, this.spinner, messages),
-      },
-      { allowNonSandbox: flags['allow-non-sandbox-org'] }
-    ).catch(renderFlowError)
+    const engine = await createOrgFlowEngine({
+      connection: flags['target-org'].getConnection(flags['api-version']),
+      notify: notice => reportEngineNotice(notice, this.spinner, messages),
+    }).catch(renderFlowError)
 
     this.log(
       messages.getMessage(

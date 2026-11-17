@@ -25,8 +25,10 @@ vi.mock('../../../../src/adapter/org/orgFlowSourceProvider.js')
 vi.mock('../../../../src/adapter/org/orgFlowTestBed.js')
 vi.mock('../../../../src/adapter/org/organizationRepository.js')
 
+const SANDBOX = { isSandbox: true, organizationType: 'Enterprise Edition' }
+
 describe('createOrgFlowEngine', () => {
-  const readIsSandbox = vi.fn()
+  const readOrganizationKind = vi.fn()
   const ctx = (apiVersion = '66.0'): EngineContext => ({
     connection: { getApiVersion: () => apiVersion } as unknown as Connection,
     notify: vi.fn(),
@@ -35,7 +37,7 @@ describe('createOrgFlowEngine', () => {
   beforeEach(() => {
     vi.mocked(OrganizationRepository).mockImplementation(
       class {
-        readIsSandbox = readIsSandbox
+        readOrganizationKind = readOrganizationKind
       } as unknown as new (
         connection: Connection
       ) => OrganizationRepository
@@ -44,7 +46,7 @@ describe('createOrgFlowEngine', () => {
 
   it('Given a sandbox on API 66.0, When created, Then one metadata repository serves both the source and the test bed', async () => {
     // Arrange
-    readIsSandbox.mockResolvedValue(true)
+    readOrganizationKind.mockResolvedValue(SANDBOX)
 
     // Act
     const engine = await createOrgFlowEngine(ctx())
@@ -67,7 +69,7 @@ describe('createOrgFlowEngine', () => {
 
   it('Given a sandbox, When the runner falls back to the asynchronous transport, Then the notice reaches ctx.notify', async () => {
     // Arrange
-    readIsSandbox.mockResolvedValue(true)
+    readOrganizationKind.mockResolvedValue(SANDBOX)
     const context = ctx()
     await createOrgFlowEngine(context)
     const fallback = new Error('View Setup required')
@@ -82,39 +84,46 @@ describe('createOrgFlowEngine', () => {
     })
   })
 
-  it('Given a non-sandbox org, When created, Then it refuses and builds no port', async () => {
-    // Arrange
-    readIsSandbox.mockResolvedValue(false)
+  it.each([
+    ['Enterprise Edition'],
+    ['Unlimited Edition'],
+    ['Partner Developer Edition'],
+    ['developer edition'],
+    [null],
+  ])(
+    'Given a production org of type %j, When created, Then it refuses and builds no port',
+    async organizationType => {
+      // Arrange
+      readOrganizationKind.mockResolvedValue({
+        isSandbox: false,
+        organizationType,
+      })
 
-    // Act & Assert
-    await expect(createOrgFlowEngine(ctx())).rejects.toBeInstanceOf(
-      ProductionOrgError
-    )
-    expect(vi.mocked(OrgFlowTestBed)).not.toHaveBeenCalled()
-  })
+      // Act & Assert
+      await expect(createOrgFlowEngine(ctx())).rejects.toBeInstanceOf(
+        ProductionOrgError
+      )
+      expect(vi.mocked(OrgFlowTestBed)).not.toHaveBeenCalled()
+    }
+  )
 
-  it('Given a non-sandbox org and allowNonSandbox, When created, Then it builds the engine without querying the sandbox flag', async () => {
-    // Arrange
-    readIsSandbox.mockResolvedValue(false)
+  it('Given a Developer Edition org (Trailhead playgrounds included), When created, Then it is accepted though it is no sandbox', async () => {
+    // Arrange — what a Developer Edition org and a Trailhead playground report
+    readOrganizationKind.mockResolvedValue({
+      isSandbox: false,
+      organizationType: 'Developer Edition',
+    })
 
     // Act
-    const engine = await createOrgFlowEngine(ctx(), { allowNonSandbox: true })
+    const engine = await createOrgFlowEngine(ctx())
 
     // Assert
-    expect(readIsSandbox).not.toHaveBeenCalled()
     expect(engine.testBed).toBe(vi.mocked(OrgFlowTestBed).mock.instances[0])
-  })
-
-  it('Given allowNonSandbox and API 65.0, When created, Then the API version is still enforced', async () => {
-    // Act & Assert
-    await expect(
-      createOrgFlowEngine(ctx('65.0'), { allowNonSandbox: true })
-    ).rejects.toBeInstanceOf(FlowApiVersionTooLowError)
   })
 
   it('Given the sandbox check itself fails, When created, Then it fails closed', async () => {
     // Arrange
-    readIsSandbox.mockRejectedValue(new Error('INVALID_SESSION_ID'))
+    readOrganizationKind.mockRejectedValue(new Error('INVALID_SESSION_ID'))
 
     // Act & Assert
     await expect(createOrgFlowEngine(ctx())).rejects.toThrow(
@@ -130,13 +139,13 @@ describe('createOrgFlowEngine', () => {
       await expect(createOrgFlowEngine(ctx(apiVersion))).rejects.toEqual(
         new FlowApiVersionTooLowError(apiVersion, MINIMUM_FLOW_API_VERSION)
       )
-      expect(readIsSandbox).not.toHaveBeenCalled()
+      expect(readOrganizationKind).not.toHaveBeenCalled()
     }
   )
 
   it('Given a later API version, When created, Then it is accepted', async () => {
     // Arrange
-    readIsSandbox.mockResolvedValue(true)
+    readOrganizationKind.mockResolvedValue(SANDBOX)
 
     // Act & Assert
     await expect(createOrgFlowEngine(ctx('100.0'))).resolves.toBeDefined()

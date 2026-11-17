@@ -71,25 +71,38 @@ describe('OrganizationRepository', () => {
     })
   })
 
-  describe('when reading whether the org is a sandbox', () => {
+  describe('when reading what kind of org it is', () => {
     it.each([
-      [[{ IsSandbox: true }], true],
-      [[{ IsSandbox: false }], false],
-      [[{ IsSandbox: 'true' }], false],
-      [[], false],
+      [
+        [{ IsSandbox: true, OrganizationType: 'Enterprise Edition' }],
+        { isSandbox: true, organizationType: 'Enterprise Edition' },
+      ],
+      [
+        [{ IsSandbox: false, OrganizationType: 'Developer Edition' }],
+        { isSandbox: false, organizationType: 'Developer Edition' },
+      ],
+      [
+        [{ IsSandbox: 'true', OrganizationType: null }],
+        { isSandbox: false, organizationType: null },
+      ],
+      [
+        [{ IsSandbox: false, OrganizationType: 7 }],
+        { isSandbox: false, organizationType: null },
+      ],
+      [[], { isSandbox: false, organizationType: null }],
     ])(
-      'Given the rows %j, When read, Then only an explicit true counts as a sandbox (%s)',
+      'Given the rows %j, When read, Then only explicit values count (%j)',
       async (records, expected) => {
         // Arrange
         queryMock.mockResolvedValue({ records })
 
         // Act
-        const result = await sut.readIsSandbox()
+        const result = await sut.readOrganizationKind()
 
         // Assert
-        expect(result).toBe(expected)
+        expect(result).toEqual(expected)
         expect(queryMock).toHaveBeenCalledWith(
-          'SELECT IsSandbox FROM Organization'
+          'SELECT IsSandbox, OrganizationType FROM Organization'
         )
       }
     )

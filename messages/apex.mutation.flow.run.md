@@ -6,7 +6,7 @@ Evaluate FlowTest quality by injecting mutations into a Flow and checking whethe
 
 Reads the Flow and its FlowTests from the org, deploys each mutant, runs the FlowTests against it, and restores the org to exactly the state the run started from. Nothing in the local project is read or written.
 
-Only record-triggered and autolaunched Flows without Pause or Screen elements can be tested, and the target org must be a sandbox or a scratch org: the command refuses any other org, dry runs included, unless --allow-non-sandbox-org is passed (e.g. Developer Edition or Trailhead orgs). Requires API version 66.0 or later.
+Only record-triggered and autolaunched Flows without Pause or Screen elements can be tested, and the target org must be a sandbox, a scratch org or a Developer Edition org (Trailhead playgrounds included): the command refuses any other org, dry runs included. Requires API version 66.0 or later.
 
 FlowTests only run against the Flow's Active version, or its latest version when none is Active. When the latest version is Active, each mutant is deployed as a temporary version that is activated for the duration of its FlowTests — so the mutant is live in the sandbox meanwhile — after which the original version is activated again and the temporary version deleted. A Flow has room for 50 versions; the run needs one free slot for its temporary version. When no version is Active and the latest is a Draft, the run overwrites that Draft and restores its original content at the end. A Draft beside an Active version is refused: it cannot be tested without activating it. FlowTests are detached from their flow versions for the run and restored at the end, and the version every FlowTest ran against is checked after each run.
 
@@ -29,10 +29,6 @@ Line ranges of the Flow XML to mutate (e.g., 1-10, 42). Only these lines are eli
 # flags.threshold.summary
 
 Minimum mutation score (0-100) required for the command to succeed
-
-# flags.allow-non-sandbox-org.summary
-
-Potentially unsafe. Allow running against an org that is not a sandbox or scratch org (e.g. Developer Edition or Trailhead). Skips the sandbox check entirely, production included: use only on orgs where deploying and activating Flow versions is safe.
 
 # flags.report-dir.summary
 
@@ -192,7 +188,7 @@ Invalid FlowTest name: '%s'. A FlowTest name contains only letters, digits and u
 
 # error.productionOrg
 
-The target org is not a sandbox. Flow mutation testing deploys and activates Flow versions and is only allowed on sandboxes and scratch orgs, dry runs included. To run against a Developer Edition or Trailhead org, pass --allow-non-sandbox-org.
+The target org is not a sandbox, a scratch org or a Developer Edition org. Flow mutation testing deploys and activates Flow versions and is only allowed on those orgs (Trailhead playgrounds are Developer Edition orgs), dry runs included.
 
 # error.apiVersionTooLow
 
@@ -225,6 +221,14 @@ The latest version of Flow '%s' (version %s) is a Draft beside the Active versio
 # error.flowVersionLimit
 
 Flow '%s' already has %s versions, the maximum of %s. Delete an obsolete version so the run can create its temporary Draft version.
+
+# error.flowLeftoverVersion
+
+Flow '%s' has versions marked [apex-mutation-testing] (%s): an interrupted run of this command left them, and they hold mutants, not your Flow. Put the Flow back as it was — activate its original version and delete the marked ones, or deploy its original Draft from your source — restore the flow-version associations of its FlowTests if they had any, then run again.
+
+# error.flowChangedOutsideRun
+
+Flow '%s' was changed outside this run (versions %s): a version was saved, added, removed, activated or deactivated since the run last deployed it. The run was stopped without writing over that change, and only the versions the run created are deleted.
 
 # error.flowVersionGuard
 

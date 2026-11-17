@@ -20,8 +20,11 @@ import {
   OrgFlowTestBed,
 } from '../../../../src/adapter/org/orgFlowTestBed.js'
 import {
+  FlowChangedOutsideRunError,
   FlowDeployFailedError,
   FlowDraftBesideActiveError,
+  FlowLeftoverVersionError,
+  FlowOrgSafetyError,
   FlowRestoreError,
   FlowRevertError,
   FlowTestPinError,
@@ -41,16 +44,15 @@ import {
   recordTriggeredFlowXml,
 } from '../../../utils/flowFixtures.js'
 
-interface FakeVersion extends FlowVersionRow {
-  xml: string
-}
+type FakeVersion = Omit<FlowVersionRow, 'description'> & { xml: string }
 
 const ORIGINAL_TEST = flowTestXml('Account_After', [1])
 
 // An in-memory org reproducing what a sandbox showed: a deploy while the
 // latest version is a Draft overwrites it in place (re-keying its record),
 // any other deploy creates a new Draft numbered after the highest; an
-// activation makes the previously Active version Obsolete; and the test
+// activation makes the previously Active version Obsolete and keeps every
+// record Id; a version's description is the one in its XML; and the test
 // runner runs a FlowTest against the Active version — the latest when none
 // is — skipping a FlowTest associated with versions that exclude it, and
 // recording one FlowTestResult row per FlowTest it ran.
@@ -109,6 +111,22 @@ class FakeOrg {
     })
   }
 
+  // A save of the flow, as a deploy or Flow Builder's Save makes it.
+  save(xml: string): void {
+    const latest = this.versions.at(-1)
+    const overwrite =
+      this.overwriteOnEveryDeploy ||
+      (latest?.status === 'Draft' && !this.createOnEveryDeploy)
+    if (overwrite && latest) {
+      latest.id = `301${this.nextId++}`
+      latest.xml = xml
+      if (this.renumberOnOverwrite) latest.versionNumber += 10
+      return
+    }
+    this.create(xml)
+    if (this.createTwice) this.create(xml)
+  }
+
   readonly metadata = {
     deploy: vi.fn(async (files: FlowMetadataFile[]) => {
       for (const file of files) {
@@ -125,18 +143,7 @@ class FakeOrg {
           throw new FlowDeployFailedError(['Element invalid'])
         }
         this.flowDeploys.push(file.xml)
-        const latest = this.versions.at(-1)
-        const overwrite =
-          this.overwriteOnEveryDeploy ||
-          (latest?.status === 'Draft' && !this.createOnEveryDeploy)
-        if (overwrite && latest) {
-          latest.id = `301${this.nextId++}`
-          latest.xml = file.xml
-          if (this.renumberOnOverwrite) latest.versionNumber += 10
-          continue
-        }
-        this.create(file.xml)
-        if (this.createTwice) this.create(file.xml)
+        this.save(file.xml)
       }
       if (this.dropLatestOnDeploy) this.versions.pop()
     }),
@@ -156,10 +163,12 @@ class FakeOrg {
     // ordered by version number, as the Tooling query is
     listVersions: vi.fn(async () =>
       this.versions
-        .map(({ id, versionNumber, status }) => ({
+        .map(({ id, versionNumber, status, xml }) => ({
           id,
           versionNumber,
           status,
+          description:
+            /<description>([^<]*)<\/description>/.exec(xml)?.[1] ?? '',
         }))
         .sort((a, b) => a.versionNumber - b.versionNumber)
     ),
@@ -252,6 +261,21 @@ const mutant = (status: string, n: number) =>
   recordTriggeredFlowXml(status).replace('Create', `Update${n}`)
 
 const KILLED = { kind: 'executed', failingTests: ['Sets_Rating'] }
+
+const GUARD_MESSAGE =
+  "Flow 'Account_After' versions changed unexpectedly during the run"
+
+// What a colleague saves in Flow Builder while the run goes on.
+const COLLEAGUE_XML = recordTriggeredFlowXml('Draft').replace(
+  'Create',
+  'Delete'
+)
+
+const withDescription = (xml: string, description: string): string =>
+  xml.replace(
+    '<processType>',
+    `<description>${description}</description>\n    <processType>`
+  )
 
 describe('OrgFlowTestBed', () => {
   describe('a full run against an org that versions flows as a sandbox does', () => {
@@ -374,7 +398,7 @@ describe('OrgFlowTestBed', () => {
       ])
     })
 
-    it('Given a Draft latest version with no Active one, When prepared, Then it is overwritten in place, unmarked, and nothing is activated', async () => {
+    it('Given a Draft latest version with no Active one, When prepared, Then it is overwritten in place, marked, and nothing is activated', async () => {
       // Arrange
       const org = new FakeOrg(['Obsolete', 'Draft'])
       const sut = build(org)
@@ -387,8 +411,74 @@ describe('OrgFlowTestBed', () => {
         [1, 'Obsolete'],
         [2, 'Draft'],
       ])
-      expect(org.versions[1].xml).toBe(recordTriggeredFlowXml('Draft'))
+      expect(org.versions[1].xml).toBe(
+        withDescription(
+          recordTriggeredFlowXml('Draft'),
+          TEMPORARY_VERSION_MARKER
+        )
+      )
       expect(org.activations).toEqual([])
+    })
+
+    it.each([
+      ['Active', ['Active'], [2]],
+      ['Draft', ['Obsolete', 'Draft'], [2]],
+    ])(
+      'Given a run on a %s original interrupted while a surviving mutant was under test, When the next run prepares, Then it refuses naming the marked version, before any write',
+      async (status, statuses, marked) => {
+        // Arrange — review proof: the org as the first run's process leaves
+        // it, dying while the mutant's tests run
+        const first = new FakeOrg(statuses)
+        first.outcome = () => 'Pass'
+        const firstRun = build(first)
+        await firstRun.prepare(source(status), hooks())
+        let leftover: FakeVersion[] = []
+        first.runner.runFlowTests.mockImplementationOnce(async () => {
+          leftover = first.versions.map(version => ({ ...version }))
+          throw new Error('SIGINT')
+        })
+        await firstRun.evaluate(mutant(status, 0)).catch(() => undefined)
+        const org = new FakeOrg([])
+        org.versions = leftover
+        const sut = build(org)
+
+        // Act & Assert
+        await expect(sut.prepare(source(status), hooks())).rejects.toEqual(
+          new FlowLeftoverVersionError('Account_After', marked)
+        )
+        expect(org.metadata.deploy).not.toHaveBeenCalled()
+        await sut.restore()
+        expect(org.metadata.deploy).not.toHaveBeenCalled()
+      }
+    )
+
+    it('Given a temporary Draft left beside the Active version, When prepared, Then the leftover is named rather than the Draft refused', async () => {
+      // Arrange — interrupted between a deploy and its activation
+      const org = new FakeOrg(['Active', 'Draft'])
+      org.versions[1].xml = withDescription(
+        mutant('Draft', 0),
+        TEMPORARY_VERSION_MARKER
+      )
+      const sut = build(org)
+
+      // Act & Assert
+      await expect(sut.prepare(source('Active'), hooks())).rejects.toEqual(
+        new FlowLeftoverVersionError('Account_After', [2])
+      )
+    })
+
+    it('Given versions with descriptions of their own, When prepared, Then it proceeds', async () => {
+      // Arrange
+      const org = new FakeOrg(['Obsolete', 'Active'])
+      for (const version of org.versions) {
+        version.xml = withDescription(version.xml, 'Rates [accounts]')
+      }
+      const sut = build(org)
+
+      // Act & Assert
+      await expect(
+        sut.prepare(source('Active'), hooks())
+      ).resolves.toBeDefined()
     })
 
     it('Given a Draft beside an older Active version, When prepared, Then it refuses before any deploy', async () => {
@@ -754,28 +844,12 @@ describe('OrgFlowTestBed', () => {
         },
       ],
       [
-        'the original overwritten instead of a version created',
-        (org: FakeOrg) => {
-          org.overwriteOnEveryDeploy = true
-        },
-      ],
-      [
         'a version created other than Draft',
         (org: FakeOrg) => {
           const deploy = org.metadata.deploy.getMockImplementation()
           org.metadata.deploy.mockImplementationOnce(async files => {
             await deploy?.(files)
             ;(org.versions.at(-1) as FakeVersion).status = 'Obsolete'
-          })
-        },
-      ],
-      [
-        'the original no longer Active',
-        (org: FakeOrg) => {
-          const deploy = org.metadata.deploy.getMockImplementation()
-          org.metadata.deploy.mockImplementationOnce(async files => {
-            await deploy?.(files)
-            org.versions[0].status = 'Obsolete'
           })
         },
       ],
@@ -798,6 +872,43 @@ describe('OrgFlowTestBed', () => {
         await expect(sut.evaluate(mutant('Active', 0))).rejects.toBeInstanceOf(
           FlowVersionGuardError
         )
+      }
+    )
+
+    it.each([
+      [
+        'the original overwritten instead of a version created',
+        (org: FakeOrg) => {
+          org.overwriteOnEveryDeploy = true
+        },
+        'Version 1 is Active, which this run did not do: version 1 is not activated again',
+      ],
+      [
+        'the original no longer Active',
+        (org: FakeOrg) => {
+          const deploy = org.metadata.deploy.getMockImplementation()
+          org.metadata.deploy.mockImplementationOnce(async files => {
+            await deploy?.(files)
+            org.versions[0].status = 'Obsolete'
+          })
+        },
+        'No version is Active, which this run did not do: version 1 is not activated again',
+      ],
+    ])(
+      'Given %s, When a mutant is evaluated against an Active original, Then nothing is activated over a version the run did not create',
+      async (_label, misbehave, revertProblem) => {
+        // Arrange
+        const org = new FakeOrg(['Active'])
+        const sut = build(org)
+        await sut.prepare(source('Active'), hooks())
+        org.activations = []
+        misbehave(org)
+
+        // Act & Assert
+        await expect(sut.evaluate(mutant('Active', 0))).rejects.toEqual(
+          new FlowRevertError('Account_After', [revertProblem, GUARD_MESSAGE])
+        )
+        expect(org.activations).toEqual([])
       }
     )
 
@@ -886,6 +997,176 @@ describe('OrgFlowTestBed', () => {
     )
   })
 
+  describe('changes made outside the run', () => {
+    it('Given a colleague saves a new Draft version between two evaluations, When the next mutant is evaluated, Then the run stops before writing and that version survives the restore', async () => {
+      // Arrange — review proof; the colleague's version takes number 2,
+      // which the run's deleted temporary versions had
+      const org = new FakeOrg(['Active'])
+      const sut = build(org)
+      await sut.prepare(source('Active'), hooks())
+      await sut.evaluate(mutant('Active', 0))
+      org.save(COLLEAGUE_XML)
+      org.flowDeploys = []
+
+      // Act
+      const error = await sut.evaluate(mutant('Active', 1)).catch(e => e)
+      const restoreError = await sut.restore().catch(e => e)
+
+      // Assert
+      expect(error).toEqual(
+        new FlowChangedOutsideRunError('Account_After', [2])
+      )
+      expect(error).toBeInstanceOf(FlowOrgSafetyError)
+      expect(org.flowDeploys).toEqual([])
+      expect(org.versions.at(-1)?.xml).toBe(COLLEAGUE_XML)
+      expect(org.deletes).toEqual([2, 2])
+      expect(restoreError).toBeInstanceOf(FlowRestoreError)
+      expect(
+        (restoreError as FlowRestoreError).failures.map(f => f.message)
+      ).toEqual([GUARD_MESSAGE])
+    })
+
+    it.each([
+      [
+        'activates an older version',
+        (org: FakeOrg) => {
+          org.versions[0].status = 'Active'
+          org.versions[1].status = 'Obsolete'
+        },
+        [1, 2],
+        'Version 1 is Active, which this run did not do: version 2 is not activated again',
+      ],
+      [
+        'deactivates the flow',
+        (org: FakeOrg) => {
+          org.versions[1].status = 'Obsolete'
+        },
+        [2],
+        'No version is Active, which this run did not do: version 2 is not activated again',
+      ],
+      [
+        'deletes an Obsolete version',
+        (org: FakeOrg) => {
+          org.versions.shift()
+        },
+        [1],
+        undefined,
+      ],
+    ])(
+      'Given a colleague %s between two evaluations, When the next mutant is evaluated, Then the run stops before writing and the restore leaves it so',
+      async (_label, change, changed, restoreProblem) => {
+        // Arrange
+        const org = new FakeOrg(['Obsolete', 'Active'])
+        const sut = build(org)
+        await sut.prepare(source('Active'), hooks())
+        change(org)
+        const state = org.state
+        org.activations = []
+        org.flowDeploys = []
+
+        // Act
+        const error = await sut.evaluate(mutant('Active', 0)).catch(e => e)
+        const restoreError = (await sut
+          .restore()
+          .catch(e => e)) as FlowRestoreError
+
+        // Assert
+        expect(error).toEqual(
+          new FlowChangedOutsideRunError('Account_After', changed)
+        )
+        expect(org.flowDeploys).toEqual([])
+        expect(org.activations).toEqual([])
+        expect(org.state).toEqual(state)
+        expect(restoreError.failures.map(f => f.message)).toEqual(
+          [restoreProblem, GUARD_MESSAGE].filter(Boolean)
+        )
+      }
+    )
+
+    it('Given changes on versions listed out of number order, When the next mutant is evaluated, Then the changed versions are named in number order', async () => {
+      // Arrange — the colleague deactivates version 3 and saves a version the
+      // org numbers 2, filling the gap
+      const org = new FakeOrg(['Obsolete', 'Obsolete', 'Active'])
+      org.versions.splice(1, 1)
+      const sut = build(org)
+      await sut.prepare(source('Active'), hooks())
+      org.versions[1].status = 'Obsolete'
+      org.fillGaps = true
+      org.save(COLLEAGUE_XML)
+
+      // Act & Assert
+      await expect(sut.evaluate(mutant('Active', 0))).rejects.toEqual(
+        new FlowChangedOutsideRunError('Account_After', [2, 3])
+      )
+    })
+
+    it('Given a colleague saves a version while a mutant is under test, When it is evaluated, Then only the temporary version is deleted and the run stops', async () => {
+      // Arrange
+      const org = new FakeOrg(['Active'])
+      const sut = build(org)
+      await sut.prepare(source('Active'), hooks())
+      const run = org.runner.runFlowTests.getMockImplementation()
+      org.runner.runFlowTests.mockImplementationOnce(async (flow, tests) => {
+        org.save(COLLEAGUE_XML)
+        return (run as NonNullable<typeof run>)(flow, tests)
+      })
+      org.deletes = []
+
+      // Act & Assert
+      await expect(sut.evaluate(mutant('Active', 0))).rejects.toBeInstanceOf(
+        FlowRevertError
+      )
+      expect(org.deletes).toEqual([2])
+      expect(org.state).toEqual([
+        [1, 'Active'],
+        [3, 'Draft'],
+      ])
+      expect(org.versions[1].xml).toBe(COLLEAGUE_XML)
+    })
+
+    it.each([
+      [
+        'saves over the Draft',
+        (org: FakeOrg) => {
+          org.save(COLLEAGUE_XML)
+        },
+      ],
+      [
+        'saves a new version beside the Draft',
+        (org: FakeOrg) => {
+          org.createOnEveryDeploy = true
+          org.save(COLLEAGUE_XML)
+          org.createOnEveryDeploy = false
+        },
+      ],
+    ])(
+      'Given a colleague %s between two evaluations of a Draft original, When the restore runs, Then the original content is not deployed over their work',
+      async (_label, change) => {
+        // Arrange
+        const org = new FakeOrg(['Obsolete', 'Draft'])
+        const sut = build(org)
+        await sut.prepare(source('Draft'), hooks())
+        change(org)
+        org.flowDeploys = []
+
+        // Act
+        const error = await sut.evaluate(mutant('Draft', 0)).catch(e => e)
+        const restoreError = (await sut
+          .restore()
+          .catch(e => e)) as FlowRestoreError
+
+        // Assert
+        expect(error).toBeInstanceOf(FlowChangedOutsideRunError)
+        expect(org.flowDeploys).toEqual([])
+        expect(org.versions.at(-1)?.xml).toBe(COLLEAGUE_XML)
+        expect(restoreError.failures[0]).toBeInstanceOf(
+          FlowChangedOutsideRunError
+        )
+        expect(org.deletes).toEqual([])
+      }
+    )
+  })
+
   describe('restore', () => {
     it('Given no prepare, When restoring, Then nothing happens', async () => {
       // Arrange
@@ -915,17 +1196,17 @@ describe('OrgFlowTestBed', () => {
     })
 
     it('Given a temporary version left Active, When restored, Then the original is activated again and the temporary version deleted', async () => {
-      // Arrange — an interruption between an activation and its revert
+      // Arrange — a revert that could not activate the original
       const org = new FakeOrg(['Active'])
       const sut = build(org)
       await sut.prepare(source('Active'), hooks())
-      org.versions[0].status = 'Obsolete'
-      org.versions.push({
-        id: '301t',
-        versionNumber: 2,
-        status: 'Active',
-        xml: mutant('Draft', 0),
-      })
+      org.refuseActivation = number => number === 1
+      await sut.evaluate(mutant('Active', 0)).catch(() => undefined)
+      org.refuseActivation = undefined
+      expect(org.state).toEqual([
+        [1, 'Obsolete'],
+        [2, 'Active'],
+      ])
       org.activations = []
       org.deletes = []
 
@@ -958,13 +1239,8 @@ describe('OrgFlowTestBed', () => {
       const org = new FakeOrg(['Active'])
       const sut = build(org)
       await sut.prepare(source('Active'), hooks())
-      org.versions.push({
-        id: '301t',
-        versionNumber: 2,
-        status: 'Draft',
-        xml: '',
-      })
       org.failDelete = true
+      await sut.evaluate(mutant('Active', 0)).catch(() => undefined)
 
       // Act
       const error = await sut.restore().catch((e: unknown) => e)
@@ -973,7 +1249,7 @@ describe('OrgFlowTestBed', () => {
       expect(error).toBeInstanceOf(FlowRestoreError)
       expect((error as FlowRestoreError).failures.map(f => f.message)).toEqual([
         'paused interview',
-        "Flow 'Account_After' versions changed unexpectedly during the run",
+        GUARD_MESSAGE,
       ])
       expect(org.flowTests.get('Sets_Rating')).toBe(ORIGINAL_TEST)
     })
@@ -983,13 +1259,8 @@ describe('OrgFlowTestBed', () => {
       const org = new FakeOrg(['Active'])
       const sut = build(org)
       await sut.prepare(source('Active'), hooks())
-      org.versions[0].status = 'Obsolete'
-      org.versions.push({
-        id: '301t',
-        versionNumber: 2,
-        status: 'Active',
-        xml: '',
-      })
+      org.refuseActivation = number => number === 1
+      await sut.evaluate(mutant('Active', 0)).catch(() => undefined)
       org.refuseActivation = () => true
       org.deletes = []
 
@@ -1003,7 +1274,7 @@ describe('OrgFlowTestBed', () => {
       expect(error.failures.map(f => f.message)).toEqual([
         'Deployment failed: cannot activate',
         'Version 2 is Active and is not deleted',
-        "Flow 'Account_After' versions changed unexpectedly during the run",
+        GUARD_MESSAGE,
       ])
     })
 

@@ -17,7 +17,10 @@ import { FlowTestDiscovery } from './flowTestDiscovery.js'
 import { FlowTestResultRepository } from './flowTestResultRepository.js'
 import { FlowVersionRepository } from './flowVersionRepository.js'
 import { OrgApexSourceProvider } from './orgApexSourceProvider.js'
-import { OrganizationRepository } from './organizationRepository.js'
+import {
+  type OrganizationKind,
+  OrganizationRepository,
+} from './organizationRepository.js'
 import { OrgFlowSourceProvider } from './orgFlowSourceProvider.js'
 import { OrgFlowTestBed } from './orgFlowTestBed.js'
 import { OrgMutationTestBed } from './orgMutationTestBed.js'
@@ -112,26 +115,29 @@ const assertFlowApiVersion = (apiVersion: string): void => {
   }
 }
 
-export interface FlowEngineOptions {
-  // Explicit opt-in for orgs that report IsSandbox=false (Developer Edition,
-  // Trailhead — but also production: the caller owns that responsibility).
-  // Skips the sandbox check entirely, so the org is not even queried for it.
-  allowNonSandbox?: boolean
-}
+// The orgs a run may deploy and activate Flow versions in: sandboxes and
+// scratch orgs, and Developer Edition orgs — Trailhead playgrounds included —
+// which report IsSandbox = false. An allow-list with no bypass: production
+// has no way in.
+const DEVELOPER_EDITION = 'Developer Edition'
+
+const isFlowTestingOrg = ({
+  isSandbox,
+  organizationType,
+}: OrganizationKind): boolean =>
+  isSandbox || organizationType === DEVELOPER_EDITION
 
 // Every check that must hold before the Flow engine may exist runs here,
-// before any port is handed out: a non-sandbox org never gets a test bed
-// unless the caller opted in explicitly, and neither does a dry run against
-// one.
+// before any port is handed out: an org outside the allow-list never gets a
+// test bed, and neither does a dry run against one.
 export const createOrgFlowEngine = async (
-  ctx: EngineContext,
-  options: FlowEngineOptions = {}
+  ctx: EngineContext
 ): Promise<FlowEngineBundle> => {
   assertFlowApiVersion(ctx.connection.getApiVersion())
-  if (
-    !options.allowNonSandbox &&
-    !(await new OrganizationRepository(ctx.connection).readIsSandbox())
-  ) {
+  const kind = await new OrganizationRepository(
+    ctx.connection
+  ).readOrganizationKind()
+  if (!isFlowTestingOrg(kind)) {
     throw new ProductionOrgError()
   }
   const metadata = new FlowMetadataRepository(ctx.connection)

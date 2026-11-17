@@ -1,6 +1,8 @@
 import {
+  FlowChangedOutsideRunError,
   FlowDeployFailedError,
   FlowDraftBesideActiveError,
+  FlowLeftoverVersionError,
   FlowRestoreError,
   FlowRevertError,
   FlowTestPinError,
@@ -29,6 +31,7 @@ import {
 } from './flowTestResultRepository.js'
 import {
   pinnedVersions,
+  TEMPORARY_VERSION_MARKER,
   toDraftXml,
   unpinFlowTest,
 } from './flowVersionEdits.js'
@@ -54,6 +57,8 @@ const PASS = 'Pass'
 //  - 'overwrite': no version is Active and the latest is a Draft. Every
 //    deploy overwrites that Draft in place, and the restore deploys its
 //    original content back. No version is created.
+// Every XML an evaluation deploys carries TEMPORARY_VERSION_MARKER, so a run
+// interrupted before its restore leaves a version the next run recognizes.
 type Mode = 'activate' | 'overwrite'
 
 interface Session {
@@ -61,6 +66,16 @@ interface Session {
   definitionId: string
   snapshot: FlowVersionRow[]
   mode: Mode
+  // The versions as the run last left them, record Ids included: the
+  // snapshot, except that a deploy over the Draft ('overwrite') gives it a
+  // new Id. Checked before every write; any other difference is somebody
+  // else's change, which the run never writes over.
+  expected: FlowVersionRow[]
+  // Record Ids of the versions this run's deploys created. Only these are
+  // ever deleted, or have the original activated over them. A version number
+  // would not do: a deleted version's number is given to the next version
+  // created, whoever creates it.
+  created: Set<string>
   // 'overwrite' only: set once the first deploy is attempted, from when the
   // restore must deploy the original back, whether or not it succeeded.
   flowTouched: boolean
@@ -69,11 +84,16 @@ interface Session {
   unpinned: FlowTestSource[]
 }
 
+type RunOutcome = { failingTests: string[]; runMs: number }
+
 const numbersOf = (versions: FlowVersionRow[]): number[] =>
   versions.map(version => version.versionNumber)
 
+const activeRowOf = (versions: FlowVersionRow[]): FlowVersionRow | undefined =>
+  versions.find(version => version.status === ACTIVE)
+
 const activeOf = (versions: FlowVersionRow[]): number | undefined =>
-  versions.find(version => version.status === ACTIVE)?.versionNumber
+  activeRowOf(versions)?.versionNumber
 
 const stateOf = (versions: FlowVersionRow[]): FlowVersionState => ({
   numbers: numbersOf(versions),
@@ -84,6 +104,26 @@ const sameState = (a: FlowVersionState, b: FlowVersionState): boolean =>
   a.active === b.active &&
   a.numbers.length === b.numbers.length &&
   a.numbers.every((number, index) => number === b.numbers[index])
+
+// The version numbers whose record Id or status differs between the two
+// listings, a version present in only one of them included.
+const changedVersions = (
+  expected: FlowVersionRow[],
+  observed: FlowVersionRow[]
+): number[] => {
+  const keyed = (versions: FlowVersionRow[]) =>
+    new Map(
+      versions.map(version => [
+        version.versionNumber,
+        `${version.id}|${version.status}`,
+      ])
+    )
+  const before = keyed(expected)
+  const after = keyed(observed)
+  return [...new Set([...before.keys(), ...after.keys()])]
+    .filter(number => before.get(number) !== after.get(number))
+    .sort((a, b) => a - b)
+}
 
 const toError = (value: unknown): Error =>
   value instanceof Error ? value : new Error(String(value))
@@ -105,11 +145,14 @@ export class OrgFlowTestBed implements FlowTestBed {
     hooks.onPreparing()
     const definitionId = await this.versions.readDefinitionId(source.apiName)
     const snapshot = await this.versions.listVersions(definitionId)
+    this.assertNoLeftover(source.apiName, snapshot)
     const session: Session = {
       source,
       definitionId,
       snapshot,
       mode: this.selectMode(source.apiName, snapshot),
+      expected: snapshot,
+      created: new Set(),
       flowTouched: false,
       unpinned: [],
     }
@@ -146,7 +189,9 @@ export class OrgFlowTestBed implements FlowTestBed {
   // Every step is attempted whatever the outcome of the one before, and the
   // org is then checked against the snapshot taken before the run: the
   // restore only reports success once the versions are exactly those the run
-  // started from, with the same one Active.
+  // started from, with the same one Active. It only ever undoes what the run
+  // did: a version somebody else saved or activated meanwhile is left as it
+  // is, and the restore then fails, naming the difference.
   public async restore(): Promise<void> {
     const session = this.session
     if (!session) return
@@ -170,22 +215,31 @@ export class OrgFlowTestBed implements FlowTestBed {
         )
       )
     }
-    if (session.flowTouched) {
-      await attempt(() => this.deployFlow(session, session.source.xml))
-    }
-    // Stryker disable next-line ConditionalExpression: in 'overwrite' mode no
-    // version is Active in the snapshot or the org, so reactivateOriginal
-    // compares undefined with undefined and activates nothing either way.
     if (session.mode === 'activate') {
       await attempt(() => this.reactivateOriginal(session))
     }
-    await attempt(() => this.deleteVersionsOutsideSnapshot(session))
+    await attempt(() => this.deleteCreatedVersions(session))
+    if (session.flowTouched) {
+      await attempt(() => this.restoreDraft(session))
+    }
     await attempt(() => this.assertAtRest(session))
 
     if (failures.length > 0) {
       throw new FlowRestoreError(session.source.apiName, failures)
     }
     this.session = undefined
+  }
+
+  // A marked version is a mutant an interrupted run left behind: taken for
+  // the original, it would be the source of every mutant and what the
+  // restore puts back.
+  private assertNoLeftover(apiName: string, snapshot: FlowVersionRow[]): void {
+    const leftovers = snapshot.filter(version =>
+      version.description.includes(TEMPORARY_VERSION_MARKER)
+    )
+    if (leftovers.length > 0) {
+      throw new FlowLeftoverVersionError(apiName, numbersOf(leftovers))
+    }
   }
 
   private selectMode(apiName: string, snapshot: FlowVersionRow[]): Mode {
@@ -220,10 +274,7 @@ export class OrgFlowTestBed implements FlowTestBed {
   // Deploys `xml` as the version under test, runs the FlowTests against it,
   // and leaves the org at rest again. A refused deploy or activation is a
   // FlowDeployFailedError, thrown once the org is known to be at rest.
-  private runVersion(
-    session: Session,
-    xml: string
-  ): Promise<{ failingTests: string[]; runMs: number }> {
+  private runVersion(session: Session, xml: string): Promise<RunOutcome> {
     return session.mode === 'activate'
       ? this.runTemporaryVersion(session, xml)
       : this.runOverwrittenDraft(session, xml)
@@ -234,15 +285,11 @@ export class OrgFlowTestBed implements FlowTestBed {
   private async runOverwrittenDraft(
     session: Session,
     xml: string
-  ): Promise<{ failingTests: string[]; runMs: number }> {
+  ): Promise<RunOutcome> {
+    await this.assertUntouched(session)
     session.flowTouched = true
-    let deployError: unknown
-    try {
-      await this.deployFlow(session, xml)
-    } catch (error: unknown) {
-      deployError = error
-    }
-    await this.assertAtRest(session)
+    const { observed, deployError } = await this.deployObserved(session, xml)
+    this.checkState(session, stateOf(session.snapshot), observed)
     if (deployError !== undefined) {
       throw deployError
     }
@@ -252,18 +299,22 @@ export class OrgFlowTestBed implements FlowTestBed {
     )
   }
 
-  // The revert runs whatever happened before it — a refused deploy, a
+  // The revert runs whatever happened after the deploy — a refused deploy, a
   // refused activation, a failed test run — so the org is back at its
   // snapshot before any outcome, verdict or error, leaves this method.
   private async runTemporaryVersion(
     session: Session,
     xml: string
-  ): Promise<{ failingTests: string[]; runMs: number }> {
-    let outcome: { failingTests: string[]; runMs: number } | undefined
+  ): Promise<RunOutcome> {
+    await this.assertUntouched(session)
+    let outcome: RunOutcome | undefined
     let runError: unknown
     try {
-      await this.deployFlow(session, xml)
-      const temporary = await this.resolveTemporaryVersion(session)
+      const { observed, deployError } = await this.deployObserved(session, xml)
+      if (deployError !== undefined) {
+        throw deployError
+      }
+      const temporary = this.resolveTemporaryVersion(session, observed)
       await this.versions.activateVersion(session.definitionId, temporary)
       await this.assertState(session, {
         numbers: [...numbersOf(session.snapshot), temporary].sort(
@@ -282,20 +333,67 @@ export class OrgFlowTestBed implements FlowTestBed {
     return outcome
   }
 
-  private async deployFlow(session: Session, xml: string): Promise<void> {
+  // Deploys `xml`, marked, then reads the versions back whatever the deploy's
+  // outcome. The org was at `expected` right before the deploy, so whatever
+  // differs now is the deploy's doing: a version with a new number was
+  // created by it, and the Draft it saved over ('overwrite') has a new Id.
+  private async deployObserved(
+    session: Session,
+    xml: string
+  ): Promise<{ observed: FlowVersionRow[]; deployError: unknown }> {
+    let deployError: unknown
+    try {
+      await this.deployFlow(session, xml, true)
+    } catch (error: unknown) {
+      deployError = error
+    }
+    const observed = await this.readVersions(session)
+    const known = new Set(numbersOf(session.expected))
+    for (const version of observed) {
+      if (!known.has(version.versionNumber)) {
+        session.created.add(version.id)
+      }
+    }
+    // Stryker disable next-line ConditionalExpression: in 'activate' mode the
+    // snapshot's latest version is the Active original, which no deploy of
+    // the run saves over, so its Id would be "updated" to the one it has.
+    if (session.mode === 'overwrite') {
+      const draftNumber = (session.snapshot.at(-1) as FlowVersionRow)
+        .versionNumber
+      const draft = observed.find(
+        version => version.versionNumber === draftNumber
+      )
+      if (draft) {
+        session.expected = session.expected.map(version =>
+          version.versionNumber === draftNumber
+            ? { ...version, id: draft.id }
+            : version
+        )
+      }
+    }
+    return { observed, deployError }
+  }
+
+  private async deployFlow(
+    session: Session,
+    xml: string,
+    marked: boolean
+  ): Promise<void> {
     await this.metadata.deploy([
       {
         type: 'Flow',
         fullName: session.source.apiName,
-        xml: toDraftXml(xml, session.mode === 'activate'),
+        xml: toDraftXml(xml, marked),
       },
     ])
   }
 
   // Exactly one Draft must have appeared beside the snapshot, with the
   // original still Active: it is the temporary version.
-  private async resolveTemporaryVersion(session: Session): Promise<number> {
-    const observed = await this.readVersions(session)
+  private resolveTemporaryVersion(
+    session: Session,
+    observed: FlowVersionRow[]
+  ): number {
     const known = new Set(numbersOf(session.snapshot))
     const created = observed.filter(
       version => !known.has(version.versionNumber)
@@ -323,7 +421,7 @@ export class OrgFlowTestBed implements FlowTestBed {
   ): Promise<void> {
     try {
       await this.reactivateOriginal(session)
-      await this.deleteVersionsOutsideSnapshot(session)
+      await this.deleteCreatedVersions(session)
       await this.assertAtRest(session)
     } catch (revertError: unknown) {
       const problems = [toError(revertError).message]
@@ -334,11 +432,46 @@ export class OrgFlowTestBed implements FlowTestBed {
     }
   }
 
+  // The original is activated again only over a version this run created:
+  // any other Active version — or none at all — is somebody else's doing,
+  // and is left as it is.
   private async reactivateOriginal(session: Session): Promise<void> {
-    const original = activeOf(session.snapshot) as number
-    if (activeOf(await this.readVersions(session)) !== original) {
-      await this.versions.activateVersion(session.definitionId, original)
+    const original = activeRowOf(session.snapshot) as FlowVersionRow
+    const active = activeRowOf(await this.readVersions(session))
+    if (active?.id === original.id) return
+    if (!active || !session.created.has(active.id)) {
+      const state = active
+        ? `Version ${active.versionNumber} is Active`
+        : 'No version is Active'
+      throw new Error(
+        `${state}, which this run did not do: version ${original.versionNumber} is not activated again`
+      )
     }
+    await this.versions.activateVersion(
+      session.definitionId,
+      original.versionNumber
+    )
+  }
+
+  // Deletes the versions this run's deploys created, and only those: a
+  // version that was already there before a deploy survives.
+  private async deleteCreatedVersions(session: Session): Promise<void> {
+    for (const version of await this.readVersions(session)) {
+      if (!session.created.has(version.id)) continue
+      if (version.status === ACTIVE) {
+        throw new Error(
+          `Version ${version.versionNumber} is Active and is not deleted`
+        )
+      }
+      await this.versions.deleteVersion(version)
+    }
+  }
+
+  // Deploys the Draft's original content back, unless somebody else saved
+  // the flow since the run last deployed it: that content is theirs.
+  private async restoreDraft(session: Session): Promise<void> {
+    await this.assertUntouched(session)
+    await this.deployFlow(session, session.source.xml, false)
   }
 
   // Each FlowTest loses its version associations for the run, is deployed,
@@ -389,7 +522,7 @@ export class OrgFlowTestBed implements FlowTestBed {
   private async runFlowTests(
     session: Session,
     expectedVersion: number
-  ): Promise<{ failingTests: string[]; runMs: number }> {
+  ): Promise<RunOutcome> {
     const before = await this.results.listResults(session.definitionId)
     const started = performance.now()
     const result = await this.runner.runFlowTests(
@@ -424,18 +557,16 @@ export class OrgFlowTestBed implements FlowTestBed {
     }
   }
 
-  private async deleteVersionsOutsideSnapshot(session: Session): Promise<void> {
-    const known = new Set(numbersOf(session.snapshot))
-    const extra = (await this.readVersions(session)).filter(
-      version => !known.has(version.versionNumber)
+  // Before every write: the org must hold exactly the versions the run last
+  // left, record Ids and statuses included. Anything else was done by
+  // somebody else meanwhile, and the run stops before writing over it.
+  private async assertUntouched(session: Session): Promise<void> {
+    const changed = changedVersions(
+      session.expected,
+      await this.readVersions(session)
     )
-    for (const version of extra) {
-      if (version.status === ACTIVE) {
-        throw new Error(
-          `Version ${version.versionNumber} is Active and is not deleted`
-        )
-      }
-      await this.versions.deleteVersion(version)
+    if (changed.length > 0) {
+      throw new FlowChangedOutsideRunError(session.source.apiName, changed)
     }
   }
 
@@ -447,13 +578,17 @@ export class OrgFlowTestBed implements FlowTestBed {
     session: Session,
     expected: FlowVersionState
   ): Promise<void> {
-    const observed = stateOf(await this.readVersions(session))
-    if (!sameState(observed, expected)) {
-      throw new FlowVersionGuardError(
-        session.source.apiName,
-        expected,
-        observed
-      )
+    this.checkState(session, expected, await this.readVersions(session))
+  }
+
+  private checkState(
+    session: Session,
+    expected: FlowVersionState,
+    observed: FlowVersionRow[]
+  ): void {
+    const state = stateOf(observed)
+    if (!sameState(state, expected)) {
+      throw new FlowVersionGuardError(session.source.apiName, expected, state)
     }
   }
 

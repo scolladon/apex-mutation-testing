@@ -4,8 +4,17 @@ interface OrganizationRow {
   NamespacePrefix: string | null
 }
 
-interface SandboxRow {
+interface OrganizationKindRow {
   IsSandbox: boolean
+  OrganizationType: string | null
+}
+
+// What the org says it is: whether it is a sandbox (scratch orgs are), and
+// its edition ('Developer Edition' for Developer Edition orgs and Trailhead
+// playgrounds alike, which report IsSandbox = false).
+export interface OrganizationKind {
+  isSandbox: boolean
+  organizationType: string | null
 }
 
 export class OrganizationRepository {
@@ -24,13 +33,17 @@ export class OrganizationRepository {
     return result.records[0]?.NamespacePrefix || null
   }
 
-  // Fails closed: only an explicit `true` from the org counts as a sandbox.
-  // Sandboxes and scratch orgs report true; production, Developer Edition
-  // and Trailhead orgs report false.
-  public async readIsSandbox(): Promise<boolean> {
-    const result = await this.connection.query<SandboxRow>(
-      'SELECT IsSandbox FROM Organization'
+  // Fails closed: only an explicit `true` from the org counts as a sandbox,
+  // and a missing edition is null, never a guess.
+  public async readOrganizationKind(): Promise<OrganizationKind> {
+    const result = await this.connection.query<OrganizationKindRow>(
+      'SELECT IsSandbox, OrganizationType FROM Organization'
     )
-    return result.records[0]?.IsSandbox === true
+    const row = result.records[0]
+    return {
+      isSandbox: row?.IsSandbox === true,
+      organizationType:
+        typeof row?.OrganizationType === 'string' ? row.OrganizationType : null,
+    }
   }
 }

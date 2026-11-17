@@ -4,9 +4,13 @@
 // apexClassErrors.ts. Org-supplied values travel on fields, never only in
 // the super() message, so the command decides how they are displayed.
 
+// The org is neither a sandbox (scratch orgs included) nor a Developer
+// Edition org (Trailhead playgrounds included).
 export class ProductionOrgError extends Error {
   constructor() {
-    super('Flow mutation testing refuses to run against a non-sandbox org')
+    super(
+      'Flow mutation testing only runs against a sandbox, scratch or Developer Edition org'
+    )
     this.name = 'ProductionOrgError'
   }
 }
@@ -83,6 +87,21 @@ export class FlowDraftBesideActiveError extends Error {
   }
 }
 
+// Versions carrying TEMPORARY_VERSION_MARKER: an earlier run was interrupted
+// before its restore, and left a mutant in the org. Taking it for the
+// original would test, and finally restore, the mutant.
+export class FlowLeftoverVersionError extends Error {
+  constructor(
+    public readonly apiName: string,
+    public readonly versionNumbers: number[]
+  ) {
+    super(
+      `Flow '${apiName}' has versions left by an interrupted run: ${versionNumbers.join(', ')}`
+    )
+    this.name = 'FlowLeftoverVersionError'
+  }
+}
+
 export class FlowVersionLimitError extends Error {
   constructor(
     public readonly apiName: string,
@@ -139,6 +158,21 @@ export class FlowVersionGuardError extends FlowOrgSafetyError {
   ) {
     super(`Flow '${apiName}' versions changed unexpectedly during the run`)
     this.name = 'FlowVersionGuardError'
+  }
+}
+
+// The flow's versions differ from those the run last left before it writes
+// again: someone saved, added, removed or (de)activated a version meanwhile.
+// The run stops without writing, so that change is left in place.
+export class FlowChangedOutsideRunError extends FlowOrgSafetyError {
+  constructor(
+    public readonly apiName: string,
+    public readonly changedVersions: number[]
+  ) {
+    super(
+      `Flow '${apiName}' was changed outside the run (versions ${changedVersions.join(', ')})`
+    )
+    this.name = 'FlowChangedOutsideRunError'
   }
 }
 

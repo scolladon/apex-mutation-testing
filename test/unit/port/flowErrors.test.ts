@@ -1,8 +1,10 @@
 import {
   FlowAmbiguousError,
   FlowApiVersionTooLowError,
+  FlowChangedOutsideRunError,
   FlowDeployFailedError,
   FlowDraftBesideActiveError,
+  FlowLeftoverVersionError,
   FlowNotFoundError,
   FlowOrgSafetyError,
   FlowRestoreError,
@@ -23,7 +25,7 @@ describe('flowErrors', () => {
     [
       new ProductionOrgError(),
       'ProductionOrgError',
-      'Flow mutation testing refuses to run against a non-sandbox org',
+      'Flow mutation testing only runs against a sandbox, scratch or Developer Edition org',
     ],
     [
       new FlowApiVersionTooLowError('65.0', '66.0'),
@@ -53,6 +55,11 @@ describe('flowErrors', () => {
       "Flow 'F' latest version is a Draft beside an Active version",
     ],
     [
+      new FlowLeftoverVersionError('F', [2, 3]),
+      'FlowLeftoverVersionError',
+      "Flow 'F' has versions left by an interrupted run: 2, 3",
+    ],
+    [
       new FlowVersionLimitError('F', 50, 50),
       'FlowVersionLimitError',
       "Flow 'F' has no room left for a temporary version",
@@ -76,6 +83,11 @@ describe('flowErrors', () => {
       ),
       'FlowVersionGuardError',
       "Flow 'F' versions changed unexpectedly during the run",
+    ],
+    [
+      new FlowChangedOutsideRunError('F', [1, 2]),
+      'FlowChangedOutsideRunError',
+      "Flow 'F' was changed outside the run (versions 1, 2)",
     ],
     [
       new FlowTestPinError('T', [2]),
@@ -107,6 +119,7 @@ describe('flowErrors', () => {
       { numbers: [], active: undefined },
       { numbers: [], active: undefined }
     ),
+    new FlowChangedOutsideRunError('F', []),
     new FlowTestPinError('T', []),
     new FlowTestVersionError('F', 1, []),
     new FlowRevertError('F', []),
@@ -121,6 +134,9 @@ describe('flowErrors', () => {
   it('Given a refusal before any write, When raised, Then it is not an org safety error', () => {
     // Assert
     expect(new FlowDraftBesideActiveError('F', 2, 1)).not.toBeInstanceOf(
+      FlowOrgSafetyError
+    )
+    expect(new FlowLeftoverVersionError('F', [2])).not.toBeInstanceOf(
       FlowOrgSafetyError
     )
   })
