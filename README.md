@@ -247,12 +247,14 @@ sf apex mutation flow run -f Account_After -o MySandbox
 sf apex mutation flow run -f Account_After -t Sets_Rating --lines 40-60 --threshold 80 -o MySandbox
 ```
 
-- **Sandboxes and scratch orgs only.** The command deploys and activates Flow versions, so it refuses any org whose `Organization.IsSandbox` is not `true` — production and Developer Edition orgs included, dry runs included.
+- **Sandboxes, scratch orgs and Developer Edition orgs only.** The command deploys and activates Flow versions, so it accepts an org only when `Organization.IsSandbox` is `true` or `Organization.OrganizationType` is `Developer Edition` (Trailhead playgrounds are Developer Edition orgs). Every other org is refused, dry runs included, and there is no flag to bypass the check.
 - **API 66.0 or later**, for Test Discovery and for the FlowTest version fields.
 - **The org is the source.** The Flow and its FlowTests are read from the org; nothing in the local project is read or written.
 - **Mutants are live while their FlowTests run.** FlowTests only ever run against the Active version of a Flow, or its latest version when none is Active. So when the latest version is Active, each mutant is deployed as a temporary version and **activated** for the duration of its FlowTests; then the original version is activated again and the temporary one deleted. Like the Apex command, which replaces the class under test, this means a mutant is the live automation in the sandbox for a few seconds at a time. It needs one free slot below the 50-version limit. When no version is Active and the latest is a Draft, the run overwrites that Draft and deploys its original content back. A Draft beside an Active version is refused: it could not be tested without activating it.
 - **Every verdict is checked against the org.** FlowTests are detached from their flow versions for the run (and restored after), and after each FlowTest run the version recorded in `FlowTestResult` must be the one under test; the versions themselves are re-checked after every deploy and activation. Any mismatch stops the run.
 - **The org is restored exactly.** Between two mutants the org is back at its snapshot; at the end, the FlowTests are restored too. If the restore fails, the command fails and says so.
+- **Changes made by others are left alone.** Before every write the run checks that the Flow's versions are still those it left. If somebody saved, added, removed or (de)activated a version meanwhile, the run stops without writing over it; it only ever deletes the versions it created itself.
+- **An interrupted run is recognized.** Every version the run deploys carries `[apex-mutation-testing]` in its description. If a run is interrupted before its restore, the next run refuses while a marked version is left, and says how to put the Flow back.
 - A FlowTest run that fails on transport (a network error, a timeout) scores the mutant **RuntimeError**, which is left out of the Flow score rather than counted as a kill.
 
 ### Configuration
@@ -529,23 +531,20 @@ Evaluate FlowTest quality by injecting mutations into a Flow and checking whethe
 ```
 USAGE
   $ sf apex mutation flow run -f <value> -o <value> [--json] [--flags-dir <value>] [-t <value>...] [-r <value>] [-d] [-l
-    <value>...] [--threshold <value>] [--allow-non-sandbox-org] [--api-version <value>]
+    <value>...] [--threshold <value>] [--api-version <value>]
 
 FLAGS
-  -d, --dry-run                Preview mutations without deploying or running tests
-  -f, --flow=<value>           (required) API name of the Flow to mutate (e.g. Account_After)
-  -l, --lines=<value>...       Line ranges of the Flow XML to mutate (e.g., 1-10, 42). Only these lines are eligible for
-                               mutation.
-  -o, --target-org=<value>     (required) Username or alias of the target org. Not required if the `target-org`
-                               configuration variable is already set.
-  -r, --report-dir=<value>     [default: mutations] Path to the directory where mutation test reports will be generated
-  -t, --flow-test=<value>...   FlowTests to run (e.g. Should_set_Rating). Defaults to every FlowTest of the Flow. Repeat
-                               the flag or pass a comma-separated list.
-      --allow-non-sandbox-org  Potentially unsafe. Allow running against an org that is not a sandbox or scratch org
-                               (e.g. Developer Edition or Trailhead). Skips the sandbox check entirely, production
-                               included: use only on orgs where deploying and activating Flow versions is safe.
-      --api-version=<value>    Override the api version used for api requests made by this command
-      --threshold=<value>      Minimum mutation score (0-100) required for the command to succeed
+  -d, --dry-run               Preview mutations without deploying or running tests
+  -f, --flow=<value>          (required) API name of the Flow to mutate (e.g. Account_After)
+  -l, --lines=<value>...      Line ranges of the Flow XML to mutate (e.g., 1-10, 42). Only these lines are eligible for
+                              mutation.
+  -o, --target-org=<value>    (required) Username or alias of the target org. Not required if the `target-org`
+                              configuration variable is already set.
+  -r, --report-dir=<value>    [default: mutations] Path to the directory where mutation test reports will be generated
+  -t, --flow-test=<value>...  FlowTests to run (e.g. Should_set_Rating). Defaults to every FlowTest of the Flow. Repeat
+                              the flag or pass a comma-separated list.
+      --api-version=<value>   Override the api version used for api requests made by this command
+      --threshold=<value>     Minimum mutation score (0-100) required for the command to succeed
 
 GLOBAL FLAGS
   --flags-dir=<value>  Import flag values from a directory.
@@ -558,8 +557,8 @@ DESCRIPTION
   org to exactly the state the run started from. Nothing in the local project is read or written.
 
   Only record-triggered and autolaunched Flows without Pause or Screen elements can be tested, and the target org must
-  be a sandbox or a scratch org: the command refuses any other org, dry runs included, unless --allow-non-sandbox-org is
-  passed (e.g. Developer Edition or Trailhead orgs). Requires API version 66.0 or later.
+  be a sandbox, a scratch org or a Developer Edition org (Trailhead playgrounds included): the command refuses any other
+  org, dry runs included. Requires API version 66.0 or later.
 
   FlowTests only run against the Flow's Active version, or its latest version when none is Active. When the latest
   version is Active, each mutant is deployed as a temporary version that is activated for the duration of its FlowTests

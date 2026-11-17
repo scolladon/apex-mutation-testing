@@ -1357,7 +1357,7 @@ src/flow/xml/FlowXmlDom.ts               namespace-aware DOM + source offsets + 
 src/port/flowSourceProvider.ts           FlowSourceProvider: read the flow and its FlowTests
 src/port/flowTestBed.ts                  FlowTestBed: prepare / evaluate / restore
 src/port/flowErrors.ts                   typed rejections the command renders
-src/adapter/org/orgEngine.ts             createOrgFlowEngine: API ≥ 66.0, sandbox check
+src/adapter/org/orgEngine.ts             createOrgFlowEngine: API ≥ 66.0, org allow-list
 src/adapter/org/orgFlowSourceProvider.ts Test Discovery + Metadata API retrieve
 src/adapter/org/orgFlowTestBed.ts        version modes, guards, FlowTest unpinning, revert, restore
 src/adapter/org/flowMetadataRepository.ts in-memory zip deploy / retrieve (jsforce + jszip)
@@ -1374,9 +1374,9 @@ sf apex mutation flow run -f Account_After -o MySandbox
 │
 ├─ 1. ENGINE            createOrgFlowEngine(ctx)
 │                         API version < 66.0  → FlowApiVersionTooLowError
-│                         Organization.IsSandbox !== true → ProductionOrgError
-│                         (dry runs included; a failed check fails closed;
-│                          --allow-non-sandbox-org skips the check entirely)
+│                         not IsSandbox = true, not OrganizationType = 'Developer Edition'
+│                           → ProductionOrgError (an allow-list with no bypass;
+│                           dry runs included; a failed check fails closed)
 ├─ 2. READ              FlowSourceProvider.readFlow(apiName, testNames?)
 │                         -t given: names normalised (FlowTesting.<flow>.<t>, <flow>.<t>, <t>)
 │                         else: Test Discovery lists this flow's FlowTests by name
@@ -1385,10 +1385,12 @@ sf apex mutation flow run -f Account_After -o MySandbox
 ├─ 3. VALIDATE + GENERATE    no org write before this point
 ├─    ── DRY RUN EXIT ──     mutants Pending, report written, { score: null }
 ├─ 4. PREPARE           FlowTestBed.prepare — first org write; restore runs on every exit from here
-│                         snapshot versions, pick the mode, unpin the FlowTests
+│                         snapshot versions, refuse a marked leftover, pick the mode,
+│                         unpin the FlowTests
 ├─ 5. BASELINE          the original goes through the per-mutant cycle; every FlowTest must pass
 ├─ 6. EVALUATE          per mutant: applyEdits(original, edits) → evaluate → verdict
-│                         activate mode: deploy temp Draft → activate → run + version check
+│                         org still as the run left it? → deploy (marked)
+│                         activate mode: temp Draft → activate → run + version check
 │                         → original Active again → temp deleted (org at its snapshot)
 ├─ 7. RESTORE           FlowTestBed.restore — throws when the org is not back to its snapshot
 └─ 8. REPORT + SCORE    FLOW_SCORE_POLICY; --threshold as in the Apex command
@@ -1419,7 +1421,7 @@ first write and picks a mode from them:
 
 | Versions | Mode | Per evaluation (baseline and every mutant) | Restore |
 | --- | --- | --- | --- |
-| latest is Active | `activate` | deploy the XML as a temporary Draft beside the Active version, activate it (`FlowDefinition.activeVersionNumber`), run the FlowTests, activate the original again, delete the temporary version | original Active again, every version outside the snapshot deleted |
+| latest is Active | `activate` | deploy the XML as a temporary Draft beside the Active version, activate it (`FlowDefinition.activeVersionNumber`), run the FlowTests, activate the original again, delete the temporary version | original Active again, every version the run created deleted |
 | latest is a Draft, none Active | `overwrite` | deploy the XML over that Draft, in place; run the FlowTests | the original content deployed back |
 | a Draft beside an Active version | — | refused: `FlowDraftBesideActiveError` — testing the Draft means activating it, after which it can never be a Draft again | — |
 | latest Obsolete, InvalidDraft, none | — | refused: `UnsupportedFlowVersionStateError` | — |
@@ -1427,11 +1429,18 @@ first write and picks a mode from them:
 Every deployed XML is a Draft; a version only becomes Active through the explicit activation
 the same evaluation undoes, so between two evaluations the org holds exactly its snapshot, and
 a mutant is live in the sandbox only while its own FlowTests run — the same exposure as the
-Apex engine, which replaces the class under test in the org. In `activate` mode the
-description carries `[apex-mutation-testing]`, because a Draft deployed with content
-identical to the Active version creates no version at all. A Flow is capped at 50 versions:
+Apex engine, which replaces the class under test in the org. A Flow is capped at 50 versions:
 `activate` needs one free slot and refuses to start otherwise (`FlowVersionLimitError`).
 Deleted version numbers are reused, so the temporary version keeps the same number throughout.
+
+Every XML an evaluation deploys — the baseline's included, in both modes — carries
+`[apex-mutation-testing]` (`TEMPORARY_VERSION_MARKER`) in its description. In `activate`
+mode the marker is what gives the run a version of its own: a Draft deployed with content
+identical to the Active version creates no version at all. In both modes it is what a run
+interrupted before its restore (Ctrl+C, a cancelled job, a restore that failed) leaves behind:
+the next run reads the descriptions of every version (`Flow.Description`) and refuses with
+`FlowLeftoverVersionError` while any carries it, rather than take the leftover mutant for the
+original. The restore of the `overwrite` mode deploys the original content unmarked.
 
 For the run, every selected FlowTest loses its `flowTestFlowVersions` and so follows the
 version the runner picks; its original XML is deployed back by the restore.
@@ -1440,13 +1449,19 @@ version the runner picks; its original XML is deployed back by the restore.
 
 The run checks the org's own state rather than trusting the model above:
 
+- **Untouched before every write.** The sandbox may be shared, and a run may be long. Before
+  each deploy — and before the restore deploys a Draft's original content back — the versions
+  are listed and compared with those the run last left, **record Ids and statuses included**:
+  a version somebody saved (a Draft saved in place gets a new Id), added, removed, activated
+  or deactivated meanwhile raises `FlowChangedOutsideRunError` before the run writes over it.
+  The only Id the run expects to change is the one its own deploys give the Draft in
+  `overwrite` mode; an activation keeps every Id (checked on a sandbox).
 - **Version guard.** After every deploy — a refused one included — and after every activation
   and revert, the versions are re-listed and compared with what must hold at that point:
   the snapshot (`overwrite` mode, a refused deploy, after a revert), the snapshot plus exactly
   one new Draft with the original still Active (after an `activate` deploy), or that plus the
   temporary version Active (after its activation). Anything else raises
-  `FlowVersionGuardError`. Version numbers, not record Ids, are compared: the platform re-keys a
-  version when it is overwritten.
+  `FlowVersionGuardError`. Version numbers and the Active one are compared here.
 - **Unpin read-back.** The unpinned FlowTests are **retrieved again**: one that comes back still
   associated with versions — or does not come back — raises `FlowTestPinError`.
 - **Executed version.** The runner never says which version it ran, but `FlowTestResult` does
@@ -1458,6 +1473,12 @@ The run checks the org's own state rather than trusting the model above:
 - **Revert.** In `activate` mode the revert (original Active again, temporary version
   deleted, snapshot checked) runs after every evaluation, whatever happened in it; when it
   fails, `FlowRevertError` carries its failure and the evaluation's own.
+- **Only the run's own versions.** Right after each deploy — a refused one included, since the
+  org was untouched just before it — every version with a number the run did not leave is
+  recorded by **record Id** as created by the run. Only those are ever deleted, and the
+  original is only activated again over one of them: an Active version the run did not set,
+  or none at all, is left as it is. Numbers alone would not do: a deleted temporary version's
+  number is given to the next version created, a colleague's included.
 
 These errors extend `FlowOrgSafetyError`: unlike a transport failure on one mutant, they abort
 the run, and the restore follows. A deploy or activation the org refuses
@@ -1467,9 +1488,11 @@ known to be at rest.
 ### Restore
 
 `restore()` attempts every step whatever the outcome of the one before, in this order:
-FlowTests back to their original XML, then the flow's original content (`overwrite` mode) or
-the original version Active again (`activate` mode), then every version absent from the
-snapshot deleted — never an Active one — and finally the versions compared with the snapshot.
+FlowTests back to their original XML, the original version Active again over a version the run
+created (`activate` mode), every version the run created deleted — never an Active one — then
+the Draft's original content deployed back unless the flow was changed outside the run
+(`overwrite` mode), and finally the versions compared with the snapshot. A change made
+outside the run is never undone: it makes the restore fail, naming it.
 Any failure is kept, and the restore throws a `FlowRestoreError` carrying all of them. The
 orchestrator restores on every exit once `prepare` has started — `prepare` itself is already a
 write — and composes errors the way `executeMutationLoopWithRollback` does: the run failure
