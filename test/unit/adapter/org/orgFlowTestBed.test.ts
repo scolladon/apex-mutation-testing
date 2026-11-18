@@ -421,34 +421,78 @@ describe('OrgFlowTestBed', () => {
     })
 
     it.each([
-      ['Active', ['Active'], [2]],
-      ['Draft', ['Obsolete', 'Draft'], [2]],
+      [
+        'Active',
+        ['Active'],
+        [
+          [1, 'Obsolete'],
+          [2, 'Active'],
+        ],
+      ],
+      [
+        'Draft',
+        ['Obsolete', 'Draft'],
+        [
+          [1, 'Obsolete'],
+          [2, 'Draft'],
+        ],
+      ],
     ])(
-      'Given a run on a %s original interrupted while a surviving mutant was under test, When the next run prepares, Then it refuses naming the marked version, before any write',
-      async (status, statuses, marked) => {
-        // Arrange — review proof: the org as the first run's process leaves
-        // it, dying while the mutant's tests run
+      'Given a run on a %s original interrupted while a surviving mutant was under test, When the command is run again, Then it refuses instead of taking the mutant as the original',
+      async (status, statuses, leftState) => {
+        // Arrange — review proof: the org exactly as a first run leaves it
+        // when its process dies (Ctrl+C, CI cancel, network loss) while a
+        // surviving mutant's FlowTests run
         const first = new FakeOrg(statuses)
         first.outcome = () => 'Pass'
-        const firstRun = build(first)
-        await firstRun.prepare(source(status), hooks())
-        let leftover: FakeVersion[] = []
+        const interrupted = build(first)
+        await interrupted.prepare(source(status), hooks())
+        let atKill: { versions: FakeVersion[]; test: string } | undefined
         first.runner.runFlowTests.mockImplementationOnce(async () => {
-          leftover = first.versions.map(version => ({ ...version }))
+          atKill = {
+            versions: first.versions.map(version => ({ ...version })),
+            test: first.flowTests.get('Sets_Rating') as string,
+          }
           throw new Error('SIGINT')
         })
-        await firstRun.evaluate(mutant(status, 0)).catch(() => undefined)
+        await interrupted.evaluate(mutant(status, 0)).catch(() => undefined)
+        const left = atKill as { versions: FakeVersion[]; test: string }
+        // what the source provider retrieves: the Active version, or the
+        // latest when none is — the mutant either way
+        const retrieved = (left.versions.find(v => v.status === 'Active') ??
+          left.versions.at(-1)) as FakeVersion
         const org = new FakeOrg([])
-        org.versions = leftover
+        org.versions = left.versions.map(version => ({ ...version }))
+        org.flowTests.set('Sets_Rating', left.test)
+        org.outcome = () => 'Pass'
         const sut = build(org)
 
-        // Act & Assert
-        await expect(sut.prepare(source(status), hooks())).rejects.toEqual(
-          new FlowLeftoverVersionError('Account_After', marked)
+        // Act
+        const outcome = await sut
+          .prepare(
+            {
+              apiName: 'Account_After',
+              xml: retrieved.xml,
+              tests: [{ fullName: 'Sets_Rating', xml: left.test }],
+            },
+            hooks()
+          )
+          .catch((error: unknown) => error)
+        await sut.restore()
+
+        // Assert — first what the interrupted run left, then what the
+        // rerun did
+        expect(left.versions.map(v => [v.versionNumber, v.status])).toEqual(
+          leftState
+        )
+        expect(retrieved.xml).toContain('Update0')
+        expect(retrieved.xml).toContain(TEMPORARY_VERSION_MARKER)
+        expect(pinnedVersions(left.test)).toEqual([])
+        expect(outcome).toEqual(
+          new FlowLeftoverVersionError('Account_After', [2])
         )
         expect(org.metadata.deploy).not.toHaveBeenCalled()
-        await sut.restore()
-        expect(org.metadata.deploy).not.toHaveBeenCalled()
+        expect(org.runner.runFlowTests).not.toHaveBeenCalled()
       }
     )
 
@@ -998,33 +1042,49 @@ describe('OrgFlowTestBed', () => {
   })
 
   describe('changes made outside the run', () => {
-    it('Given a colleague saves a new Draft version between two evaluations, When the next mutant is evaluated, Then the run stops before writing and that version survives the restore', async () => {
-      // Arrange — review proof; the colleague's version takes number 2,
-      // which the run's deleted temporary versions had
-      const org = new FakeOrg(['Active'])
-      const sut = build(org)
-      await sut.prepare(source('Active'), hooks())
-      await sut.evaluate(mutant('Active', 0))
-      org.save(COLLEAGUE_XML)
-      org.flowDeploys = []
+    it.each([
+      ['right after the baseline', 0],
+      ['after a mutant', 1],
+    ])(
+      'Given a colleague saves a new Draft version %s, When the next mutant is evaluated, Then the run stops and that version is neither overwritten nor deleted',
+      async (_label, evaluatedBefore) => {
+        // Arrange — review proof; the colleague's version takes number 2,
+        // which the run's deleted temporary versions had
+        const org = new FakeOrg(['Active'])
+        const sut = build(org)
+        await sut.prepare(source('Active'), hooks())
+        for (let n = 0; n < evaluatedBefore; n++) {
+          await sut.evaluate(mutant('Active', n))
+        }
+        org.save(COLLEAGUE_XML)
+        org.flowDeploys = []
 
-      // Act
-      const error = await sut.evaluate(mutant('Active', 1)).catch(e => e)
-      const restoreError = await sut.restore().catch(e => e)
+        // Act
+        const error = await sut
+          .evaluate(mutant('Active', evaluatedBefore))
+          .catch(e => e)
+        const restoreError = await sut.restore().catch(e => e)
 
-      // Assert
-      expect(error).toEqual(
-        new FlowChangedOutsideRunError('Account_After', [2])
-      )
-      expect(error).toBeInstanceOf(FlowOrgSafetyError)
-      expect(org.flowDeploys).toEqual([])
-      expect(org.versions.at(-1)?.xml).toBe(COLLEAGUE_XML)
-      expect(org.deletes).toEqual([2, 2])
-      expect(restoreError).toBeInstanceOf(FlowRestoreError)
-      expect(
-        (restoreError as FlowRestoreError).failures.map(f => f.message)
-      ).toEqual([GUARD_MESSAGE])
-    })
+        // Assert
+        expect(error).toEqual(
+          new FlowChangedOutsideRunError('Account_After', [2])
+        )
+        expect(error).toBeInstanceOf(FlowOrgSafetyError)
+        expect(org.flowDeploys).toEqual([])
+        expect(org.versions.find(v => v.versionNumber === 2)?.xml).toBe(
+          COLLEAGUE_XML
+        )
+        // only the run's own temporary versions: the baseline's, then one
+        // per mutant evaluated before the colleague's save
+        expect(org.deletes).toEqual(
+          Array.from({ length: evaluatedBefore + 1 }, () => 2)
+        )
+        expect(restoreError).toBeInstanceOf(FlowRestoreError)
+        expect(
+          (restoreError as FlowRestoreError).failures.map(f => f.message)
+        ).toEqual([GUARD_MESSAGE])
+      }
+    )
 
     it.each([
       [

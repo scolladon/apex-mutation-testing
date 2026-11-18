@@ -240,24 +240,24 @@ describe('FlowVersionRepository', () => {
       'PATCH /services/data/v66.0/tooling/sobjects/FlowDefinition/300A'
     const DELETE = 'DELETE /services/data/v66.0/tooling/sobjects/Flow/3012'
 
-    it('Given an org refusing the activation, When activating, Then it is a deploy failure carrying the reason', async () => {
-      // Arrange
-      answers[ACTIVATE] = () => [
-        400,
-        [
-          {
-            message: 'Invalid version number: 99',
-            errorCode: 'INVALID_INPUT',
-            fields: [],
-          },
-        ],
-      ]
+    it.each([
+      // what the sandbox answered for an unknown version number
+      ['INVALID_INPUT', 'Invalid version number: 99'],
+      // the review's case: a version the org will not activate
+      ['FIELD_INTEGRITY_EXCEPTION', 'This flow version cannot be activated'],
+    ])(
+      'Given an org refusing the activation (%s), When activating, Then it is a deploy failure carrying the reason',
+      async (errorCode, message) => {
+        // Arrange — HTTP 400 and an error array: the REST contract of a
+        // refused single-record DML
+        answers[ACTIVATE] = () => [400, [{ message, errorCode, fields: [] }]]
 
-      // Act & Assert
-      await expect(real.activateVersion('300A', 99)).rejects.toEqual(
-        new FlowDeployFailedError(['Invalid version number: 99'])
-      )
-    })
+        // Act & Assert
+        await expect(real.activateVersion('300A', 99)).rejects.toEqual(
+          new FlowDeployFailedError([message])
+        )
+      }
+    )
 
     it('Given an expired session, When activating, Then the session error propagates, not a deploy failure', async () => {
       // Arrange
