@@ -247,14 +247,18 @@ sf apex mutation flow run -f Account_After -o MySandbox
 sf apex mutation flow run -f Account_After -t Sets_Rating --lines 40-60 --threshold 80 -o MySandbox
 ```
 
-- **Sandboxes, scratch orgs and Developer Edition orgs only.** The command deploys and activates Flow versions, so it accepts an org only when `Organization.IsSandbox` is `true` or `Organization.OrganizationType` is `Developer Edition` (Trailhead playgrounds are Developer Edition orgs). Every other org is refused, dry runs included, and there is no flag to bypass the check.
+- **Sandboxes, scratch orgs and Developer Edition orgs only.** The command deploys and activates Flow versions, so it accepts an org only when `Organization.IsSandbox` is `true` or `Organization.OrganizationType` is `Developer Edition` (Trailhead playgrounds are Developer Edition orgs). Every other org is refused, dry runs included, and there is no flag to bypass the check. An org with a namespace prefix is refused too: FlowTests cannot be run by name there.
 - **API 66.0 or later**, for Test Discovery and for the FlowTest version fields.
-- **The org is the source.** The Flow and its FlowTests are read from the org; nothing in the local project is read or written.
+- **The org is the source.** The Flow and its FlowTests are read from the org; nothing in the local project is read or written, except the optional configuration file. `--lines` therefore refers to the lines of the Flow's XML as retrieved from the org: run with `--dry-run` first to see each mutant's line in the report.
+- **Permissions.** The running user must be able to deploy metadata, activate Flow versions, run FlowTests and read `FlowTestResult`. Without the View Setup permission, FlowTests run through the asynchronous test API instead of the synchronous one.
 - **Mutants are live while their FlowTests run.** FlowTests only ever run against the Active version of a Flow, or its latest version when none is Active. So when the latest version is Active, each mutant is deployed as a temporary version and **activated** for the duration of its FlowTests; then the original version is activated again and the temporary one deleted. Like the Apex command, which replaces the class under test, this means a mutant is the live automation in the sandbox for a few seconds at a time. It needs one free slot below the 50-version limit. When no version is Active and the latest is a Draft, the run overwrites that Draft and deploys its original content back. A Draft beside an Active version is refused: it could not be tested without activating it.
-- **Every verdict is checked against the org.** FlowTests are detached from their flow versions for the run (and restored after), and after each FlowTest run the version recorded in `FlowTestResult` must be the one under test; the versions themselves are re-checked after every deploy and activation. Any mismatch stops the run.
+- **Every verdict is checked against the org.** FlowTests are detached from their flow versions for the run (and restored after), and after each FlowTest run the version recorded in `FlowTestResult` must be the one under test; the versions themselves are re-checked after every deploy and activation. A mutant only counts as surviving when every selected FlowTest reported a pass. A deploy whose outcome is unknown (a timeout, a cancellation) is cancelled and waited for. Any mismatch stops the run.
 - **The org is restored exactly.** Between two mutants the org is back at its snapshot; at the end, the FlowTests are restored too. If the restore fails, the command fails and says so.
-- **Changes made by others are left alone.** Before every write the run checks that the Flow's versions are still those it left. If somebody saved, added, removed or (de)activated a version meanwhile, the run stops without writing over it; it only ever deletes the versions it created itself.
-- **An interrupted run is recognized.** Every version the run deploys carries `[apex-mutation-testing]` in its description. If a run is interrupted before its restore, the next run refuses while a marked version is left, and says how to put the Flow back.
+- **Changes made by others are left alone.** Before every write the run checks that the Flow's versions and FlowTests are still those it left. If somebody saved, added, removed or (de)activated a version, or edited a FlowTest, meanwhile, the run stops without writing over it; it only ever deletes the versions it created itself, recognized by a token unique to each of its deploys. One window cannot be closed: the Metadata API has no conditional deploy, so a new version a colleague saves in the seconds between the run's check and its own deploy landing is overwritten by that deploy (the run then stops).
+- **An interrupted run is recognized.** Every version the run deploys carries `[apex-mutation-testing]` in its description, and every FlowTest it detaches carries `[apex-mutation-testing pins=…]` with the versions it was associated with. If a run is interrupted before its restore, the next run refuses while a marked version or FlowTest is left, and says how to put it back. When the latest version is a Draft (no version Active), the run overwrites that Draft: a run killed outright (`kill -9`, a cancelled CI job) leaves a mutant there, and the Draft's original content has to come back from source control. As in the Apex command, Ctrl+C is not intercepted.
+- **Scheduled and Async Paths.** A Flow with a Scheduled Path gets a warning: actions already scheduled may run against a mutant while it is Active. FlowTests do not run the Async Path, so the elements only it reaches get no mutant.
+- **Supported Flows.** Delete-triggered, platform event-triggered and schedule-triggered Flows, and Flows with Pause or Screen elements, are refused: FlowTests cannot run them.
+- **Mutators and configuration.** `--include-mutators` / `--exclude-mutators` select the Flow mutators by name (`RecordTriggerType`, `FormulaExpression`, `ConnectorBypass`, `DecisionOperator`, `Assignment`, with or without the `Mutator` suffix). In the configuration file, the Flow command reads its own `flow` section and the top-level `threshold` as its default (see [Configuration](#configuration)); a mutator flag replaces both mutator lists of the file.
 - A FlowTest run that fails on transport (a network error, a timeout) scores the mutant **RuntimeError**, which is left out of the Flow score rather than counted as a kill.
 
 ### Configuration
@@ -303,6 +307,18 @@ if `--include-mutators` is passed via CLI and `mutators.exclude` is set in the c
 the CLI value takes precedence and the config file value is ignored.
 
 **Precedence:** CLI flags always override config file values. If both provide a value for the same attribute, the CLI flag wins.
+
+**Flows:** `sf apex mutation flow run` reads only a `flow` section of the same file, plus the top-level `threshold` as the default for its own; the other top-level attributes describe an Apex class and are ignored for Flows:
+
+```json
+{
+  "threshold": 80,
+  "flow": {
+    "mutators": { "exclude": ["ConnectorBypass"] },
+    "threshold": 70
+  }
+}
+```
 
 ```sh
 # Use a custom config file
@@ -530,21 +546,30 @@ Evaluate FlowTest quality by injecting mutations into a Flow and checking whethe
 
 ```
 USAGE
-  $ sf apex mutation flow run -f <value> -o <value> [--json] [--flags-dir <value>] [-t <value>...] [-r <value>] [-d] [-l
-    <value>...] [--threshold <value>] [--api-version <value>]
+  $ sf apex mutation flow run -f <value> -o <value> [--json] [--flags-dir <value>] [-t <value>...] [-r <value>] [-d]
+    [--include-mutators <value>... | --exclude-mutators <value>...] [-l <value>...] [--threshold <value>] [--config-file
+    <value>] [--api-version <value>]
 
 FLAGS
-  -d, --dry-run               Preview mutations without deploying or running tests
-  -f, --flow=<value>          (required) API name of the Flow to mutate (e.g. Account_After)
-  -l, --lines=<value>...      Line ranges of the Flow XML to mutate (e.g., 1-10, 42). Only these lines are eligible for
-                              mutation.
-  -o, --target-org=<value>    (required) Username or alias of the target org. Not required if the `target-org`
-                              configuration variable is already set.
-  -r, --report-dir=<value>    [default: mutations] Path to the directory where mutation test reports will be generated
-  -t, --flow-test=<value>...  FlowTests to run (e.g. Should_set_Rating). Defaults to every FlowTest of the Flow. Repeat
-                              the flag or pass a comma-separated list.
-      --api-version=<value>   Override the api version used for api requests made by this command
-      --threshold=<value>     Minimum mutation score (0-100) required for the command to succeed
+  -d, --dry-run                      Preview mutations without deploying or running tests
+  -f, --flow=<value>                 (required) API name of the Flow to mutate (e.g. Account_After)
+  -l, --lines=<value>...             Line ranges of the Flow's XML as retrieved from the org (e.g., 1-10, 42), which may
+                                     differ from a local copy. Only mutants on these lines are evaluated; run with
+                                     --dry-run first to see each mutant's line in the report.
+  -o, --target-org=<value>           (required) Username or alias of the target org. Not required if the `target-org`
+                                     configuration variable is already set.
+  -r, --report-dir=<value>           [default: mutations] Path to the directory where mutation test reports will be
+                                     generated
+  -t, --flow-test=<value>...         FlowTests to run, by API name (e.g. Should_set_Rating,
+                                     Account_After.Should_set_Rating or FlowTesting.Account_After.Should_set_Rating).
+                                     Defaults to every FlowTest of the Flow. Repeat the flag or pass a comma-separated
+                                     list.
+      --api-version=<value>          Override the api version used for api requests made by this command
+      --config-file=<value>          Path to mutation testing configuration file; the Flow command reads its "flow"
+                                     section and its top-level "threshold"
+      --exclude-mutators=<value>...  Mutator names to exclude
+      --include-mutators=<value>...  Mutator names to include (e.g. DecisionOperator, ConnectorBypass)
+      --threshold=<value>            Minimum mutation score (0-100) required for the command to succeed
 
 GLOBAL FLAGS
   --flags-dir=<value>  Import flag values from a directory.
@@ -554,11 +579,12 @@ DESCRIPTION
   Evaluate FlowTest quality by injecting mutations into a Flow and checking whether its FlowTests detect them
 
   Reads the Flow and its FlowTests from the org, deploys each mutant, runs the FlowTests against it, and restores the
-  org to exactly the state the run started from. Nothing in the local project is read or written.
+  org to exactly the state the run started from. Nothing in the local project is read or written, except the optional
+  configuration file.
 
   Only record-triggered and autolaunched Flows without Pause or Screen elements can be tested, and the target org must
   be a sandbox, a scratch org or a Developer Edition org (Trailhead playgrounds included): the command refuses any other
-  org, dry runs included. Requires API version 66.0 or later.
+  org, and any org with a namespace, dry runs included. Requires API version 66.0 or later.
 
   FlowTests only run against the Flow's Active version, or its latest version when none is Active. When the latest
   version is Active, each mutant is deployed as a temporary version that is activated for the duration of its FlowTests
@@ -567,7 +593,8 @@ DESCRIPTION
   When no version is Active and the latest is a Draft, the run overwrites that Draft and restores its original content
   at the end. A Draft beside an Active version is refused: it cannot be tested without activating it. FlowTests are
   detached from their flow versions for the run and restored at the end, and the version every FlowTest ran against is
-  checked after each run.
+  checked after each run. A version or FlowTest somebody else changes during the run is never written over: the run
+  stops instead.
 
 EXAMPLES
   Preview the mutations of a Flow:

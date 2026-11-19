@@ -94,6 +94,12 @@
     "trailhead",
     "sobjects",
     "npmjs",
-    "biomejs"
+    "biomejs",
+    "picklist",
+    "multipicklist",
+    "xmldom",
+    "jszip",
+    "apos",
+    "econnreset"
   ]
 }
