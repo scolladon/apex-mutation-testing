@@ -29,6 +29,9 @@ export class FlowTestDiscovery {
     while (url) {
       const page: DiscoveryPage =
         await this.connection.tooling.request<DiscoveryPage>(url)
+      // Stryker disable next-line ArrayDeclaration: an element put in place
+      // of the empty list has no name equal to a Flow API name, so it is
+      // skipped like any other flow's class.
       for (const testClass of page.apexTestClasses ?? []) {
         if (testClass.name !== flowApiName) continue
         for (const method of testClass.testMethods ?? []) {

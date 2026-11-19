@@ -110,6 +110,76 @@ describe('FlowValidator', () => {
     })
   })
 
+  const started = (start: string, processType = 'AutoLaunchedFlow') =>
+    flowXml(
+      `    <processType>${processType}</processType>\n    <start>\n${start}\n    </start>`
+    )
+
+  it.each([
+    [
+      'a record-delete trigger type',
+      '        <triggerType>RecordBeforeDelete</triggerType>',
+      'deleteTriggered',
+    ],
+    [
+      'a Delete record trigger',
+      '        <recordTriggerType>Delete</recordTriggerType>\n        <triggerType>RecordAfterSave</triggerType>',
+      'deleteTriggered',
+    ],
+    [
+      'a platform event trigger',
+      '        <triggerType>PlatformEvent</triggerType>',
+      'platformEventTriggered',
+    ],
+    [
+      'a schedule trigger',
+      '        <triggerType>Scheduled</triggerType>',
+      'scheduleTriggered',
+    ],
+  ])(
+    'Given %s, When validated, Then it is rejected up front',
+    (_label, start, reason) => {
+      // Act & Assert
+      expect(sut.validate(started(start))).toEqual({ isValid: false, reason })
+    }
+  )
+
+  it.each([
+    [
+      'an after-save trigger',
+      '        <triggerType>RecordAfterSave</triggerType>',
+    ],
+    [
+      'an update record trigger',
+      '        <recordTriggerType>CreateAndUpdate</recordTriggerType>',
+    ],
+    ['no trigger at all', '        <object>Account</object>'],
+  ])('Given %s, When validated, Then it is accepted', (_label, start) => {
+    // Act & Assert
+    expect(sut.validate(started(start)).isValid).toBe(true)
+  })
+
+  it('Given a non-autolaunched process with a trigger type not starting with Record, When validated, Then it is rejected for its process type', () => {
+    // Act & Assert
+    expect(
+      sut.validate(
+        started('        <triggerType>Scheduled</triggerType>', 'Workflow')
+      )
+    ).toEqual({
+      isValid: false,
+      reason: 'unsupportedProcessType',
+      processType: 'Workflow',
+    })
+  })
+
+  it('Given an autolaunched flow without a start, When validated, Then it is valid', () => {
+    // Act & Assert
+    expect(
+      sut.validate(flowXml('    <processType>AutoLaunchedFlow</processType>'))
+        .isValid
+    ).toBe(true)
+  })
+
   it('Given Pause elements, When validated, Then it is rejected', () => {
     // Act
     const result = sut.validate(

@@ -27,6 +27,28 @@ const isElement = (node: Node): node is Element =>
 export const escapeXmlText = (text: string): string =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
+const CDATA_OPEN = '<![CDATA['
+const CDATA_CLOSE = ']]>'
+
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+}
+
+// The text one entity reference (without its '&' and ';') stands for; an
+// unknown one never reaches here, since the parser rejects the document.
+const decodeEntity = (name: string): string =>
+  name.startsWith('#')
+    ? String.fromCodePoint(
+        name[1] === 'x'
+          ? Number.parseInt(name.slice(2), 16)
+          : Number.parseInt(name.slice(1), 10)
+      )
+    : NAMED_ENTITIES[name]
+
 const escapeRegExp = (text: string): string =>
   text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -105,13 +127,14 @@ export class FlowXmlDom {
     return Array.from(scope.getElementsByTagNameNS(SF_NAMESPACE, localName))
   }
 
+  // Only an element has a namespace: text, comment and CDATA nodes never
+  // match it, so the one check is also the element check.
   public children(parent: Element, localName: string): Element[] {
-    return Array.from(parent.childNodes)
-      .filter(isElement)
-      .filter(
-        child =>
-          child.namespaceURI === SF_NAMESPACE && child.localName === localName
-      )
+    return Array.from(parent.childNodes).filter(
+      (child): child is Element =>
+        child.namespaceURI === SF_NAMESPACE &&
+        (child as Element).localName === localName
+    )
   }
 
   public child(parent: Element, localName: string): Element | undefined {
@@ -120,6 +143,8 @@ export class FlowXmlDom {
 
   // The trimmed text of an element, or undefined when it has none.
   public text(element: Element | undefined): string | undefined {
+    // Stryker disable next-line OptionalChaining: an element's textContent is
+    // never null — only a document's is — so the second ?. never short-circuits.
     const value = element?.textContent?.trim()
     return value ? value : undefined
   }
@@ -130,6 +155,9 @@ export class FlowXmlDom {
 
   public positionAt(offset: number): SourcePosition {
     let low = 0
+    // Stryker disable next-line ArithmeticOperator: a bound past the last line
+    // reads lineStarts as undefined, which compares false like any start
+    // beyond the offset, so the search converges on the same line.
     let high = this.lineStarts.length - 1
     while (low < high) {
       const mid = Math.ceil((low + high) / 2)
@@ -137,6 +165,58 @@ export class FlowXmlDom {
       else high = mid - 1
     }
     return { line: low + 1, column: offset - this.lineStarts[low] + 1 }
+  }
+
+  // The element's own span in the source, from its '<' to one past its
+  // closing '>'.
+  public spanOf(element: Element): { start: number; end: number } {
+    return { start: this.startOf(element), end: this.endOf(element) }
+  }
+
+  // Where each character of a leaf element's text sits in the source: entry
+  // i is the offset of the i-th character of its textContent, the last entry
+  // one past the end. Entities, CDATA and CRLF line ends spell a character
+  // with more than one source character, so a position in the text is not a
+  // fixed distance from the element's start. Undefined when the text cannot
+  // be mapped back character by character.
+  public textOffsets(element: Element): number[] | undefined {
+    const start = this.source.indexOf('>', this.startOf(element)) + 1
+    const end = this.source.lastIndexOf('</', this.endOf(element) - 1)
+    const offsets: number[] = []
+    let decoded = ''
+    let at = start
+    while (at < end) {
+      if (this.source.startsWith(CDATA_OPEN, at)) {
+        const close = this.source.indexOf(CDATA_CLOSE, at)
+        for (let i = at + CDATA_OPEN.length; i < close; i++) {
+          offsets.push(i)
+          // A CRLF reads as one LF inside CDATA too.
+          if (this.source.startsWith('\r\n', i)) {
+            decoded += '\n'
+            i++
+          } else {
+            decoded += this.source[i]
+          }
+        }
+        at = close + CDATA_CLOSE.length
+      } else if (this.source[at] === '&') {
+        const semicolon = this.source.indexOf(';', at)
+        const character = decodeEntity(this.source.slice(at + 1, semicolon))
+        for (let unit = 0; unit < character.length; unit++) offsets.push(at)
+        decoded += character
+        at = semicolon + 1
+      } else if (this.source.startsWith('\r\n', at)) {
+        offsets.push(at)
+        decoded += '\n'
+        at += 2
+      } else {
+        offsets.push(at)
+        decoded += this.source[at]
+        at++
+      }
+    }
+    offsets.push(end)
+    return decoded === element.textContent ? offsets : undefined
   }
 
   // Replaces the whole text content of a leaf element. A self-closing
@@ -177,6 +257,8 @@ export class FlowXmlDom {
     localName: string,
     fragment: string
   ): XmlEdit {
+    // Stryker disable next-line MethodExpression: a text or comment node has
+    // no localName, and undefined never sorts after a name.
     const next = Array.from(parent.childNodes)
       .filter(isElement)
       .find(child => (child.localName as string) > localName)
@@ -212,6 +294,9 @@ export class FlowXmlDom {
       `<(/?)${escapeRegExp(element.tagName)}(?=[\\s/>])`,
       'g'
     )
+    // Stryker disable next-line ArithmeticOperator: the characters just before
+    // an open tag's '>' are its name, attributes or '/', never a '<', so the
+    // search finds the same next tag from either side of it.
     tag.lastIndex = openEnd + 1
     let depth = 1
     for (;;) {
@@ -230,6 +315,9 @@ export class FlowXmlDom {
   private lineSpanOf(element: Element): { start: number; end: number } {
     const start = this.startOf(element)
     const end = this.endOf(element)
+    // Stryker disable next-line ArithmeticOperator: the character after an
+    // element's '<' is its name, never a newline, so searching back from
+    // either side of the '<' finds the same newline.
     const lineStart = this.source.lastIndexOf('\n', start - 1) + 1
     const lineEnd = this.source.indexOf('\n', end)
     const aloneOnLine =

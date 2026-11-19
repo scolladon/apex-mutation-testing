@@ -74,22 +74,42 @@ describe('OrganizationRepository', () => {
   describe('when reading what kind of org it is', () => {
     it.each([
       [
-        [{ IsSandbox: true, OrganizationType: 'Enterprise Edition' }],
-        { isSandbox: true, organizationType: 'Enterprise Edition' },
+        [
+          {
+            IsSandbox: true,
+            OrganizationType: 'Enterprise Edition',
+            NamespacePrefix: null,
+          },
+        ],
+        {
+          isSandbox: true,
+          organizationType: 'Enterprise Edition',
+          namespacePrefix: null,
+        },
       ],
       [
-        [{ IsSandbox: false, OrganizationType: 'Developer Edition' }],
-        { isSandbox: false, organizationType: 'Developer Edition' },
+        [
+          {
+            IsSandbox: false,
+            OrganizationType: 'Developer Edition',
+            NamespacePrefix: 'acme',
+          },
+        ],
+        {
+          isSandbox: false,
+          organizationType: 'Developer Edition',
+          namespacePrefix: 'acme',
+        },
       ],
       [
-        [{ IsSandbox: 'true', OrganizationType: null }],
-        { isSandbox: false, organizationType: null },
+        [{ IsSandbox: 'true', OrganizationType: null, NamespacePrefix: '' }],
+        { isSandbox: false, organizationType: null, namespacePrefix: null },
       ],
       [
         [{ IsSandbox: false, OrganizationType: 7 }],
-        { isSandbox: false, organizationType: null },
+        { isSandbox: false, organizationType: null, namespacePrefix: null },
       ],
-      [[], { isSandbox: false, organizationType: null }],
+      [[], { isSandbox: false, organizationType: null, namespacePrefix: null }],
     ])(
       'Given the rows %j, When read, Then only explicit values count (%j)',
       async (records, expected) => {
@@ -102,7 +122,7 @@ describe('OrganizationRepository', () => {
         // Assert
         expect(result).toEqual(expected)
         expect(queryMock).toHaveBeenCalledWith(
-          'SELECT IsSandbox, OrganizationType FROM Organization'
+          'SELECT IsSandbox, OrganizationType, NamespacePrefix FROM Organization'
         )
       }
     )

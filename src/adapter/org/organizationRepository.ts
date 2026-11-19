@@ -7,6 +7,7 @@ interface OrganizationRow {
 interface OrganizationKindRow {
   IsSandbox: boolean
   OrganizationType: string | null
+  NamespacePrefix: string | null
 }
 
 // What the org says it is: whether it is a sandbox (scratch orgs are), and
@@ -15,6 +16,7 @@ interface OrganizationKindRow {
 export interface OrganizationKind {
   isSandbox: boolean
   organizationType: string | null
+  namespacePrefix: string | null
 }
 
 export class OrganizationRepository {
@@ -37,13 +39,15 @@ export class OrganizationRepository {
   // and a missing edition is null, never a guess.
   public async readOrganizationKind(): Promise<OrganizationKind> {
     const result = await this.connection.query<OrganizationKindRow>(
-      'SELECT IsSandbox, OrganizationType FROM Organization'
+      'SELECT IsSandbox, OrganizationType, NamespacePrefix FROM Organization'
     )
     const row = result.records[0]
     return {
       isSandbox: row?.IsSandbox === true,
       organizationType:
         typeof row?.OrganizationType === 'string' ? row.OrganizationType : null,
+      // `||`, as readNamespacePrefix: '' and null both mean no namespace.
+      namespacePrefix: row?.NamespacePrefix || null,
     }
   }
 }

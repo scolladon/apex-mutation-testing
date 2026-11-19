@@ -23,11 +23,17 @@ const TEMPLATED_KEYS = [
     'invalidXml',
     'notAFlow',
     'unsupportedProcessType',
+    'deleteTriggered',
+    'platformEventTriggered',
+    'scheduleTriggered',
     'hasPauseElements',
     'hasScreenElements',
   ].map(reason => `error.flowInvalid.${reason}`),
   ...['Killed', 'Survived', 'CompileError', 'RuntimeError'].map(
     status => `info.mutantResult.${status}`
+  ),
+  ...['info.CommandIsRunning', 'info.DryRunCommandIsRunning'].map(
+    prefix => `${prefix}AllTests`
   ),
 ]
 
@@ -39,13 +45,23 @@ const SHARED_KEYS = [
   'error.reportDirSymlinkOutsideCwd',
   'info.syncTransportFallback',
   'info.typeResolutionDegraded',
+  // ConfigReader.resolveFlow
+  'error.configFileUnreadable',
+  'error.configFieldNotStringArray',
+  'error.configEntryNotString',
+  'error.configFieldNotNumber',
+  'error.configFieldNotBoolean',
+  'error.mutuallyExclusiveMutators',
+  'error.thresholdOutOfRange',
 ]
 
+// Every quoted string that reads like a bundle key: passed straight to
+// getMessage/createError, or returned as the key of a rendered error.
 const literalKeys = (): string[] =>
   SOURCES.flatMap(file =>
     Array.from(
       readFileSync(path.resolve(file), 'utf8').matchAll(
-        /(?:getMessages?|createError)\(\s*'([^']+)'/g
+        /'((?:error|info|flags)\.[A-Za-z][A-Za-z.-]*|summary|description|examples)'/g
       ),
       match => match[1]
     )
@@ -62,7 +78,15 @@ describe('apex.mutation.flow.run message bundle', () => {
     const missing = keys.filter(key => !messages.messages.has(key))
 
     // Assert
-    expect(keys.length).toBeGreaterThan(40)
+    expect(keys.length).toBeGreaterThan(70)
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        'error.namespacedOrg',
+        'error.flowDeployNotCompleted',
+        'error.runtimeErrorStreak',
+        'info.hasAsyncPath',
+      ])
+    )
     expect(missing).toEqual([])
   })
 

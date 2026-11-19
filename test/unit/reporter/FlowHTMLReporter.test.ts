@@ -18,6 +18,7 @@ const mutant = (overrides: Partial<FlowMutant> = {}): FlowMutant => ({
   elementName: '$Start',
   description: "Changed recordTriggerType from 'Create' to 'Update'",
   edits: [{ start: 1, end: 2, replacement: 'Update' }],
+  anchor: { start: 1, end: 2 },
   status: 'Killed',
   killedBy: ['Sets_Rating'],
   location: { start: { line: 7, column: 28 }, end: { line: 7, column: 34 } },
@@ -28,6 +29,7 @@ const mutant = (overrides: Partial<FlowMutant> = {}): FlowMutant => ({
 const result = (mutants: FlowMutant[]): FlowMutationResult => ({
   flowApiName: 'Account_After',
   sourceXml: recordTriggeredFlowXml(),
+  testNames: ['Sets_Rating', 'Keeps_Rating'],
   mutants,
 })
 
@@ -68,10 +70,17 @@ describe('FlowHTMLReporter', () => {
         mutant({ id: 'FLOW-MUT-2', status: 'Survived', killedBy: [] }),
         mutant({
           id: 'FLOW-MUT-3',
-          status: 'Pending',
+          status: 'CompileError',
           killedBy: undefined,
           statusReason: 'deploy refused',
         }),
+        mutant({
+          id: 'FLOW-MUT-4',
+          status: 'RuntimeError',
+          killedBy: undefined,
+          statusReason: 'socket hang up',
+        }),
+        mutant({ id: 'FLOW-MUT-5', status: 'Pending', killedBy: undefined }),
       ]),
       'mutations'
     )
@@ -87,9 +96,10 @@ describe('FlowHTMLReporter', () => {
         id: 'FLOW-MUT-1',
         mutatorName: 'RecordTriggerTypeMutator',
         replacement: 'Update',
+        description: "Changed recordTriggerType from 'Create' to 'Update'",
         status: 'Killed',
-        statusReason: "Changed recordTriggerType from 'Create' to 'Update'",
         static: false,
+        coveredBy: ['Sets_Rating', 'Keeps_Rating'],
         killedBy: ['Sets_Rating'],
         testsCompleted: 1,
         location: {
@@ -100,15 +110,34 @@ describe('FlowHTMLReporter', () => {
       expect.objectContaining({
         id: 'FLOW-MUT-2',
         status: 'Survived',
+        coveredBy: ['Sets_Rating', 'Keeps_Rating'],
         testsCompleted: 1,
       }),
       expect.objectContaining({
         id: 'FLOW-MUT-3',
+        description: "Changed recordTriggerType from 'Create' to 'Update'",
         statusReason: 'deploy refused',
-        testsCompleted: 0,
+        testsCompleted: 1,
       }),
+      expect.objectContaining({
+        id: 'FLOW-MUT-4',
+        statusReason: 'socket hang up',
+      }),
+      expect.objectContaining({ id: 'FLOW-MUT-5', testsCompleted: 0 }),
     ])
+    expect(file.mutants[0]).not.toHaveProperty('statusReason')
     expect(file.mutants[1].killedBy).toBeUndefined()
+    for (const notScored of file.mutants.slice(2)) {
+      expect(notScored).not.toHaveProperty('coveredBy')
+    }
+    expect(data.testFiles).toEqual({
+      'FlowTesting.Account_After': {
+        tests: [
+          { id: 'Sets_Rating', name: 'Sets_Rating' },
+          { id: 'Keeps_Rating', name: 'Keeps_Rating' },
+        ],
+      },
+    })
   })
 
   it('Given a report dir outside cwd, When reporting, Then it refuses', async () => {

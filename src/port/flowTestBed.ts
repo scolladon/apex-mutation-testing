@@ -22,9 +22,12 @@ export interface FlowPrepareHooks {
 // The seam that keeps the org SDK out of the Flow service. prepare is a
 // precondition of evaluate; restore undoes whatever prepare and evaluate
 // changed in the org, and is safe to call after a prepare that failed
-// part-way — it restores only what was actually changed.
+// part-way — it restores only what was actually changed. needsRestore says
+// whether there is anything to restore: false until prepare is about to
+// write, so a refusal before any write announces no restore.
 export interface FlowTestBed {
   prepare(source: FlowSource, hooks: FlowPrepareHooks): Promise<FlowBaseline>
   evaluate(mutatedXml: string): Promise<FlowMutantVerdict>
+  needsRestore(): boolean
   restore(): Promise<void>
 }

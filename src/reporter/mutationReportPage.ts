@@ -21,6 +21,9 @@ export interface ReportMutant {
   id: string
   mutatorName: string
   replacement: string
+  // What the mutant changes, in words (schema 2.0.0): shown apart from
+  // statusReason, which only ever says why the mutant ended as it did.
+  description?: string
   status: string
   statusReason?: string
   static: boolean

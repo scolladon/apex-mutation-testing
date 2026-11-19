@@ -1,4 +1,5 @@
 import {
+  leftoverPins,
   pinnedVersions,
   TEMPORARY_VERSION_MARKER,
   toDraftXml,
@@ -96,19 +97,108 @@ describe('flowVersionEdits', () => {
       expect(unpinFlowTest(xml)).toBe(xml)
     })
 
+    const withDescription = (xml: string, description: string) =>
+      xml.replace(
+        '    <flowApiName>',
+        `    <description>${description}</description>\n    <flowApiName>`
+      )
+
     it.each([
-      ['one version', [1]],
-      ['several versions', [1, 2, 3]],
+      ['one version', [1], '1'],
+      ['several versions', [1, 2, 3], '1,2,3'],
     ])(
-      'Given a test pinned to %s, When unpinned, Then every association and its line are removed',
-      (_label, pins) => {
+      'Given a test pinned to %s, When unpinned, Then every association and its line are removed, and the pins are written in a marker',
+      (_label, pins, listed) => {
         // Act
         const sut = unpinFlowTest(flowTestXml('F', pins))
 
         // Assert
-        expect(sut).toBe(flowTestXml('F'))
+        expect(sut).toBe(
+          withDescription(
+            flowTestXml('F'),
+            `[apex-mutation-testing pins=${listed}]`
+          )
+        )
         expect(pinnedVersions(sut)).toEqual([])
+        expect(leftoverPins(sut)).toEqual(pins)
       }
     )
+
+    it('Given a pinned test with a description of its own, When unpinned, Then the marker leads and the description is kept', () => {
+      // Arrange
+      const xml = withDescription(flowTestXml('F', [4]), 'Checks &amp; rates')
+
+      // Act
+      const sut = unpinFlowTest(xml)
+
+      // Assert
+      expect(sut).toBe(
+        withDescription(
+          flowTestXml('F'),
+          '[apex-mutation-testing pins=4] Checks &amp; rates'
+        )
+      )
+    })
+
+    it('Given a pinned test without description and a field sorting before it, When unpinned, Then the description is inserted in metadata order, after that field', () => {
+      // Arrange
+      const withActive = (xml: string) =>
+        xml.replace(
+          '    <flowApiName>',
+          '    <active>true</active>\n    <flowApiName>'
+        )
+      const xml = withActive(flowTestXml('F', [1]))
+
+      // Act & Assert
+      expect(unpinFlowTest(xml)).toBe(
+        withDescription(
+          withActive(flowTestXml('F')),
+          '[apex-mutation-testing pins=1]'
+        )
+      )
+    })
+
+    it('Given a pinned test with an empty description, When unpinned, Then the marker fills it', () => {
+      // Arrange
+      const xml = withDescription(flowTestXml('F', [2]), '')
+
+      // Act & Assert
+      expect(unpinFlowTest(xml)).toBe(
+        withDescription(flowTestXml('F'), '[apex-mutation-testing pins=2]')
+      )
+    })
+  })
+
+  describe('leftoverPins', () => {
+    it.each([
+      ['no description', flowTestXml('F'), undefined],
+      [
+        'a description without the marker',
+        flowTestXml('F').replace(
+          '    <flowApiName>',
+          '    <description>Checks [apex-mutation-testing]</description>\n    <flowApiName>'
+        ),
+        undefined,
+      ],
+      [
+        'a marker without pins',
+        flowTestXml('F').replace(
+          '    <flowApiName>',
+          '    <description>x [apex-mutation-testing pins=] y</description>\n    <flowApiName>'
+        ),
+        [],
+      ],
+      [
+        'a marker inside the description',
+        flowTestXml('F').replace(
+          '    <flowApiName>',
+          '    <description>before [apex-mutation-testing pins=7,12] after</description>\n    <flowApiName>'
+        ),
+        [7, 12],
+      ],
+    ])('Given %s, When read, Then the pins are %j', (_label, xml, expected) => {
+      // Act & Assert
+      expect(leftoverPins(xml)).toEqual(expected)
+    })
   })
 })

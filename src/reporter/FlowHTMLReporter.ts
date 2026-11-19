@@ -9,8 +9,10 @@ import {
 } from './mutationReportPage.js'
 
 // Maps a Flow run onto the shared report page. Locations are exact: each
-// mutant carries the source position of the edit it makes, so nothing here
-// searches the XML for a snippet.
+// mutant carries the source position of what it changes, so nothing here
+// searches the XML for a snippet. Every evaluated mutant ran against every
+// selected FlowTest, which the report lists as the Flow's test file so it
+// can show which of them killed the mutant.
 export class FlowHTMLReporter {
   constructor(private readonly messages: Messages<string>) {}
 
@@ -30,20 +32,31 @@ export class FlowHTMLReporter {
         [`${result.flowApiName}.flow-meta.xml`]: {
           language: 'xml',
           source: result.sourceXml,
-          mutants: result.mutants.map(mapMutant),
+          mutants: result.mutants.map(mutant =>
+            mapMutant(mutant, result.testNames)
+          ),
+        },
+      },
+      testFiles: {
+        [`FlowTesting.${result.flowApiName}`]: {
+          tests: result.testNames.map(name => ({ id: name, name })),
         },
       },
     }
   }
 }
 
-const mapMutant = (mutant: FlowMutant): ReportMutant => ({
+const RAN_AGAINST_TESTS = new Set(['Killed', 'Survived'])
+
+const mapMutant = (mutant: FlowMutant, testNames: string[]): ReportMutant => ({
   id: mutant.id,
   mutatorName: mutant.mutatorName,
   replacement: mutant.replacement,
+  description: mutant.description,
   status: mutant.status,
-  statusReason: mutant.statusReason ?? mutant.description,
+  statusReason: mutant.statusReason,
   static: false,
+  coveredBy: RAN_AGAINST_TESTS.has(mutant.status) ? testNames : undefined,
   killedBy: mutant.killedBy?.length ? mutant.killedBy : undefined,
   testsCompleted: mutant.status === 'Pending' ? 0 : 1,
   location: mutant.location,

@@ -15,6 +15,17 @@ export class ProductionOrgError extends Error {
   }
 }
 
+// FlowTests of a namespaced org cannot be run by name: the runner answers
+// "Invalid ID or name" to every form the plugin can send.
+export class FlowNamespacedOrgError extends Error {
+  constructor(public readonly namespacePrefix: string) {
+    super(
+      `Flow mutation testing does not support an org with a namespace (${namespacePrefix})`
+    )
+    this.name = 'FlowNamespacedOrgError'
+  }
+}
+
 export class FlowApiVersionTooLowError extends Error {
   constructor(
     public readonly apiVersion: string,
@@ -102,6 +113,38 @@ export class FlowLeftoverVersionError extends Error {
   }
 }
 
+// A FlowTest still carrying the marker an earlier run wrote when it detached
+// the test from its flow versions: that run was interrupted before its
+// restore, and pinnedVersions are the associations it removed.
+export class FlowTestLeftoverError extends Error {
+  constructor(
+    public readonly apiName: string,
+    public readonly testName: string,
+    public readonly pinnedVersions: number[]
+  ) {
+    super(
+      `FlowTest '${testName}' of Flow '${apiName}' was left detached by an interrupted run`
+    )
+    this.name = 'FlowTestLeftoverError'
+  }
+}
+
+// Requested FlowTests the runner did not report as run, on a run in which
+// none failed: their silence would read as a pass. Not a safety error — the
+// org is untouched by it — so a mutant's run is a RuntimeError and the
+// baseline's stops the run.
+export class FlowTestsNotRunError extends Error {
+  constructor(
+    public readonly apiName: string,
+    public readonly missingTests: string[]
+  ) {
+    super(
+      `FlowTests of Flow '${apiName}' did not run: ${missingTests.join(', ')}`
+    )
+    this.name = 'FlowTestsNotRunError'
+  }
+}
+
 export class FlowVersionLimitError extends Error {
   constructor(
     public readonly apiName: string,
@@ -137,8 +180,8 @@ export class FlowTestRepinFailedError extends Error {
 // transport failure on one mutant — scored RuntimeError, the run goes on —
 // every subclass aborts the run and triggers the restore.
 export class FlowOrgSafetyError extends Error {
-  constructor(message: string) {
-    super(message)
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options)
     this.name = 'FlowOrgSafetyError'
   }
 }
@@ -167,12 +210,34 @@ export class FlowVersionGuardError extends FlowOrgSafetyError {
 export class FlowChangedOutsideRunError extends FlowOrgSafetyError {
   constructor(
     public readonly apiName: string,
-    public readonly changedVersions: number[]
+    public readonly changedVersions: number[],
+    // True when seen before the run's first write: nothing of the run's own
+    // is in the org yet.
+    public readonly beforeAnyWrite = false
   ) {
     super(
       `Flow '${apiName}' was changed outside the run (versions ${changedVersions.join(', ')})`
     )
     this.name = 'FlowChangedOutsideRunError'
+  }
+}
+
+// A Metadata API deploy that ended neither in success nor in a refusal of
+// one of its components: it timed out, was cancelled, failed for an org-wide
+// reason, or its status could not be read. What it did to the org is
+// unknown, so it is never a verdict; `pending` says it may still land, in
+// which case the restore waits for it first.
+export class FlowDeployNotCompletedError extends FlowOrgSafetyError {
+  constructor(
+    public readonly asyncProcessId: string | undefined,
+    public readonly status: string,
+    public readonly pending: boolean,
+    public readonly detail: string
+  ) {
+    super(
+      `Metadata API deploy ${asyncProcessId ?? '(not started)'} did not complete (${status}): ${detail}`
+    )
+    this.name = 'FlowDeployNotCompletedError'
   }
 }
 
@@ -214,12 +279,67 @@ export class FlowTestVersionError extends FlowOrgSafetyError {
 export class FlowRevertError extends FlowOrgSafetyError {
   constructor(
     public readonly apiName: string,
-    public readonly problems: string[]
+    public readonly failures: Error[]
   ) {
     super(
-      `Flow '${apiName}' could not be put back to its original version: ${problems.join('; ')}`
+      `Flow '${apiName}' could not be put back to its original version: ${failures.map(f => f.message).join('; ')}`,
+      { cause: failures[0] }
     )
     this.name = 'FlowRevertError'
+  }
+}
+
+// The Active version is not the original nor one the run created (or no
+// version is Active): somebody else activated or deactivated the flow, so
+// the original is not activated over their change.
+export class FlowForeignActiveVersionError extends Error {
+  constructor(
+    public readonly apiName: string,
+    public readonly activeVersion: number | undefined,
+    public readonly originalVersion: number
+  ) {
+    super(
+      `Flow '${apiName}' has ${activeVersion === undefined ? 'no Active version' : `version ${activeVersion} Active`}, which this run did not set: version ${originalVersion} is not activated again`
+    )
+    this.name = 'FlowForeignActiveVersionError'
+  }
+}
+
+// A version the run created is Active: it is never deleted, since the
+// platform refuses it and the flow would be left without its Active version.
+export class FlowActiveVersionNotDeletedError extends Error {
+  constructor(public readonly versionNumber: number) {
+    super(`Version ${versionNumber} is Active and is not deleted`)
+    this.name = 'FlowActiveVersionNotDeletedError'
+  }
+}
+
+// FlowTests that no longer hold what the run left in them, or were deleted:
+// somebody else changed them, so the restore does not write their original
+// over that change (nor recreate a deleted one).
+export class FlowTestChangedOutsideRunError extends Error {
+  constructor(
+    public readonly testNames: string[],
+    // True when seen before the run's first write.
+    public readonly beforeAnyWrite = false
+  ) {
+    super(`FlowTests changed outside the run: ${testNames.join(', ')}`)
+    this.name = 'FlowTestChangedOutsideRunError'
+  }
+}
+
+// A FlowTest deployed back with its original associations, read back with
+// other ones.
+export class FlowTestRestorePinError extends Error {
+  constructor(
+    public readonly testName: string,
+    public readonly expectedVersions: number[],
+    public readonly foundVersions: number[]
+  ) {
+    super(
+      `FlowTest '${testName}' came back associated with versions [${foundVersions.join(', ')}] instead of [${expectedVersions.join(', ')}]`
+    )
+    this.name = 'FlowTestRestorePinError'
   }
 }
 
@@ -235,5 +355,35 @@ export class FlowRestoreError extends Error {
       { cause: failures[0] }
     )
     this.name = 'FlowRestoreError'
+  }
+}
+
+// Several mutants in a row failed on transport after a passing baseline: the
+// session expired, a FlowTest was deleted, or the org stopped answering.
+// Going on would only add RuntimeErrors, so the run stops and restores.
+export class FlowRuntimeErrorStreakError extends Error {
+  constructor(
+    public readonly apiName: string,
+    public readonly count: number,
+    public readonly lastReason: string
+  ) {
+    super(
+      `${count} mutants of Flow '${apiName}' in a row failed to run: ${lastReason}`
+    )
+    this.name = 'FlowRuntimeErrorStreakError'
+  }
+}
+
+// A run that failed, followed by a restore that failed too. Both are kept,
+// typed, so each is rendered as itself; the run failure leads.
+export class FlowRunAndRestoreError extends Error {
+  constructor(
+    public readonly runError: unknown,
+    public readonly restoreError: unknown
+  ) {
+    const text = (value: unknown) =>
+      value instanceof Error ? value.message : String(value)
+    super(`${text(runError)}\n${text(restoreError)}`, { cause: runError })
+    this.name = 'FlowRunAndRestoreError'
   }
 }

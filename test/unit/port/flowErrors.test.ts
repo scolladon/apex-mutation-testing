@@ -1,17 +1,27 @@
 import {
+  FlowActiveVersionNotDeletedError,
   FlowAmbiguousError,
   FlowApiVersionTooLowError,
   FlowChangedOutsideRunError,
   FlowDeployFailedError,
+  FlowDeployNotCompletedError,
   FlowDraftBesideActiveError,
+  FlowForeignActiveVersionError,
   FlowLeftoverVersionError,
+  FlowNamespacedOrgError,
   FlowNotFoundError,
   FlowOrgSafetyError,
   FlowRestoreError,
   FlowRevertError,
+  FlowRunAndRestoreError,
+  FlowRuntimeErrorStreakError,
+  FlowTestChangedOutsideRunError,
+  FlowTestLeftoverError,
   FlowTestNotFoundError,
   FlowTestPinError,
   FlowTestRepinFailedError,
+  FlowTestRestorePinError,
+  FlowTestsNotRunError,
   FlowTestVersionError,
   FlowVersionGuardError,
   FlowVersionLimitError,
@@ -100,9 +110,74 @@ describe('flowErrors', () => {
       "The FlowTests of Flow 'F' did not run against version 2",
     ],
     [
-      new FlowRevertError('F', ['a', 'b']),
+      new FlowRevertError('F', [new Error('a'), new Error('b')]),
       'FlowRevertError',
       "Flow 'F' could not be put back to its original version: a; b",
+    ],
+    [
+      new FlowNamespacedOrgError('ns'),
+      'FlowNamespacedOrgError',
+      'Flow mutation testing does not support an org with a namespace (ns)',
+    ],
+    [
+      new FlowTestLeftoverError('F', 'T', [1, 2]),
+      'FlowTestLeftoverError',
+      "FlowTest 'T' of Flow 'F' was left detached by an interrupted run",
+    ],
+    [
+      new FlowTestsNotRunError('F', ['A', 'B']),
+      'FlowTestsNotRunError',
+      "FlowTests of Flow 'F' did not run: A, B",
+    ],
+    [
+      new FlowDeployNotCompletedError('0Af1', 'Canceled', false, 'canceled'),
+      'FlowDeployNotCompletedError',
+      'Metadata API deploy 0Af1 did not complete (Canceled): canceled',
+    ],
+    [
+      new FlowDeployNotCompletedError(undefined, 'Unknown', false, 'down'),
+      'FlowDeployNotCompletedError',
+      'Metadata API deploy (not started) did not complete (Unknown): down',
+    ],
+    [
+      new FlowForeignActiveVersionError('F', 3, 1),
+      'FlowForeignActiveVersionError',
+      "Flow 'F' has version 3 Active, which this run did not set: version 1 is not activated again",
+    ],
+    [
+      new FlowForeignActiveVersionError('F', undefined, 1),
+      'FlowForeignActiveVersionError',
+      "Flow 'F' has no Active version, which this run did not set: version 1 is not activated again",
+    ],
+    [
+      new FlowActiveVersionNotDeletedError(2),
+      'FlowActiveVersionNotDeletedError',
+      'Version 2 is Active and is not deleted',
+    ],
+    [
+      new FlowTestChangedOutsideRunError(['A', 'B']),
+      'FlowTestChangedOutsideRunError',
+      'FlowTests changed outside the run: A, B',
+    ],
+    [
+      new FlowTestRestorePinError('T', [1, 2], [1, 3]),
+      'FlowTestRestorePinError',
+      "FlowTest 'T' came back associated with versions [1, 3] instead of [1, 2]",
+    ],
+    [
+      new FlowRuntimeErrorStreakError('F', 3, 'INVALID_SESSION_ID'),
+      'FlowRuntimeErrorStreakError',
+      "3 mutants of Flow 'F' in a row failed to run: INVALID_SESSION_ID",
+    ],
+    [
+      new FlowRunAndRestoreError(new Error('run'), 'restore'),
+      'FlowRunAndRestoreError',
+      'run\nrestore',
+    ],
+    [
+      new FlowRunAndRestoreError('run', new Error('restore')),
+      'FlowRunAndRestoreError',
+      'run\nrestore',
     ],
   ])(
     'Given %s, When raised, Then it carries its own name and message',
@@ -123,6 +198,7 @@ describe('flowErrors', () => {
     new FlowTestPinError('T', []),
     new FlowTestVersionError('F', 1, []),
     new FlowRevertError('F', []),
+    new FlowDeployNotCompletedError('0Af1', 'InProgress', true, 'x'),
   ])(
     'Given %s, When raised, Then it is an org safety error that aborts the run',
     error => {
@@ -139,6 +215,19 @@ describe('flowErrors', () => {
     expect(new FlowLeftoverVersionError('F', [2])).not.toBeInstanceOf(
       FlowOrgSafetyError
     )
+    for (const refusal of [
+      new FlowNamespacedOrgError('ns'),
+      new FlowTestLeftoverError('F', 'T', [1]),
+      new FlowTestsNotRunError('F', ['T']),
+      new FlowForeignActiveVersionError('F', 2, 1),
+      new FlowActiveVersionNotDeletedError(2),
+      new FlowTestChangedOutsideRunError(['T']),
+      new FlowTestRestorePinError('T', [1], []),
+      new FlowRuntimeErrorStreakError('F', 3, 'x'),
+      new FlowRunAndRestoreError('a', 'b'),
+    ]) {
+      expect(refusal).not.toBeInstanceOf(FlowOrgSafetyError)
+    }
   })
 
   it('Given several restore failures, When raised, Then every message is listed and the first is the cause', () => {
@@ -152,5 +241,44 @@ describe('flowErrors', () => {
     expect(sut.name).toBe('FlowRestoreError')
     expect(sut.message).toBe("Flow 'F' could not be fully restored: one; two")
     expect(sut.cause).toBe(first)
+  })
+
+  it('Given a revert with failures, When raised, Then the first failure is the cause and every one is kept', () => {
+    // Arrange
+    const first = new Error('one')
+
+    // Act
+    const sut = new FlowRevertError('F', [first, new Error('two')])
+
+    // Assert
+    expect(sut.cause).toBe(first)
+    expect(sut.failures.map(f => f.message)).toEqual(['one', 'two'])
+  })
+
+  it('Given a run failure followed by a restore failure, When raised, Then both are kept typed and the run failure is the cause', () => {
+    // Arrange
+    const run = new FlowLeftoverVersionError('F', [2])
+    const restore = new FlowRestoreError('F', [new Error('x')])
+
+    // Act
+    const sut = new FlowRunAndRestoreError(run, restore)
+
+    // Assert
+    expect(sut.runError).toBe(run)
+    expect(sut.restoreError).toBe(restore)
+    expect(sut.cause).toBe(run)
+  })
+
+  it('Given a deploy that may still land, When raised, Then it says so and keeps its id', () => {
+    // Act
+    const sut = new FlowDeployNotCompletedError('0Af1', 'InProgress', true, 'x')
+
+    // Assert
+    expect(sut).toMatchObject({
+      asyncProcessId: '0Af1',
+      status: 'InProgress',
+      pending: true,
+      detail: 'x',
+    })
   })
 })

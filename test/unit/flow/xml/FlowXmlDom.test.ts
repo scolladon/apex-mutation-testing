@@ -378,4 +378,206 @@ describe('FlowXmlDom', () => {
       )
     })
   })
+
+  describe('round-4 behaviour', () => {
+    it('Given an unquoted attribute, a parser warning, When parsed, Then it still parses', () => {
+      // Arrange — xmldom reports a missing quote as a warning, not an error
+      const xml = `<Flow xmlns="${SF_NAMESPACE}" x=1><name>a</name></Flow>`
+
+      // Act
+      const sut = FlowXmlDom.parse(xml)
+
+      // Assert
+      expect(sut.childText(sut.root, 'name')).toBe('a')
+    })
+
+    it('Given a child of the same name in another namespace, When reading children, Then only the metadata one matches', () => {
+      // Arrange
+      const sut = FlowXmlDom.parse(
+        doc(
+          '    <value>a</value>\n    <x:value xmlns:x="urn:other">b</x:value>'
+        )
+      )
+
+      // Act & Assert
+      expect(sut.children(sut.root, 'value').map(v => sut.text(v))).toEqual([
+        'a',
+      ])
+    })
+
+    it('Given an offset exactly at the start of a line, When converted, Then it is column 1 of that line', () => {
+      // Arrange
+      const sut = FlowXmlDom.parse('<a>\n<b/>\n</a>')
+
+      // Act & Assert
+      expect(sut.positionAt(4)).toEqual({ line: 2, column: 1 })
+      expect(sut.positionAt(3)).toEqual({ line: 1, column: 4 })
+      expect(sut.positionAt(9)).toEqual({ line: 3, column: 1 })
+    })
+
+    it('Given an element whose name holds a regular-expression character, When removed, Then its own close tag is found', () => {
+      // Arrange — "a.b" read as a pattern would also match <aXb>
+      const sut = FlowXmlDom.parse(
+        `<Flow xmlns="${SF_NAMESPACE}"><a.b><aXb>1</aXb></a.b><c/></Flow>`
+      )
+
+      // Act
+      const edit = sut.removeElementEdit(sut.elements('a.b')[0])
+
+      // Assert
+      expect(applyEdits(sut.source, [edit])).toBe(
+        `<Flow xmlns="${SF_NAMESPACE}"><c/></Flow>`
+      )
+    })
+
+    it('Given a sibling of the same name, When a child is inserted, Then it lands after it, before the next name', () => {
+      // Arrange
+      const sut = FlowXmlDom.parse(doc('    <b>1</b>\n    <c>2</c>'))
+
+      // Act
+      const edit = sut.insertChildEdit(sut.root, 'b', '<b>0</b>')
+
+      // Assert
+      expect(applyEdits(sut.source, [edit])).toBe(
+        doc('    <b>1</b>\n    <b>0</b>\n    <c>2</c>')
+      )
+    })
+
+    it('Given a parent closed right before its own parent, When a child is appended, Then it lands inside the parent', () => {
+      // Arrange
+      const sut = FlowXmlDom.parse(
+        `<Flow xmlns="${SF_NAMESPACE}"><p><a/></p></Flow>`
+      )
+
+      // Act
+      const edit = sut.insertChildEdit(sut.elements('p')[0], 'z', '<z/>')
+
+      // Assert
+      expect(applyEdits(sut.source, [edit])).toBe(
+        `<Flow xmlns="${SF_NAMESPACE}"><p><a/>    <z/>\n</p></Flow>`
+      )
+    })
+
+    it('Given an element preceded by text on its line, When removed, Then the line is kept', () => {
+      // Arrange
+      const sut = FlowXmlDom.parse(doc('x <b>1</b>\n    <c/>'))
+
+      // Act
+      const edit = sut.removeElementEdit(sut.child(sut.root, 'b')!)
+
+      // Assert
+      expect(applyEdits(sut.source, [edit])).toBe(doc('x \n    <c/>'))
+    })
+
+    it('Given an element followed only by spaces on its line, When removed, Then its whole line goes', () => {
+      // Arrange
+      const sut = FlowXmlDom.parse(doc('    <b>1</b>   \n    <c/>'))
+
+      // Act
+      const edit = sut.removeElementEdit(sut.child(sut.root, 'b')!)
+
+      // Assert
+      expect(applyEdits(sut.source, [edit])).toBe(doc('    <c/>'))
+    })
+
+    it('Given elements, When asked for their span, Then it runs from the open tag to one past the close tag', () => {
+      // Arrange
+      const sut = FlowXmlDom.parse(doc('    <b><c/></b>\n    <d/>'))
+
+      // Act
+      const spans = ['b', 'c', 'd'].map(name => {
+        const { start, end } = sut.spanOf(sut.elements(name)[0])
+        return sut.source.slice(start, end)
+      })
+
+      // Assert
+      expect(spans).toEqual(['<b><c/></b>', '<c/>', '<d/>'])
+    })
+
+    describe('textOffsets', () => {
+      const offsetsOf = (body: string) => {
+        const sut = FlowXmlDom.parse(doc(body))
+        const element = sut.elements('e')[0]
+        const offsets = sut.textOffsets(element)
+        return { sut, element, offsets }
+      }
+
+      it('Given plain text, When mapped, Then each character maps to its own offset and one entry follows the last', () => {
+        // Act
+        const { sut, offsets } = offsetsOf('<e>ab</e>')
+
+        // Assert
+        expect(offsets?.map(at => sut.source[at])).toEqual(['a', 'b', '<'])
+      })
+
+      it('Given named and numeric entities, When mapped, Then each character maps to the start of its entity', () => {
+        // Act
+        const { sut, element, offsets } = offsetsOf(
+          '<e>&amp;&lt;&gt;&quot;&apos;&#65;&#x42;c</e>'
+        )
+
+        // Assert
+        expect(element.textContent).toBe('&<>"\'ABc')
+        expect(offsets?.map(at => sut.source.slice(at, at + 2))).toEqual([
+          '&a',
+          '&l',
+          '&g',
+          '&q',
+          '&a',
+          '&#',
+          '&#',
+          'c<',
+          '</',
+        ])
+      })
+
+      it('Given a character outside the BMP, When mapped, Then both of its code units map to its entity', () => {
+        // Act
+        const { offsets } = offsetsOf('<e>&#x1F600;z</e>')
+
+        // Assert
+        expect(offsets?.length).toBe(4)
+        expect(offsets?.[0]).toBe(offsets?.[1])
+        expect((offsets?.[2] ?? 0) - (offsets?.[1] ?? 0)).toBe(
+          '&#x1F600;'.length
+        )
+      })
+
+      it('Given CDATA and CRLF line ends, When mapped, Then markers are skipped and a CRLF is one character', () => {
+        // Act
+        const { sut, element, offsets } = offsetsOf(
+          '<e>a\r\nb<![CDATA[<c\r\nd>]]>e</e>'
+        )
+
+        // Assert
+        expect(element.textContent).toBe('a\nb<c\nd>e')
+        expect(offsets?.map(at => sut.source[at])).toEqual([
+          'a',
+          '\r',
+          'b',
+          '<',
+          'c',
+          '\r',
+          'd',
+          '>',
+          'e',
+          '<',
+        ])
+      })
+
+      it('Given text the element spells with a comment inside, When mapped, Then it cannot be mapped character by character', () => {
+        // Act & Assert
+        expect(offsetsOf('<e>a<!-- x -->b</e>').offsets).toBeUndefined()
+      })
+
+      it('Given an empty element, When mapped, Then only the end entry is left', () => {
+        // Act
+        const { sut, offsets } = offsetsOf('<e></e>')
+
+        // Assert
+        expect(offsets).toHaveLength(1)
+        expect(sut.source.slice(offsets?.[0])).toMatch(/^<\/e>/)
+      })
+    })
+  })
 })

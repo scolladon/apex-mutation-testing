@@ -742,6 +742,161 @@ describe('ConfigReader', () => {
     ).toThrow(/Invalid skip pattern 'some-pattern': string thrown/)
   })
 
+  describe('resolveFlow', () => {
+    const fileWith = (config: unknown) =>
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify(config))
+
+    it('Given no config file, When resolving for a Flow, Then the parameters come back as given', async () => {
+      // Act
+      const result = await sut.resolveFlow({ threshold: 70 })
+
+      // Assert
+      expect(result).toEqual({
+        threshold: 70,
+        includeMutators: undefined,
+        excludeMutators: undefined,
+      })
+      expect(readFile).toHaveBeenCalledWith('.mutation-testing.json', 'utf-8')
+    })
+
+    it('Given a config file with a flow section, When resolving, Then its mutators and threshold are used, not the top-level Apex ones', async () => {
+      // Arrange
+      fileWith({
+        mutators: { include: ['ArithmeticOperator'] },
+        threshold: 50,
+        flow: { mutators: { exclude: ['ConnectorBypass'] }, threshold: 80 },
+      })
+
+      // Act
+      const result = await sut.resolveFlow({ configFile: 'cfg.json' })
+
+      // Assert
+      expect(result).toEqual({
+        configFile: 'cfg.json',
+        includeMutators: undefined,
+        excludeMutators: ['ConnectorBypass'],
+        threshold: 80,
+      })
+      expect(readFile).toHaveBeenCalledWith('cfg.json', 'utf-8')
+    })
+
+    it('Given a flow section with include mutators and no threshold, When resolving, Then the top-level threshold is the default', async () => {
+      // Arrange
+      fileWith({
+        threshold: 60,
+        flow: { mutators: { include: ['DecisionOperator'] } },
+      })
+
+      // Act
+      const result = await sut.resolveFlow({})
+
+      // Assert
+      expect(result).toMatchObject({
+        includeMutators: ['DecisionOperator'],
+        threshold: 60,
+      })
+    })
+
+    it('Given flags and a config file, When resolving, Then the flags win', async () => {
+      // Arrange
+      fileWith({
+        threshold: 60,
+        flow: { mutators: { include: ['A'] }, threshold: 70 },
+      })
+
+      // Act
+      const result = await sut.resolveFlow({
+        includeMutators: ['C'],
+        excludeMutators: undefined,
+        threshold: 90,
+      })
+
+      // Assert
+      expect(result).toMatchObject({
+        includeMutators: ['C'],
+        threshold: 90,
+      })
+    })
+
+    it.each([
+      [
+        'include from a flag, exclude from the file',
+        { includeMutators: ['A'] },
+        { includeMutators: ['A'], excludeMutators: undefined },
+      ],
+      [
+        'exclude from a flag, include from the file',
+        { excludeMutators: ['A'] },
+        { includeMutators: undefined, excludeMutators: ['A'] },
+      ],
+    ])(
+      'Given %s, When resolving, Then the flag replaces both lists of the file',
+      async (_label, parameter, expected) => {
+        // Arrange
+        fileWith({ flow: { mutators: { include: ['B'], exclude: ['C'] } } })
+
+        // Act
+        const result = await sut.resolveFlow(parameter)
+
+        // Assert
+        expect(result).toMatchObject(expected)
+      }
+    )
+
+    it.each([
+      ['both flags', { includeMutators: ['A'], excludeMutators: ['B'] }, {}],
+      [
+        'both lists of the file',
+        {},
+        { flow: { mutators: { include: ['A'], exclude: ['B'] } } },
+      ],
+    ])(
+      'Given include and exclude mutators from %s, When resolving, Then it refuses, as the Apex command does',
+      async (_label, parameter, config) => {
+        // Arrange
+        fileWith(config)
+
+        // Act & Assert
+        await expect(sut.resolveFlow(parameter)).rejects.toThrow(
+          'Cannot specify both includeMutators and excludeMutators'
+        )
+      }
+    )
+
+    it.each([[-1], [101]])(
+      'Given a threshold of %s from the file, When resolving, Then it refuses',
+      async threshold => {
+        // Arrange
+        fileWith({ flow: { threshold } })
+
+        // Act & Assert
+        await expect(sut.resolveFlow({})).rejects.toThrow(
+          'Threshold must be between 0 and 100'
+        )
+      }
+    )
+
+    it('Given a malformed flow section, When resolving, Then the field is named with its path', async () => {
+      // Arrange
+      fileWith({ flow: { mutators: { include: 'ConnectorBypass' } } })
+
+      // Act & Assert
+      await expect(sut.resolveFlow({})).rejects.toThrow(
+        "Invalid 'flow.mutators.include' in config file '.mutation-testing.json': expected an array of strings (for example [\"90-100\"]), found string. A bare value is not accepted — wrap it in an array."
+      )
+    })
+
+    it('Given a flow section of the wrong type, When resolving the Apex command, Then the Apex resolution refuses it too', async () => {
+      // Arrange
+      fileWith({ flow: { threshold: 'high' } })
+
+      // Act & Assert
+      await expect(sut.resolve({ ...baseParameter })).rejects.toThrow(
+        "Invalid 'flow.threshold' in config file '.mutation-testing.json': expected a number, found string."
+      )
+    })
+  })
+
   describe('perimeter normalization', () => {
     it('Given test class names with surrounding whitespace, When resolving config, Then trims each name', async () => {
       // Arrange

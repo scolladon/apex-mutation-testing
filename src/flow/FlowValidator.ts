@@ -7,6 +7,9 @@ type FlowRejection =
   | { reason: 'invalidXml'; detail: string }
   | { reason: 'notAFlow' }
   | { reason: 'unsupportedProcessType'; processType: string }
+  | { reason: 'deleteTriggered' }
+  | { reason: 'platformEventTriggered' }
+  | { reason: 'scheduleTriggered' }
   | { reason: 'hasPauseElements' }
   | { reason: 'hasScreenElements' }
 
@@ -16,8 +19,17 @@ export type FlowValidationResult =
 
 const AUTOLAUNCHED_PROCESS_TYPE = 'AutoLaunchedFlow'
 
-// FlowTests only exercise record-triggered and autolaunched flows, and
-// neither kind may pause or show a screen while under test.
+// Start triggers FlowTests cannot run: a flow triggered when a record is
+// deleted, by a platform event, or on a schedule.
+const TRIGGER_REJECTIONS = new Map<string, FlowRejection['reason']>([
+  ['RecordBeforeDelete', 'deleteTriggered'],
+  ['PlatformEvent', 'platformEventTriggered'],
+  ['Scheduled', 'scheduleTriggered'],
+])
+
+// FlowTests only exercise record-triggered and autolaunched flows started on
+// create or update, and neither kind may pause or show a screen while under
+// test.
 export class FlowValidator {
   public validate(xml: string): FlowValidationResult {
     let dom: FlowXmlDom
@@ -36,12 +48,20 @@ export class FlowValidator {
 
     const processType = dom.childText(dom.root, 'processType') ?? ''
     const start = dom.child(dom.root, 'start')
+    const triggerType = start && dom.childText(start, 'triggerType')
+    const recordTriggerType = start && dom.childText(start, 'recordTriggerType')
     const isRecordTriggered =
-      start !== undefined &&
-      (dom.childText(start, 'recordTriggerType') !== undefined ||
-        (dom.childText(start, 'triggerType') ?? '').startsWith('Record'))
+      recordTriggerType !== undefined || triggerType?.startsWith('Record')
     if (processType !== AUTOLAUNCHED_PROCESS_TYPE && !isRecordTriggered) {
       return { isValid: false, reason: 'unsupportedProcessType', processType }
+    }
+    const rejected =
+      recordTriggerType === 'Delete'
+        ? 'deleteTriggered'
+        : // a missing trigger type finds nothing, like any unlisted one
+          TRIGGER_REJECTIONS.get(triggerType as string)
+    if (rejected) {
+      return { isValid: false, reason: rejected } as FlowValidationResult
     }
     if (dom.elements('waits').length > 0) {
       return { isValid: false, reason: 'hasPauseElements' }

@@ -4,6 +4,17 @@ import { mutateBody } from '../../../utils/flowMutatorHarness.js'
 const start = (trigger: string) =>
   `    <start>\n        <recordTriggerType>${trigger}</recordTriggerType>\n    </start>`
 
+const isChangedDecision = `    <decisions>
+        <name>D</name>
+        <rules>
+            <conditions>
+                <leftValueReference>$Record.Name</leftValueReference>
+                <operator>IsChanged</operator>
+                <rightValue><booleanValue>true</booleanValue></rightValue>
+            </conditions>
+        </rules>
+    </decisions>`
+
 describe('RecordTriggerTypeMutator', () => {
   const sut = new RecordTriggerTypeMutator()
 
@@ -12,38 +23,63 @@ describe('RecordTriggerTypeMutator', () => {
     ['Update', ['Create']],
     ['CreateAndUpdate', ['Create', 'Update']],
   ])(
-    'Given a %s trigger, When mutated, Then it is replaced by each of %j',
-    (trigger, expected) => {
+    'Given a %s trigger, When mutated, Then it becomes each of %j, anchored at the trigger',
+    (from, to) => {
       // Act
-      const result = mutateBody(sut, start(trigger))
+      const results = mutateBody(sut, start(from))
 
       // Assert
-      expect(result.map(r => r.mutation.edits[0].replacement)).toEqual(expected)
-      expect(result[0].xml).toContain(
-        `<recordTriggerType>${expected[0]}</recordTriggerType>`
-      )
-      expect(result[0].mutation).toMatchObject({
-        mutatorName: 'RecordTriggerTypeMutator',
-        elementName: '$Start',
-        description: `Changed recordTriggerType from '${trigger}' to '${expected[0]}'`,
-      })
+      expect(results.map(r => r.mutation.replacement)).toEqual(to)
+      for (const [index, result] of results.entries()) {
+        expect(result.xml).toContain(
+          `<recordTriggerType>${to[index]}</recordTriggerType>`
+        )
+        expect(result.mutation).toMatchObject({
+          mutatorName: 'RecordTriggerTypeMutator',
+          elementName: '$Start',
+          description: `Changed recordTriggerType from '${from}' to '${to[index]}'`,
+        })
+        const { start: at, end } = result.mutation.anchor
+        expect(result.source.slice(at, end)).toBe(from)
+      }
     }
   )
 
-  it('Given a trigger type with no replacement, When mutated, Then nothing is produced', () => {
-    // Act & Assert
-    expect(mutateBody(sut, start('Delete'))).toEqual([])
-    expect(mutateBody(sut, start('constructor'))).toEqual([])
+  it.each([
+    ['Update', []],
+    ['CreateAndUpdate', ['Update']],
+    ['Create', ['Update']],
+  ])(
+    'Given a %s trigger and a flow using IsChanged, When mutated, Then no mutant makes it a Create flow',
+    (from, to) => {
+      // Arrange — the org refuses IsChanged in a flow triggered on Create
+      const body = `${isChangedDecision}\n${start(from)}`
+
+      // Act & Assert
+      expect(mutateBody(sut, body).map(r => r.mutation.replacement)).toEqual(to)
+    }
+  )
+
+  it('Given another operator than IsChanged, When mutated, Then Create stays a mutant', () => {
+    // Act
+    const body = `${isChangedDecision.replace('IsChanged', 'IsNull')}\n${start('Update')}`
+
+    // Assert
+    expect(mutateBody(sut, body).map(r => r.mutation.replacement)).toEqual([
+      'Create',
+    ])
   })
 
-  it('Given an empty trigger type, When mutated, Then nothing is produced', () => {
+  it.each([
+    ['an unknown trigger', start('Delete')],
+    ['an empty trigger', start('')],
+    [
+      'no trigger',
+      '    <start>\n        <object>Account</object>\n    </start>',
+    ],
+    ['no start', '    <label>x</label>'],
+  ])('Given %s, When mutated, Then nothing is produced', (_label, body) => {
     // Act & Assert
-    expect(mutateBody(sut, start(''))).toEqual([])
-  })
-
-  it('Given no start element, or a start without trigger type, When mutated, Then nothing is produced', () => {
-    // Act & Assert
-    expect(mutateBody(sut, '    <label>x</label>')).toEqual([])
-    expect(mutateBody(sut, '    <start>\n    </start>')).toEqual([])
+    expect(mutateBody(sut, body)).toEqual([])
   })
 })

@@ -4,7 +4,11 @@ import * as path from 'node:path'
 import { createOrgFlowEngine } from '../../src/adapter/org/orgEngine.js'
 import FlowMutationRun from '../../src/commands/apex/mutation/flow/run.js'
 import type { FlowEngineBundle } from '../../src/port/executionEngine.js'
-import { ProductionOrgError } from '../../src/port/flowErrors.js'
+import {
+  FlowLeftoverVersionError,
+  FlowRestoreError,
+  ProductionOrgError,
+} from '../../src/port/flowErrors.js'
 import type { FlowTestBed } from '../../src/port/flowTestBed.js'
 import { flowTestXml, recordTriggeredFlowXml } from '../utils/flowFixtures.js'
 
@@ -30,6 +34,7 @@ vi.mock('@salesforce/sf-plugins-core', () => {
       string: vi.fn(options => options),
       boolean: vi.fn(options => options),
       directory: vi.fn(options => options),
+      file: vi.fn(options => options),
       integer: vi.fn(options => options),
       requiredOrg: vi.fn().mockReturnValue({}),
       orgApiVersion: vi.fn().mockReturnValue({}),
@@ -43,6 +48,7 @@ vi.mock('../../src/adapter/org/orgEngine.js', () => ({
 type Command = FlowMutationRun & {
   parse: ReturnType<typeof vi.fn>
   log: ReturnType<typeof vi.fn>
+  spinner: { start: ReturnType<typeof vi.fn> }
 }
 
 describe('apex mutation flow run (NUT)', () => {
@@ -89,6 +95,7 @@ describe('apex mutation flow run (NUT)', () => {
         cost: { applyMs: 10, runMs: 10 },
       }),
       evaluate: vi.fn(),
+      needsRestore: vi.fn().mockReturnValue(true),
       restore: vi.fn().mockResolvedValue(undefined),
     }
     const engine: FlowEngineBundle = {
@@ -174,14 +181,36 @@ describe('apex mutation flow run (NUT)', () => {
       kind: 'executed',
       failingTests: ['t'],
     })
-    testBed.restore.mockRejectedValue(new Error('org down'))
+    testBed.restore.mockRejectedValue(
+      new FlowRestoreError('Account_After', [new Error('org down')])
+    )
 
     // Act & Assert
     await expect(command().run()).rejects.toThrow(
-      "Restoring Flow 'Account_After' failed: org down."
+      "Flow 'Account_After' and its FlowTests could not be fully restored: org down."
     )
     await expect(
       fs.stat(path.join(cwd, 'mutations', 'index.html'))
     ).rejects.toThrow()
+  })
+
+  it('Given a refusal before any write, When run, Then the bundle message is shown and no restore is announced', async () => {
+    // Arrange
+    testBed.prepare.mockRejectedValue(
+      new FlowLeftoverVersionError('Account_After', [2])
+    )
+    testBed.needsRestore.mockReturnValue(false)
+    const sut = command()
+
+    // Act & Assert
+    await expect(sut.run()).rejects.toThrow(
+      "Flow 'Account_After' has versions marked [apex-mutation-testing] (2)"
+    )
+    expect(testBed.restore).not.toHaveBeenCalled()
+    expect(
+      sut.spinner.start.mock.calls.some(([text]) =>
+        String(text).startsWith('Restoring')
+      )
+    ).toBe(false)
   })
 })

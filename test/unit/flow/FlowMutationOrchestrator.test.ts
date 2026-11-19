@@ -5,6 +5,8 @@ import { FlowMutationOrchestrator } from '../../../src/flow/FlowMutationOrchestr
 import type { FlowMutation, FlowMutator } from '../../../src/flow/types.js'
 import type { FlowEngineBundle } from '../../../src/port/executionEngine.js'
 import {
+  FlowRunAndRestoreError,
+  FlowRuntimeErrorStreakError,
   FlowTestPinError,
   FlowVersionGuardError,
 } from '../../../src/port/flowErrors.js'
@@ -48,15 +50,17 @@ const fixedMutator = (count: number): FlowMutator => ({
   name: 'Fixed',
   mutate: dom => {
     const trigger = dom.elements('recordTriggerType')[0]
-    return Array.from(
-      { length: count },
-      (_, i): FlowMutation => ({
+    return Array.from({ length: count }, (_, i): FlowMutation => {
+      const edit = dom.replaceTextEdit(trigger, `Update${i}`)
+      return {
         mutatorName: 'Fixed',
         elementName: `E${i}`,
         description: `m${i}`,
-        edits: [dom.replaceTextEdit(trigger, `Update${i}`)],
-      })
-    )
+        edits: [edit],
+        anchor: { start: edit.start, end: edit.end },
+        replacement: edit.replacement,
+      }
+    })
   },
 })
 
@@ -103,6 +107,7 @@ describe('FlowMutationOrchestrator', () => {
       evaluate: vi
         .fn()
         .mockResolvedValue({ kind: 'executed', failingTests: ['Sets_Rating'] }),
+      needsRestore: vi.fn().mockReturnValue(true),
       restore: vi.fn().mockResolvedValue(undefined),
     }
     engine = {
@@ -166,7 +171,7 @@ describe('FlowMutationOrchestrator', () => {
     it('Given no mutation, When run, Then it fails naming the flow', async () => {
       // Act & Assert
       await expect(run([fixedMutator(0)])).rejects.toThrow(
-        "No mutations could be generated for Flow 'Account_After'."
+        "No mutations could be generated for Flow 'Account_After': none of its elements"
       )
       expect(testBed.prepare).not.toHaveBeenCalled()
     })
@@ -176,6 +181,41 @@ describe('FlowMutationOrchestrator', () => {
       await expect(run(undefined, { lines: ['1-2', '40'] })).rejects.toThrow(
         "No mutations could be generated for Flow 'Account_After' within the requested --lines range (1-2, 40)."
       )
+    })
+
+    it.each([
+      ['an include list naming no mutator', { includeMutators: ['Other'] }],
+      ['an exclude list naming every mutator', { excludeMutators: ['fixed'] }],
+    ])(
+      'Given %s, When run, Then it fails naming the mutator filter',
+      async (_label, filter) => {
+        // Act & Assert
+        await expect(run(undefined, filter)).rejects.toThrow(
+          "No mutations could be generated for Flow 'Account_After' with the requested mutators."
+        )
+        expect(testBed.prepare).not.toHaveBeenCalled()
+      }
+    )
+
+    it.each([
+      ['its name', { includeMutators: ['Fixed'] }],
+      ['another name', { excludeMutators: ['Other'] }],
+    ])(
+      'Given a mutator filter keeping the mutator by %s, When run, Then its mutants are evaluated',
+      async (_label, filter) => {
+        // Act
+        const result = await run(undefined, filter)
+
+        // Assert
+        expect(result.mutants).toHaveLength(1)
+      }
+    )
+
+    it('Given a filter that narrows nothing and a line range excluding every mutant, When run, Then the line range is named', async () => {
+      // Act & Assert
+      await expect(
+        run(undefined, { excludeMutators: ['Other'], lines: ['1'] })
+      ).rejects.toThrow('within the requested --lines range (1)')
     })
 
     it('Given a line range including the mutant, When run, Then it is evaluated', async () => {
@@ -196,6 +236,7 @@ describe('FlowMutationOrchestrator', () => {
       expect(result).toMatchObject({
         flowApiName: 'Account_After',
         sourceXml: recordTriggeredFlowXml(),
+        testNames: ['Sets_Rating'],
       })
       expect(result.mutants.map(m => m.status)).toEqual(['Pending', 'Pending'])
       expect(testBed.prepare).not.toHaveBeenCalled()
@@ -319,6 +360,50 @@ describe('FlowMutationOrchestrator', () => {
       }
     )
 
+    it('Given 3 mutants in a row failing to run, When evaluated, Then the run stops naming the last reason and the org is restored', async () => {
+      // Arrange
+      testBed.evaluate
+        .mockRejectedValueOnce(new Error('first'))
+        .mockRejectedValueOnce(new Error('second'))
+        .mockRejectedValueOnce(new Error('INVALID_SESSION_ID'))
+
+      // Act
+      const error = await run([fixedMutator(5)]).catch((e: unknown) => e)
+
+      // Assert
+      expect(error).toEqual(
+        new FlowRuntimeErrorStreakError(
+          'Account_After',
+          3,
+          'INVALID_SESSION_ID'
+        )
+      )
+      expect(testBed.evaluate).toHaveBeenCalledTimes(3)
+      expect(testBed.restore).toHaveBeenCalledTimes(1)
+    })
+
+    it('Given RuntimeErrors broken up by a verdict, When evaluated, Then the run goes on', async () => {
+      // Arrange
+      testBed.evaluate
+        .mockRejectedValueOnce(new Error('a'))
+        .mockRejectedValueOnce(new Error('b'))
+        .mockResolvedValueOnce({ kind: 'executed', failingTests: [] })
+        .mockRejectedValueOnce(new Error('c'))
+        .mockRejectedValueOnce(new Error('d'))
+
+      // Act
+      const result = await run([fixedMutator(5)])
+
+      // Assert
+      expect(result.mutants.map(m => m.status)).toEqual([
+        'RuntimeError',
+        'RuntimeError',
+        'Survived',
+        'RuntimeError',
+        'RuntimeError',
+      ])
+    })
+
     it('Given a progress bar that cannot be torn down, When the run fails, Then the failure is reported and the restore still runs', async () => {
       // Arrange
       const outputSink = vi.fn()
@@ -364,7 +449,7 @@ describe('FlowMutationOrchestrator', () => {
         { stdout: true }
       )
       expect(spinner.stop).toHaveBeenCalledWith(
-        'Deploy: ~1s/mutant | Test: ~2s/mutant | Mutants: 2'
+        'Deploy and revert: ~1s/mutant | Test: ~2s/mutant | Mutants: 2'
       )
       expect(progress.finish).toHaveBeenCalledWith({
         info: 'All mutations evaluated',
@@ -399,15 +484,30 @@ describe('FlowMutationOrchestrator', () => {
   })
 
   describe('restore', () => {
-    it('Given the rollback deploy fails, When run, Then the run rejects', async () => {
+    it('Given the rollback deploy fails, When run, Then the run rejects with that failure, typed', async () => {
       // Arrange — review proof
-      testBed.restore.mockRejectedValue(new Error('org down'))
+      const failure = new Error('org down')
+      testBed.restore.mockRejectedValue(failure)
 
       // Act & Assert
-      await expect(run()).rejects.toThrow(
-        "Restoring Flow 'Account_After' failed: org down. Check the Flow's versions and FlowTests on the target org and restore them manually."
+      await expect(run()).rejects.toBe(failure)
+      expect(spinner.stop).toHaveBeenCalledWith('Restore failed')
+    })
+
+    it('Given a refusal before any write, When run, Then no restore is announced nor attempted', async () => {
+      // Arrange
+      const refusal = new Error('leftover version')
+      testBed.prepare.mockRejectedValue(refusal)
+      testBed.needsRestore.mockReturnValue(false)
+
+      // Act & Assert
+      await expect(run()).rejects.toBe(refusal)
+      expect(testBed.restore).not.toHaveBeenCalled()
+      expect(spinner.start).not.toHaveBeenCalledWith(
+        'Restoring Flow "Account_After" and its FlowTests to their original state',
+        undefined,
+        { stdout: true }
       )
-      expect(spinner.stop).toHaveBeenCalledWith('Restore FAILED')
     })
 
     it('Given the run and the restore both fail, When run, Then the run failure leads and the restore failure is appended', async () => {
@@ -424,10 +524,10 @@ describe('FlowMutationOrchestrator', () => {
       const error = await run().catch((e: Error) => e)
 
       // Assert
-      expect(error).toBeInstanceOf(Error)
-      expect((error as Error).message).toBe(
-        `${runFailure.message}\nRestoring Flow 'Account_After' failed: still down. Check the Flow's versions and FlowTests on the target org and restore them manually.`
-      )
+      expect(error).toBeInstanceOf(FlowRunAndRestoreError)
+      expect((error as FlowRunAndRestoreError).runError).toBe(runFailure)
+      expect((error as FlowRunAndRestoreError).restoreError).toBe('still down')
+      expect((error as Error).message).toBe(`${runFailure.message}\nstill down`)
       expect((error as Error).cause).toBe(runFailure)
     })
 
@@ -437,7 +537,7 @@ describe('FlowMutationOrchestrator', () => {
       testBed.restore.mockRejectedValue(new Error('down'))
 
       // Act & Assert
-      await expect(run()).rejects.toThrow(/^boom\nRestoring Flow/)
+      await expect(run()).rejects.toThrow(/^boom\ndown$/)
     })
 
     it('Given a successful run, When it ends, Then the restore runs once after every mutant', async () => {
@@ -499,7 +599,10 @@ describe('FlowMutationOrchestrator', () => {
       )
       expect(spinner.stop).toHaveBeenCalledWith('FlowTests: A, B')
       expect(spinner.stop).toHaveBeenCalledWith('1 mutations generated')
-      expect(spinner.stop).toHaveBeenCalledWith('Done')
+      // once when the FlowTests are prepared, once when the restore is done
+      expect(
+        vi.mocked(spinner.stop).mock.calls.filter(([text]) => text === 'Done')
+      ).toHaveLength(2)
       expect(spinner.stop).toHaveBeenCalledWith('Original tests passed')
       expect(progress.start).toHaveBeenCalledWith(
         1,
@@ -536,8 +639,11 @@ describe('FlowMutationOrchestrator', () => {
         )
       )
 
-      // Act & Assert
-      await expect(run()).rejects.toThrow(
+      // Act
+      const error = (await run().catch(e => e)) as Error
+
+      // Assert — exactly the bundle text: no token appended to it
+      expect(error.message).toBe(
         "Flow 'Account_After' contains Pause elements. Flows with Pause elements cannot be tested with FlowTests."
       )
     })
@@ -549,16 +655,134 @@ describe('FlowMutationOrchestrator', () => {
       )
     })
 
-    it('Given a failed restore, When run, Then the restore failure is kept as the cause', async () => {
-      // Arrange
-      const failure = new Error('org down')
-      testBed.restore.mockRejectedValue(failure)
+    it.each([
+      [
+        'a Scheduled Path',
+        '<pathType>AsyncAfterCommit</pathType>',
+        false,
+        true,
+      ],
+      ['an Async Path', '<offsetNumber>1</offsetNumber>', true, false],
+    ])(
+      'Given a flow with %s beside another kind, When run, Then each kind is announced once',
+      async () => {
+        // Arrange
+        const outputSink = vi.fn()
+        readFlow.mockResolvedValue(
+          source(
+            recordTriggeredFlowXml().replace(
+              '<object>Account</object>',
+              '<object>Account</object>\n        <scheduledPaths><name>Later</name><offsetNumber>1</offsetNumber></scheduledPaths>\n        <scheduledPaths><pathType>AsyncAfterCommit</pathType></scheduledPaths>'
+            )
+          )
+        )
+
+        // Act
+        await new FlowMutationOrchestrator(
+          progress,
+          spinner,
+          engine,
+          messages,
+          undefined,
+          new FlowMutantGenerator([fixedMutator(1)]),
+          outputSink
+        ).run({ flowApiName: 'Account_After', dryRun: false })
+
+        // Assert
+        expect(outputSink.mock.calls).toEqual([
+          [`${messages.getMessage('info.hasScheduledPath')}\n`],
+          [`${messages.getMessage('info.hasAsyncPath')}\n`],
+        ])
+      }
+    )
+
+    it.each([
+      [
+        'only a Scheduled Path',
+        '<scheduledPaths><offsetNumber>1</offsetNumber></scheduledPaths>',
+        'info.hasScheduledPath',
+      ],
+      [
+        'only an Async Path',
+        '<scheduledPaths><pathType>AsyncAfterCommit</pathType></scheduledPaths>',
+        'info.hasAsyncPath',
+      ],
+    ])(
+      'Given a flow with %s, When run, Then only that kind is announced',
+      async (_label, paths, key) => {
+        // Arrange
+        const outputSink = vi.fn()
+        readFlow.mockResolvedValue(
+          source(
+            recordTriggeredFlowXml().replace(
+              '<object>Account</object>',
+              `<object>Account</object>\n        ${paths}`
+            )
+          )
+        )
+
+        // Act
+        await new FlowMutationOrchestrator(
+          progress,
+          spinner,
+          engine,
+          messages,
+          undefined,
+          new FlowMutantGenerator([fixedMutator(1)]),
+          outputSink
+        ).run({ flowApiName: 'Account_After', dryRun: false })
+
+        // Assert
+        expect(outputSink.mock.calls).toEqual([
+          [`${messages.getMessage(key)}\n`],
+        ])
+      }
+    )
+
+    it('Given a dry run of a flow with a Scheduled Path, When run, Then nothing is announced', async () => {
+      // Arrange — no mutant is ever Active on a dry run
+      const outputSink = vi.fn()
+      readFlow.mockResolvedValue(
+        source(
+          recordTriggeredFlowXml().replace(
+            '<object>Account</object>',
+            '<object>Account</object>\n        <scheduledPaths><offsetNumber>1</offsetNumber></scheduledPaths>'
+          )
+        )
+      )
 
       // Act
-      const error = (await run().catch((e: unknown) => e)) as Error
+      await new FlowMutationOrchestrator(
+        progress,
+        spinner,
+        engine,
+        messages,
+        undefined,
+        new FlowMutantGenerator([fixedMutator(1)]),
+        outputSink
+      ).run({ flowApiName: 'Account_After', dryRun: true })
 
       // Assert
-      expect(error.cause).toBe(failure)
+      expect(outputSink).not.toHaveBeenCalled()
+    })
+
+    it('Given a flow without any path, When run, Then nothing is announced', async () => {
+      // Arrange
+      const outputSink = vi.fn()
+
+      // Act
+      await new FlowMutationOrchestrator(
+        progress,
+        spinner,
+        engine,
+        messages,
+        undefined,
+        new FlowMutantGenerator([fixedMutator(1)]),
+        outputSink
+      ).run({ flowApiName: 'Account_After', dryRun: true })
+
+      // Assert
+      expect(outputSink).not.toHaveBeenCalled()
     })
   })
 })

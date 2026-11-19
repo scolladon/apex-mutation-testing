@@ -1,9 +1,18 @@
 import { Connection } from '@salesforce/core'
 import JSZip from 'jszip'
 import { escapeXmlText } from '../../flow/xml/FlowXmlDom.js'
-import { FlowDeployFailedError } from '../../port/flowErrors.js'
+import {
+  FlowDeployFailedError,
+  FlowDeployNotCompletedError,
+} from '../../port/flowErrors.js'
 
 type RetrieveRequest = Parameters<Connection['metadata']['retrieve']>[0]
+type DeployResult = Awaited<
+  ReturnType<Connection['metadata']['checkDeployStatus']>
+>
+
+const errorText = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error)
 
 export type FlowMetadataType = 'Flow' | 'FlowTest'
 
@@ -25,6 +34,7 @@ const DEFAULT_POLL_INITIAL_INTERVAL_MS = 500
 const DEFAULT_POLL_MAX_INTERVAL_MS = 5000
 const DEFAULT_POLL_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes
 const POLL_BACKOFF_FACTOR = 1.5
+const MAX_CONSECUTIVE_READ_FAILURES = 3
 
 interface PollOptions {
   initialIntervalMs?: number
@@ -49,6 +59,9 @@ interface ComponentFailure {
 }
 
 const asArray = <T>(value: T | T[] | undefined): T[] =>
+  // Stryker disable next-line ArrayDeclaration: the only caller reads each
+  // entry's `problem` and drops the entries without one, so a stray entry in
+  // the empty case is dropped the same way.
   value === undefined ? [] : Array.isArray(value) ? value : [value]
 
 // Flows and FlowTests travel through the Metadata API as zip packages built
@@ -88,35 +101,73 @@ export class FlowMetadataRepository {
     return this.unzip(result.zipFile)
   }
 
-  // Throws FlowDeployFailedError when the org refuses a component — the one
-  // failure a caller may treat as data — and anything else unchanged.
-  public async deploy(files: FlowMetadataFile[]): Promise<void> {
-    const { id } = await this.connection.metadata.deploy(
-      await this.zip(files),
-      {
+  // Resolves once the org saved every component. Throws
+  // FlowDeployFailedError when it refused at least one — the one failure a
+  // caller may treat as data about the XML — and FlowDeployNotCompletedError
+  // for everything else (a timeout, a cancellation, an org-wide failure, a
+  // status that could not be read): then what the deploy did is unknown.
+  public async deploy(files: FlowMetadataFile[], cancel = true): Promise<void> {
+    const zip = await this.zip(files)
+    let id: string
+    try {
+      ;({ id } = await this.connection.metadata.deploy(zip, {
         singlePackage: true,
         rollbackOnError: true,
         testLevel: 'NoTestRun',
+      }))
+    } catch (error: unknown) {
+      // The request may or may not have queued a deploy, and there is no id
+      // to follow it by.
+      throw new FlowDeployNotCompletedError(
+        undefined,
+        'Unknown',
+        false,
+        errorText(error)
+      )
+    }
+    const result = await this.awaitDeploy(id, cancel)
+    if (result.success) return
+    const problems = asArray(
+      result.details?.componentFailures as
+        | ComponentFailure
+        | ComponentFailure[]
+        | undefined
+    )
+      .map(failure => failure.problem)
+      .filter((problem): problem is string => Boolean(problem))
+    if (problems.length > 0) {
+      throw new FlowDeployFailedError(problems)
+    }
+    throw new FlowDeployNotCompletedError(
+      id,
+      String(result.status),
+      false,
+      result.errorMessage ?? String(result.status)
+    )
+  }
+
+  // Follows deploy `id` to a terminal state. When it does not get there
+  // within the poll timeout, or its status cannot be read, the deploy is
+  // cancelled and followed again: a deploy left running could still land
+  // after the caller moved on. One that still does not finish is reported
+  // pending, with its id, for the caller to wait on.
+  public async awaitDeploy(id: string, cancel = true): Promise<DeployResult> {
+    const check = () => this.connection.metadata.checkDeployStatus(id, true)
+    try {
+      return await this.poll('deploy', id, check)
+    } catch (firstError: unknown) {
+      try {
+        if (!cancel) throw firstError
+        await this.connection.metadata.cancelDeploy(id)
+        return await this.poll('deploy', id, check)
+      } catch (error: unknown) {
+        throw new FlowDeployNotCompletedError(
+          id,
+          'InProgress',
+          true,
+          `${errorText(firstError)}; then ${errorText(error)}`
+        )
       }
-    )
-    const result = await this.poll('deploy', id, () =>
-      this.connection.metadata.checkDeployStatus(id, true)
-    )
-    if (!result.success) {
-      const failures = asArray(
-        result.details?.componentFailures as
-          | ComponentFailure
-          | ComponentFailure[]
-          | undefined
-      )
-      const problems = failures
-        .map(failure => failure.problem)
-        .filter((problem): problem is string => Boolean(problem))
-      throw new FlowDeployFailedError(
-        problems.length > 0
-          ? problems
-          : [result.errorMessage ?? String(result.status)]
-      )
     }
   }
 
@@ -171,14 +222,28 @@ export class FlowMetadataRepository {
       this.pollOptions.maxIntervalMs ?? DEFAULT_POLL_MAX_INTERVAL_MS
     let intervalMs =
       this.pollOptions.initialIntervalMs ?? DEFAULT_POLL_INITIAL_INTERVAL_MS
-    let result = await check()
-    while (!result.done) {
+    // A status read can fail once on its own (a dropped connection): only
+    // several failures in a row stop the polling.
+    let failures = 0
+    const read = async (): Promise<T | undefined> => {
+      try {
+        const status = await check()
+        failures = 0
+        return status
+      } catch (error: unknown) {
+        failures++
+        if (failures >= MAX_CONSECUTIVE_READ_FAILURES) throw error
+        return undefined
+      }
+    }
+    let result = await read()
+    while (!result?.done) {
       if (Date.now() > deadline) {
         throw new MetadataPollTimeoutError(operation, id)
       }
       await new Promise(resolve => setTimeout(resolve, intervalMs))
       intervalMs = Math.min(intervalMs * POLL_BACKOFF_FACTOR, maxIntervalMs)
-      result = await check()
+      result = await read()
     }
     return result
   }

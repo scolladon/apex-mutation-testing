@@ -59,8 +59,13 @@ export class OrgFlowSourceProvider implements FlowSourceProvider {
     // Only the FlowTests asked for are run and unpinned. A FlowTest of another
     // flow that happens to answer to a requested name is not one of ours: it
     // is reported as missing, never touched.
+    // Stryker disable ConditionalExpression: a Flow file answering to a
+    // requested name has no <flowApiName>, so belongsTo drops it anyway.
+    const isRequested = (file: FlowTestSource & { type: string }) =>
+      file.type === 'FlowTest' && names.includes(file.fullName)
+    // Stryker restore ConditionalExpression
     const tests = files
-      .filter(file => file.type === 'FlowTest' && names.includes(file.fullName))
+      .filter(isRequested)
       .map(file => ({ fullName: file.fullName, xml: file.xml }))
       .filter(test => belongsTo(test, apiName))
     const missing = names.filter(

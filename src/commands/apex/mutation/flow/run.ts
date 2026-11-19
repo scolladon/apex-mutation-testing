@@ -1,20 +1,31 @@
-import { Messages } from '@salesforce/core'
+import { Messages, SfError } from '@salesforce/core'
 import { Flags, SfCommand } from '@salesforce/sf-plugins-core'
 import { createOrgFlowEngine } from '../../../../adapter/org/orgEngine.js'
 import { FlowMutationOrchestrator } from '../../../../flow/FlowMutationOrchestrator.js'
 import type { FlowMutationResult } from '../../../../flow/types.js'
 import {
+  FlowActiveVersionNotDeletedError,
   FlowAmbiguousError,
   FlowApiVersionTooLowError,
   FlowChangedOutsideRunError,
   FlowDeployFailedError,
+  FlowDeployNotCompletedError,
   FlowDraftBesideActiveError,
+  FlowForeignActiveVersionError,
   FlowLeftoverVersionError,
+  FlowNamespacedOrgError,
   FlowNotFoundError,
+  FlowRestoreError,
   FlowRevertError,
+  FlowRunAndRestoreError,
+  FlowRuntimeErrorStreakError,
+  FlowTestChangedOutsideRunError,
+  FlowTestLeftoverError,
   FlowTestNotFoundError,
   FlowTestPinError,
   FlowTestRepinFailedError,
+  FlowTestRestorePinError,
+  FlowTestsNotRunError,
   FlowTestVersionError,
   FlowVersionGuardError,
   FlowVersionLimitError,
@@ -24,6 +35,7 @@ import {
   UnsupportedFlowVersionStateError,
 } from '../../../../port/flowErrors.js'
 import { FlowHTMLReporter } from '../../../../reporter/FlowHTMLReporter.js'
+import { ConfigReader } from '../../../../service/configReader.js'
 import {
   renderOrgDetail,
   reportEngineNotice,
@@ -45,7 +57,10 @@ export type FlowMutationRunResult = {
 }
 
 const FLOW_API_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
-const FLOW_TEST_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_.]*$/
+// A FlowTest name, optionally qualified (<flow>.<test>, FlowTesting.<flow>.
+// <test>): dot-separated identifiers, none of them empty.
+const FLOW_TEST_NAME_PATTERN =
+  /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)*$/
 
 // "1, 2, 5 (5 Active)" — the numbers and the Active one, as the guard saw
 // them.
@@ -56,101 +71,223 @@ const describeVersions = ({ numbers, active }: FlowVersionState): string =>
       : messages.getMessage('info.activeVersion', [String(active)])
   })`
 
-// Every typed rejection of the Flow engine renders as the command's own
-// error; anything else is rethrown untouched. Names and versions travel on
-// the error's fields; the org-supplied ones are sanitized before display.
-function renderFlowError(error: unknown): never {
-  if (error instanceof ProductionOrgError) {
-    throw messages.createError('error.productionOrg')
+const versionList = (versions: number[]): string => versions.join(', ') || '-'
+
+type Rendered = [key: string, tokens?: string[]]
+
+// The bundle message every typed rejection of the Flow engine renders as.
+// Names and versions travel on the error's fields; the org-supplied ones are
+// sanitized before display. Undefined for anything else.
+const renderedOf = (
+  error: unknown,
+  flowApiName: string
+): Rendered | undefined => {
+  if (error instanceof ProductionOrgError) return ['error.productionOrg']
+  if (error instanceof FlowNamespacedOrgError) {
+    return ['error.namespacedOrg', [sanitizeForDisplay(error.namespacePrefix)]]
   }
   if (error instanceof FlowApiVersionTooLowError) {
-    throw messages.createError('error.apiVersionTooLow', [
-      error.minimumApiVersion,
-      error.apiVersion,
-      error.minimumApiVersion,
-    ])
+    return [
+      'error.apiVersionTooLow',
+      [error.minimumApiVersion, error.apiVersion, error.minimumApiVersion],
+    ]
   }
   if (error instanceof FlowNotFoundError) {
-    throw messages.createError('error.flowNotFound', [error.apiName])
+    return ['error.flowNotFound', [error.apiName]]
   }
   if (error instanceof FlowAmbiguousError) {
-    throw messages.createError('error.flowAmbiguous', [
-      error.apiName,
-      String(error.count),
-    ])
+    return ['error.flowAmbiguous', [error.apiName, String(error.count)]]
   }
   if (error instanceof NoFlowTestsError) {
-    throw messages.createError('error.noFlowTests', [error.apiName])
+    return ['error.noFlowTests', [error.apiName]]
   }
   if (error instanceof FlowTestNotFoundError) {
-    throw messages.createError('error.flowTestNotFound', [
-      error.apiName,
-      error.testNames.map(sanitizeForDisplay).join(', '),
-    ])
+    return [
+      'error.flowTestNotFound',
+      [error.apiName, error.testNames.map(sanitizeForDisplay).join(', ')],
+    ]
   }
   if (error instanceof UnsupportedFlowVersionStateError) {
-    throw messages.createError('error.unsupportedFlowVersionState', [
-      error.apiName,
-      sanitizeForDisplay(error.status),
-    ])
+    return [
+      'error.unsupportedFlowVersionState',
+      [error.apiName, sanitizeForDisplay(error.status)],
+    ]
   }
   if (error instanceof FlowDraftBesideActiveError) {
-    throw messages.createError('error.flowDraftBesideActive', [
-      error.apiName,
-      String(error.draftVersion),
-      String(error.activeVersion),
-    ])
+    return [
+      'error.flowDraftBesideActive',
+      [error.apiName, String(error.draftVersion), String(error.activeVersion)],
+    ]
   }
   if (error instanceof FlowLeftoverVersionError) {
-    throw messages.createError('error.flowLeftoverVersion', [
-      error.apiName,
-      error.versionNumbers.join(', '),
-    ])
+    return [
+      'error.flowLeftoverVersion',
+      [error.apiName, versionList(error.versionNumbers)],
+    ]
+  }
+  if (error instanceof FlowTestLeftoverError) {
+    return [
+      'error.flowTestLeftover',
+      [
+        sanitizeForDisplay(error.testName),
+        error.apiName,
+        versionList(error.pinnedVersions),
+      ],
+    ]
   }
   if (error instanceof FlowChangedOutsideRunError) {
-    throw messages.createError('error.flowChangedOutsideRun', [
-      error.apiName,
-      error.changedVersions.join(', '),
-    ])
+    return [
+      error.beforeAnyWrite
+        ? 'error.flowChangedBeforeRun'
+        : 'error.flowChangedOutsideRun',
+      [error.apiName, versionList(error.changedVersions)],
+    ]
+  }
+  if (error instanceof FlowTestChangedOutsideRunError) {
+    return [
+      error.beforeAnyWrite
+        ? 'error.flowTestChangedBeforeRun'
+        : 'error.flowTestChangedOutsideRun',
+      [error.testNames.map(sanitizeForDisplay).join(', ')],
+    ]
   }
   if (error instanceof FlowVersionLimitError) {
-    throw messages.createError('error.flowVersionLimit', [
-      error.apiName,
-      String(error.versionCount),
-      String(error.versionLimit),
-    ])
+    return [
+      'error.flowVersionLimit',
+      [error.apiName, String(error.versionCount), String(error.versionLimit)],
+    ]
   }
   if (error instanceof FlowVersionGuardError) {
-    throw messages.createError('error.flowVersionGuard', [
-      error.apiName,
-      describeVersions(error.expected),
-      describeVersions(error.observed),
-    ])
+    return [
+      'error.flowVersionGuard',
+      [
+        error.apiName,
+        describeVersions(error.expected),
+        describeVersions(error.observed),
+      ],
+    ]
   }
   if (error instanceof FlowTestPinError) {
-    throw messages.createError('error.flowTestPin', [
-      sanitizeForDisplay(error.testName),
-    ])
+    return ['error.flowTestPin', [sanitizeForDisplay(error.testName)]]
+  }
+  if (error instanceof FlowTestRestorePinError) {
+    return [
+      'error.flowTestRestorePin',
+      [
+        sanitizeForDisplay(error.testName),
+        versionList(error.expectedVersions),
+        versionList(error.foundVersions),
+      ],
+    ]
+  }
+  if (error instanceof FlowTestsNotRunError) {
+    return [
+      'error.flowTestsNotRun',
+      [error.apiName, error.missingTests.map(sanitizeForDisplay).join(', ')],
+    ]
   }
   if (error instanceof FlowTestVersionError) {
-    throw messages.createError('error.flowTestVersion', [
-      error.apiName,
-      String(error.expectedVersion),
-      error.executedVersions.join(', ') ||
-        messages.getMessage('info.noFlowTestResult'),
-    ])
+    return [
+      'error.flowTestVersion',
+      [
+        error.apiName,
+        String(error.expectedVersion),
+        error.executedVersions.join(', ') ||
+          messages.getMessage('info.noFlowTestResult'),
+      ],
+    ]
+  }
+  if (error instanceof FlowDeployNotCompletedError) {
+    return [
+      'error.flowDeployNotCompleted',
+      [
+        sanitizeForDisplay(error.asyncProcessId ?? '-'),
+        sanitizeForDisplay(error.status),
+        renderOrgDetail(error.detail),
+      ],
+    ]
+  }
+  if (error instanceof FlowForeignActiveVersionError) {
+    return [
+      'error.flowForeignActiveVersion',
+      [
+        error.apiName,
+        error.activeVersion === undefined
+          ? messages.getMessage('info.noActiveVersion')
+          : messages.getMessage('info.activeVersion', [
+              String(error.activeVersion),
+            ]),
+        String(error.originalVersion),
+      ],
+    ]
+  }
+  if (error instanceof FlowActiveVersionNotDeletedError) {
+    return ['error.flowActiveVersionNotDeleted', [String(error.versionNumber)]]
   }
   if (error instanceof FlowRevertError) {
-    throw messages.createError('error.flowRevert', [
-      error.apiName,
-      renderOrgDetail(error.problems.join('; ')),
-    ])
+    return [
+      'error.flowRevert',
+      [error.apiName, textsOf(error.failures, flowApiName)],
+    ]
+  }
+  if (error instanceof FlowRestoreError) {
+    return [
+      'error.flowRestoreFailed',
+      [error.apiName, textsOf(error.failures, flowApiName)],
+    ]
   }
   if (error instanceof FlowTestRepinFailedError) {
-    throw messages.createError('error.flowTestRepinFailed', [
-      renderOrgDetail(error.problems.join('; ')),
-    ])
+    return [
+      'error.flowTestRepinFailed',
+      [renderOrgDetail(error.problems.join('; '))],
+    ]
   }
+  // The one deploy failure that escapes the run unclassified is the
+  // baseline's — a mutant's is a verdict.
+  if (error instanceof FlowDeployFailedError) {
+    return [
+      'error.flowDeployFailed',
+      [flowApiName, renderOrgDetail(error.problems.join('; '))],
+    ]
+  }
+  if (error instanceof FlowRuntimeErrorStreakError) {
+    return [
+      'error.runtimeErrorStreak',
+      [String(error.count), error.apiName, renderOrgDetail(error.lastReason)],
+    ]
+  }
+  return undefined
+}
+
+// The text a failure reads as: its bundle message when it is a typed one,
+// else its own message as the org gave it, sanitized and bounded.
+const textOf = (error: unknown, flowApiName: string): string => {
+  if (error instanceof FlowRunAndRestoreError) {
+    return `${textOf(error.runError, flowApiName)}\n${textOf(error.restoreError, flowApiName)}`
+  }
+  const rendered = renderedOf(error, flowApiName)
+  if (rendered) return messages.getMessage(...rendered)
+  return renderOrgDetail(error instanceof Error ? error.message : String(error))
+}
+
+const textsOf = (failures: Error[], flowApiName: string): string =>
+  failures.map(failure => textOf(failure, flowApiName)).join('; ')
+
+// Renders a failure of the run as the command's own error, both parts of a
+// run failure followed by a failed restore included; anything untyped is
+// rethrown untouched.
+function renderFlowError(error: unknown, flowApiName: string): never {
+  if (error instanceof FlowRunAndRestoreError) {
+    throw new SfError(
+      textOf(error, flowApiName),
+      error.name,
+      undefined,
+      undefined,
+      error
+    )
+  }
+  const rendered = renderedOf(error, flowApiName)
+  if (rendered) throw messages.createError(...rendered)
   throw error
 }
 
@@ -186,6 +323,16 @@ export default class FlowMutationRun extends SfCommand<FlowMutationRunResult> {
       summary: messages.getMessage('flags.dry-run.summary'),
       default: false,
     }),
+    'include-mutators': Flags.string({
+      summary: messages.getMessage('flags.include-mutators.summary'),
+      exclusive: ['exclude-mutators'],
+      multiple: true,
+    }),
+    'exclude-mutators': Flags.string({
+      summary: messages.getMessage('flags.exclude-mutators.summary'),
+      exclusive: ['include-mutators'],
+      multiple: true,
+    }),
     lines: Flags.string({
       char: 'l',
       summary: messages.getMessage('flags.lines.summary'),
@@ -196,6 +343,10 @@ export default class FlowMutationRun extends SfCommand<FlowMutationRunResult> {
       min: 0,
       max: 100,
     }),
+    'config-file': Flags.file({
+      summary: messages.getMessage('flags.config-file.summary'),
+      exists: true,
+    }),
     'target-org': Flags.requiredOrg(),
     'api-version': Flags.orgApiVersion(),
   }
@@ -205,23 +356,19 @@ export default class FlowMutationRun extends SfCommand<FlowMutationRunResult> {
     const flowApiName = flags.flow.trim()
     const flowTestNames = flags['flow-test']?.map(name => name.trim())
     this.assertNames(flowApiName, flowTestNames)
+    const config = await new ConfigReader(messages).resolveFlow({
+      configFile: flags['config-file'],
+      includeMutators: flags['include-mutators'],
+      excludeMutators: flags['exclude-mutators'],
+      threshold: flags.threshold,
+    })
 
     const engine = await createOrgFlowEngine({
       connection: flags['target-org'].getConnection(flags['api-version']),
       notify: notice => reportEngineNotice(notice, this.spinner, messages),
-    }).catch(renderFlowError)
+    }).catch(error => renderFlowError(error, flowApiName))
 
-    this.log(
-      messages.getMessage(
-        flags['dry-run']
-          ? 'info.DryRunCommandIsRunning'
-          : 'info.CommandIsRunning',
-        [
-          flowApiName,
-          flowTestNames?.join(', ') ?? messages.getMessage('info.allFlowTests'),
-        ]
-      )
-    )
+    this.log(this.runningMessage(flags['dry-run'], flowApiName, flowTestNames))
     const result = await new FlowMutationOrchestrator(
       this.progress,
       this.spinner,
@@ -232,11 +379,11 @@ export default class FlowMutationRun extends SfCommand<FlowMutationRunResult> {
         flowApiName,
         flowTestNames,
         lines: flags.lines,
+        includeMutators: config.includeMutators,
+        excludeMutators: config.excludeMutators,
         dryRun: flags['dry-run'],
       })
-      .catch(error =>
-        renderFlowError(this.withDeployContext(error, flowApiName))
-      )
+      .catch(error => renderFlowError(error, flowApiName))
 
     await this.publishReport(result, flags['report-dir'])
 
@@ -249,10 +396,23 @@ export default class FlowMutationRun extends SfCommand<FlowMutationRunResult> {
     if (score !== null) {
       this.log(messages.getMessage('info.CommandSuccess', [score]))
     }
-    this.enforceThreshold(score, flags.threshold)
+    this.enforceThreshold(score, config.threshold)
 
     this.info(messages.getMessage('info.EncourageSponsorship'))
     return { score }
+  }
+
+  private runningMessage(
+    dryRun: boolean,
+    flowApiName: string,
+    flowTestNames: string[] | undefined
+  ): string {
+    const prefix = dryRun
+      ? 'info.DryRunCommandIsRunning'
+      : 'info.CommandIsRunning'
+    return flowTestNames
+      ? messages.getMessage(prefix, [flowApiName, flowTestNames.join(', ')])
+      : messages.getMessage(`${prefix}AllTests`, [flowApiName])
   }
 
   private assertNames(flowApiName: string, flowTestNames?: string[]): void {
@@ -260,21 +420,13 @@ export default class FlowMutationRun extends SfCommand<FlowMutationRunResult> {
       throw messages.createError('error.invalidFlowName', [flowApiName])
     }
     for (const name of flowTestNames ?? []) {
+      if (name === '') {
+        throw messages.createError('error.blankFlowTest')
+      }
       if (!FLOW_TEST_NAME_PATTERN.test(name)) {
         throw messages.createError('error.invalidFlowTestName', [name])
       }
     }
-  }
-
-  // The one deploy failure that can escape the run unclassified is the
-  // baseline's — a mutant's is a verdict — so it is the one rendered here.
-  private withDeployContext(error: unknown, flowApiName: string): unknown {
-    return error instanceof FlowDeployFailedError
-      ? messages.createError('error.flowDeployFailed', [
-          flowApiName,
-          renderOrgDetail(error.problems.join('; ')),
-        ])
-      : error
   }
 
   private async publishReport(
@@ -289,7 +441,10 @@ export default class FlowMutationRun extends SfCommand<FlowMutationRunResult> {
     score: number | null,
     threshold: number | undefined
   ): void {
-    if (score === null || threshold === undefined) return
+    if (score === null) return
+    // Stryker disable next-line ConditionalExpression: type narrowing only —
+    // `score < undefined` is false, so an unset threshold never throws.
+    if (threshold === undefined) return
     if (score < threshold) {
       throw messages.createError('error.thresholdNotMet', [
         String(score),

@@ -5,6 +5,7 @@ import type {
 } from '../../port/executionEngine.js'
 import {
   FlowApiVersionTooLowError,
+  FlowNamespacedOrgError,
   ProductionOrgError,
 } from '../../port/flowErrors.js'
 import { ApexClassRepository } from './apexClassRepository.js'
@@ -139,6 +140,12 @@ export const createOrgFlowEngine = async (
   ).readOrganizationKind()
   if (!isFlowTestingOrg(kind)) {
     throw new ProductionOrgError()
+  }
+  // The test runner refuses every name the plugin can give a FlowTest in a
+  // namespaced org ("Invalid ID or name"), so such an org is refused before
+  // anything is read from it.
+  if (kind.namespacePrefix !== null) {
+    throw new FlowNamespacedOrgError(kind.namespacePrefix)
   }
   const metadata = new FlowMetadataRepository(ctx.connection)
   return {

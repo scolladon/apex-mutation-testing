@@ -13,6 +13,7 @@ import { OrgFlowTestBed } from '../../../../src/adapter/org/orgFlowTestBed.js'
 import type { EngineContext } from '../../../../src/port/executionEngine.js'
 import {
   FlowApiVersionTooLowError,
+  FlowNamespacedOrgError,
   ProductionOrgError,
 } from '../../../../src/port/flowErrors.js'
 
@@ -25,7 +26,11 @@ vi.mock('../../../../src/adapter/org/orgFlowSourceProvider.js')
 vi.mock('../../../../src/adapter/org/orgFlowTestBed.js')
 vi.mock('../../../../src/adapter/org/organizationRepository.js')
 
-const SANDBOX = { isSandbox: true, organizationType: 'Enterprise Edition' }
+const SANDBOX = {
+  isSandbox: true,
+  organizationType: 'Enterprise Edition',
+  namespacePrefix: null,
+}
 
 describe('createOrgFlowEngine', () => {
   const readOrganizationKind = vi.fn()
@@ -97,6 +102,7 @@ describe('createOrgFlowEngine', () => {
       readOrganizationKind.mockResolvedValue({
         isSandbox: false,
         organizationType,
+        namespacePrefix: null,
       })
 
       // Act & Assert
@@ -112,6 +118,7 @@ describe('createOrgFlowEngine', () => {
     readOrganizationKind.mockResolvedValue({
       isSandbox: false,
       organizationType: 'Developer Edition',
+      namespacePrefix: null,
     })
 
     // Act
@@ -149,5 +156,40 @@ describe('createOrgFlowEngine', () => {
 
     // Act & Assert
     await expect(createOrgFlowEngine(ctx('100.0'))).resolves.toBeDefined()
+  })
+
+  it.each([
+    [{ isSandbox: true, organizationType: 'Enterprise Edition' }],
+    [{ isSandbox: false, organizationType: 'Developer Edition' }],
+  ])(
+    'Given an accepted org %j with a namespace, When created, Then it refuses before building any port',
+    async kind => {
+      // Arrange
+      readOrganizationKind.mockResolvedValue({
+        ...kind,
+        namespacePrefix: 'acme',
+      })
+
+      // Act & Assert
+      await expect(createOrgFlowEngine(ctx())).rejects.toEqual(
+        new FlowNamespacedOrgError('acme')
+      )
+      expect(vi.mocked(FlowMetadataRepository)).not.toHaveBeenCalled()
+      expect(vi.mocked(OrgFlowTestBed)).not.toHaveBeenCalled()
+    }
+  )
+
+  it('Given a production org with a namespace, When created, Then the org refusal comes first', async () => {
+    // Arrange
+    readOrganizationKind.mockResolvedValue({
+      isSandbox: false,
+      organizationType: 'Enterprise Edition',
+      namespacePrefix: 'acme',
+    })
+
+    // Act & Assert
+    await expect(createOrgFlowEngine(ctx())).rejects.toBeInstanceOf(
+      ProductionOrgError
+    )
   })
 })
