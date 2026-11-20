@@ -160,14 +160,13 @@ class FakeOrg {
       }
       if (this.dropLatestOnDeploy) this.versions.pop()
     }),
-    // A retrieve returns the Flow's Active version, or its latest when none
-    // is Active, and the FlowTests that exist.
+    // A retrieve returns the Flow's latest version — a Draft beside the
+    // Active one included, as observed on a sandbox — and the FlowTests that
+    // exist.
     retrieve: vi.fn(async (members: { type: string; fullNames: string[] }[]) =>
       members.flatMap(member => {
         if (member.type === 'Flow') {
-          const version =
-            this.versions.find(v => v.status === 'Active') ??
-            this.versions.at(-1)
+          const version = this.versions.at(-1)
           return version
             ? [
                 {
@@ -296,6 +295,50 @@ const mutant = (status: string, n: number) =>
   recordTriggeredFlowXml(status).replace('Create', `Update${n}`)
 
 const KILLED = { kind: 'executed', failingTests: ['Sets_Rating'] }
+
+describe('OrgFlowTestBed — names as the runner spells them', () => {
+  it('Given the runner naming a failing FlowTest in another case, When evaluated, Then it is reported as the retrieve names it', async () => {
+    // Arrange
+    const org = new FakeOrg(['Active'])
+    const run = org.runner.runFlowTests.getMockImplementation()
+    org.runner.runFlowTests.mockImplementation(async (flow, names) => {
+      const result = await (run as NonNullable<typeof run>)(flow, names)
+      return {
+        ...result,
+        tests: result.tests.map(test => ({
+          ...test,
+          methodName: test.methodName.toUpperCase(),
+        })),
+      }
+    })
+    const sut = build(org)
+    await sut.prepare(source('Active'), hooks())
+
+    // Act & Assert
+    await expect(sut.evaluate(mutant('Active', 0))).resolves.toEqual(KILLED)
+  })
+
+  it('Given the runner naming a failing FlowTest that was not requested, When evaluated, Then it is reported as the runner names it', async () => {
+    // Arrange
+    const org = new FakeOrg(['Active'])
+    const run = org.runner.runFlowTests.getMockImplementation()
+    const sut = build(org)
+    await sut.prepare(source('Active'), hooks())
+    org.runner.runFlowTests.mockImplementation(async (flow, names) => {
+      const result = await (run as NonNullable<typeof run>)(flow, names)
+      return {
+        ...result,
+        tests: [...result.tests, { methodName: 'Other', outcome: 'Fail' }],
+      }
+    })
+
+    // Act & Assert
+    await expect(sut.evaluate(mutant('Active', 0))).resolves.toEqual({
+      kind: 'executed',
+      failingTests: ['Sets_Rating', 'Other'],
+    })
+  })
+})
 
 const GUARD_MESSAGE =
   "Flow 'Account_After' versions changed unexpectedly during the run"
@@ -497,10 +540,9 @@ describe('OrgFlowTestBed', () => {
         })
         await interrupted.evaluate(mutant(status, 0)).catch(() => undefined)
         const left = atKill as { versions: FakeVersion[]; test: string }
-        // what the source provider retrieves: the Active version, or the
-        // latest when none is — the mutant either way
-        const retrieved = (left.versions.find(v => v.status === 'Active') ??
-          left.versions.at(-1)) as FakeVersion
+        // what the source provider retrieves: the latest version — the
+        // mutant either way
+        const retrieved = left.versions.at(-1) as FakeVersion
         const org = new FakeOrg([])
         org.versions = left.versions.map(version => ({ ...version }))
         org.flowTests.set('Sets_Rating', left.test)
@@ -1532,6 +1574,23 @@ describe('OrgFlowTestBed', () => {
       )
     })
 
+    it('Given a version deactivated between the two listings, its content unchanged, When prepared, Then it refuses naming it', async () => {
+      // Arrange
+      const org = new FakeOrg(['Obsolete', 'Active'])
+      const list = org.versionRepository.listVersions.getMockImplementation()
+      org.versionRepository.listVersions.mockImplementationOnce(async () => {
+        const rows = await (list as NonNullable<typeof list>)()
+        org.versions[0].id = '301rekeyed'
+        return rows
+      })
+      const sut = build(org)
+
+      // Act & Assert
+      await expect(sut.prepare(source('Active'), hooks())).rejects.toEqual(
+        new FlowChangedOutsideRunError('Account_After', [1], true)
+      )
+    })
+
     it('Given a version saved between the two listings, When prepared, Then it refuses naming it, before any write', async () => {
       // Arrange
       const org = new FakeOrg(['Active'])
@@ -1679,7 +1738,7 @@ describe('OrgFlowTestBed', () => {
 
       // Assert
       expect((error as FlowRestoreError).failures).toEqual([
-        new FlowTestRestorePinError('Sets_Rating', [1], []),
+        new FlowTestRestorePinError('Sets_Rating', [1], [], 'missing'),
       ])
     })
 
@@ -1978,7 +2037,7 @@ describe('OrgFlowTestBed', () => {
       // Assert
       expect(error).toBeInstanceOf(FlowOrgSafetyError)
       expect(activationsBeforeRestore).toEqual([])
-      expect(org.metadata.awaitDeploy).toHaveBeenCalledWith('0Af1')
+      expect(org.metadata.awaitDeploy).toHaveBeenCalledWith('0Af1', true)
       expect(org.deletes).toEqual([2])
       expect(org.state).toEqual([[1, 'Active']])
     })
@@ -2041,7 +2100,7 @@ describe('OrgFlowTestBed', () => {
       await sut.restore()
 
       // Assert
-      expect(org.metadata.awaitDeploy).toHaveBeenCalledWith('0Af1')
+      expect(org.metadata.awaitDeploy).toHaveBeenCalledWith('0Af1', true)
       expect(org.flowTests.get('Sets_Rating')).toBe(ORIGINAL_TEST)
     })
   })
@@ -2354,6 +2413,177 @@ describe('OrgFlowTestBed', () => {
       expect(org.metadata.deploy).not.toHaveBeenCalled()
     })
 
+    it('Given a FlowTest read back with only the first of its versions, When restored, Then the restore reports the difference', async () => {
+      // Arrange
+      const original = flowTestXml('Account_After', [1, 2])
+      const org = new FakeOrg(['Obsolete', 'Active'])
+      org.flowTests.set('Sets_Rating', original)
+      const sut = build(org)
+      await sut.prepare(source('Active', [original]), hooks())
+      org.metadata.deploy.mockImplementationOnce(async () => {
+        org.flowTests.set('Sets_Rating', flowTestXml('Account_After', [1]))
+      })
+
+      // Act
+      const error = (await sut.restore().catch(e => e)) as FlowRestoreError
+
+      // Assert
+      expect(error.failures).toEqual([
+        new FlowTestRestorePinError('Sets_Rating', [1, 2], [1], 'pins'),
+      ])
+    })
+
+    it('Given a FlowTest read back with its versions in another order, When restored, Then it counts as restored', async () => {
+      // Arrange
+      const original = flowTestXml('Account_After', [2, 1])
+      const org = new FakeOrg(['Obsolete', 'Active'])
+      org.flowTests.set('Sets_Rating', original)
+      const sut = build(org)
+      await sut.prepare(source('Active', [original]), hooks())
+      org.metadata.deploy.mockImplementationOnce(async () => {
+        org.flowTests.set('Sets_Rating', flowTestXml('Account_After', [1, 2]))
+      })
+
+      // Act & Assert
+      await expect(sut.restore()).resolves.toBeUndefined()
+    })
+
+    it('Given a FlowTest read back with its versions but still marked, When restored, Then the restore reports it', async () => {
+      // Arrange
+      const org = new FakeOrg(['Active'])
+      const sut = build(org)
+      await sut.prepare(source('Active'), hooks())
+      org.metadata.deploy.mockImplementationOnce(async () => {
+        org.flowTests.set(
+          'Sets_Rating',
+          ORIGINAL_TEST.replace(
+            '<label>',
+            '<description>[apex-mutation-testing pins=1]</description>\n    <label>'
+          )
+        )
+      })
+
+      // Act
+      const error = (await sut.restore().catch(e => e)) as FlowRestoreError
+
+      // Assert
+      expect(error.failures).toEqual([
+        new FlowTestRestorePinError('Sets_Rating', [1], [1], 'marked'),
+      ])
+    })
+
+    it('Given one FlowTest a colleague edited and another read back wrong, When restored, Then both are reported', async () => {
+      // Arrange
+      const second = flowTestXml('Account_After', [1])
+      const org = new FakeOrg(['Active'])
+      org.flowTests.set('Test_1', second)
+      const sut = build(org)
+      await sut.prepare(source('Active', [ORIGINAL_TEST, second]), hooks())
+      org.flowTests.set('Sets_Rating', flowTestXml('Account_After', [9]))
+      org.metadata.deploy.mockImplementationOnce(async () => {
+        org.flowTests.set('Test_1', flowTestXml('Account_After', [3]))
+      })
+
+      // Act
+      const error = (await sut.restore().catch(e => e)) as FlowRestoreError
+
+      // Assert
+      expect(error.failures).toEqual([
+        new FlowTestChangedOutsideRunError(['Sets_Rating']),
+        new FlowTestRestorePinError('Test_1', [1], [3]),
+      ])
+    })
+
+    it("Given the put-back of the FlowTests refused, When restored and restored again, Then the colleague's edit is reported once and the put-back retried", async () => {
+      // Arrange
+      const second = flowTestXml('Account_After', [1])
+      const org = new FakeOrg(['Active'])
+      org.flowTests.set('Test_1', second)
+      const sut = build(org)
+      await sut.prepare(source('Active', [ORIGINAL_TEST, second]), hooks())
+      org.flowTests.set('Sets_Rating', flowTestXml('Account_After', [9]))
+      org.metadata.deploy.mockRejectedValueOnce(new Error('lock'))
+
+      // Act
+      const first = (await sut.restore().catch(e => e)) as FlowRestoreError
+      await sut.restore()
+
+      // Assert
+      expect(first.failures).toEqual([
+        new FlowTestChangedOutsideRunError(['Sets_Rating']),
+        new Error('lock'),
+      ])
+      expect(org.flowTests.get('Test_1')).toBe(second)
+    })
+
+    it('Given the put-back of the FlowTests pending, When restored again, Then the restore waits for it without ever cancelling it', async () => {
+      // Arrange
+      const org = new FakeOrg(['Active'])
+      const sut = build(org)
+      await sut.prepare(source('Active'), hooks())
+      const deploy = org.metadata.deploy.getMockImplementation()
+      org.metadata.deploy.mockImplementationOnce(async files => {
+        org.pendingLanding = () => {
+          deploy?.(files)
+        }
+        throw new FlowDeployNotCompletedError('0AfR', 'InProgress', true, 'x')
+      })
+      await sut.restore().catch(() => undefined)
+
+      // Act
+      await sut.restore()
+
+      // Assert
+      expect(org.metadata.awaitDeploy).toHaveBeenCalledWith('0AfR', false)
+      expect(org.flowTests.get('Sets_Rating')).toBe(ORIGINAL_TEST)
+    })
+
+    it('Given the put-back landed but its read-back failed, When restored again, Then it is not deployed a second time', async () => {
+      // Arrange
+      const org = new FakeOrg(['Active'])
+      const sut = build(org)
+      await sut.prepare(source('Active'), hooks())
+      const retrieve = org.metadata.retrieve.getMockImplementation()
+      org.metadata.retrieve
+        .mockImplementationOnce(async members =>
+          (retrieve as NonNullable<typeof retrieve>)(members)
+        )
+        .mockRejectedValueOnce(new Error('read failed'))
+      await sut.restore().catch(() => undefined)
+      org.metadata.deploy.mockClear()
+
+      // Act
+      await sut.restore()
+
+      // Assert
+      expect(org.metadata.deploy).not.toHaveBeenCalled()
+    })
+
+    it("Given the read-back of the put-back FlowTests failing, When restored, Then the colleague's edit is still reported beside it", async () => {
+      // Arrange
+      const second = flowTestXml('Account_After', [1])
+      const org = new FakeOrg(['Active'])
+      org.flowTests.set('Test_1', second)
+      const sut = build(org)
+      await sut.prepare(source('Active', [ORIGINAL_TEST, second]), hooks())
+      org.flowTests.set('Sets_Rating', flowTestXml('Account_After', [9]))
+      const retrieve = org.metadata.retrieve.getMockImplementation()
+      org.metadata.retrieve
+        .mockImplementationOnce(async members =>
+          (retrieve as NonNullable<typeof retrieve>)(members)
+        )
+        .mockRejectedValueOnce(new Error('read failed'))
+
+      // Act
+      const error = (await sut.restore().catch(e => e)) as FlowRestoreError
+
+      // Assert
+      expect(error.failures).toEqual([
+        new FlowTestChangedOutsideRunError(['Sets_Rating']),
+        new Error('read failed'),
+      ])
+    })
+
     it('Given a FlowTest read back with only some of its versions, When restored, Then the restore reports the difference', async () => {
       // Arrange
       const original = flowTestXml('Account_After', [1, 2])
@@ -2374,7 +2604,7 @@ describe('OrgFlowTestBed', () => {
       ])
     })
 
-    it('Given the FlowTest deploy of the prepare pending and the org storing it in another spelling, When restored, Then what landed is read back and the FlowTest put back', async () => {
+    it("Given the FlowTest deploy of the prepare pending and the org storing it in another spelling, When restored, Then what landed is not taken for the run's: it is left as it is and reported", async () => {
       // Arrange
       const org = new FakeOrg(['Active'])
       org.normalizeFlowTests = true
@@ -2389,12 +2619,61 @@ describe('OrgFlowTestBed', () => {
       await sut.prepare(source('Active'), hooks()).catch(() => undefined)
 
       // Act
-      await sut.restore()
+      const error = (await sut.restore().catch(e => e)) as FlowRestoreError
 
       // Assert
       expect(
         pinnedVersions(org.flowTests.get('Sets_Rating') as string)
-      ).toEqual([1])
+      ).toEqual([])
+      expect(error.failures).toEqual([
+        new FlowTestChangedOutsideRunError(['Sets_Rating']),
+      ])
+    })
+
+    it('Given the FlowTest deploy of the prepare pending and a colleague editing that FlowTest once it landed, When restored, Then their edit is kept and reported', async () => {
+      // Arrange — a read-back taken after the pending deploy would take
+      // their edit for what the run left
+      const org = new FakeOrg(['Active'])
+      const edited = flowTestXml('Account_After', [7])
+      const deploy = org.metadata.deploy.getMockImplementation()
+      org.metadata.deploy.mockImplementationOnce(async files => {
+        org.pendingLanding = () => {
+          deploy?.(files)
+          org.flowTests.set('Sets_Rating', edited)
+        }
+        throw new FlowDeployNotCompletedError('0Af1', 'InProgress', true, 'x')
+      })
+      const sut = build(org)
+      await sut.prepare(source('Active'), hooks()).catch(() => undefined)
+
+      // Act
+      const error = (await sut.restore().catch(e => e)) as FlowRestoreError
+
+      // Assert
+      expect(org.flowTests.get('Sets_Rating')).toBe(edited)
+      expect(error.failures).toEqual([
+        new FlowTestChangedOutsideRunError(['Sets_Rating']),
+      ])
+    })
+
+    it('Given the FlowTest deploy of the prepare pending and landing as deployed, When restored, Then the FlowTest is put back', async () => {
+      // Arrange
+      const org = new FakeOrg(['Active'])
+      const deploy = org.metadata.deploy.getMockImplementation()
+      org.metadata.deploy.mockImplementationOnce(async files => {
+        org.pendingLanding = () => {
+          deploy?.(files)
+        }
+        throw new FlowDeployNotCompletedError('0Af1', 'InProgress', true, 'x')
+      })
+      const sut = build(org)
+      await sut.prepare(source('Active'), hooks()).catch(() => undefined)
+
+      // Act
+      await sut.restore()
+
+      // Assert
+      expect(org.flowTests.get('Sets_Rating')).toBe(ORIGINAL_TEST)
       expect(sut.needsRestore()).toBe(false)
     })
 

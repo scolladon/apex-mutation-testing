@@ -156,8 +156,15 @@ export class FlowMetadataRepository {
     try {
       return await this.poll('deploy', id, check)
     } catch (firstError: unknown) {
+      if (!cancel) {
+        throw new FlowDeployNotCompletedError(
+          id,
+          'InProgress',
+          true,
+          errorText(firstError)
+        )
+      }
       try {
-        if (!cancel) throw firstError
         await this.connection.metadata.cancelDeploy(id)
         return await this.poll('deploy', id, check)
       } catch (error: unknown) {

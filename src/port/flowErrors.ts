@@ -330,14 +330,27 @@ export class FlowTestChangedOutsideRunError extends Error {
 
 // A FlowTest deployed back with its original associations, read back with
 // other ones.
+// How a FlowTest deployed back failed to come back as it was: with other
+// versions, still carrying the run's marker, or not at all.
+export type FlowTestRestoreProblem = 'pins' | 'marked' | 'missing'
+
+const RESTORE_PROBLEM_TEXT: Record<FlowTestRestoreProblem, string> = {
+  pins: 'came back associated with versions',
+  marked: 'came back still marked, associated with versions',
+  missing: 'did not come back, expected with versions',
+}
+
 export class FlowTestRestorePinError extends Error {
   constructor(
     public readonly testName: string,
     public readonly expectedVersions: number[],
-    public readonly foundVersions: number[]
+    public readonly foundVersions: number[],
+    public readonly problem: FlowTestRestoreProblem = 'pins'
   ) {
     super(
-      `FlowTest '${testName}' came back associated with versions [${foundVersions.join(', ')}] instead of [${expectedVersions.join(', ')}]`
+      problem === 'missing'
+        ? `FlowTest '${testName}' ${RESTORE_PROBLEM_TEXT.missing} [${expectedVersions.join(', ')}]`
+        : `FlowTest '${testName}' ${RESTORE_PROBLEM_TEXT[problem]} [${foundVersions.join(', ')}] instead of [${expectedVersions.join(', ')}]`
     )
     this.name = 'FlowTestRestorePinError'
   }

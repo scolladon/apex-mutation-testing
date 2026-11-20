@@ -372,7 +372,7 @@ describe('FlowMetadataRepository', () => {
       expect(metadata.checkDeployStatus).toHaveBeenCalledTimes(4)
     })
 
-    it('Given a restore deploy that times out, When deployed without cancelling, Then it is reported pending and never cancelled', async () => {
+    it('Given a restore deploy that times out, When deployed without cancelling, Then it is reported pending with its one cause and never cancelled', async () => {
       // Arrange
       metadata.deploy.mockResolvedValue({ id: '0AfA' })
       metadata.checkDeployStatus.mockResolvedValue({ done: false })
@@ -384,12 +384,7 @@ describe('FlowMetadataRepository', () => {
 
       // Act & Assert
       await expect(sut.deploy(flow, false)).rejects.toEqual(
-        new FlowDeployNotCompletedError(
-          '0AfA',
-          'InProgress',
-          true,
-          `${timeout}; then ${timeout}`
-        )
+        new FlowDeployNotCompletedError('0AfA', 'InProgress', true, timeout)
       )
       expect(metadata.cancelDeploy).not.toHaveBeenCalled()
     })

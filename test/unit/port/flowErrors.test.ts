@@ -160,6 +160,16 @@ describe('flowErrors', () => {
       'FlowTests changed outside the run: A, B',
     ],
     [
+      new FlowTestRestorePinError('T', [1, 2], [1, 2], 'marked'),
+      'FlowTestRestorePinError',
+      "FlowTest 'T' came back still marked, associated with versions [1, 2] instead of [1, 2]",
+    ],
+    [
+      new FlowTestRestorePinError('T', [1, 2], [], 'missing'),
+      'FlowTestRestorePinError',
+      "FlowTest 'T' did not come back, expected with versions [1, 2]",
+    ],
+    [
       new FlowTestRestorePinError('T', [1, 2], [1, 3]),
       'FlowTestRestorePinError',
       "FlowTest 'T' came back associated with versions [1, 3] instead of [1, 2]",

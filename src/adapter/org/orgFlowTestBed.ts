@@ -14,6 +14,7 @@ import {
   FlowTestPinError,
   FlowTestRepinFailedError,
   FlowTestRestorePinError,
+  type FlowTestRestoreProblem,
   FlowTestsNotRunError,
   FlowTestVersionError,
   FlowVersionGuardError,
@@ -84,8 +85,9 @@ interface UnpinnedTest {
   original: FlowTestSource
   // What the run deployed in its place, detached and marked.
   deployed: string
-  // What the org held once the run's own deploy landed, read back; undefined
-  // when the deploy or the read-back did not get that far.
+  // What the org held right after the run's own deploy landed, read back
+  // within the same step; undefined when the deploy or the read-back did not
+  // get that far — then only the exact XML deployed counts as the run's.
   readBack: string | undefined
 }
 
@@ -111,8 +113,9 @@ interface Session {
   // attempted so the restore covers a deploy that half-failed.
   unpinned: UnpinnedTest[]
   // A deploy whose outcome is unknown and which may still land: the restore
-  // waits for it before it trusts anything it reads.
-  pendingDeployId: string | undefined
+  // waits for it before it trusts anything it reads — and cancels it on a
+  // timeout only when it is a mutant's, never when it puts the original back.
+  pendingDeploy: { id: string; cancellable: boolean } | undefined
   // A deploy request that failed before the org returned its id: it may have
   // been queued, and nothing can wait for it, so the restore never reports
   // success.
@@ -182,6 +185,9 @@ const changedVersions = (
     .sort((a, b) => a - b)
 }
 
+const sortedPins = (xml: string): number[] =>
+  pinnedVersions(xml).sort((a, b) => a - b)
+
 const toError = (value: unknown): Error =>
   value instanceof Error ? value : new Error(String(value))
 
@@ -227,7 +233,7 @@ export class OrgFlowTestBed implements FlowTestBed {
       created: new Set(),
       flowTouched: false,
       unpinned: [],
-      pendingDeployId: undefined,
+      pendingDeploy: undefined,
       untrackedDeploy: false,
       wrote: false,
       runId: randomUUID().slice(0, 8),
@@ -289,8 +295,8 @@ export class OrgFlowTestBed implements FlowTestBed {
       this.session = undefined
       return
     }
-    if (session.pendingDeployId !== undefined) {
-      await this.awaitPendingDeploy(session)
+    if (session.pendingDeploy !== undefined) {
+      await this.awaitPendingDeploy(session, session.pendingDeploy)
     }
     const failures: Error[] = []
     const attempt = async (step: () => Promise<unknown>) => {
@@ -305,7 +311,9 @@ export class OrgFlowTestBed implements FlowTestBed {
     // listing that failed during the run would otherwise leave a version the
     // run created, or its Draft's new Id, unrecorded.
     await attempt(() => this.observe(session))
-    await attempt(() => this.restoreFlowTests(session))
+    await attempt(async () => {
+      failures.push(...(await this.restoreFlowTests(session)))
+    })
     if (session.mode === 'activate') {
       await attempt(() => this.reactivateOriginal(session))
     }
@@ -333,13 +341,17 @@ export class OrgFlowTestBed implements FlowTestBed {
 
   // Nothing the org says can be trusted while a deploy of the run may still
   // land, so nothing is attempted until it has: then whatever it created is
-  // recorded as the run's, like any other deploy's.
-  private async awaitPendingDeploy(session: Session): Promise<void> {
+  // recorded as the run's, like any other deploy's. A FlowTest it detached is
+  // not read back now: by then a colleague may have edited it, and what is
+  // read would be taken for what the run left.
+  private async awaitPendingDeploy(
+    session: Session,
+    pending: { id: string; cancellable: boolean }
+  ): Promise<void> {
     try {
-      await this.metadata.awaitDeploy(session.pendingDeployId as string)
-      session.pendingDeployId = undefined
+      await this.metadata.awaitDeploy(pending.id, pending.cancellable)
+      session.pendingDeploy = undefined
       await this.observe(session)
-      await this.readBackUnpinned(session)
     } catch (error: unknown) {
       throw new FlowRestoreError(session.source.apiName, [toError(error)])
     }
@@ -543,7 +555,10 @@ export class OrgFlowTestBed implements FlowTestBed {
         if (error.asyncProcessId === undefined) {
           session.untrackedDeploy = true
         } else if (error.pending) {
-          session.pendingDeployId = error.asyncProcessId
+          session.pendingDeploy = {
+            id: error.asyncProcessId,
+            cancellable: cancel,
+          }
         }
       }
       throw error
@@ -785,9 +800,13 @@ export class OrgFlowTestBed implements FlowTestBed {
   // what the run left in them: one somebody else edited or deleted meanwhile
   // is theirs, and is reported rather than written over or recreated. The
   // ones put back are read back, and must carry their original associations
-  // again.
-  private async restoreFlowTests(session: Session): Promise<void> {
-    if (session.unpinned.length === 0) return
+  // again — in whatever order the org lists them — and no marker. Every
+  // FlowTest is accounted for: the failures are returned, all of them. Only a
+  // put-back deploy that did not get through is left for a later restore to
+  // retry; what somebody else changed, or what came back wrong, is reported
+  // once.
+  private async restoreFlowTests(session: Session): Promise<Error[]> {
+    if (session.unpinned.length === 0) return []
     const current = await this.readFlowTests(
       session.unpinned.map(entry => entry.original.fullName)
     )
@@ -806,51 +825,61 @@ export class OrgFlowTestBed implements FlowTestBed {
         changed.push(entry.original.fullName)
       }
     }
-    if (restorable.length > 0) {
+    const failures: Error[] =
+      changed.length > 0 ? [new FlowTestChangedOutsideRunError(changed)] : []
+    session.unpinned = []
+    if (restorable.length === 0) return failures
+    try {
       await this.deployTracked(
         session,
         flowTestFiles(restorable.map(entry => entry.original)),
         false
       )
-      const readBack = await this.readFlowTests(
-        restorable.map(entry => entry.original.fullName)
-      )
-      for (const entry of restorable) {
-        const expected = pinnedVersions(entry.original.xml)
-        // a FlowTest that did not come back has no association at all
-        const back = readBack.get(entry.original.fullName)
-        const found = back === undefined ? [] : pinnedVersions(back)
-        if (
-          found.length !== expected.length ||
-          found.some((pin, index) => pin !== expected[index])
-        ) {
-          throw new FlowTestRestorePinError(
-            entry.original.fullName,
-            expected,
-            found
-          )
-        }
-      }
+    } catch (error: unknown) {
+      session.unpinned = restorable
+      return [...failures, toError(error)]
     }
-    session.unpinned = []
-    if (changed.length > 0) {
-      throw new FlowTestChangedOutsideRunError(changed)
+    try {
+      failures.push(...(await this.checkPutBack(restorable)))
+    } catch (error: unknown) {
+      failures.push(toError(error))
     }
+    return failures
   }
 
-  // A pending deploy of the detached FlowTests has landed: what it left is
-  // read back now, so the restore compares with what the org actually held.
-  private async readBackUnpinned(session: Session): Promise<void> {
-    const missing = session.unpinned.filter(
-      entry => entry.readBack === undefined
-    )
-    if (missing.length === 0) return
+  // The FlowTests just deployed back, read back: each must carry its
+  // original versions, in whatever order, and no marker.
+  private async checkPutBack(
+    restorable: UnpinnedTest[]
+  ): Promise<FlowTestRestorePinError[]> {
     const readBack = await this.readFlowTests(
-      missing.map(entry => entry.original.fullName)
+      restorable.map(entry => entry.original.fullName)
     )
-    for (const entry of missing) {
-      entry.readBack = readBack.get(entry.original.fullName)
-    }
+    return restorable
+      .map(entry => {
+        const expected = sortedPins(entry.original.xml)
+        // a FlowTest that did not come back has no association at all
+        const back = readBack.get(entry.original.fullName)
+        const found = back === undefined ? [] : sortedPins(back)
+        const problem: FlowTestRestoreProblem | undefined =
+          back === undefined
+            ? 'missing'
+            : found.length !== expected.length ||
+                found.some((pin, index) => pin !== expected[index])
+              ? 'pins'
+              : leftoverPins(back) !== undefined
+                ? 'marked'
+                : undefined
+        return problem
+          ? new FlowTestRestorePinError(
+              entry.original.fullName,
+              expected,
+              found,
+              problem
+            )
+          : undefined
+      })
+      .filter((error): error is FlowTestRestorePinError => error !== undefined)
   }
 
   private async readFlowTests(names: string[]): Promise<Map<string, string>> {
@@ -878,12 +907,14 @@ export class OrgFlowTestBed implements FlowTestBed {
       requested
     )
     const runMs = performance.now() - started
+    // Salesforce names are case-insensitive: the runner may spell one
+    // differently from the retrieve, whose spelling the report uses.
+    const asRequested = (name: string): string =>
+      requested.find(test => test.toLowerCase() === name.toLowerCase()) ?? name
     const failingTests = result.tests
       .filter(test => KILLING_OUTCOMES.has(test.outcome))
-      .map(test => test.methodName)
+      .map(test => asRequested(test.methodName))
     if (failingTests.length === 0) {
-      // Salesforce names are case-insensitive: the runner may spell one
-      // differently from the retrieve.
       const passed = new Set(
         result.tests
           .filter(test => test.outcome === PASS)
