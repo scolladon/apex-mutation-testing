@@ -1381,12 +1381,17 @@ sf apex mutation flow run -f Account_After -o MySandbox
 │                           dry runs included; a failed check fails closed)
 │                         NamespacePrefix set → FlowNamespacedOrgError
 ├─ 2. READ              FlowSourceProvider.readFlow(apiName, testNames?)
-│                         -t given: names normalised (FlowTesting.<flow>.<t>, <flow>.<t>, <t>)
+│                         -t given: names normalised (FlowTesting.<flow>.<t>, <flow>.<t>, <t>),
+│                           each once whatever its case
 │                         else: Test Discovery lists this flow's FlowTests by name
 │                         one retrieve: Flow + only those FlowTests (singlePackage zip)
+│                         names matched in any case, then used as the org spells them
 │                         a FlowTest whose <flowApiName> is another flow counts as missing
+│                         no FlowTest: the Flow alone is retrieved — FlowNotFoundError when
+│                           nothing answers to the name, else NoFlowTestsError
 ├─ 3. VALIDATE + GENERATE    no org write before this point
-│                         Scheduled / Async Path → an info line each
+│                         unknown mutator name → warning; none selected → error (as Apex)
+│                         Async Path → an info line; Scheduled Path → one too (not on a dry run)
 ├─    ── DRY RUN EXIT ──     mutants Pending, report written, { score: null }
 ├─ 4. PREPARE           FlowTestBed.prepare
 │                         snapshot versions, refuse a marked version or FlowTest, pick the mode,
@@ -1410,8 +1415,9 @@ sf apex mutation flow run -f Account_After -o MySandbox
 The run reads the Flow and its FlowTests from the org and never reads or writes the local
 project, except the optional configuration file: every deploy is a zip built in memory
 (`FlowMetadataRepository`), so an interrupted run never leaves a mutant in the working tree.
-A Metadata API retrieve returns the latest version of a Flow, which is the version every
-deploy of the run overwrites or supersedes.
+A Metadata API retrieve returns the latest version of a Flow — a Draft beside the Active
+version included (checked on a sandbox) — which is the version every deploy of the run
+overwrites or supersedes.
 
 The source is read before `prepare` takes its snapshot, so `prepare` reads it again between two
 listings of the versions: the Flow and every selected FlowTest must be byte for byte what the
@@ -1480,8 +1486,18 @@ command, Ctrl+C is not intercepted.
 
 Running a mutant Active is visible to more than its FlowTests. A Flow with a Scheduled Path
 gets an info line at the start of a run that deploys — actions already scheduled may run
-against a mutant meanwhile — and one with an Async Path another (neither on a dry run): FlowTests do not run the Async Path, so
-the elements only it reaches get no mutant (`flowPaths.ts`).
+against a mutant meanwhile — and one with an Async Path another, dry runs included: FlowTests
+do not run the Async Path, so the elements only it reaches, and the formulas only they use, get
+no mutant (`flowPaths.ts`). A real transaction can also start an interview on a temporary
+version while it is Active — a Scheduled Path waiting, a paused interview — and the org refuses
+to delete a version with one: the restore then fails, naming that version, and the next run
+refuses the marked version until it is removed.
+
+Names follow the org: Salesforce API names are case-insensitive, and the retrieve and Test
+Discovery answer to any spelling, but report their own — and the test runner, given another
+spelling, runs nothing and reports success (checked on a sandbox). So the Flow and FlowTest
+names given are matched in any case and replaced by the org's own before anything else uses
+them.
 
 ### Guards
 
@@ -1526,7 +1542,11 @@ The run checks the org's own state rather than trusting the model above:
   again — except a restore deploy, which is never cancelled — and one that still does not
   finish is kept as pending. Nothing
   read while it may land can be trusted, so the run stops at once — no revert — and the restore
-  first waits for it, then records whatever it created.
+  first waits for it, then records whatever it created. A deploy request that fails before the
+  org returns an id may still have been queued; the restore runs regardless: the org runs one
+  deploy at a time, in the order received (checked on a sandbox: a second deploy stays
+  `Pending`, not started, until the first one ends), so the restore's own deploys land after
+  it. Whatever such a deploy creates carries the marker, so the next run would refuse it.
 - **Revert.** In `activate` mode the revert (original Active again, temporary version
   deleted, snapshot checked) runs after every evaluation, whatever happened in it; when it
   fails, `FlowRevertError` carries its failure and the evaluation's own.
@@ -1572,8 +1592,13 @@ waited for before any step; if it still does not finish, nothing is attempted an
 fails with that alone. A deploy request that failed before the org returned its id cannot be
 waited for: every step still runs, but the restore fails, saying such a deploy may still
 land. A FlowTest is re-pinned only while the org holds exactly what the run's deploy left in
-it (the read-back, or failing one, the XML the run deployed); otherwise it is reported, with
-how to associate it again, rather than written over. Nothing is restored — nor
+it (the read-back taken right after that deploy, or failing one, the XML the run deployed — a
+FlowTest deploy that was pending is never read back later, when a colleague's edit could be
+taken for the run's; a FlowTest reads back byte for byte as deployed, checked on a sandbox); otherwise it is reported, with how to associate it again, rather than
+written over. A re-pinned FlowTest is read back and must carry its original versions, in any
+order, and no marker. Every FlowTest is accounted for — those changed outside the run and
+those that came back wrong are all reported — and only a put-back that did not get through is
+left for a later `restore()` to retry. Nothing is restored — nor
 announced — when the run was refused before its first write (`FlowTestBed.needsRestore`,
 set right before the first deploy is attempted).
 Any failure is kept, and the restore throws a `FlowRestoreError` carrying all of them. The
@@ -1596,18 +1621,22 @@ bypassing an element edits its predecessors' connectors but is anchored on the e
 formula mutant rewrites the whole expression but is anchored on its token (entities, CDATA and
 CRLF mapped back by `FlowXmlDom.textOffsets`). The report marks the anchor and `--lines`
 filters on its first line. `--include-mutators` / `--exclude-mutators` (or the `flow` section
-of the configuration file) select mutators by name, with or without the `Mutator` suffix. Element names are
+of the configuration file) select mutators by name, with or without the `Mutator` suffix; as
+in the Apex command, a name no mutator answers to is warned about and skipped, and a filter
+leaving no mutator is an error. Element names are
 compared as text in JavaScript; nothing is ever interpolated into a query.
 
 | Mutator | Mutation |
 | --- | --- |
 | `RecordTriggerTypeMutator` | `recordTriggerType` Create ↔ Update, CreateAndUpdate → Create / Update; no → Create when the flow uses `IsChanged` (the org refuses it) |
-| `FormulaExpressionMutator` | each non-empty `'…'` / `"…"` literal emptied; each `&&` ↔ `\|\|`, `==` ↔ `!=` — by token, never inside a literal or a `{!…}` merge field |
+| `FormulaExpressionMutator` | each non-empty `'…'` / `"…"` literal emptied; each `&&` ↔ `\|\|`, `==` ↔ `!=` — by token, never inside a literal, a `{!…}` merge field or a `/* … */` comment |
 | `ConnectorBypassMutator` | rewire every connector into an element to its successor; a terminal element loses each connector, decision outcome, default outcome or loop exit leading to it (never the start's, a loop's next-value or a fault connector) |
 | `DecisionOperatorMutator` | per condition: invert its comparison operator, or, when it has none to invert (IsNull, IsChanged…), its boolean — `booleanValue` or `$GlobalConstant.True/False` |
-| `AssignmentMutator` | empty / fill a string, invert a boolean (literal or global constant), zero / one a number, swap Add ↔ Subtract (not on text, a collection, or by zero) |
+| `AssignmentMutator` | empty / fill a string, invert a boolean (literal or global constant), zero / one a number, swap Add ↔ Subtract (not on text or a collection, not with a text or collection value, not by zero) |
 
-An element only the Async Path reaches gets no mutant. A delete-triggered, platform
+An element only the Async Path reaches gets no mutant, nor does a formula only such elements
+use, directly or through other formulas and text templates. A formula nothing uses keeps its
+mutants: they survive, and the report shows it unused. A delete-triggered, platform
 event-triggered or schedule-triggered Flow is refused by the validator: FlowTests cannot run
 it.
 
