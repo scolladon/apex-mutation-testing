@@ -52,7 +52,25 @@ const configSchema = z.object({
   skipPatterns: z.array(z.string()).optional(),
   lines: z.array(z.string()).optional(),
   mutationGrouping: z.boolean().optional(),
+  // The Flow command's own section: the top-level keys describe an Apex
+  // class (its mutator names, its lines), so only `threshold` is shared, as
+  // the default for the section's own.
+  flow: z
+    .object({
+      mutators: nameListSchema,
+      threshold: z.number().optional(),
+    })
+    .optional(),
 })
+
+// What the Flow command takes from its flags and, failing them, from the
+// config file.
+export interface FlowConfigParameter {
+  configFile?: string
+  includeMutators?: string[]
+  excludeMutators?: string[]
+  threshold?: number
+}
 
 type MutationTestingConfig = z.infer<typeof configSchema>
 
@@ -124,6 +142,39 @@ export class ConfigReader {
 
     this.validate(resolved)
 
+    return resolved
+  }
+
+  // The Flow command's resolution: a flag wins over the file's `flow`
+  // section, which wins over the file's top-level threshold. Read and
+  // checked by the same code as the Apex command's, so a malformed file is
+  // reported with the same messages.
+  public async resolveFlow(
+    parameter: FlowConfigParameter
+  ): Promise<FlowConfigParameter> {
+    const configPath = parameter.configFile ?? DEFAULT_CONFIG_FILE
+    const rawConfig = await this.readConfigFile(configPath)
+    const fileConfig =
+      rawConfig === undefined
+        ? undefined
+        : this.assertConfigShape(rawConfig, configPath)
+    // A mutator flag replaces the file's mutator lists, both of them: a flag
+    // on one list beside the file's other list would read as asking for both.
+    const mutators =
+      parameter.includeMutators || parameter.excludeMutators
+        ? undefined
+        : fileConfig?.flow?.mutators
+    const resolved: FlowConfigParameter = {
+      ...parameter,
+      includeMutators: parameter.includeMutators ?? mutators?.include,
+      excludeMutators: parameter.excludeMutators ?? mutators?.exclude,
+      threshold:
+        parameter.threshold ??
+        fileConfig?.flow?.threshold ??
+        fileConfig?.threshold,
+    }
+    this.assertMutatorFiltersExclusive(resolved)
+    this.assertThresholdInRange(resolved.threshold)
     return resolved
   }
 
@@ -317,41 +368,57 @@ export class ConfigReader {
   }
 
   private validate(parameter: ApexMutationParameter): void {
-    if (parameter.includeMutators && parameter.excludeMutators) {
-      throw new Error(
-        this.messages.getMessage('error.mutuallyExclusiveMutators')
-      )
-    }
+    this.assertMutatorFiltersExclusive(parameter)
     if (parameter.includeTestMethods && parameter.excludeTestMethods) {
       throw new Error(
         this.messages.getMessage('error.mutuallyExclusiveTestMethods')
       )
     }
+    this.assertThresholdInRange(parameter.threshold)
+    ConfigReader.validateLineRanges(parameter.lines, this.messages)
+  }
+
+  private assertMutatorFiltersExclusive(parameter: {
+    includeMutators?: string[]
+    excludeMutators?: string[]
+  }): void {
+    if (parameter.includeMutators && parameter.excludeMutators) {
+      throw new Error(
+        this.messages.getMessage('error.mutuallyExclusiveMutators')
+      )
+    }
+  }
+
+  private assertThresholdInRange(threshold: number | undefined): void {
     // The `!== undefined` half is type narrowing only: `undefined < 0` and
     // `undefined > 100` are both false, so an unset threshold never throws.
-    const { threshold } = parameter
     // Stryker disable next-line ConditionalExpression: type narrowing only.
     if (threshold !== undefined && (threshold < 0 || threshold > 100)) {
       throw new Error(this.messages.getMessage('error.thresholdOutOfRange'))
     }
-    if (parameter.lines) {
-      for (const range of parameter.lines) {
-        if (!/^\d+(-\d+)?$/.test(range)) {
+  }
+
+  // Public and static so every command accepting --lines rejects the same
+  // inputs with the same messages: the bundle passed in must define
+  // error.invalidLineRange and error.invalidLineRangeOrder.
+  public static validateLineRanges(
+    lines: string[] | undefined,
+    messages: Messages<string>
+  ): void {
+    for (const range of lines ?? []) {
+      if (!/^\d+(-\d+)?$/.test(range)) {
+        throw new Error(messages.getMessage('error.invalidLineRange', [range]))
+      }
+      // Not observable: the regex above already accepted the range, and for a
+      // bare number `split('-')` yields a single element so `end` is
+      // undefined and `start > undefined` is false either way.
+      // Stryker disable next-line ConditionalExpression,StringLiteral: no-op for bare numbers.
+      if (range.includes('-')) {
+        const [start, end] = range.split('-').map(Number)
+        if (start > end) {
           throw new Error(
-            this.messages.getMessage('error.invalidLineRange', [range])
+            messages.getMessage('error.invalidLineRangeOrder', [range])
           )
-        }
-        // Not observable: the regex above already accepted the range, and for a
-        // bare number `split('-')` yields a single element so `end` is
-        // undefined and `start > undefined` is false either way.
-        // Stryker disable next-line ConditionalExpression,StringLiteral: no-op for bare numbers.
-        if (range.includes('-')) {
-          const [start, end] = range.split('-').map(Number)
-          if (start > end) {
-            throw new Error(
-              this.messages.getMessage('error.invalidLineRangeOrder', [range])
-            )
-          }
         }
       }
     }

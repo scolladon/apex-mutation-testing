@@ -1,11 +1,29 @@
-import type { EngineBundle, EngineContext } from '../../port/executionEngine.js'
+import type {
+  EngineBundle,
+  EngineContext,
+  FlowEngineBundle,
+} from '../../port/executionEngine.js'
+import {
+  FlowApiVersionTooLowError,
+  FlowNamespacedOrgError,
+  ProductionOrgError,
+} from '../../port/flowErrors.js'
 import { ApexClassRepository } from './apexClassRepository.js'
 import { ApexSettingsRepository } from './apexSettingsRepository.js'
 import { ApexTestRunner } from './apexTestRunner.js'
 import { ApexTestSuiteRepository } from './apexTestSuiteRepository.js'
 import { EntityDefinitionRepository } from './entityDefinitionRepository.js'
+import { FlowMetadataRepository } from './flowMetadataRepository.js'
+import { FlowTestDiscovery } from './flowTestDiscovery.js'
+import { FlowTestResultRepository } from './flowTestResultRepository.js'
+import { FlowVersionRepository } from './flowVersionRepository.js'
 import { OrgApexSourceProvider } from './orgApexSourceProvider.js'
-import { OrganizationRepository } from './organizationRepository.js'
+import {
+  type OrganizationKind,
+  OrganizationRepository,
+} from './organizationRepository.js'
+import { OrgFlowSourceProvider } from './orgFlowSourceProvider.js'
+import { OrgFlowTestBed } from './orgFlowTestBed.js'
 import { OrgMutationTestBed } from './orgMutationTestBed.js'
 import { OrgSObjectSchemaProvider } from './orgSObjectSchemaProvider.js'
 
@@ -84,5 +102,63 @@ export const createOrgEngine = async (
       orgNamespace
     ),
     testBed: buildTestBed(ctx, apexClassRepository, apexTestRunner),
+  }
+}
+
+// The Test Discovery resource that lists a flow's FlowTests by name, and the
+// FlowTest field that associates a test with one flow version, both arrive
+// with API 66.0: below it the engine could neither find nor pin the tests.
+export const MINIMUM_FLOW_API_VERSION = '66.0'
+
+// Fail-closed: a version that is not a number is no proof of 66.0 either.
+const assertFlowApiVersion = (apiVersion: string): void => {
+  if (!(Number(apiVersion) >= Number(MINIMUM_FLOW_API_VERSION))) {
+    throw new FlowApiVersionTooLowError(apiVersion, MINIMUM_FLOW_API_VERSION)
+  }
+}
+
+// The orgs a run may deploy and activate Flow versions in: sandboxes and
+// scratch orgs, and Developer Edition orgs — Trailhead playgrounds included —
+// which report IsSandbox = false. An allow-list with no bypass: production
+// has no way in.
+const DEVELOPER_EDITION = 'Developer Edition'
+
+const isFlowTestingOrg = ({
+  isSandbox,
+  organizationType,
+}: OrganizationKind): boolean =>
+  isSandbox || organizationType === DEVELOPER_EDITION
+
+// Every check that must hold before the Flow engine may exist runs here,
+// before any port is handed out: an org outside the allow-list never gets a
+// test bed, and neither does a dry run against one.
+export const createOrgFlowEngine = async (
+  ctx: EngineContext
+): Promise<FlowEngineBundle> => {
+  assertFlowApiVersion(ctx.connection.getApiVersion())
+  const kind = await new OrganizationRepository(
+    ctx.connection
+  ).readOrganizationKind()
+  if (!isFlowTestingOrg(kind)) {
+    throw new ProductionOrgError()
+  }
+  // The test runner refuses every name the plugin can give a FlowTest in a
+  // namespaced org ("Invalid ID or name"), so such an org is refused before
+  // anything is read from it.
+  if (kind.namespacePrefix !== null) {
+    throw new FlowNamespacedOrgError(kind.namespacePrefix)
+  }
+  const metadata = new FlowMetadataRepository(ctx.connection)
+  return {
+    source: new OrgFlowSourceProvider(
+      metadata,
+      new FlowTestDiscovery(ctx.connection)
+    ),
+    testBed: new OrgFlowTestBed(
+      metadata,
+      new FlowVersionRepository(ctx.connection),
+      new FlowTestResultRepository(ctx.connection),
+      buildTestRunner(ctx)
+    ),
   }
 }

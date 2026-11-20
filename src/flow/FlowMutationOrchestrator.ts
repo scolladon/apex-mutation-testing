@@ -1,0 +1,406 @@
+import type { Messages } from '@salesforce/core'
+import type { Progress, Spinner } from '@salesforce/sf-plugins-core'
+import type { FlowEngineBundle } from '../port/executionEngine.js'
+import {
+  FlowOrgSafetyError,
+  FlowRunAndRestoreError,
+  FlowRuntimeErrorStreakError,
+} from '../port/flowErrors.js'
+import type { FlowSource } from '../port/flowSourceProvider.js'
+import type { FlowBaseline } from '../port/flowTestBed.js'
+import { ConfigReader } from '../service/configReader.js'
+import {
+  type OutputSink,
+  renderOrgDetail,
+  writeToStdout,
+} from '../service/engineNotice.js'
+import { sanitizeForDisplay } from '../service/skippedTestClassMessage.js'
+import { formatDuration, formatRemainingTime } from '../service/timeUtils.js'
+import {
+  FlowMutantGenerator,
+  type FlowMutatorFilter,
+} from './FlowMutantGenerator.js'
+import { FlowValidator } from './FlowValidator.js'
+import { analyzeFlowPaths } from './flowPaths.js'
+import type { FlowMutant, FlowMutationResult } from './types.js'
+import { applyEdits, type FlowXmlDom } from './xml/FlowXmlDom.js'
+
+export interface FlowMutationParameters {
+  flowApiName: string
+  flowTestNames?: string[]
+  lines?: string[]
+  includeMutators?: string[]
+  excludeMutators?: string[]
+  dryRun: boolean
+}
+
+// After a passing baseline, this many RuntimeErrors in a row mean the run
+// itself is broken (an expired session, a deleted FlowTest), not the mutants.
+const RUNTIME_ERROR_STREAK_LIMIT = 3
+
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error)
+
+// Lifecycle: read the flow from the org → validate → generate → (dry run
+// stops here) → prepare a baseline → evaluate each mutant → restore. The
+// restore runs on every exit once prepare has started, because prepare is
+// already the first write to the org.
+export class FlowMutationOrchestrator {
+  constructor(
+    private readonly progress: Progress,
+    private readonly spinner: Spinner,
+    private readonly engine: FlowEngineBundle,
+    private readonly messages: Messages<string>,
+    private readonly validator: FlowValidator = new FlowValidator(),
+    private readonly generator: FlowMutantGenerator = new FlowMutantGenerator(),
+    private readonly outputSink: OutputSink = writeToStdout
+  ) {}
+
+  public async run(
+    parameters: FlowMutationParameters
+  ): Promise<FlowMutationResult> {
+    ConfigReader.validateLineRanges(parameters.lines, this.messages)
+    const allowedLines = ConfigReader.parseLineRanges(
+      parameters.lines,
+      this.messages
+    )
+    this.checkMutatorFilter(parameters)
+    const source = await this.readFlow(parameters)
+    const dom = this.validate(source)
+    const mutants = this.generateMutants(
+      parameters,
+      source.apiName,
+      dom,
+      allowedLines
+    )
+    this.reportPaths(dom, parameters.dryRun)
+    if (!parameters.dryRun) {
+      await this.executeWithRestore(source, mutants)
+    }
+    return {
+      flowApiName: source.apiName,
+      sourceXml: source.xml,
+      testNames: source.tests.map(test => test.fullName),
+      mutants,
+    }
+  }
+
+  private async readFlow(
+    parameters: FlowMutationParameters
+  ): Promise<FlowSource> {
+    this.spinner.start(
+      this.messages.getMessage('info.readingFlow', [parameters.flowApiName]),
+      undefined,
+      { stdout: true }
+    )
+    const source = await this.engine.source.readFlow(
+      parameters.flowApiName,
+      parameters.flowTestNames
+    )
+    this.spinner.stop(
+      this.messages.getMessage('info.flowRead', [
+        source.tests.map(test => sanitizeForDisplay(test.fullName)).join(', '),
+      ])
+    )
+    return source
+  }
+
+  private validate(source: FlowSource): FlowXmlDom {
+    const validation = this.validator.validate(source.xml)
+    if (validation.isValid) {
+      return validation.dom
+    }
+    const tokens = [source.apiName]
+    if (validation.reason === 'invalidXml') {
+      tokens.push(renderOrgDetail(validation.detail))
+    }
+    // Stryker disable next-line ConditionalExpression: for any other reason the
+    // pushed value is undefined, and Messages.getMessage renders a token only
+    // where its message has a specifier for it, which none of theirs has.
+    if (validation.reason === 'unsupportedProcessType') {
+      tokens.push(validation.processType)
+    }
+    throw new Error(
+      this.messages.getMessage(`error.flowInvalid.${validation.reason}`, tokens)
+    )
+  }
+
+  // FlowTests run the Scheduled Paths but not the Async Path; either kind
+  // also runs, for real records, while a mutant is Active. The Async Path
+  // line explains the mutants a dry run does not list either; the Scheduled
+  // Path warning is about mutants made Active, which a dry run never does.
+  private reportPaths(dom: FlowXmlDom, dryRun: boolean): void {
+    const { hasScheduledPath, hasAsyncPath } = analyzeFlowPaths(dom)
+    if (hasScheduledPath && !dryRun) {
+      this.outputSink(`${this.messages.getMessage('info.hasScheduledPath')}\n`)
+    }
+    if (hasAsyncPath) {
+      this.outputSink(`${this.messages.getMessage('info.hasAsyncPath')}\n`)
+    }
+  }
+
+  // Both lists as given: the generator reads include, else exclude, and an
+  // absent filter selects every mutator.
+  private filterOf(parameters: FlowMutationParameters): FlowMutatorFilter {
+    return {
+      include: parameters.includeMutators,
+      exclude: parameters.excludeMutators,
+    }
+  }
+
+  // As in the Apex command: a name no mutator answers to is warned about and
+  // skipped, and a filter that leaves no mutator at all is an error — both
+  // known before the org is read.
+  private checkMutatorFilter(parameters: FlowMutationParameters): void {
+    const filter = this.filterOf(parameters)
+    for (const name of this.generator.unknownNames(filter)) {
+      process.emitWarning(
+        `Unknown mutator name: '${sanitizeForDisplay(name)}' — skipping`
+      )
+    }
+    if (!this.generator.selectsAny(filter)) {
+      throw new Error(this.messages.getMessage('error.allMutatorsExcluded'))
+    }
+  }
+
+  private generateMutants(
+    parameters: FlowMutationParameters,
+    flowApiName: string,
+    dom: FlowXmlDom,
+    allowedLines: Set<number> | undefined
+  ): FlowMutant[] {
+    this.spinner.start(
+      this.messages.getMessage('info.generatingMutants', [flowApiName]),
+      undefined,
+      { stdout: true }
+    )
+    const filter = this.filterOf(parameters)
+    const mutants = this.generator.generate(dom, allowedLines, filter)
+    this.spinner.stop(
+      this.messages.getMessage('info.mutantsGenerated', [
+        String(mutants.length),
+      ])
+    )
+    if (mutants.length === 0) {
+      throw new Error(
+        this.noMutationsMessage(
+          parameters,
+          flowApiName,
+          dom,
+          allowedLines,
+          filter
+        )
+      )
+    }
+    return mutants
+  }
+
+  // Names the narrowing that emptied the set, so the user knows which flag to
+  // widen: the line range when the selected mutators do find mutants outside
+  // it, else the mutator filter when it left some mutators out, else the flow
+  // itself.
+  private noMutationsMessage(
+    parameters: FlowMutationParameters,
+    flowApiName: string,
+    dom: FlowXmlDom,
+    allowedLines: Set<number> | undefined,
+    filter: FlowMutatorFilter
+  ): string {
+    if (
+      allowedLines &&
+      this.generator.generate(dom, undefined, filter).length > 0
+    ) {
+      return this.messages.getMessage('error.noMutationsInLineRange', [
+        flowApiName,
+        // allowedLines is only ever parsed from lines
+        (parameters.lines as string[]).join(', '),
+      ])
+    }
+    if (this.generator.narrows(filter)) {
+      return this.messages.getMessage('error.noMutationsWithMutatorFilter', [
+        flowApiName,
+      ])
+    }
+    return this.messages.getMessage('error.noMutations', [flowApiName])
+  }
+
+  private async executeWithRestore(
+    source: FlowSource,
+    mutants: FlowMutant[]
+  ): Promise<void> {
+    try {
+      const baseline = await this.prepareBaseline(source)
+      this.displayTimeEstimate(baseline, mutants.length)
+      await this.evaluateMutants(source, mutants)
+    } catch (runError: unknown) {
+      this.stopProgress()
+      throw await this.restoreAfterFailure(source, runError)
+    }
+    await this.restore(source)
+  }
+
+  private async prepareBaseline(source: FlowSource): Promise<FlowBaseline> {
+    const baseline = await this.engine.testBed.prepare(source, {
+      onPreparing: () =>
+        this.spinner.start(
+          this.messages.getMessage('info.preparingFlowVersion', [
+            source.apiName,
+          ]),
+          undefined,
+          { stdout: true }
+        ),
+      onPrepared: () =>
+        this.spinner.stop(this.messages.getMessage('info.done')),
+      onBaselineStarting: () =>
+        this.spinner.start(
+          this.messages.getMessage('info.runningBaseline', [
+            String(source.tests.length),
+          ]),
+          undefined,
+          { stdout: true }
+        ),
+    })
+    if (baseline.failingTests.length > 0) {
+      this.spinner.stop(this.messages.getMessage('info.baselineFailed'))
+      throw new Error(
+        this.messages.getMessage('error.baselineTestsFailed', [
+          source.apiName,
+          baseline.failingTests.map(sanitizeForDisplay).join(', '),
+        ])
+      )
+    }
+    this.spinner.stop(this.messages.getMessage('info.baselinePassed'))
+    return baseline
+  }
+
+  private displayTimeEstimate(baseline: FlowBaseline, count: number): void {
+    const { applyMs, runMs } = baseline.cost
+    this.spinner.start(
+      this.messages.getMessage('info.timeEstimate', [
+        formatDuration((applyMs + runMs) * count),
+      ]),
+      undefined,
+      { stdout: true }
+    )
+    this.spinner.stop(
+      this.messages.getMessage('info.timeEstimateBreakdown', [
+        formatDuration(applyMs),
+        formatDuration(runMs),
+        String(count),
+      ])
+    )
+  }
+
+  private async evaluateMutants(
+    source: FlowSource,
+    mutants: FlowMutant[]
+  ): Promise<void> {
+    this.progress.start(
+      mutants.length,
+      { info: this.messages.getMessage('info.progressStarting') },
+      {
+        title: 'MUTATION TESTING PROGRESS',
+        format: '%s | {bar} | {value}/{total} {info}',
+      }
+    )
+    const loopStart = performance.now()
+    let streak = 0
+    for (const [index, mutant] of mutants.entries()) {
+      this.progress.update(index, {
+        info: `${formatRemainingTime(loopStart, index, mutants.length)}${this.messages.getMessage('info.evaluatingMutant', [sanitizeForDisplay(mutant.description)])}`,
+      })
+      await this.evaluateMutant(source, mutant)
+      streak = mutant.status === 'RuntimeError' ? streak + 1 : 0
+      if (streak === RUNTIME_ERROR_STREAK_LIMIT) {
+        throw new FlowRuntimeErrorStreakError(
+          source.apiName,
+          streak,
+          mutant.statusReason as string
+        )
+      }
+      this.progress.update(index + 1, {
+        info: `${formatRemainingTime(loopStart, index + 1, mutants.length)}${this.messages.getMessage(`info.mutantResult.${mutant.status}`)}`,
+      })
+    }
+    this.progress.finish({
+      info: this.messages.getMessage('info.progressFinished'),
+    })
+  }
+
+  // A transport failure on one mutant scores it RuntimeError and the run goes
+  // on; a failed safety check on the org's own state is never a verdict about
+  // a mutant — it aborts the run, and the restore follows.
+  private async evaluateMutant(
+    source: FlowSource,
+    mutant: FlowMutant
+  ): Promise<void> {
+    try {
+      const verdict = await this.engine.testBed.evaluate(
+        applyEdits(source.xml, mutant.edits)
+      )
+      if (verdict.kind === 'not-compilable') {
+        mutant.status = 'CompileError'
+        mutant.statusReason = verdict.detail
+      } else if (verdict.failingTests.length > 0) {
+        mutant.status = 'Killed'
+        mutant.killedBy = verdict.failingTests
+      } else {
+        mutant.status = 'Survived'
+      }
+    } catch (error: unknown) {
+      if (error instanceof FlowOrgSafetyError) {
+        throw error
+      }
+      mutant.status = 'RuntimeError'
+      mutant.statusReason = errorMessage(error)
+    }
+  }
+
+  // Reaching the restore is the whole point of the caller, so a renderer
+  // teardown failure must not preempt it: it is reported, not propagated —
+  // on stdout, apart from the bar's own stream, as the Apex service does.
+  private stopProgress(): void {
+    try {
+      this.progress.stop()
+    } catch (error: unknown) {
+      this.outputSink(
+        `${this.messages.getMessage('info.progressTeardownFailed', [
+          sanitizeForDisplay(errorMessage(error)),
+        ])}\n`
+      )
+    }
+  }
+
+  // Returns the error for the caller to throw. The run failure is the root
+  // cause and leads; a restore failure is kept beside it, typed, so "the org
+  // was not restored" is never lost behind it and each renders as itself.
+  private async restoreAfterFailure(
+    source: FlowSource,
+    runError: unknown
+  ): Promise<unknown> {
+    try {
+      await this.restore(source)
+      return runError
+    } catch (restoreError: unknown) {
+      return new FlowRunAndRestoreError(runError, restoreError)
+    }
+  }
+
+  // Nothing is announced, nor attempted, when the run was refused before its
+  // first write: there is nothing to restore.
+  private async restore(source: FlowSource): Promise<void> {
+    if (!this.engine.testBed.needsRestore()) return
+    this.spinner.start(
+      this.messages.getMessage('info.restoringFlow', [source.apiName]),
+      undefined,
+      { stdout: true }
+    )
+    try {
+      await this.engine.testBed.restore()
+      this.spinner.stop(this.messages.getMessage('info.done'))
+    } catch (error: unknown) {
+      this.spinner.stop(this.messages.getMessage('info.restoreFailed'))
+      throw error
+    }
+  }
+}
