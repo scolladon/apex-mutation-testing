@@ -225,3 +225,61 @@ describe('FormulaExpressionMutator', () => {
     expect(result.mutation.elementName).toBe('Formula_0')
   })
 })
+
+describe('FormulaExpressionMutator — review round 4 proof', () => {
+  const sut = new FormulaExpressionMutator()
+
+  it('Given a comment holding an operator, When mutated, Then nothing inside the comment is mutated', () => {
+    // Act
+    const results = mutateBody(
+      sut,
+      expression('/* a &amp;&amp; b */ {!Amount} == 1')
+    )
+
+    // Assert
+    expect(anchored(results)).toEqual([['==', '!=']])
+  })
+
+  it("Given a comment holding an apostrophe, When mutated, Then the formula's operators are still mutated", () => {
+    // Act
+    const results = mutateBody(
+      sut,
+      expression("/* don't touch */ {!A} &amp;&amp; {!B}")
+    )
+
+    // Assert
+    expect(anchored(results)).toEqual([['&amp;&amp;', '||']])
+  })
+})
+
+describe('FormulaExpressionMutator — review round 4, unterminated comment', () => {
+  const sut = new FormulaExpressionMutator()
+
+  it('Given an unterminated comment, When mutated, Then only what precedes it is mutated', () => {
+    // Act
+    const results = mutateBody(sut, expression("'a' == 'b' /* c &amp;&amp; d"))
+
+    // Assert
+    expect(anchored(results)).toEqual([
+      ["'a'", "''"],
+      ['==', '!='],
+      ["'b'", "''"],
+    ])
+  })
+
+  it('Given a comment closed right after it opens, When mutated, Then what follows is mutated', () => {
+    // Act
+    const results = mutateBody(sut, expression('/**/ {!A} || {!B}'))
+
+    // Assert
+    expect(anchored(results)).toEqual([['||', '&amp;&amp;']])
+  })
+
+  it('Given a slash-star-slash, When mutated, Then it does not close the comment it opens', () => {
+    // Act
+    const results = mutateBody(sut, expression('/*/ {!A} || {!B} */ {!C} == 1'))
+
+    // Assert
+    expect(anchored(results)).toEqual([['==', '!=']])
+  })
+})

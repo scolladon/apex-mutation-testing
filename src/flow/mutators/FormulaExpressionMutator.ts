@@ -8,6 +8,10 @@ const OPERATOR_SWAPS = new Map<string, string>([
   ['!=', '=='],
 ])
 
+// A formula comment changes nothing the flow does: nothing in it is a token.
+const COMMENT_OPEN = '/*'
+const COMMENT_CLOSE = '*/'
+
 // One mutable token of a formula: where it is, what it reads, what it reads
 // once mutated, and how a description names that change.
 interface Token {
@@ -22,8 +26,9 @@ interface Token {
 // with ' or " and may escape its quote with a backslash; an empty one has
 // nothing to empty and is not a token. A merge field ({!…}) is skipped
 // whole, so neither an operator inside a literal nor a quote inside a merge
-// field is ever taken for what it is not. An unterminated literal ends the
-// scan: the formula is invalid as it stands.
+// field is ever taken for what it is not. A comment (/* … */) is skipped
+// whole too. An unterminated literal ends the scan, and an unterminated
+// comment runs to the end: the formula is invalid as it stands.
 const tokenize = (text: string): Token[] => {
   const tokens: Token[] = []
   let at = 0
@@ -55,6 +60,9 @@ const tokenize = (text: string): Token[] => {
     } else if (text.startsWith('{!', at)) {
       const close = text.indexOf('}', at)
       at = close === -1 ? text.length : close + 1
+    } else if (text.startsWith(COMMENT_OPEN, at)) {
+      const close = text.indexOf(COMMENT_CLOSE, at + COMMENT_OPEN.length)
+      at = close === -1 ? text.length : close + COMMENT_CLOSE.length
     } else {
       const operator = text.slice(at, at + 2)
       const swapped = OPERATOR_SWAPS.get(operator)
