@@ -480,6 +480,35 @@ describe('FlowXmlDom', () => {
       expect(applyEdits(sut.source, [edit])).toBe(doc('    <c/>'))
     })
 
+    it.each([
+      ['a comment', '<!-- <a> --><b>x</b><!-- </a> -->'],
+      ['a CDATA section', '<b><![CDATA[<a></a> </a>]]></b>'],
+    ])(
+      'Given %s spelling the tag inside the element, When asked for its span, Then the real close tag ends it',
+      (_label, inner) => {
+        // Arrange
+        const source = doc(`    <a>${inner}</a>\n    <c/>`)
+        const dom = FlowXmlDom.parse(source)
+        const [a] = dom.elements('a')
+
+        // Act
+        const { start, end } = dom.spanOf(a)
+
+        // Assert
+        expect(source.slice(start, end)).toBe(`<a>${inner}</a>`)
+      }
+    )
+
+    it('Given a self-closing element, When its text offsets are read, Then the one offset is where it ends', () => {
+      // Arrange
+      const source = doc('    <b>xy</b>\n    <a/>')
+      const dom = FlowXmlDom.parse(source)
+      const [a] = dom.elements('a')
+
+      // Act & Assert
+      expect(dom.textOffsets(a)).toEqual([source.indexOf('<a/>') + 4])
+    })
+
     it('Given elements, When asked for their span, Then it runs from the open tag to one past the close tag', () => {
       // Arrange
       const sut = FlowXmlDom.parse(doc('    <b><c/></b>\n    <d/>'))

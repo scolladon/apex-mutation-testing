@@ -142,4 +142,181 @@ ${start(path('Async_1', 'AsyncAfterCommit'), '<scheduledPaths><pathType>AsyncAft
     // Assert
     expect(sut.asyncOnlyElements).toEqual(new Set(['Async_1']))
   })
+
+  describe('formulas', () => {
+    const formula = (name: string, expression: string) =>
+      `    <formulas>\n        <name>${name}</name>\n        <dataType>Boolean</dataType>\n        <expression>${expression}</expression>\n    </formulas>`
+    const template = (name: string, text: string) =>
+      `    <textTemplates>\n        <name>${name}</name>\n        <text>${text}</text>\n    </textTemplates>`
+    const using = (name: string, reference: string, ...connectors: string[]) =>
+      `    <decisions>\n        <name>${name}</name>\n        <rules><conditions><leftValueReference>${reference}</leftValueReference></conditions></rules>\n        ${connectors.join('\n        ')}\n    </decisions>`
+    const asyncFlow = (...body: string[]) =>
+      [
+        ...body,
+        element('Now'),
+        start(connector('Now'), path('Later', 'AsyncAfterCommit')),
+      ].join('\n')
+
+    it.each([
+      [
+        'used only by an async-only element',
+        asyncFlow(formula('IsHot', 'true'), using('Later', 'IsHot')),
+        true,
+      ],
+      [
+        'used, in another case, only by an async-only element',
+        asyncFlow(formula('IsHot', 'true'), using('Later', 'isHOT')),
+        true,
+      ],
+      [
+        'used only through another formula an async-only element uses',
+        asyncFlow(
+          formula('IsHot', 'true'),
+          formula('IsHotter', '{!IsHot} &amp;&amp; true'),
+          using('Later', 'IsHotter')
+        ),
+        true,
+      ],
+      [
+        'used only through a text template an async-only element uses',
+        asyncFlow(
+          formula('IsHot', 'true'),
+          template('Body', 'Hot: {!IsHot}'),
+          using('Later', 'Body')
+        ),
+        true,
+      ],
+      [
+        'used by an async-only element and by a tested one',
+        asyncFlow(
+          formula('IsHot', 'true'),
+          using('Later', 'IsHot'),
+          using('Tested', 'IsHot')
+        ),
+        false,
+      ],
+      [
+        'used through a formula a tested element uses',
+        asyncFlow(
+          formula('IsHot', 'true'),
+          formula('IsHotter', '{!IsHot}'),
+          using('Later', 'IsHot'),
+          using('Tested', 'IsHotter')
+        ),
+        false,
+      ],
+      [
+        'used by the start',
+        [
+          formula('IsHot', 'true'),
+          using('Later', 'IsHot'),
+          element('Now'),
+          start(
+            connector('Now'),
+            path('Later', 'AsyncAfterCommit'),
+            '<filterFormula>{!IsHot}</filterFormula>'
+          ),
+        ].join('\n'),
+        false,
+      ],
+      [
+        'used by a variable, which is no element',
+        asyncFlow(
+          formula('IsHot', 'true'),
+          using('Later', 'IsHot'),
+          '    <variables>\n        <name>v</name>\n        <value><elementReference>IsHot</elementReference></value>\n    </variables>'
+        ),
+        false,
+      ],
+      [
+        'used through two formulas, both used only by an async-only element',
+        asyncFlow(
+          formula('IsHot', 'true'),
+          formula('Left', '{!IsHot}'),
+          formula('Right', '{!IsHot}'),
+          formula('Both', '{!Left} &amp;&amp; {!Right}'),
+          using('Later', 'Both')
+        ),
+        true,
+      ],
+      [
+        'used by an unnamed text template, which may be anywhere',
+        asyncFlow(
+          formula('IsHot', 'true'),
+          '    <textTemplates>\n        <text>Hot: {!IsHot}</text>\n    </textTemplates>',
+          using('Later', 'IsHot')
+        ),
+        false,
+      ],
+      [
+        'used by nothing at all',
+        asyncFlow(formula('IsHot', 'true'), using('Later', 'Other')),
+        false,
+      ],
+      [
+        'whose name is only part of a longer name used',
+        asyncFlow(
+          formula('IsHot', 'true'),
+          using('Later', 'IsHot'),
+          using('Tested', 'IsHotter')
+        ),
+        true,
+      ],
+      [
+        'used only by formulas using each other',
+        asyncFlow(
+          formula('IsHot', '{!IsHotter}'),
+          formula('IsHotter', '{!IsHot}')
+        ),
+        false,
+      ],
+      [
+        'named with a regular-expression character, used only by an async-only element',
+        asyncFlow(formula('Is.Hot', 'true'), using('Later', 'Is.Hot')),
+        true,
+      ],
+      [
+        'named with a regular-expression character, used by a tested element',
+        asyncFlow(formula('Is.Hot', 'true'), using('Tested', 'IsXHot')),
+        false,
+      ],
+    ])(
+      'Given a formula %s, When analyzed, Then it is async-only: %s',
+      (_label, body, asyncOnly) => {
+        // Act
+        const sut = analyze(body)
+
+        // Assert
+        const formulaName = body.includes('Is.Hot') ? 'Is.Hot' : 'IsHot'
+        expect(sut.asyncOnlyElements.has(formulaName)).toBe(asyncOnly)
+      }
+    )
+
+    it('Given a text template used only by an async-only element, When analyzed, Then only formulas join the async-only elements', () => {
+      // Act
+      const sut = analyze(
+        asyncFlow(
+          formula('IsHot', 'true'),
+          template('Body', 'Hot: {!IsHot}'),
+          using('Later', 'Body')
+        )
+      )
+
+      // Assert
+      expect(sut.asyncOnlyElements).toEqual(new Set(['Later', 'IsHot']))
+    })
+
+    it('Given an unnamed formula, When analyzed, Then it is left alone', () => {
+      // Act
+      const sut = analyze(
+        asyncFlow(
+          '    <formulas>\n        <expression>true</expression>\n    </formulas>',
+          using('Later', 'x')
+        )
+      )
+
+      // Assert
+      expect([...sut.asyncOnlyElements]).toEqual(['Later'])
+    })
+  })
 })

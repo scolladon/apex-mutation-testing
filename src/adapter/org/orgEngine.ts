@@ -110,8 +110,9 @@ export const createOrgEngine = async (
 // with API 66.0: below it the engine could neither find nor pin the tests.
 export const MINIMUM_FLOW_API_VERSION = '66.0'
 
+// Fail-closed: a version that is not a number is no proof of 66.0 either.
 const assertFlowApiVersion = (apiVersion: string): void => {
-  if (Number(apiVersion) < Number(MINIMUM_FLOW_API_VERSION)) {
+  if (!(Number(apiVersion) >= Number(MINIMUM_FLOW_API_VERSION))) {
     throw new FlowApiVersionTooLowError(apiVersion, MINIMUM_FLOW_API_VERSION)
   }
 }

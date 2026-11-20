@@ -1,6 +1,7 @@
 import type { Messages } from '@salesforce/core'
 import type { FlowMutant, FlowMutationResult } from '../flow/types.js'
 import {
+  assertReportDirWithinCwd,
   type MutationTestResult,
   REPORT_SCHEMA_VERSION,
   REPORT_THRESHOLDS,
@@ -15,6 +16,13 @@ import {
 // can show which of them killed the mutant.
 export class FlowHTMLReporter {
   constructor(private readonly messages: Messages<string>) {}
+
+  // The run writes to the org for minutes: a report directory outside the
+  // working directory, which the report would be refused, is refused before
+  // it starts.
+  async assertReportDirAllowed(outputDir: string): Promise<void> {
+    await assertReportDirWithinCwd(outputDir, this.messages)
+  }
 
   async generateReport(
     result: FlowMutationResult,
@@ -58,6 +66,7 @@ const mapMutant = (mutant: FlowMutant, testNames: string[]): ReportMutant => ({
   static: false,
   coveredBy: RAN_AGAINST_TESTS.has(mutant.status) ? testNames : undefined,
   killedBy: mutant.killedBy?.length ? mutant.killedBy : undefined,
-  testsCompleted: mutant.status === 'Pending' ? 0 : 1,
+  // Only a mutant whose FlowTests ran to a verdict completed any.
+  testsCompleted: RAN_AGAINST_TESTS.has(mutant.status) ? 1 : 0,
   location: mutant.location,
 })

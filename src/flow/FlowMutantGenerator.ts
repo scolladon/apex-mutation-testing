@@ -9,8 +9,8 @@ const MUTATOR_SUFFIX = 'mutator'
 
 // A mutator answers to its name with or without the "Mutator" suffix, in any
 // case: "ConnectorBypass" and "connectorbypassmutator" both name
-// ConnectorBypassMutator. A name that matches no mutator selects nothing, as
-// in the Apex command.
+// ConnectorBypassMutator. A name that matches no mutator selects nothing; the
+// caller warns about it, as the Apex command does.
 const normalize = (name: string): string => {
   const lower = name.trim().toLowerCase()
   return lower.endsWith(MUTATOR_SUFFIX)
@@ -60,6 +60,25 @@ export class FlowMutantGenerator {
   // empty mutant set.
   public narrows(filter?: FlowMutatorFilter): boolean {
     return this.select(filter).length < this.mutators.length
+  }
+
+  public selectsAny(filter: FlowMutatorFilter): boolean {
+    return this.select(filter).length > 0
+  }
+
+  // The names in the filter that no mutator answers to, as given, each once
+  // whatever its spelling.
+  public unknownNames(filter: FlowMutatorFilter): string[] {
+    const known = new Set(this.mutators.map(mutator => normalize(mutator.name)))
+    const { include, exclude } = filter
+    const unknown = (include ?? exclude ?? []).filter(
+      name => !known.has(normalize(name))
+    )
+    return unknown.filter(
+      (name, index) =>
+        unknown.findIndex(other => normalize(other) === normalize(name)) ===
+        index
+    )
   }
 
   // An absent filter and one whose list is empty both select every mutator,

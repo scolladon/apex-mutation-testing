@@ -181,6 +181,8 @@ export class FlowXmlDom {
   // be mapped back character by character.
   public textOffsets(element: Element): number[] | undefined {
     const start = this.source.indexOf('>', this.startOf(element)) + 1
+    // A self-closing element has no text: its one offset is where it ends.
+    if (this.source[start - 2] === '/') return [start]
     const end = this.source.lastIndexOf('</', this.endOf(element) - 1)
     const offsets: number[] = []
     let decoded = ''
@@ -290,8 +292,10 @@ export class FlowXmlDom {
     if (this.source[openEnd - 1] === '/') {
       return openEnd + 1
     }
+    // A comment or a CDATA section may spell the tag without being one: it
+    // is matched whole, and skipped.
     const tag = new RegExp(
-      `<(/?)${escapeRegExp(element.tagName)}(?=[\\s/>])`,
+      `<!--[\\s\\S]*?-->|<!\\[CDATA\\[[\\s\\S]*?\\]\\]>|<(/?)${escapeRegExp(element.tagName)}(?=[\\s/>])`,
       'g'
     )
     // Stryker disable next-line ArithmeticOperator: the characters just before
@@ -302,6 +306,7 @@ export class FlowXmlDom {
     for (;;) {
       // Never null: the parser has already rejected an unclosed element.
       const match = tag.exec(this.source) as RegExpExecArray
+      if (match[0].startsWith('<!')) continue
       const tagEnd = this.source.indexOf('>', match.index)
       if (match[1]) {
         depth--

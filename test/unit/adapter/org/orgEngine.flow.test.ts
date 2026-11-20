@@ -139,7 +139,7 @@ describe('createOrgFlowEngine', () => {
     expect(vi.mocked(OrgFlowTestBed)).not.toHaveBeenCalled()
   })
 
-  it.each([['65.0'], ['9.0']])(
+  it.each([['65.0'], ['9.0'], ['abc'], ['']])(
     'Given API %s, When created, Then it refuses before querying the org',
     async apiVersion => {
       // Act & Assert

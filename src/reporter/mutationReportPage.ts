@@ -83,11 +83,21 @@ export async function writeMutationReport(
   outputDir: string,
   messages: Messages<string>
 ): Promise<void> {
-  const resolvedDir = resolveSafeOutputDir(outputDir, messages)
-  await assertRealPathWithinCwd(resolvedDir, outputDir, messages)
+  const resolvedDir = await assertReportDirWithinCwd(outputDir, messages)
   const bundle = await loadMutationTestElements()
   const htmlContent = createReportHtml(report, bundle)
   await writeFile(path.join(resolvedDir, 'index.html'), htmlContent)
+}
+
+// Both checks of writeMutationReport, alone: a caller that is about to
+// spend a long run can refuse a report directory it would never write.
+export async function assertReportDirWithinCwd(
+  outputDir: string,
+  messages: Messages<string>
+): Promise<string> {
+  const resolvedDir = resolveSafeOutputDir(outputDir, messages)
+  await assertRealPathWithinCwd(resolvedDir, outputDir, messages)
+  return resolvedDir
 }
 
 function resolveSafeOutputDir(

@@ -286,6 +286,14 @@ The versions of Flow '%s' changed unexpectedly (expected %s, found %s). The run 
 
 FlowTest '%s' did not come back free of flow-version associations after its deploy. The run was stopped: the FlowTest would have been skipped for the versions under test.
 
+# error.flowTestRestoreMarked
+
+FlowTest '%s' was deployed back with its versions (%s) but came back still carrying the [apex-mutation-testing pins=…] marker in its description. Remove the marker from its description on the target org.
+
+# error.flowTestRestoreMissing
+
+FlowTest '%s' was deployed back with its versions (%s) but could not be read back. Check that it exists on the target org and is associated with those versions.
+
 # error.flowTestRestorePin
 
 FlowTest '%s' was deployed back with its versions (%s) but came back associated with %s. Check its flow-version associations on the target org.
@@ -361,6 +369,10 @@ Flow '%s' contains Screen elements. Screen Flows cannot be tested with FlowTests
 # error.noMutations
 
 No mutations could be generated for Flow '%s': none of its elements is one the mutators change (decision conditions, assignments, formulas, the record trigger, elements between connectors), or they are only on its Async Path.
+
+# error.allMutatorsExcluded
+
+All mutators have been excluded by configuration
 
 # error.noMutationsWithMutatorFilter
 

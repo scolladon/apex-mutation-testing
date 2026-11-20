@@ -59,6 +59,29 @@ describe('FlowHTMLReporter', () => {
     await fs.rm(cwd, { recursive: true, force: true })
   })
 
+  it.each([
+    [
+      'outside the working directory',
+      '..',
+      "Report directory '..' resolves outside",
+    ],
+  ])(
+    'Given a report directory %s, When checked before the run, Then it is refused',
+    async (_label, dir, message) => {
+      // Act & Assert
+      await expect(
+        new FlowHTMLReporter(messages).assertReportDirAllowed(dir)
+      ).rejects.toThrow(message)
+    }
+  )
+
+  it('Given the report directory, When checked before the run, Then it is accepted', async () => {
+    // Act & Assert
+    await expect(
+      new FlowHTMLReporter(messages).assertReportDirAllowed('mutations')
+    ).resolves.toBeUndefined()
+  })
+
   it('Given mutants, When reported, Then each maps onto the shared schema with its exact location', async () => {
     // Arrange
     const sut = new FlowHTMLReporter(messages)
@@ -117,11 +140,12 @@ describe('FlowHTMLReporter', () => {
         id: 'FLOW-MUT-3',
         description: "Changed recordTriggerType from 'Create' to 'Update'",
         statusReason: 'deploy refused',
-        testsCompleted: 1,
+        testsCompleted: 0,
       }),
       expect.objectContaining({
         id: 'FLOW-MUT-4',
         statusReason: 'socket hang up',
+        testsCompleted: 0,
       }),
       expect.objectContaining({ id: 'FLOW-MUT-5', testsCompleted: 0 }),
     ])

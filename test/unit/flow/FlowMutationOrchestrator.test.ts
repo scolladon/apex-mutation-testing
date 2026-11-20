@@ -187,15 +187,127 @@ describe('FlowMutationOrchestrator', () => {
       ['an include list naming no mutator', { includeMutators: ['Other'] }],
       ['an exclude list naming every mutator', { excludeMutators: ['fixed'] }],
     ])(
-      'Given %s, When run, Then it fails naming the mutator filter',
+      'Given %s, When run, Then it fails as the Apex command does: every mutator excluded',
       async (_label, filter) => {
         // Act & Assert
         await expect(run(undefined, filter)).rejects.toThrow(
-          "No mutations could be generated for Flow 'Account_After' with the requested mutators."
+          'All mutators have been excluded by configuration'
         )
         expect(testBed.prepare).not.toHaveBeenCalled()
       }
     )
+
+    it('Given mutator names no mutator answers to, When run, Then each is warned about as the Apex command does', async () => {
+      // Arrange
+      const warn = vi
+        .spyOn(process, 'emitWarning')
+        .mockImplementation(() => undefined)
+
+      // Act
+      const result = await run(undefined, {
+        excludeMutators: ['NoSuchMutator', 'FixedMutator', 'Bad\u001b[31m'],
+      }).catch((error: unknown) => error)
+
+      // Assert
+      expect(warn.mock.calls).toEqual([
+        ["Unknown mutator name: 'NoSuchMutator' — skipping"],
+        ["Unknown mutator name: 'Bad [31m' — skipping"],
+      ])
+      expect(result).toEqual(
+        new Error('All mutators have been excluded by configuration')
+      )
+      warn.mockRestore()
+    })
+
+    it('Given a filter leaving no mutator, When run, Then it fails before the org is read', async () => {
+      // Act & Assert
+      await expect(
+        run(undefined, { includeMutators: ['Other'] })
+      ).rejects.toThrow('All mutators have been excluded by configuration')
+      expect(readFlow).not.toHaveBeenCalled()
+      expect(spinner.start).not.toHaveBeenCalled()
+    })
+
+    it('Given no mutator filter, When run, Then nothing is warned about', async () => {
+      // Arrange
+      const warn = vi
+        .spyOn(process, 'emitWarning')
+        .mockImplementation(() => undefined)
+
+      // Act
+      await run()
+
+      // Assert
+      expect(warn).not.toHaveBeenCalled()
+      warn.mockRestore()
+    })
+
+    it('Given the same unknown name twice in two spellings, When run, Then it is warned about once', async () => {
+      // Arrange
+      const warn = vi
+        .spyOn(process, 'emitWarning')
+        .mockImplementation(() => undefined)
+
+      // Act
+      await run(undefined, { excludeMutators: ['Nope', 'NOPE', 'nopemutator'] })
+
+      // Assert
+      expect(warn.mock.calls).toEqual([
+        ["Unknown mutator name: 'Nope' — skipping"],
+      ])
+      warn.mockRestore()
+    })
+
+    it('Given the flow named in another case than the org spells it, When generating, Then the messages use the org spelling', async () => {
+      // Arrange
+      readFlow.mockResolvedValue({ ...source(), apiName: 'Account_After' })
+
+      // Act & Assert
+      await expect(
+        sut([fixedMutator(0)]).run({
+          flowApiName: 'account_after',
+          dryRun: false,
+        })
+      ).rejects.toThrow("Flow 'Account_After'")
+      expect(spinner.start).toHaveBeenCalledWith(
+        messages.getMessage('info.generatingMutants', ['Account_After']),
+        undefined,
+        { stdout: true }
+      )
+    })
+
+    it('Given a filter keeping a mutator that finds nothing, When run, Then it fails naming the mutator filter', async () => {
+      // Arrange
+      const other: FlowMutator = { name: 'Other', mutate: () => [] }
+
+      // Act & Assert
+      await expect(
+        run([fixedMutator(1), other], { includeMutators: ['Other'] })
+      ).rejects.toThrow(
+        "No mutations could be generated for Flow 'Account_After' with the requested mutators."
+      )
+      expect(testBed.prepare).not.toHaveBeenCalled()
+    })
+
+    it('Given a filter keeping a mutator that finds mutants only outside the line range, When run, Then the line range is named', async () => {
+      // Arrange
+      const other: FlowMutator = { name: 'Other', mutate: () => [] }
+
+      // Act & Assert
+      await expect(
+        run([fixedMutator(1), other], {
+          includeMutators: ['Fixed'],
+          lines: ['1'],
+        })
+      ).rejects.toThrow('within the requested --lines range (1)')
+    })
+
+    it('Given a line range and a flow with no mutation at all, When run, Then the flow itself is named, not the range', async () => {
+      // Act & Assert
+      await expect(run([fixedMutator(0)], { lines: ['1'] })).rejects.toThrow(
+        "No mutations could be generated for Flow 'Account_After': none of its elements"
+      )
+    })
 
     it.each([
       ['its name', { includeMutators: ['Fixed'] }],
@@ -766,6 +878,35 @@ describe('FlowMutationOrchestrator', () => {
       expect(outputSink).not.toHaveBeenCalled()
     })
 
+    it('Given a dry run of a flow with an Async Path, When run, Then the Async Path is announced: it explains the mutants not listed', async () => {
+      // Arrange
+      const outputSink = vi.fn()
+      readFlow.mockResolvedValue(
+        source(
+          recordTriggeredFlowXml().replace(
+            '<object>Account</object>',
+            '<object>Account</object>\n        <scheduledPaths><offsetNumber>1</offsetNumber></scheduledPaths>\n        <scheduledPaths><pathType>AsyncAfterCommit</pathType></scheduledPaths>'
+          )
+        )
+      )
+
+      // Act
+      await new FlowMutationOrchestrator(
+        progress,
+        spinner,
+        engine,
+        messages,
+        undefined,
+        new FlowMutantGenerator([fixedMutator(1)]),
+        outputSink
+      ).run({ flowApiName: 'Account_After', dryRun: true })
+
+      // Assert
+      expect(outputSink.mock.calls).toEqual([
+        [`${messages.getMessage('info.hasAsyncPath')}\n`],
+      ])
+    })
+
     it('Given a flow without any path, When run, Then nothing is announced', async () => {
       // Arrange
       const outputSink = vi.fn()
@@ -783,6 +924,65 @@ describe('FlowMutationOrchestrator', () => {
 
       // Assert
       expect(outputSink).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('text from the org on the terminal', () => {
+    const ESC = '\u001b'
+
+    it('Given names and descriptions holding control characters, When run, Then they reach the terminal sanitized', async () => {
+      // Arrange
+      readFlow.mockResolvedValue({
+        ...source(),
+        tests: [{ fullName: `Sets${ESC}[2J`, xml: '' }],
+      })
+      const mutator: FlowMutator = {
+        name: 'Fixed',
+        mutate: dom =>
+          fixedMutator(1)
+            .mutate(dom)
+            .map(mutation => ({ ...mutation, description: `m${ESC}[31m` })),
+      }
+
+      // Act
+      await run([mutator])
+
+      // Assert
+      expect(spinner.stop).toHaveBeenCalledWith(
+        messages.getMessage('info.flowRead', ['Sets [2J'])
+      )
+      expect(progress.update).toHaveBeenCalledWith(0, {
+        info: expect.stringContaining(
+          messages.getMessage('info.evaluatingMutant', ['m [31m'])
+        ),
+      })
+    })
+
+    it('Given a failing baseline test named with control characters, When run, Then its name reaches the message sanitized', async () => {
+      // Arrange
+      testBed.prepare.mockResolvedValue({
+        ...baseline(),
+        failingTests: [`Sets${ESC}[2J`],
+      })
+
+      // Act & Assert
+      await expect(run()).rejects.toThrow(
+        messages.getMessage('error.baselineTestsFailed', [
+          'Account_After',
+          'Sets [2J',
+        ])
+      )
+    })
+
+    it('Given XML the parser rejects with control characters in its message, When run, Then the detail is sanitized', async () => {
+      // Arrange
+      readFlow.mockResolvedValue(source(`<Flow${ESC}>`))
+
+      // Act
+      const error = (await run().catch((e: unknown) => e)) as Error
+
+      // Assert
+      expect(error.message).not.toContain(ESC)
     })
   })
 })

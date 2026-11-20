@@ -171,13 +171,17 @@ const renderedOf = (
     return ['error.flowTestPin', [sanitizeForDisplay(error.testName)]]
   }
   if (error instanceof FlowTestRestorePinError) {
+    const name = sanitizeForDisplay(error.testName)
+    const expected = versionList(error.expectedVersions)
+    if (error.problem === 'marked') {
+      return ['error.flowTestRestoreMarked', [name, expected]]
+    }
+    if (error.problem === 'missing') {
+      return ['error.flowTestRestoreMissing', [name, expected]]
+    }
     return [
       'error.flowTestRestorePin',
-      [
-        sanitizeForDisplay(error.testName),
-        versionList(error.expectedVersions),
-        versionList(error.foundVersions),
-      ],
+      [name, expected, versionList(error.foundVersions)],
     ]
   }
   if (error instanceof FlowTestsNotRunError) {
@@ -356,6 +360,11 @@ export default class FlowMutationRun extends SfCommand<FlowMutationRunResult> {
     const flowApiName = flags.flow.trim()
     const flowTestNames = flags['flow-test']?.map(name => name.trim())
     this.assertNames(flowApiName, flowTestNames)
+    // The line ranges and the report directory are checked before the org
+    // is: they would otherwise only fail after the whole run.
+    ConfigReader.validateLineRanges(flags.lines, messages)
+    const reporter = new FlowHTMLReporter(messages)
+    await reporter.assertReportDirAllowed(flags['report-dir'])
     const config = await new ConfigReader(messages).resolveFlow({
       configFile: flags['config-file'],
       includeMutators: flags['include-mutators'],
@@ -369,11 +378,17 @@ export default class FlowMutationRun extends SfCommand<FlowMutationRunResult> {
     }).catch(error => renderFlowError(error, flowApiName))
 
     this.log(this.runningMessage(flags['dry-run'], flowApiName, flowTestNames))
+    // Through this.log, which --json silences: a line written straight to
+    // stdout would break the JSON.
+    const outputSink = (text: string) => this.log(text.trimEnd())
     const result = await new FlowMutationOrchestrator(
       this.progress,
       this.spinner,
       engine,
-      messages
+      messages,
+      undefined,
+      undefined,
+      outputSink
     )
       .run({
         flowApiName,
@@ -385,7 +400,7 @@ export default class FlowMutationRun extends SfCommand<FlowMutationRunResult> {
       })
       .catch(error => renderFlowError(error, flowApiName))
 
-    await this.publishReport(result, flags['report-dir'])
+    await this.publishReport(reporter, result, flags['report-dir'])
 
     const score = flags['dry-run']
       ? null
@@ -417,23 +432,28 @@ export default class FlowMutationRun extends SfCommand<FlowMutationRunResult> {
 
   private assertNames(flowApiName: string, flowTestNames?: string[]): void {
     if (!FLOW_API_NAME_PATTERN.test(flowApiName)) {
-      throw messages.createError('error.invalidFlowName', [flowApiName])
+      throw messages.createError('error.invalidFlowName', [
+        sanitizeForDisplay(flowApiName),
+      ])
     }
     for (const name of flowTestNames ?? []) {
       if (name === '') {
         throw messages.createError('error.blankFlowTest')
       }
       if (!FLOW_TEST_NAME_PATTERN.test(name)) {
-        throw messages.createError('error.invalidFlowTestName', [name])
+        throw messages.createError('error.invalidFlowTestName', [
+          sanitizeForDisplay(name),
+        ])
       }
     }
   }
 
   private async publishReport(
+    reporter: FlowHTMLReporter,
     result: FlowMutationResult,
     reportDir: string
   ): Promise<void> {
-    await new FlowHTMLReporter(messages).generateReport(result, reportDir)
+    await reporter.generateReport(result, reportDir)
     this.log(messages.getMessage('info.reportGenerated', [reportDir]))
   }
 

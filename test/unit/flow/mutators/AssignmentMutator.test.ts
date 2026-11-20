@@ -179,6 +179,26 @@ describe('AssignmentMutator', () => {
       '<elementReference>a</elementReference>',
     ],
     ['an Add of zero', '', '<numberValue>0</numberValue>'],
+    [
+      'a String variable as the value',
+      variable('String').replace('total', 'label'),
+      '<elementReference>label</elementReference>',
+    ],
+    [
+      'a text constant as the value',
+      '    <constants>\n        <name>label</name>\n        <dataType>String</dataType>\n    </constants>',
+      '<elementReference>label</elementReference>',
+    ],
+    [
+      'a text formula as the value',
+      '    <formulas>\n        <name>label</name>\n        <dataType>String</dataType>\n    </formulas>',
+      '<elementReference>label</elementReference>',
+    ],
+    [
+      'a collection as the value',
+      variable('Number', true).replace('total', 'items'),
+      '<elementReference>items</elementReference>',
+    ],
     ['an Add of 0.0', '', '<numberValue>0.0</numberValue>'],
   ])(
     'Given %s, When mutated, Then Add is not swapped for Subtract',
@@ -198,6 +218,11 @@ describe('AssignmentMutator', () => {
     ['a Number target', variable('Number')],
     ['a Currency target, not a collection', variable('Currency', false)],
     ['an undeclared target', ''],
+
+    [
+      'a Number target and a Number variable as the value',
+      `${variable('Number')}\n${variable('Number').replace('total', 'a')}`,
+    ],
   ])(
     'Given %s added to by a reference, When mutated, Then Add becomes Subtract',
     (_label, variables) => {
@@ -211,6 +236,20 @@ describe('AssignmentMutator', () => {
       expect(results.map(r => r.mutation.replacement)).toEqual(['Subtract'])
     }
   )
+
+  it('Given a Number target added to by a number beside an unnamed text resource, When mutated, Then Add still becomes Subtract', () => {
+    // Act
+    const results = mutateBody(
+      sut,
+      `${variable('Number')}\n    <constants>\n        <dataType>String</dataType>\n    </constants>\n${assignment(targetItem('<numberValue>2</numberValue>'))}`
+    )
+
+    // Assert
+    expect(results.map(r => r.mutation.replacement)).toEqual([
+      '0.0',
+      'Subtract',
+    ])
+  })
 
   it('Given a Number target added to by a non-zero number, When mutated, Then Add becomes Subtract', () => {
     // Act

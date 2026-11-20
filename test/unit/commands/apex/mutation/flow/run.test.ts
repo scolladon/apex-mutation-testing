@@ -87,6 +87,7 @@ const statusMutant = (status: FlowMutant['status']) =>
 describe('apex mutation flow run', () => {
   const orchestratorRun = vi.fn()
   const generateReport = vi.fn()
+  const assertReportDirAllowed = vi.fn()
   const getConnection = vi.fn().mockReturnValue({ conn: true })
   let sut: FlowMutationRun & {
     parse: ReturnType<typeof vi.fn>
@@ -128,6 +129,7 @@ describe('apex mutation flow run', () => {
     vi.mocked(FlowHTMLReporter).mockImplementation(
       class {
         generateReport = generateReport
+        assertReportDirAllowed = assertReportDirAllowed
       } as unknown as typeof FlowHTMLReporter
     )
     orchestratorRun.mockResolvedValue({
@@ -481,6 +483,49 @@ describe('apex mutation flow run', () => {
       expect(orchestratorRun).toHaveBeenCalled()
     })
 
+    it('Given an invalid line range, When run, Then it is refused before any org call', async () => {
+      // Act & Assert
+      await expect(runWith({ lines: ['x'] })).rejects.toThrow(
+        "Invalid line range 'x'"
+      )
+      expect(createOrgFlowEngine).not.toHaveBeenCalled()
+    })
+
+    it('Given a report directory the report could not be written to, When run, Then it is refused before any org call', async () => {
+      // Arrange
+      assertReportDirAllowed.mockRejectedValueOnce(new Error('outside'))
+
+      // Act & Assert
+      await expect(runWith({ 'report-dir': '..' })).rejects.toThrow('outside')
+      expect(assertReportDirAllowed).toHaveBeenCalledWith('..')
+      expect(createOrgFlowEngine).not.toHaveBeenCalled()
+    })
+
+    it('Given a name holding control characters, When refused, Then it is shown sanitized', async () => {
+      // Act
+      const flow = await runWith({ flow: 'Bad\u001b[2J' }).catch(e => e)
+      const test = await runWith({ 'flow-test': ['Bad\u001b[2J'] }).catch(
+        e => e
+      )
+
+      // Assert
+      expect(flow.message).not.toContain('\u001b')
+      expect(flow.message).toContain('Bad [2J')
+      expect(test.message).not.toContain('\u001b')
+      expect(test.message).toContain('Bad [2J')
+    })
+
+    it('Given a line for the console, When the orchestrator writes it, Then it goes through this.log, which --json silences', async () => {
+      // Act
+      await runWith({})
+      const outputSink = vi.mocked(FlowMutationOrchestrator).mock
+        .calls[0][6] as (text: string) => void
+      outputSink('A line\n')
+
+      // Assert
+      expect(sut.log).toHaveBeenCalledWith('A line')
+    })
+
     it('Given an empty FlowTest entry, When run, Then it is rejected with its own message', async () => {
       // Act & Assert
       await expect(runWith({ 'flow-test': ['A', ' '] })).rejects.toThrow(
@@ -614,8 +659,16 @@ describe('apex mutation flow run', () => {
         "FlowTest 'T' did not come back free of flow-version associations after its deploy.",
       ],
       [
-        new FlowTestRestorePinError('T\u0007', [1, 2], []),
-        "FlowTest 'T' was deployed back with its versions (1, 2) but came back associated with -.",
+        new FlowTestRestorePinError('T\u0007', [1, 2], [3]),
+        "FlowTest 'T' was deployed back with its versions (1, 2) but came back associated with 3.",
+      ],
+      [
+        new FlowTestRestorePinError('T\u0007', [1, 2], [1, 2], 'marked'),
+        "FlowTest 'T' was deployed back with its versions (1, 2) but came back still carrying the [apex-mutation-testing pins=…] marker",
+      ],
+      [
+        new FlowTestRestorePinError('T\u0007', [1, 2], [], 'missing'),
+        "FlowTest 'T' was deployed back with its versions (1, 2) but could not be read back.",
       ],
       [
         new FlowTestsNotRunError('F', ['A', 'B\u0007']),

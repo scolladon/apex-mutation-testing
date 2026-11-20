@@ -48,6 +48,20 @@ describe('FlowTestDiscovery', () => {
     )
   })
 
+  it('Given the flow named in another case, When listing, Then its tests are returned as the org names them', async () => {
+    // Arrange
+    request.mockResolvedValueOnce({
+      apexTestClasses: [
+        { name: 'Account_After', testMethods: [{ name: 'Sets_Rating' }] },
+      ],
+    })
+
+    // Act & Assert
+    await expect(sut.listTestNames('ACCOUNT_after')).resolves.toEqual([
+      'Sets_Rating',
+    ])
+  })
+
   it('Given a page without test classes, When listing, Then nothing is returned', async () => {
     // Arrange
     request.mockResolvedValueOnce({})

@@ -19,14 +19,24 @@ interface ItemContext {
   targetReference: string
 }
 
+// The resources a flow declares with a data type, by name: a variable, a
+// constant, a formula.
+const TYPED_RESOURCES = ['variables', 'constants', 'formulas']
+
+// A resource that is text or a collection: Add appends to or with it.
+const isTextOrCollection = (dom: FlowXmlDom, resource: Element | undefined) =>
+  resource !== undefined &&
+  (TEXT_TYPES.has(dom.childText(resource, 'dataType') as string) ||
+    dom.childText(resource, 'isCollection') === 'true')
+
 export class AssignmentMutator implements FlowMutator {
   public readonly name = 'AssignmentMutator'
 
   public mutate(dom: FlowXmlDom): FlowMutation[] {
-    const variables = new Map(
-      dom
-        .elements('variables')
-        .map(variable => [dom.childText(variable, 'name'), variable] as const)
+    const resources = new Map<string | undefined, Element>(
+      TYPED_RESOURCES.flatMap(tag => dom.elements(tag))
+        .map(resource => [dom.childText(resource, 'name'), resource] as const)
+        .filter(([name]) => name !== undefined)
     )
     return dom.elements('assignments').flatMap((assignment, index) => {
       const assignmentName =
@@ -45,10 +55,7 @@ export class AssignmentMutator implements FlowMutator {
             this.mutateString(context),
             this.mutateBoolean(context),
             this.mutateNumber(context),
-            this.mutateOperator(
-              context,
-              variables.get(context.targetReference)
-            ),
+            this.mutateOperator(context, resources),
           ].filter(
             (mutation): mutation is FlowMutation => mutation !== undefined
           )
@@ -99,22 +106,25 @@ export class AssignmentMutator implements FlowMutator {
   }
 
   // Add and Subtract only swap where both mean arithmetic: not on a text or
-  // a collection (Add appends there, Subtract is refused), and not by zero
-  // (the swap would change nothing).
+  // a collection, nor with a text value or a reference to one (Add appends
+  // there, Subtract is refused), and not by zero (the swap would change
+  // nothing).
   private mutateOperator(
     context: ItemContext,
-    target: Element | undefined
+    resources: Map<string | undefined, Element>
   ): FlowMutation | undefined {
     const { dom, item, assignmentName, targetReference } = context
     const operator = dom.child(item, 'operator')
     const current = dom.text(operator)
     const mutated = current && OPERATOR_SWAPS.get(current)
     if (!operator || !mutated) return undefined
+    const valueReference = dom.text(
+      firstNested(dom, item, 'value', 'elementReference')
+    )
     const appends =
       firstNested(dom, item, 'value', 'stringValue') !== undefined ||
-      (target !== undefined &&
-        (TEXT_TYPES.has(dom.childText(target, 'dataType') as string) ||
-          dom.childText(target, 'isCollection') === 'true'))
+      isTextOrCollection(dom, resources.get(targetReference)) ||
+      isTextOrCollection(dom, resources.get(valueReference))
     const byZero =
       Number(dom.text(firstNested(dom, item, 'value', 'numberValue'))) === 0
     if (appends || byZero) return undefined

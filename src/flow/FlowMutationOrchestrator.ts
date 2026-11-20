@@ -9,7 +9,11 @@ import {
 import type { FlowSource } from '../port/flowSourceProvider.js'
 import type { FlowBaseline } from '../port/flowTestBed.js'
 import { ConfigReader } from '../service/configReader.js'
-import { type OutputSink, writeToStdout } from '../service/engineNotice.js'
+import {
+  type OutputSink,
+  renderOrgDetail,
+  writeToStdout,
+} from '../service/engineNotice.js'
 import { sanitizeForDisplay } from '../service/skippedTestClassMessage.js'
 import { formatDuration, formatRemainingTime } from '../service/timeUtils.js'
 import {
@@ -60,11 +64,17 @@ export class FlowMutationOrchestrator {
       parameters.lines,
       this.messages
     )
+    this.checkMutatorFilter(parameters)
     const source = await this.readFlow(parameters)
     const dom = this.validate(source)
-    const mutants = this.generateMutants(parameters, dom, allowedLines)
+    const mutants = this.generateMutants(
+      parameters,
+      source.apiName,
+      dom,
+      allowedLines
+    )
+    this.reportPaths(dom, parameters.dryRun)
     if (!parameters.dryRun) {
-      this.reportPaths(dom)
       await this.executeWithRestore(source, mutants)
     }
     return {
@@ -89,7 +99,7 @@ export class FlowMutationOrchestrator {
     )
     this.spinner.stop(
       this.messages.getMessage('info.flowRead', [
-        source.tests.map(test => test.fullName).join(', '),
+        source.tests.map(test => sanitizeForDisplay(test.fullName)).join(', '),
       ])
     )
     return source
@@ -102,7 +112,7 @@ export class FlowMutationOrchestrator {
     }
     const tokens = [source.apiName]
     if (validation.reason === 'invalidXml') {
-      tokens.push(validation.detail)
+      tokens.push(renderOrgDetail(validation.detail))
     }
     // Stryker disable next-line ConditionalExpression: for any other reason the
     // pushed value is undefined, and Messages.getMessage renders a token only
@@ -116,11 +126,12 @@ export class FlowMutationOrchestrator {
   }
 
   // FlowTests run the Scheduled Paths but not the Async Path; either kind
-  // also runs, for real records, while a mutant is Active. Not said on a dry
-  // run, which makes no mutant Active.
-  private reportPaths(dom: FlowXmlDom): void {
+  // also runs, for real records, while a mutant is Active. The Async Path
+  // line explains the mutants a dry run does not list either; the Scheduled
+  // Path warning is about mutants made Active, which a dry run never does.
+  private reportPaths(dom: FlowXmlDom, dryRun: boolean): void {
     const { hasScheduledPath, hasAsyncPath } = analyzeFlowPaths(dom)
-    if (hasScheduledPath) {
+    if (hasScheduledPath && !dryRun) {
       this.outputSink(`${this.messages.getMessage('info.hasScheduledPath')}\n`)
     }
     if (hasAsyncPath) {
@@ -128,24 +139,42 @@ export class FlowMutationOrchestrator {
     }
   }
 
+  // Both lists as given: the generator reads include, else exclude, and an
+  // absent filter selects every mutator.
+  private filterOf(parameters: FlowMutationParameters): FlowMutatorFilter {
+    return {
+      include: parameters.includeMutators,
+      exclude: parameters.excludeMutators,
+    }
+  }
+
+  // As in the Apex command: a name no mutator answers to is warned about and
+  // skipped, and a filter that leaves no mutator at all is an error — both
+  // known before the org is read.
+  private checkMutatorFilter(parameters: FlowMutationParameters): void {
+    const filter = this.filterOf(parameters)
+    for (const name of this.generator.unknownNames(filter)) {
+      process.emitWarning(
+        `Unknown mutator name: '${sanitizeForDisplay(name)}' — skipping`
+      )
+    }
+    if (!this.generator.selectsAny(filter)) {
+      throw new Error(this.messages.getMessage('error.allMutatorsExcluded'))
+    }
+  }
+
   private generateMutants(
     parameters: FlowMutationParameters,
+    flowApiName: string,
     dom: FlowXmlDom,
     allowedLines: Set<number> | undefined
   ): FlowMutant[] {
     this.spinner.start(
-      this.messages.getMessage('info.generatingMutants', [
-        parameters.flowApiName,
-      ]),
+      this.messages.getMessage('info.generatingMutants', [flowApiName]),
       undefined,
       { stdout: true }
     )
-    // Both lists as given: the generator reads include, else exclude, and an
-    // absent filter selects every mutator.
-    const filter: FlowMutatorFilter = {
-      include: parameters.includeMutators,
-      exclude: parameters.excludeMutators,
-    }
+    const filter = this.filterOf(parameters)
     const mutants = this.generator.generate(dom, allowedLines, filter)
     this.spinner.stop(
       this.messages.getMessage('info.mutantsGenerated', [
@@ -153,33 +182,46 @@ export class FlowMutationOrchestrator {
       ])
     )
     if (mutants.length === 0) {
-      throw new Error(this.noMutationsMessage(parameters, allowedLines, filter))
+      throw new Error(
+        this.noMutationsMessage(
+          parameters,
+          flowApiName,
+          dom,
+          allowedLines,
+          filter
+        )
+      )
     }
     return mutants
   }
 
   // Names the narrowing that emptied the set, so the user knows which flag to
-  // widen: the mutator filter, then the line range, else the flow itself.
+  // widen: the line range when the selected mutators do find mutants outside
+  // it, else the mutator filter when it left some mutators out, else the flow
+  // itself.
   private noMutationsMessage(
     parameters: FlowMutationParameters,
+    flowApiName: string,
+    dom: FlowXmlDom,
     allowedLines: Set<number> | undefined,
     filter: FlowMutatorFilter
   ): string {
-    if (this.generator.narrows(filter)) {
-      return this.messages.getMessage('error.noMutationsWithMutatorFilter', [
-        parameters.flowApiName,
-      ])
-    }
-    if (allowedLines) {
+    if (
+      allowedLines &&
+      this.generator.generate(dom, undefined, filter).length > 0
+    ) {
       return this.messages.getMessage('error.noMutationsInLineRange', [
-        parameters.flowApiName,
+        flowApiName,
         // allowedLines is only ever parsed from lines
         (parameters.lines as string[]).join(', '),
       ])
     }
-    return this.messages.getMessage('error.noMutations', [
-      parameters.flowApiName,
-    ])
+    if (this.generator.narrows(filter)) {
+      return this.messages.getMessage('error.noMutationsWithMutatorFilter', [
+        flowApiName,
+      ])
+    }
+    return this.messages.getMessage('error.noMutations', [flowApiName])
   }
 
   private async executeWithRestore(
@@ -223,7 +265,7 @@ export class FlowMutationOrchestrator {
       throw new Error(
         this.messages.getMessage('error.baselineTestsFailed', [
           source.apiName,
-          baseline.failingTests.join(', '),
+          baseline.failingTests.map(sanitizeForDisplay).join(', '),
         ])
       )
     }
@@ -265,7 +307,7 @@ export class FlowMutationOrchestrator {
     let streak = 0
     for (const [index, mutant] of mutants.entries()) {
       this.progress.update(index, {
-        info: `${formatRemainingTime(loopStart, index, mutants.length)}${this.messages.getMessage('info.evaluatingMutant', [mutant.description])}`,
+        info: `${formatRemainingTime(loopStart, index, mutants.length)}${this.messages.getMessage('info.evaluatingMutant', [sanitizeForDisplay(mutant.description)])}`,
       })
       await this.evaluateMutant(source, mutant)
       streak = mutant.status === 'RuntimeError' ? streak + 1 : 0
