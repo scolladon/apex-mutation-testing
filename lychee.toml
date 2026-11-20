@@ -1,2 +1,2 @@
 exclude_path = ["CHANGELOG.md", "package-lock.json"]
-exclude = ["https?://(www\\.)?npmjs\\.(com|org)", "https?://biomejs\\.dev", "^https://github\\.com/scolladon/apex-mutation-testing/blob/v[0-9.]+/src/commands/"]
+exclude = ["https?://(www\\.)?npmjs\\.(com|org)", "https?://biomejs\\.dev", "^https://github\\.com/scolladon/apex-mutation-testing/blob/(v[0-9.]+|main)/src/commands/"]
