@@ -2,6 +2,13 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [1.10.0](https://github.com/scolladon/apex-mutation-testing/compare/v1.9.1...v1.10.0) (2026-11-20)
+
+
+### Features
+
+* adding flow mutations ([#168](https://github.com/scolladon/apex-mutation-testing/issues/168)) ([b015732](https://github.com/scolladon/apex-mutation-testing/commit/b015732d2fe44844725340c83d19ac6ba62e95b9))
+
 ## [1.9.1](https://github.com/scolladon/apex-mutation-testing/compare/v1.9.0...v1.9.1) (2026-08-25)
 
 
